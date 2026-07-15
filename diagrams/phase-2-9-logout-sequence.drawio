@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" agent="TAVLA" version="24.0.0" type="device">
+  <diagram name="Page-1" id="page-1">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1466" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="2" value="Client" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="120" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="3" value="AuthController" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="200" y="40" width="140" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="4" value="JwtAuthGuard" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="380" y="40" width="130" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="5" value="SessionVersionGuard" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="540" y="40" width="150" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="6" value="Use Case" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="720" y="40" width="140" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="7" value="1. Bearer access token" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="120" width="200" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="8" value="2. Verify JWT (signature, iss, aud, exp)" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="160" width="320" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="9" value="3. Attach AuthenticatedActor to request" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="200" width="320" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="10" value="4. Load User; compare JWT sessionVersion vs DB" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="240" width="360" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="11" value="5. Execute logout / list / revoke use case" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="280" width="360" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="12" value="6. Persist revocation / sessionVersion bump" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="320" width="360" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="13" value="7. Publish events after commit" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="360" width="280" height="24" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" agent="TAVLA" version="24.0.0" type="device">
+  <diagram name="Page-1" id="page-1">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1456" pageHeight="780" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="2" value="Presentation" style="swimlane;whiteSpace=wrap;html=1;startSize=28;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="320" height="264" as="geometry"/>
+        </mxCell>
+        <mxCell id="3" value="AuthController" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="2">
+          <mxGeometry x="20" y="40" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="4" value="RefreshSessionRequestDto" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="2">
+          <mxGeometry x="20" y="108" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="5" value="RefreshSessionResponseDto" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="2">
+          <mxGeometry x="20" y="176" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="6" value="Application" style="swimlane;whiteSpace=wrap;html=1;startSize=28;" vertex="1" parent="1">
+          <mxGeometry x="384" y="40" width="320" height="332" as="geometry"/>
+        </mxCell>
+        <mxCell id="7" value="RefreshSessionUseCase" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="6">
+          <mxGeometry x="20" y="40" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="8" value="RefreshSessionCommand / Result" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="6">
+          <mxGeometry x="20" y="108" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="9" value="InvalidRefreshTokenException" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="6">
+          <mxGeometry x="20" y="176" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="10" value="AuthTokenTtlPort" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="6">
+          <mxGeometry x="20" y="244" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="11" value="Domain" style="swimlane;whiteSpace=wrap;html=1;startSize=28;" vertex="1" parent="1">
+          <mxGeometry x="728" y="40" width="320" height="536" as="geometry"/>
+        </mxCell>
+        <mxCell id="12" value="DeviceSession / TokenFamily" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="11">
+          <mxGeometry x="20" y="40" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="13" value="SessionPolicy / TokenFamilyPolicy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="11">
+          <mxGeometry x="20" y="108" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="14" value="SessionRefreshed + Security Events" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="11">
+          <mxGeometry x="20" y="176" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="15" value="Repository Ports (Session/Family/User)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="11">
+          <mxGeometry x="20" y="244" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="16" value="OpaqueTokenService / TokenService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="11">
+          <mxGeometry x="20" y="312" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="17" value="RotateRefreshTokenOutcome (CAS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="11">
+          <mxGeometry x="20" y="380" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="18" value="Infrastructure" style="swimlane;whiteSpace=wrap;html=1;startSize=28;" vertex="1" parent="1">
+          <mxGeometry x="1072" y="40" width="320" height="604" as="geometry"/>
+        </mxCell>
+        <mxCell id="19" value="PrismaDeviceSessionRepository" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="18">
+          <mxGeometry x="20" y="40" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="20" value="PrismaTokenFamilyRepository" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="18">
+          <mxGeometry x="20" y="108" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="21" value="PrismaUserRepository" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="18">
+          <mxGeometry x="20" y="176" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="22" value="PrismaUnitOfWork + PrismaContext" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="18">
+          <mxGeometry x="20" y="244" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="23" value="Sha256OpaqueTokenService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="18">
+          <mxGeometry x="20" y="312" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="24" value="JwtTokenService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="18">
+          <mxGeometry x="20" y="380" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="25" value="LoggingEventPublisher" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="18">
+          <mxGeometry x="20" y="448" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="26" value="PostgreSQL device_sessions CAS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="18">
+          <mxGeometry x="20" y="516" width="280" height="52" as="geometry"/>
+        </mxCell>
+        <mxCell id="27" value="" style="endArrow=block;html=1;" edge="1" parent="1" source="3" target="7">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="28" value="" style="endArrow=block;html=1;" edge="1" parent="1" source="7" target="19">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="29" value="" style="endArrow=block;html=1;" edge="1" parent="1" source="7" target="20">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="30" value="" style="endArrow=block;html=1;" edge="1" parent="1" source="19" target="26">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,11 @@
+{
+  "REQUIRE_LIVE_DATABASE": "true",
+  "DATABASE_URL": "postgresql://tavla:tavla_test_password@localhost:15433/tavla_test?schema=public&connection_limit=5",
+  "REDIS_URL": "redis://:tavla_test_redis_password@localhost:16379",
+  "MINIO_ENDPOINT": "localhost",
+  "MINIO_PORT": "19000",
+  "MINIO_ACCESS_KEY": "tavla_minio_test_access",
+  "MINIO_SECRET_KEY": "tavla_minio_test_secret",
+  "MINIO_PUBLIC_BUCKET": "tavla-test-public",
+  "MINIO_PRIVATE_BUCKET": "tavla-test-private"
+}

@@ -1,0 +1,24 @@
+# Auto-merged by Compose when running `docker compose up` (no -f flags)
+# from this directory. The only difference from the production shape in
+# docker-compose.yml: internal services publish their ports to the host so
+# local tooling (a Postgres GUI, redis-cli, the MinIO console, Swagger
+# directly) can reach them without going through Nginx. Nothing here changes
+# application behavior.
+
+services:
+  postgres:
+    ports:
+      - "5433:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  minio:
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  backend:
+    ports:
+      - "3000:3000"

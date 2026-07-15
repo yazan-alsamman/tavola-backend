@@ -1,0 +1,44 @@
+---
+description: Persist generated diagrams as draw.io files under diagrams/
+alwaysApply: true
+---
+
+# Diagram Persistence (draw.io)
+
+Whenever you generate a diagram in response to a prompt or task, **also save it as a draw.io file** under `diagrams/`.
+
+## Applies to
+
+Sequence, use case, dependency graph, flowchart, architecture, component, deployment, ER, state, activity, and any other visual diagram (including Mermaid or ASCII equivalents).
+
+## Required workflow
+
+1. Create or update a `.drawio` file in `diagrams/`.
+2. Use a descriptive kebab-case name: `{scope}-{diagram-type}.drawio`  
+   Examples: `phase-2-7-login-sequence.drawio`, `authentication-dependency-graph.drawio`
+3. If a diagram for the same scope/type already exists, **update that file** instead of creating a duplicate.
+4. You may still include a Mermaid or ASCII preview in chat for readability, but the **draw.io file is mandatory**.
+
+## File format
+
+- Extension: `.drawio` (draw.io / diagrams.net XML)
+- Root element: `<mxfile>` with at least one `<diagram>` containing `<mxGraphModel>`
+- Use standard draw.io shapes (rectangles, arrows, swimlanes, actors) that match the diagram semantics
+- Keep the XML valid and openable in draw.io / diagrams.net
+
+## Naming & organization
+
+```
+diagrams/
+  phase-2-6-verify-email-sequence.drawio
+  phase-2-7-login-sequence.drawio
+  authentication-dependency-graph.drawio
+```
+
+Group by feature/phase in the filename; do not scatter diagrams elsewhere in the repo.
+
+## Do not
+
+- Leave diagrams only in chat responses
+- Save diagrams as PNG/SVG/Mermaid-only without a corresponding `.drawio` source
+- Put diagram source files outside `diagrams/` (unless the user explicitly requests another path)

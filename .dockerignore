@@ -1,0 +1,22 @@
+# Lives at the repo root because the build context (docker-compose.yml's
+# `context: ../..`) is the repo root, not apps/backend - Docker only reads
+# .dockerignore from the context directory.
+
+**/node_modules
+**/dist
+**/coverage
+**/.turbo
+
+.git
+.github
+.claude
+.vscode
+.idea
+
+**/.env
+**/.env.*
+!**/.env.example
+
+**/*.log
+docs/
+*.md

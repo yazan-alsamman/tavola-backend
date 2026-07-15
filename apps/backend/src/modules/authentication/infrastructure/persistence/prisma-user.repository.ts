@@ -1,0 +1,251 @@
+import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { UserId } from '@shared/domain/value-objects/identifiers.vo';
+import { PrismaContext } from '@infrastructure/prisma/prisma-context.service';
+import {
+  EmailVerificationRepository,
+  EmailVerificationTokenRecord,
+} from '../../domain/repositories/authentication.repositories';
+import { User } from '../../domain/entities/user.entity';
+import { Email } from '@shared/domain/value-objects/email.vo';
+import {
+  UpdatePasswordIfCurrentHashMatchesOutcome,
+  UserRepository,
+} from '../../domain/repositories/authentication.repositories';
+import { UserPrismaMapper } from './user.prisma-mapper';
+import { UserStatus } from '../../domain/enums/authentication.enums';
+import { EmailAlreadyExistsException } from '../../domain/exceptions/email-already-exists.exception';
+
+function isUniqueEmailViolation(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+    return false;
+  }
+  const target = error.meta?.target;
+  if (Array.isArray(target)) {
+    return target.includes('email');
+  }
+  return typeof target === 'string' && target.includes('email');
+}
+
+@Injectable()
+export class PrismaUserRepository implements UserRepository {
+  constructor(private readonly prismaContext: PrismaContext) {}
+
+  async findById(id: UserId): Promise<User | null> {
+    const row = await this.prismaContext.client.user.findUnique({
+      where: { id: id.value },
+    });
+    return row ? UserPrismaMapper.toDomain(row) : null;
+  }
+
+  async findByEmail(email: Email): Promise<User | null> {
+    const row = await this.prismaContext.client.user.findFirst({
+      where: { email: email.value, deletedAt: null },
+    });
+    return row ? UserPrismaMapper.toDomain(row) : null;
+  }
+
+  async existsByEmail(email: Email): Promise<boolean> {
+    const count = await this.prismaContext.client.user.count({
+      where: { email: email.value, deletedAt: null },
+    });
+    return count > 0;
+  }
+
+  async save(user: User): Promise<void> {
+    const data = UserPrismaMapper.toPersistence(user);
+    try {
+      await this.prismaContext.client.user.upsert({
+        where: { id: data.id },
+        create: data,
+        update: {
+          firstName: data.firstName,
+          lastName: data.lastName,
+          email: data.email,
+          phone: data.phone,
+          passwordHash: data.passwordHash,
+          language: data.language,
+          preferredCurrency: data.preferredCurrency,
+          notificationOptIn: data.notificationOptIn,
+          marketingOptIn: data.marketingOptIn,
+          status: data.status,
+          emailVerified: data.emailVerified,
+          failedLoginCount: data.failedLoginCount,
+          lockedUntil: data.lockedUntil,
+          permissionsVersion: data.permissionsVersion,
+          sessionVersion: data.sessionVersion,
+          passwordChangedAt: data.passwordChangedAt,
+          lastLoginAt: data.lastLoginAt,
+          anonymizedAt: data.anonymizedAt,
+          updatedAt: data.updatedAt,
+          deletedAt: data.deletedAt,
+        },
+      });
+    } catch (error) {
+      if (isUniqueEmailViolation(error)) {
+        throw new EmailAlreadyExistsException(data.email);
+      }
+      throw error;
+    }
+  }
+
+  async getAvatarId(userId: UserId): Promise<string | null> {
+    const row = await this.prismaContext.client.user.findUnique({
+      where: { id: userId.value },
+      select: { avatarId: true },
+    });
+    return row?.avatarId ?? null;
+  }
+
+  async updateAvatarId(userId: UserId, avatarId: string | null, at: Date): Promise<void> {
+    await this.prismaContext.client.user.update({
+      where: { id: userId.value },
+      data: { avatarId, updatedAt: at },
+    });
+  }
+
+  async incrementSessionVersion(userId: UserId, at: Date): Promise<number | null> {
+    try {
+      const row = await this.prismaContext.client.user.update({
+        where: { id: userId.value },
+        data: {
+          sessionVersion: { increment: 1 },
+          updatedAt: at,
+        },
+        select: { sessionVersion: true },
+      });
+      return row.sessionVersion;
+    } catch {
+      return null;
+    }
+  }
+
+  async updatePasswordIfCurrentHashMatches(input: {
+    userId: UserId;
+    expectedCurrentHash: string;
+    newHash: string;
+    at: Date;
+  }): Promise<UpdatePasswordIfCurrentHashMatchesOutcome> {
+    const result = await this.prismaContext.client.user.updateMany({
+      where: {
+        id: input.userId.value,
+        passwordHash: input.expectedCurrentHash,
+      },
+      data: {
+        passwordHash: input.newHash,
+        sessionVersion: { increment: 1 },
+        passwordChangedAt: input.at,
+        failedLoginCount: 0,
+        lockedUntil: null,
+        updatedAt: input.at,
+      },
+    });
+
+    if (result.count !== 1) {
+      return { status: 'hash_mismatch' };
+    }
+
+    const row = await this.prismaContext.client.user.findUnique({
+      where: { id: input.userId.value },
+      select: { sessionVersion: true, status: true },
+    });
+
+    if (!row) {
+      return { status: 'hash_mismatch' };
+    }
+
+    if (row.status === UserStatus.Locked) {
+      await this.prismaContext.client.user.update({
+        where: { id: input.userId.value },
+        data: { status: UserStatus.Active },
+      });
+    }
+
+    return { status: 'updated', sessionVersion: row.sessionVersion };
+  }
+}
+
+@Injectable()
+export class PrismaEmailVerificationRepository implements EmailVerificationRepository {
+  constructor(private readonly prismaContext: PrismaContext) {}
+
+  async findByTokenHash(tokenHash: string): Promise<EmailVerificationTokenRecord | null> {
+    const row = await this.prismaContext.client.emailVerificationToken.findUnique({
+      where: { tokenHash },
+    });
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      userId: row.userId,
+      tokenHash: row.tokenHash,
+      expiresAt: row.expiresAt,
+      consumedAt: row.consumedAt,
+      createdAt: row.createdAt,
+    };
+  }
+
+  async findActiveByUserId(
+    userId: UserId,
+    now: Date,
+  ): Promise<EmailVerificationTokenRecord | null> {
+    const row = await this.prismaContext.client.emailVerificationToken.findFirst({
+      where: {
+        userId: userId.value,
+        consumedAt: null,
+        expiresAt: { gt: now },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      userId: row.userId,
+      tokenHash: row.tokenHash,
+      expiresAt: row.expiresAt,
+      consumedAt: row.consumedAt,
+      createdAt: row.createdAt,
+    };
+  }
+
+  async save(record: EmailVerificationTokenRecord): Promise<void> {
+    await this.prismaContext.client.emailVerificationToken.upsert({
+      where: { id: record.id },
+      create: {
+        id: record.id,
+        userId: record.userId,
+        tokenHash: record.tokenHash,
+        expiresAt: record.expiresAt,
+        consumedAt: record.consumedAt,
+        createdAt: record.createdAt,
+      },
+      update: {
+        tokenHash: record.tokenHash,
+        expiresAt: record.expiresAt,
+        consumedAt: record.consumedAt,
+      },
+    });
+  }
+
+  async invalidateActiveByUserId(userId: UserId): Promise<void> {
+    await this.prismaContext.client.emailVerificationToken.updateMany({
+      where: { userId: userId.value, consumedAt: null },
+      data: { consumedAt: new Date() },
+    });
+  }
+
+  async consumeIfActive(id: string, consumedAt: Date): Promise<boolean> {
+    const result = await this.prismaContext.client.emailVerificationToken.updateMany({
+      where: { id, consumedAt: null },
+      data: { consumedAt },
+    });
+    return result.count === 1;
+  }
+}

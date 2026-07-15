@@ -1,0 +1,105 @@
+# TENANCY.md
+
+# Enterprise Restaurant Reservation Platform
+
+Version: 1.0
+
+---
+
+# Purpose
+
+This document is the single source of truth for **how multi-tenancy is implemented**, as distinct from DOMAIN_MODEL.md (which defines *what* the tenant boundary is) and ADR-011/ADR-012 in DECISIONS.md (which record *why* these choices were made). If this document and an ADR ever disagree on a mechanism detail, the ADR's stated decision wins and this document must be corrected.
+
+Every engineer touching a repository, controller, background job, or WebSocket handler must read this document before writing tenant-owned queries.
+
+---
+
+# Why This Document Exists
+
+Multi-tenant data leakage is the single highest-severity risk category for this platform. A convention ("always filter by organizationId") is not a control — it depends on every developer remembering it in every code path, forever. This document describes the structural mechanism that makes tenant isolation the default behavior, not an opt-in discipline.
+
+---
+
+# The Tenant Boundary
+
+The **Organization** (see ADR-011, DOMAIN_MODEL.md) is the tenant. Every table that is not a global reference table (`Country`, `Currency`, `Roles`, `Permissions`, `SubscriptionPlan`) or a platform-administration table carries `organizationId`, either directly or transitively through a foreign key chain (e.g., `Reservation.branchId → Branch.restaurantId → Restaurant.organizationId`).
+
+`restaurantId` and `branchId` remain important **authorization** scopes within a tenant (an employee assigned to Branch A must not act on Branch B even though both belong to the same Organization), but they are not the outermost isolation boundary — see Employee Branch Rules in DOMAIN_MODEL.md for that layer, which is enforced by RBAC/permission checks, not by the tenant-isolation mechanism described here.
+
+---
+
+# Mechanism Overview
+
+Two cooperating pieces make tenant scoping automatic:
+
+1. **Tenant Context** — an `AsyncLocalStorage`-backed store carrying the current request's `organizationId`, `userId`, and `correlationId`, populated once per request/connection, before any application code runs.
+2. **Scoped Prisma Client Extension** — a Prisma Client Extension that reads the Tenant Context and automatically merges `organizationId` into every query and write on tenant-owned models.
+
+Neither piece is optional per-repository configuration. Every repository built on the standard injected Prisma client inherits this behavior automatically.
+
+```
+Request/Connection
+        ↓
+Auth Guard (validates JWT, extracts organizationId, userId, roles)
+        ↓
+TenantContextInterceptor → binds { organizationId, userId, correlationId } into AsyncLocalStorage
+        ↓
+Controller → Application Use Case (organizationId is never passed as an explicit parameter)
+        ↓
+Repository (Infrastructure) → injected, tenant-scoped PrismaService
+        ↓
+Prisma Client Extension reads AsyncLocalStorage → merges organizationId into where/create payloads
+        ↓
+PostgreSQL executes the tenant-scoped query
+```
+
+---
+
+# Tenant Context Propagation Per Entry Point
+
+## HTTP Requests
+
+`TenantContextInterceptor` runs immediately after the JWT auth guard resolves and validates the token. It extracts `organizationId` from the token claims (never from a request body or query parameter — the client never gets to declare its own tenant) and binds it for the lifetime of the request.
+
+## WebSocket Connections
+
+The Socket.IO gateway extracts `organizationId` from the JWT supplied at handshake time and binds it for the lifetime of each event handler invocation triggered by that connection, using the same `AsyncLocalStorage` mechanism. See ADR-015 for how this interacts with the Redis adapter across multiple API instances — tenant context is per-instance/per-event and is not itself propagated through Redis; only the already-authorized broadcast payload is.
+
+## Background Jobs (BullMQ)
+
+Jobs do not have an inbound request to extract context from. Every job payload published to a queue **must** include `organizationId` explicitly as job data (not inferred), and the worker **must** explicitly establish Tenant Context from that payload as the first line of the job handler, before calling any repository. This is the one place tenant context is threaded explicitly rather than derived automatically — documented here so it is never mistaken for an oversight. CODING_STANDARDS.md codifies this as a mandatory job-authoring rule.
+
+## System / Platform-Administration Operations
+
+A small number of legitimate operations must read or write across tenants: platform admin dashboards, scheduled cross-tenant analytics aggregation, and support tooling. These use a distinct, explicitly named Prisma client variant (`prisma.$systemContext`), never the default tenant-scoped client. Any use of `$systemContext` must be:
+
+* Justified in the PR description.
+* Restricted to a small, clearly-named set of platform-administration services (never a feature-module repository).
+* Logged as an audit event when it touches tenant-owned data, per DATABASE_SCHEMA.md's Audit Logs table (`actorType = 'System'`).
+
+Grep-ability is a deliberate design property: `$systemContext` should never appear inside `src/modules/**`, only inside a dedicated `platform-admin` module and select BullMQ jobs (e.g., cross-tenant analytics rollups) that are explicitly reviewed for this exception.
+
+---
+
+# Fail-Closed Behavior
+
+If a query against a tenant-owned model executes with no Tenant Context bound, the Prisma Client Extension throws `TenantContextMissingException` rather than executing the query unscoped. This converts a missing-context bug into an immediate, loud failure in development and CI, rather than a silent cross-tenant data leak in production. There is no "unscoped by default" mode for tenant-owned models — only the explicit `$systemContext` escape hatch, which is never the default client injected into a repository.
+
+---
+
+# What This Mechanism Does Not Cover
+
+* **Branch/Restaurant-level authorization** within a tenant is a separate concern from tenant isolation, resolved by `PermissionResolver`, domain policies, and scope guards — see AUTHORIZATION_ARCHITECTURE.md and DOMAIN_MODEL.md Employee Branch Rules.
+* **Row-level security at the PostgreSQL level** is not implemented in v1 (see ADR-012's Alternatives Considered) — it is tracked as an open, deferred hardening layer pending a connection-pooling-mode decision (transaction-mode PgBouncer pooling, standard for stateless horizontally-scaled API servers per NON_FUNCTIONAL_REQUIREMENTS.md, is not compatible with session-scoped `SET` variables that most RLS setups rely on). If adopted later, it would be a second, defense-in-depth layer underneath the mechanism described here, not a replacement for it.
+* **Search/analytics indexes** (if a future dedicated search engine is adopted, per DECISIONS.md's Future Decisions) must implement their own equivalent tenant-scoping discipline; this document's mechanism is specific to the Prisma/PostgreSQL path.
+
+---
+
+# Testing Requirements
+
+Per TESTING_STRATEGY.md, every repository method that queries a tenant-owned model requires an integration test asserting that:
+
+1. A query executed with Tenant Context bound to Organization A never returns rows belonging to Organization B, even when B's data would otherwise match the query's other filters.
+2. A query executed with no Tenant Context bound throws `TenantContextMissingException` rather than returning unscoped results.
+
+These two assertions are the minimum acceptable tenant-isolation test for any new repository method — a feature is not "production-ready" per CLAUDE.md without them.

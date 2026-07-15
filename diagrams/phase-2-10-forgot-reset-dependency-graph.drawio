@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" agent="TAVLA" version="24.0.0" type="device">
+  <diagram name="Page-1" id="page-1">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1466" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="2" value="AuthController" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="140" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="3" value="ForgotPasswordUseCase" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="220" y="40" width="170" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="4" value="ResetPasswordUseCase" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="420" y="40" width="170" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="5" value="UserRepository" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="140" width="140" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="6" value="PasswordResetRepository" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="220" y="140" width="170" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="7" value="PasswordHistoryRepository" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="420" y="140" width="180" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="8" value="DeviceSessionRepository" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="640" y="140" width="170" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="9" value="PasswordHasherPort" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="40" y="240" width="140" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="10" value="OpaqueTokenPort" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="220" y="240" width="140" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="11" value="SystemConfigurationPort" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="400" y="240" width="180" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="12" value="UnitOfWorkPort" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="620" y="240" width="140" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="13" value="EventPublisherPort" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="800" y="240" width="150" height="44" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

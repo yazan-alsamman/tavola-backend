@@ -1,0 +1,21 @@
+{
+  "name": "tavla",
+  "private": true,
+  "version": "0.0.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@11.10.0",
+  "scripts": {
+    "backend:build": "pnpm --filter backend build",
+    "backend:start:dev": "pnpm --filter backend start:dev",
+    "backend:lint": "pnpm --filter backend lint",
+    "backend:typecheck": "pnpm --filter backend typecheck",
+    "backend:test": "pnpm --filter backend test",
+    "backend:test:e2e": "pnpm --filter backend test:e2e",
+    "backend:test:integration": "pnpm --filter backend test:integration",
+    "backend:prisma:migrate:deploy": "pnpm --filter backend prisma:migrate:deploy",
+    "backend:prisma:seed": "pnpm --filter backend prisma:seed",
+    "backend:audit": "pnpm audit --audit-level critical"
+  }
+}

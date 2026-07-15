@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" agent="TAVLA" version="24.0.0" type="device">
+  <diagram name="Page-1" id="page-1">
+    <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1466" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="2" value="Client" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="130" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="104" y="104" width="2" height="920" as="geometry"/>
+        </mxCell>
+        <mxCell id="4" value="AuthController" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="194" y="40" width="130" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="5" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="258" y="104" width="2" height="920" as="geometry"/>
+        </mxCell>
+        <mxCell id="6" value="RefreshSessionUseCase" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="348" y="40" width="160" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="7" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="427" y="104" width="2" height="920" as="geometry"/>
+        </mxCell>
+        <mxCell id="8" value="DeviceSessionRepo" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="502" y="40" width="150" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="9" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="576" y="104" width="2" height="920" as="geometry"/>
+        </mxCell>
+        <mxCell id="10" value="PostgreSQL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="656" y="40" width="130" height="44" as="geometry"/>
+        </mxCell>
+        <mxCell id="11" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="720" y="104" width="2" height="920" as="geometry"/>
+        </mxCell>
+        <mxCell id="12" value="1. POST /auth/refresh (opaque token)" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="120" width="280" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="13" value="" style="endArrow=block;html=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="106" y="150" as="sourcePoint"/>
+            <mxPoint x="258" y="150" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="14" value="2. execute(RefreshSessionCommand)" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="194" y="170" width="280" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="15" value="" style="endArrow=block;html=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="260" y="200" as="sourcePoint"/>
+            <mxPoint x="427" y="200" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="16" value="3. hash(refreshToken)" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="348" y="220" width="220" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="17" value="4. findByRefreshTokenHash" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="348" y="260" width="220" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="18" value="" style="endArrow=block;html=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="429" y="290" as="sourcePoint"/>
+            <mxPoint x="576" y="290" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="19" value="5. validateable?" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="348" y="320" width="160" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="20" value="alt [current token]" style="shape=note;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="820" y="300" width="180" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="21" value="6. validate family/user/sessionVersion" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="348" y="360" width="300" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="22" value="7. rotateRefreshTokenIfHashMatches (CAS UPDATE)" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="348" y="400" width="340" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="23" value="" style="endArrow=block;html=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="429" y="430" as="sourcePoint"/>
+            <mxPoint x="720" y="430" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="24" value="8. count=1 ? sign JWT + publish SessionRefreshed" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="348" y="460" width="360" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="25" value="alt [superseded token]" style="shape=note;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="820" y="520" width="180" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="26" value="9. findByPreviousRefreshTokenHash" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="348" y="540" width="280" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="27" value="10. within 30s grace? → AUTH_INVALID_REFRESH_TOKEN (no compromise)" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="348" y="580" width="420" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="28" value="11. after grace → mark family compromised + revoke sessions + security events" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="348" y="620" width="480" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="29" value="12. return new tokens / 401" style="text;html=1;strokeColor=none;fillColor=none;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="680" width="260" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="30" value="" style="endArrow=open;dashed=1;html=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="427" y="710" as="sourcePoint"/>
+            <mxPoint x="106" y="710" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

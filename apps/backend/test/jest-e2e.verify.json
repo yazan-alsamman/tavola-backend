@@ -1,0 +1,22 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": ".",
+  "testEnvironment": "node",
+  "testRegex": ".e2e-spec.ts$",
+  "setupFiles": [
+    "<rootDir>/jest-live-database.verify-setup.ts",
+    "<rootDir>/jest-e2e.setup.ts"
+  ],
+  "globalSetup": "<rootDir>/jest-live-database.global-setup.ts",
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "moduleNameMapper": {
+    "^@config/(.*)$": "<rootDir>/../src/config/$1",
+    "^@common/(.*)$": "<rootDir>/../src/common/$1",
+    "^@shared/(.*)$": "<rootDir>/../src/shared/$1",
+    "^@infrastructure/(.*)$": "<rootDir>/../src/infrastructure/$1",
+    "^@modules/(.*)$": "<rootDir>/../src/modules/$1"
+  },
+  "testTimeout": 120000
+}
