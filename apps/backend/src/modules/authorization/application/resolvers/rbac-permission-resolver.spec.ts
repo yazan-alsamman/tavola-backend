@@ -39,8 +39,36 @@ class InMemoryEmployeeRepository implements EmployeeRepository {
     return this.context?.employee ?? null;
   }
 
+  async findByIdAndRestaurantId(): Promise<Employee | null> {
+    // not exercised by this resolver (Phase 7.0)
+    return this.context?.employee ?? null;
+  }
+
+  async findByEmailAndRestaurantId(): Promise<Employee | null> {
+    // not exercised by this resolver (Phase 7.0)
+    return null;
+  }
+
+  async findUnlinkedInvitedByEmail(): Promise<Employee[]> {
+    // not exercised by this resolver (Phase 7.0)
+    return [];
+  }
+
+  async countActiveByRestaurantIdAndRoleId(): Promise<number> {
+    // not exercised by this resolver (Phase 7.0)
+    return 0;
+  }
+
   async save(): Promise<void> {
     // not exercised by this resolver
+  }
+
+  async addBranchAssignment(): Promise<void> {
+    // not exercised by this resolver (Phase 7.0)
+  }
+
+  async removeBranchAssignment(): Promise<void> {
+    // not exercised by this resolver (Phase 7.0)
   }
 
   async findActiveAuthContextByUserId(): Promise<EmployeeAuthContext | null> {

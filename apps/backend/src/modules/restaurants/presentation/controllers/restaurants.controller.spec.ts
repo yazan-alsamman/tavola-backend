@@ -13,8 +13,19 @@ import { GetRestaurantSettingsUseCase } from '../../application/use-cases/get-re
 import { UpdateRestaurantSettingsUseCase } from '../../application/use-cases/update-restaurant-settings.use-case';
 import { GetWorkingHoursUseCase } from '../../application/use-cases/get-working-hours.use-case';
 import { UpdateWorkingHoursUseCase } from '../../application/use-cases/update-working-hours.use-case';
+import { AddRestaurantGalleryImageUseCase } from '../../application/use-cases/add-restaurant-gallery-image.use-case';
+import { ListRestaurantGalleryUseCase } from '../../application/use-cases/list-restaurant-gallery.use-case';
+import { RemoveRestaurantGalleryImageUseCase } from '../../application/use-cases/remove-restaurant-gallery-image.use-case';
+import { GetRestaurantCuisineCategoriesUseCase } from '../../application/use-cases/get-restaurant-cuisine-categories.use-case';
+import { SetRestaurantCuisineCategoriesUseCase } from '../../application/use-cases/set-restaurant-cuisine-categories.use-case';
+import { GetRestaurantOccasionCategoriesUseCase } from '../../application/use-cases/get-restaurant-occasion-categories.use-case';
+import { SetRestaurantOccasionCategoriesUseCase } from '../../application/use-cases/set-restaurant-occasion-categories.use-case';
 import { RestaurantNotFoundException } from '../../domain/exceptions/restaurant-not-found.exception';
 import { InvalidWorkingHoursException } from '../../domain/exceptions/invalid-working-hours.exception';
+import { RestaurantGalleryLimitExceededException } from '../../domain/exceptions/restaurant-gallery-limit-exceeded.exception';
+import { RestaurantGalleryItemNotFoundException } from '../../domain/exceptions/restaurant-gallery-item-not-found.exception';
+import { UnknownCuisineCategoryException } from '../../domain/exceptions/unknown-cuisine-category.exception';
+import { UnknownOccasionCategoryException } from '../../domain/exceptions/unknown-occasion-category.exception';
 import { RestaurantStatus } from '../../domain/enums/restaurant.enums';
 import { AuthenticatedOrganizationMemberActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
 import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
@@ -30,6 +41,13 @@ describe('RestaurantsController', () => {
   const updateSettingsExecute = jest.fn();
   const getWorkingHoursExecute = jest.fn();
   const updateWorkingHoursExecute = jest.fn();
+  const addGalleryImageExecute = jest.fn();
+  const listGalleryExecute = jest.fn();
+  const removeGalleryImageExecute = jest.fn();
+  const getCuisineCategoriesExecute = jest.fn();
+  const setCuisineCategoriesExecute = jest.fn();
+  const getOccasionCategoriesExecute = jest.fn();
+  const setOccasionCategoriesExecute = jest.fn();
 
   const actor: AuthenticatedOrganizationMemberActor = {
     actorType: AccessTokenActorType.OrganizationMember,
@@ -63,6 +81,7 @@ describe('RestaurantsController', () => {
     maxGuestsPerReservation: 20,
     cancellationWindowMinutes: 60,
     pendingReservationTimeoutMinutes: 15,
+    defaultReservationDurationMinutes: 90,
     autoApproval: false,
     timezone: 'UTC',
     defaultCurrency: null,
@@ -85,6 +104,49 @@ describe('RestaurantsController', () => {
     ],
   };
 
+  const galleryImageResult = {
+    galleryItemId: '66666666-6666-4666-8666-666666666666',
+    restaurantId: '55555555-5555-4555-8555-555555555555',
+    caption: 'Our dining room',
+    sortOrder: 0,
+    imageUrl: 'https://signed.example.com/tavla-public/restaurants/.../gallery/x.jpg',
+    createdAt: new Date('2026-07-16T12:00:00.000Z'),
+    updatedAt: new Date('2026-07-16T12:00:00.000Z'),
+  };
+
+  const galleryListResult = {
+    restaurantId: '55555555-5555-4555-8555-555555555555',
+    items: [galleryImageResult],
+  };
+
+  const cuisineCategoryResult = {
+    cuisineCategoryId: '77777777-7777-4777-8777-777777777777',
+    slug: 'italian',
+    name: 'Italian',
+    sortOrder: 0,
+    createdAt: new Date('2026-07-16T12:00:00.000Z'),
+    updatedAt: new Date('2026-07-16T12:00:00.000Z'),
+  };
+
+  const restaurantCuisineCategoriesResult = {
+    restaurantId: '55555555-5555-4555-8555-555555555555',
+    categories: [cuisineCategoryResult],
+  };
+
+  const occasionCategoryResult = {
+    occasionCategoryId: '88888888-8888-4888-8888-888888888888',
+    slug: 'date-night',
+    name: 'Date Night',
+    sortOrder: 0,
+    createdAt: new Date('2026-07-16T12:00:00.000Z'),
+    updatedAt: new Date('2026-07-16T12:00:00.000Z'),
+  };
+
+  const restaurantOccasionCategoriesResult = {
+    restaurantId: '55555555-5555-4555-8555-555555555555',
+    categories: [occasionCategoryResult],
+  };
+
   function buildRequest(headers: Record<string, string> = {}): Request {
     return { headers } as unknown as Request;
   }
@@ -99,6 +161,13 @@ describe('RestaurantsController', () => {
     updateSettingsExecute.mockReset();
     getWorkingHoursExecute.mockReset();
     updateWorkingHoursExecute.mockReset();
+    addGalleryImageExecute.mockReset();
+    listGalleryExecute.mockReset();
+    removeGalleryImageExecute.mockReset();
+    getCuisineCategoriesExecute.mockReset();
+    setCuisineCategoriesExecute.mockReset();
+    getOccasionCategoriesExecute.mockReset();
+    setOccasionCategoriesExecute.mockReset();
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [RestaurantsController],
@@ -117,6 +186,31 @@ describe('RestaurantsController', () => {
         {
           provide: UpdateWorkingHoursUseCase,
           useValue: { execute: updateWorkingHoursExecute },
+        },
+        {
+          provide: AddRestaurantGalleryImageUseCase,
+          useValue: { execute: addGalleryImageExecute },
+        },
+        { provide: ListRestaurantGalleryUseCase, useValue: { execute: listGalleryExecute } },
+        {
+          provide: RemoveRestaurantGalleryImageUseCase,
+          useValue: { execute: removeGalleryImageExecute },
+        },
+        {
+          provide: GetRestaurantCuisineCategoriesUseCase,
+          useValue: { execute: getCuisineCategoriesExecute },
+        },
+        {
+          provide: SetRestaurantCuisineCategoriesUseCase,
+          useValue: { execute: setCuisineCategoriesExecute },
+        },
+        {
+          provide: GetRestaurantOccasionCategoriesUseCase,
+          useValue: { execute: getOccasionCategoriesExecute },
+        },
+        {
+          provide: SetRestaurantOccasionCategoriesUseCase,
+          useValue: { execute: setOccasionCategoriesExecute },
         },
       ],
     })
@@ -314,6 +408,7 @@ describe('RestaurantsController', () => {
       maxGuestsPerReservation: 12,
       cancellationWindowMinutes: 120,
       pendingReservationTimeoutMinutes: 30,
+      defaultReservationDurationMinutes: 120,
       autoApproval: true,
       timezone: 'Europe/Istanbul',
       defaultCurrency: 'TRY',
@@ -461,6 +556,295 @@ describe('RestaurantsController', () => {
         controller.updateWorkingHours(
           workingHoursResult.restaurantId,
           requestBody,
+          actor,
+          buildRequest(),
+        ),
+      ).rejects.toBeInstanceOf(RestaurantNotFoundException);
+    });
+  });
+
+  describe('addGalleryImage', () => {
+    const uploadedFile = {
+      buffer: Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+      mimetype: 'image/jpeg',
+      size: 4,
+    } as Express.Multer.File;
+
+    it('delegates to the use case with the actor from the JWT, mapping the multipart file and caption', async () => {
+      addGalleryImageExecute.mockResolvedValue(galleryImageResult);
+
+      const response = await controller.addGalleryImage(
+        galleryImageResult.restaurantId,
+        uploadedFile,
+        { caption: 'Our dining room' },
+        actor,
+        buildRequest({ 'x-correlation-id': 'corr-6' }),
+      );
+
+      expect(addGalleryImageExecute).toHaveBeenCalledWith({
+        actor,
+        restaurantId: galleryImageResult.restaurantId,
+        file: { buffer: uploadedFile.buffer, mimeType: 'image/jpeg', sizeBytes: 4 },
+        caption: 'Our dining room',
+        correlationId: 'corr-6',
+      });
+      expect(response.galleryItemId).toBe(galleryImageResult.galleryItemId);
+    });
+
+    it('normalizes a missing file to null and an omitted caption to null', async () => {
+      addGalleryImageExecute.mockResolvedValue(galleryImageResult);
+
+      await controller.addGalleryImage(
+        galleryImageResult.restaurantId,
+        undefined,
+        {},
+        actor,
+        buildRequest(),
+      );
+
+      expect(addGalleryImageExecute).toHaveBeenCalledWith(
+        expect.objectContaining({ file: null, caption: null }),
+      );
+    });
+
+    it('propagates RestaurantGalleryLimitExceededException from the use case unchanged', async () => {
+      addGalleryImageExecute.mockRejectedValue(new RestaurantGalleryLimitExceededException(20));
+
+      await expect(
+        controller.addGalleryImage(
+          galleryImageResult.restaurantId,
+          uploadedFile,
+          {},
+          actor,
+          buildRequest(),
+        ),
+      ).rejects.toBeInstanceOf(RestaurantGalleryLimitExceededException);
+    });
+
+    it('propagates RestaurantNotFoundException from the use case unchanged', async () => {
+      addGalleryImageExecute.mockRejectedValue(new RestaurantNotFoundException());
+
+      await expect(
+        controller.addGalleryImage(
+          galleryImageResult.restaurantId,
+          uploadedFile,
+          {},
+          actor,
+          buildRequest(),
+        ),
+      ).rejects.toBeInstanceOf(RestaurantNotFoundException);
+    });
+  });
+
+  describe('listGallery', () => {
+    it('delegates to the use case and maps the documented fields', async () => {
+      listGalleryExecute.mockResolvedValue(galleryListResult);
+
+      const response = await controller.listGallery(galleryListResult.restaurantId, actor);
+
+      expect(listGalleryExecute).toHaveBeenCalledWith({
+        actor,
+        restaurantId: galleryListResult.restaurantId,
+      });
+      expect(response.items).toHaveLength(1);
+      expect(response.items[0].caption).toBe('Our dining room');
+    });
+
+    it('propagates RestaurantNotFoundException from the use case unchanged', async () => {
+      listGalleryExecute.mockRejectedValue(new RestaurantNotFoundException());
+
+      await expect(
+        controller.listGallery(galleryListResult.restaurantId, actor),
+      ).rejects.toBeInstanceOf(RestaurantNotFoundException);
+    });
+  });
+
+  describe('removeGalleryImage', () => {
+    it('delegates to the use case with the actor from the JWT', async () => {
+      removeGalleryImageExecute.mockResolvedValue(undefined);
+
+      const response = await controller.removeGalleryImage(
+        galleryImageResult.restaurantId,
+        galleryImageResult.galleryItemId,
+        actor,
+        buildRequest({ 'x-correlation-id': 'corr-7' }),
+      );
+
+      expect(removeGalleryImageExecute).toHaveBeenCalledWith({
+        actor,
+        restaurantId: galleryImageResult.restaurantId,
+        galleryItemId: galleryImageResult.galleryItemId,
+        correlationId: 'corr-7',
+      });
+      expect(response).toBeUndefined();
+    });
+
+    it('propagates RestaurantGalleryItemNotFoundException from the use case unchanged', async () => {
+      removeGalleryImageExecute.mockRejectedValue(new RestaurantGalleryItemNotFoundException());
+
+      await expect(
+        controller.removeGalleryImage(
+          galleryImageResult.restaurantId,
+          galleryImageResult.galleryItemId,
+          actor,
+          buildRequest(),
+        ),
+      ).rejects.toBeInstanceOf(RestaurantGalleryItemNotFoundException);
+    });
+
+    it('propagates RestaurantNotFoundException from the use case unchanged', async () => {
+      removeGalleryImageExecute.mockRejectedValue(new RestaurantNotFoundException());
+
+      await expect(
+        controller.removeGalleryImage(
+          galleryImageResult.restaurantId,
+          galleryImageResult.galleryItemId,
+          actor,
+          buildRequest(),
+        ),
+      ).rejects.toBeInstanceOf(RestaurantNotFoundException);
+    });
+  });
+
+  describe('getCuisineCategories', () => {
+    it('delegates to the use case and maps the documented fields', async () => {
+      getCuisineCategoriesExecute.mockResolvedValue(restaurantCuisineCategoriesResult);
+
+      const response = await controller.getCuisineCategories(
+        restaurantCuisineCategoriesResult.restaurantId,
+        actor,
+      );
+
+      expect(getCuisineCategoriesExecute).toHaveBeenCalledWith({
+        actor,
+        restaurantId: restaurantCuisineCategoriesResult.restaurantId,
+      });
+      expect(response.categories).toHaveLength(1);
+      expect(response.categories[0].slug).toBe('italian');
+    });
+
+    it('propagates RestaurantNotFoundException from the use case unchanged', async () => {
+      getCuisineCategoriesExecute.mockRejectedValue(new RestaurantNotFoundException());
+
+      await expect(
+        controller.getCuisineCategories(restaurantCuisineCategoriesResult.restaurantId, actor),
+      ).rejects.toBeInstanceOf(RestaurantNotFoundException);
+    });
+  });
+
+  describe('setCuisineCategories', () => {
+    it('delegates to the use case with the actor from the JWT, never a client-supplied id', async () => {
+      setCuisineCategoriesExecute.mockResolvedValue(restaurantCuisineCategoriesResult);
+
+      const response = await controller.setCuisineCategories(
+        restaurantCuisineCategoriesResult.restaurantId,
+        { cuisineCategoryIds: [cuisineCategoryResult.cuisineCategoryId] },
+        actor,
+        buildRequest({ 'x-correlation-id': 'corr-8' }),
+      );
+
+      expect(setCuisineCategoriesExecute).toHaveBeenCalledWith({
+        actor,
+        restaurantId: restaurantCuisineCategoriesResult.restaurantId,
+        cuisineCategoryIds: [cuisineCategoryResult.cuisineCategoryId],
+        correlationId: 'corr-8',
+      });
+      expect(response.categories).toHaveLength(1);
+    });
+
+    it('propagates UnknownCuisineCategoryException from the use case unchanged', async () => {
+      setCuisineCategoriesExecute.mockRejectedValue(new UnknownCuisineCategoryException());
+
+      await expect(
+        controller.setCuisineCategories(
+          restaurantCuisineCategoriesResult.restaurantId,
+          { cuisineCategoryIds: ['does-not-exist'] },
+          actor,
+          buildRequest(),
+        ),
+      ).rejects.toBeInstanceOf(UnknownCuisineCategoryException);
+    });
+
+    it('propagates RestaurantNotFoundException from the use case unchanged', async () => {
+      setCuisineCategoriesExecute.mockRejectedValue(new RestaurantNotFoundException());
+
+      await expect(
+        controller.setCuisineCategories(
+          restaurantCuisineCategoriesResult.restaurantId,
+          { cuisineCategoryIds: [] },
+          actor,
+          buildRequest(),
+        ),
+      ).rejects.toBeInstanceOf(RestaurantNotFoundException);
+    });
+  });
+
+  describe('getOccasionCategories', () => {
+    it('delegates to the use case and maps the documented fields', async () => {
+      getOccasionCategoriesExecute.mockResolvedValue(restaurantOccasionCategoriesResult);
+
+      const response = await controller.getOccasionCategories(
+        restaurantOccasionCategoriesResult.restaurantId,
+        actor,
+      );
+
+      expect(getOccasionCategoriesExecute).toHaveBeenCalledWith({
+        actor,
+        restaurantId: restaurantOccasionCategoriesResult.restaurantId,
+      });
+      expect(response.categories).toHaveLength(1);
+      expect(response.categories[0].slug).toBe('date-night');
+    });
+
+    it('propagates RestaurantNotFoundException from the use case unchanged', async () => {
+      getOccasionCategoriesExecute.mockRejectedValue(new RestaurantNotFoundException());
+
+      await expect(
+        controller.getOccasionCategories(restaurantOccasionCategoriesResult.restaurantId, actor),
+      ).rejects.toBeInstanceOf(RestaurantNotFoundException);
+    });
+  });
+
+  describe('setOccasionCategories', () => {
+    it('delegates to the use case with the actor from the JWT, never a client-supplied id', async () => {
+      setOccasionCategoriesExecute.mockResolvedValue(restaurantOccasionCategoriesResult);
+
+      const response = await controller.setOccasionCategories(
+        restaurantOccasionCategoriesResult.restaurantId,
+        { occasionCategoryIds: [occasionCategoryResult.occasionCategoryId] },
+        actor,
+        buildRequest({ 'x-correlation-id': 'corr-9' }),
+      );
+
+      expect(setOccasionCategoriesExecute).toHaveBeenCalledWith({
+        actor,
+        restaurantId: restaurantOccasionCategoriesResult.restaurantId,
+        occasionCategoryIds: [occasionCategoryResult.occasionCategoryId],
+        correlationId: 'corr-9',
+      });
+      expect(response.categories).toHaveLength(1);
+    });
+
+    it('propagates UnknownOccasionCategoryException from the use case unchanged', async () => {
+      setOccasionCategoriesExecute.mockRejectedValue(new UnknownOccasionCategoryException());
+
+      await expect(
+        controller.setOccasionCategories(
+          restaurantOccasionCategoriesResult.restaurantId,
+          { occasionCategoryIds: ['does-not-exist'] },
+          actor,
+          buildRequest(),
+        ),
+      ).rejects.toBeInstanceOf(UnknownOccasionCategoryException);
+    });
+
+    it('propagates RestaurantNotFoundException from the use case unchanged', async () => {
+      setOccasionCategoriesExecute.mockRejectedValue(new RestaurantNotFoundException());
+
+      await expect(
+        controller.setOccasionCategories(
+          restaurantOccasionCategoriesResult.restaurantId,
+          { occasionCategoryIds: [] },
           actor,
           buildRequest(),
         ),

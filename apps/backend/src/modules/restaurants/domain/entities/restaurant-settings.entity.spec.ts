@@ -9,6 +9,7 @@ describe('RestaurantSettings entity', () => {
     maxGuestsPerReservation: 20,
     cancellationWindowMinutes: 60,
     pendingReservationTimeoutMinutes: 15,
+    defaultReservationDurationMinutes: 90,
     autoApproval: false,
     timezone: 'UTC',
     defaultCurrency: null,
@@ -29,6 +30,7 @@ describe('RestaurantSettings entity', () => {
       expect(settings.maxGuestsPerReservation).toBe(20);
       expect(settings.cancellationWindowMinutes).toBe(60);
       expect(settings.pendingReservationTimeoutMinutes).toBe(15);
+      expect(settings.defaultReservationDurationMinutes).toBe(90);
       expect(settings.autoApproval).toBe(false);
       expect(settings.timezone).toBe('UTC');
       expect(settings.defaultCurrency).toBeNull();
@@ -46,6 +48,8 @@ describe('RestaurantSettings entity', () => {
       ['cancellationWindowMinutes too high', { cancellationWindowMinutes: 999999 }],
       ['pendingReservationTimeoutMinutes too low', { pendingReservationTimeoutMinutes: 0 }],
       ['pendingReservationTimeoutMinutes too high', { pendingReservationTimeoutMinutes: 9999 }],
+      ['defaultReservationDurationMinutes too low', { defaultReservationDurationMinutes: 14 }],
+      ['defaultReservationDurationMinutes too high', { defaultReservationDurationMinutes: 481 }],
       ['empty timezone', { timezone: '' }],
       ['lowercase defaultCurrency', { defaultCurrency: 'usd' }],
       ['too-short defaultCurrency', { defaultCurrency: 'US' }],
@@ -72,6 +76,7 @@ describe('RestaurantSettings entity', () => {
           maxGuestsPerReservation: 10,
           cancellationWindowMinutes: 30,
           pendingReservationTimeoutMinutes: 10,
+          defaultReservationDurationMinutes: 60,
           autoApproval: true,
           timezone: 'Europe/Istanbul',
           defaultCurrency: 'EUR',
@@ -83,6 +88,7 @@ describe('RestaurantSettings entity', () => {
       expect(updated.maxGuestsPerReservation).toBe(10);
       expect(updated.cancellationWindowMinutes).toBe(30);
       expect(updated.pendingReservationTimeoutMinutes).toBe(10);
+      expect(updated.defaultReservationDurationMinutes).toBe(60);
       expect(updated.autoApproval).toBe(true);
       expect(updated.timezone).toBe('Europe/Istanbul');
       expect(updated.defaultCurrency).toBe('EUR');
@@ -98,6 +104,7 @@ describe('RestaurantSettings entity', () => {
           maxGuestsPerReservation: 10,
           cancellationWindowMinutes: 30,
           pendingReservationTimeoutMinutes: 10,
+          defaultReservationDurationMinutes: 60,
           autoApproval: true,
           timezone: 'Europe/Istanbul',
           defaultCurrency: 'EUR',
@@ -118,6 +125,7 @@ describe('RestaurantSettings entity', () => {
           maxGuestsPerReservation: 10,
           cancellationWindowMinutes: 30,
           pendingReservationTimeoutMinutes: 10,
+          defaultReservationDurationMinutes: 60,
           autoApproval: true,
           timezone: 'Europe/Istanbul',
           defaultCurrency: 'EUR',
@@ -138,6 +146,7 @@ describe('RestaurantSettings entity', () => {
             maxGuestsPerReservation: 10,
             cancellationWindowMinutes: 30,
             pendingReservationTimeoutMinutes: 10,
+            defaultReservationDurationMinutes: 60,
             autoApproval: true,
             timezone: 'UTC',
             defaultCurrency: null,
@@ -156,6 +165,7 @@ describe('RestaurantSettings entity', () => {
           maxGuestsPerReservation: 20,
           cancellationWindowMinutes: 60,
           pendingReservationTimeoutMinutes: 15,
+          defaultReservationDurationMinutes: 90,
           autoApproval: false,
           timezone: 'UTC',
           defaultCurrency: null,

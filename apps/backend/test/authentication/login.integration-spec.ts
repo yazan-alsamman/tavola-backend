@@ -20,6 +20,7 @@ import {
   InMemoryTokenFamilyRepository,
   InMemoryUserRepository,
 } from './support/in-memory-registration.dependencies';
+import { InMemoryEmployeeRepository } from '../authorization/support/in-memory-employee.repository';
 import { SYSTEM_CONFIG_KEYS } from '@shared/application/ports/system-configuration.port';
 import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
 
@@ -96,6 +97,7 @@ describe('LoginUseCase (integration)', () => {
       new FixedAuthTokenTtl(900),
       new InMemoryLoginOrganizationReader(),
       new InMemoryEmployeeAccessResolver(),
+      new InMemoryEmployeeRepository(),
       new CollectingAuditLogWriter(),
     );
 

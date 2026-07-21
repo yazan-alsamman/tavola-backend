@@ -357,6 +357,7 @@ Many-to-many link between `Restaurants` and `CuisineCategories`.
 
 Fields
 
+* id (UUID)
 * restaurantId
 * cuisineCategoryId
 * createdAt
@@ -395,6 +396,7 @@ Many-to-many link between `Restaurants` and `OccasionCategories`.
 
 Fields
 
+* id (UUID)
 * restaurantId
 * occasionCategoryId
 * createdAt
@@ -455,7 +457,7 @@ Indexes
 * restaurantId
 * unique composite (restaurantId, dayOfWeek)
 
-Deferred to Phase 5 (not built in Phase 4.3): `branchId` nullable FK, branch-level override rows, composite `(branchId, dayOfWeek)` index.
+**Resolved in Phase 5.2**: branch-level override was delivered as a separate table, `BranchWorkingHours` (see "Branch Working Hours" below), not as a nullable `branchId` column added to this table - each aggregate owns its own child entity, avoiding the dual-parent design this section originally anticipated.
 
 ---
 
@@ -533,12 +535,45 @@ Indexes
 * restaurantId
 * city
 * countryCode
-* composite (latitude, longitude) — supports bounding-box and distance queries for nearby-restaurant search (ADR-018); consider `GiST` index on `point(longitude, latitude)` when query volume warrants (Phase 15+)
+* composite (latitude, longitude) — added Phase 5.3 as a plain B-tree index; supports bounding-box and distance queries for nearby-restaurant search (ADR-018); consider upgrading to `GiST` on `point(longitude, latitude)` when query volume warrants (Phase 15+)
 
 Notes
 
 * `countryCode` and `currency` are owned at this level, not the Restaurant level (see DOMAIN_MODEL.md Money/Currency Ownership). If `currency` is null, the application falls back to `Restaurant Settings.defaultCurrency`.
 * Geo coordinates are authoritative for **nearby restaurant** queries at branch granularity (a restaurant with multiple branches appears once per qualifying branch).
+* **Phase 5.1 (Branch CRUD) scope**: `id`, `restaurantId`, `city`, `district`, `address`, `countryCode`, `currency`, `timezone`, `phone` are exposed and mutable via `POST`/`GET`/`PATCH`/`DELETE /api/v1/restaurants/:restaurantId/branches[/:branchId]`. `Branch` carries no direct `organizationId` column and is deliberately not registered in the tenant-scoping Prisma extension's `DIRECT_TENANT_OWNED_MODELS`; tenant isolation is enforced by resolving the parent Restaurant first (see TENANCY.md and TASKS.md's "Phase 5.1" report).
+* **Phase 5.3 (Geo Coordinates for Nearby Search, ADR-018) scope**: `latitude`/`longitude` are now also exposed and mutable via the same `POST`/`PATCH` routes above - both must be set together or both omitted (`InvalidBranchCoordinatesException`, 400), and range-validated (-90..90 / -180..180) at both the DTO and domain layers. The actual bounding-box/nearby-search query that reads these columns is out of this scope, deferred to a future Discovery module (TASKS.md Phase 15.5) per ADR-018's own attribution - the columns and index exist and are populated, but nothing queries them yet. See TASKS.md's "Phase 5.3" report.
+* **Phase 5.2 (Working Schedule) resolution**: the branch-level working-hours override was delivered as a separate table, `BranchWorkingHours` (see below), not via this row's own `openingHours` Json column. `openingHours` remains `NULL`/unused by any code - it is pre-existing technical debt from the Phase 2.1 foundation migration (flagged, not removed, since no phase owns cleaning it up yet), structurally superseded by `BranchWorkingHours` for any future consumer.
+
+---
+
+## Branch Working Hours
+
+Purpose
+
+Branch-level weekly opening/closing schedule override (Phase 5.2), resolving the branch-level override the "Working Hours" section above deferred to Phase 5. A separate table from `WorkingHours` (Restaurant-level, Phase 4.3) - each aggregate owns its own child entity, not a nullable `branchId` added to the Restaurant-level table. Structurally identical to `WorkingHours`, scoped to `branchId` instead of `restaurantId`.
+
+Fields
+
+* id (UUID)
+* branchId (required — every row belongs to exactly one Branch)
+* dayOfWeek (integer, 0=Sunday..6=Saturday; one row per day per branch, missing day = no override for that branch)
+* openingTime (`HH:mm`, 24-hour)
+* closingTime (`HH:mm`, 24-hour; `closingTime <= openingTime` is valid and represents hours crossing midnight)
+* breakStartTime (`HH:mm`, nullable)
+* breakEndTime (`HH:mm`, nullable; both break fields null or both present, `breakStartTime < breakEndTime`)
+* createdAt
+* updatedAt
+
+Indexes
+
+* branchId
+* unique composite (branchId, dayOfWeek)
+
+Notes
+
+* Tenant-owned transitively via `branchId -> Branch.restaurantId -> Restaurant.organizationId` (two hops), not directly - not registered in the tenant-scoping Prisma extension's `DIRECT_TENANT_OWNED_MODELS`, same pattern as `WorkingHours`/`RestaurantSettings`. Every use case resolves the parent Restaurant, then the parent Branch, via their already-tenant-scoped repositories first (see TASKS.md's "Phase 5.2" report).
+* No precedence/fallback logic exists yet between a Branch's override here and its Restaurant's default in `WorkingHours` - out of Phase 5.2's CRUD-only scope; a future consumer (most likely the Reservation Engine, Phase 7) will need to define that resolution.
 
 ---
 
@@ -562,6 +597,12 @@ Indexes
 * branchId
 * composite partial unique (branchId) WHERE isActive = true — guarantees at most one active floor plan per branch
 
+Notes
+
+* **Phase 6.1 architecture decision:** every Table belongs to exactly one FloorPlan (`Table.floorPlanId` is required, never nullable - see "Restaurant Tables" below). A Branch with only one physical floor still gets one `FloorPlan` row (e.g., named "Main Floor"); there is no "tableless"/"floor-plan-less" state. A FloorPlan is the owner of its table layout - retrieving all Tables belonging to one FloorPlan is a required read capability (exact endpoint shape decided at implementation time, not fixed here).
+* **Activation invariants** (Aggregate Invariants, not optional validation - see DOMAIN_MODEL.md's Branch Aggregate Notes for full detail): the first FloorPlan created for a Branch becomes `isActive = true` automatically, with no manual activation step; activating a different FloorPlan atomically deactivates the previously active one in the same operation, so the `composite partial unique (branchId) WHERE isActive = true` index above is never violated even transiently; a FloorPlan cannot be deleted while any Table still references it via `floorPlanId` (the delete must be rejected); a Branch's last remaining FloorPlan cannot be deleted (a Branch always owns at least one).
+* **Cascade:** soft-deleting a Branch cascades to soft-deleting its FloorPlans, alongside its Tables (see "Restaurant Tables" below and DOMAIN_MODEL.md's Branch Aggregate Notes) - both are child entities of the Branch Aggregate, so this is aggregate consistency, not a new feature. **This cascade executes inside one database transaction; partial completion (e.g., Branch deleted but Tables/FloorPlans not) is forbidden.**
+
 ---
 
 ## Restaurant Tables
@@ -572,7 +613,7 @@ Fields
 
 * id
 * branchId
-* floorPlanId
+* floorPlanId (required — every Table belongs to exactly one FloorPlan; never nullable, per Phase 6.1's architecture decision)
 * tableNumber
 * capacity
 * floor
@@ -581,12 +622,12 @@ Fields
 * width
 * height
 * rotation
-* shape
+* shape (`Rectangle`, `Round` only — Phase 6.1 architecture decision; see Notes)
 * layer
 * indoor
 * vip
 * smoking
-* status
+* status (`Available`, `Occupied`, `Cleaning`, `Disabled` — Status Management architecture decision; `Reserved` excluded, see Notes)
 * mergeGroupId (nullable)
 * createdAt
 * updatedAt
@@ -595,9 +636,17 @@ Fields
 Indexes
 
 * branchId
+* floorPlanId
 * status
 * mergeGroupId
 * composite unique (branchId, tableNumber) — table numbers are unique within a branch
+
+Notes
+
+* **Cascade:** soft-deleting a Branch cascades to soft-deleting its Tables (and its FloorPlans - see "Floor Plans" above), but never its historical Reservations, which are immutable per the Soft Delete Policy above (DOMAIN_MODEL.md's Branch Aggregate Notes, "Branch deletion"). **Executes inside one database transaction; partial completion is forbidden** - the system must never reach a state where the Branch is soft-deleted but its Tables and/or FloorPlans are not.
+* **Deletion guard:** a FloorPlan cannot be deleted while any (non-soft-deleted) Table still references it via `floorPlanId`; the operation must be rejected, not silently reassigned or orphaned (Aggregate Invariant, see "Floor Plans" above and DOMAIN_MODEL.md).
+* **`status` (Phase 6.1 decision, superseded by the Status Management architecture decision):** `Create Table` still always produces `Available`. The `TableStatus` enum now also defines `Occupied`, `Cleaning`, and `Disabled` (Status Management architecture decision) - transitioned exclusively through the single dedicated Domain Action `POST /tables/{tableId}/status` (see API_GUIDELINES.md); `Update Table` (`PATCH /tables/:tableId`) never modifies `status`. Allowed transitions are restricted to `Available ↔ Occupied`, `Available ↔ Cleaning`, and `Available ↔ Disabled` only - every other combination (e.g. `Cleaning → Occupied`, `Disabled → Cleaning`) is rejected as an invalid transition. `Reserved` is approved for introduction as part of **Phase 7.2 — Approval Workflow** (Reservation Engine architecture frozen, see TASKS.md's Phase 7 pre-implementation decision note item 6 and the "Phase 7.2 — Approval Workflow: Architecture Freeze" note) - not yet added to this enum, since Phase 7.2 implementation has not started. Once implemented, only the new `Table.reserve(reservationId, at)` / `Table.release(at)` domain methods may set or clear it; `Table.transitionStatus`'s validator (frozen Phase 6.3) continues to reject it, exactly as it does today. Status transitions produce an audit-log entry only (`table.status_changed`) - no domain event class exists for this action.
+* **`shape` (Phase 6.1 architecture decision):** `TableShape` is presentation metadata only - it describes how a table renders on the floor plan and does not participate in reservation rules, capacity, or merge/split behavior. Its initial value set is intentionally minimal: `Rectangle` and `Round` only. A square table is represented as `Rectangle` with `width == height`; there is no separate `Square` value. `Oval`/`Triangle`/`Hexagon`/`Custom`/any other value are not defined and must not be inferred - a future product requirement may extend the enum, but only through an explicit architectural decision.
 
 ---
 
@@ -613,7 +662,7 @@ Fields
 * tableId
 * reservationDate
 * reservationStartTime
-* reservationEndTime
+* reservationEndTime (always persisted as a concrete value — never null; see Notes below)
 * guests
 * status
 * source
@@ -631,6 +680,7 @@ Fields
 Notes
 
 * `source` enum includes at minimum: `Online`, `Phone`, `WalkIn`, `Staff`, `WaitlistConversion` (when a waitlist entry is promoted to a reservation).
+* `reservationEndTime` (Phase 7.1 architecture decision, 2026-07-20 — documentation clarification only, no schema change): always persisted, never left null. It may originate from client input (validated: must be later than `reservationStartTime`, and must satisfy any configured Restaurant reservation-duration constraints) or from backend derivation (the Restaurant's `Default Reservation Duration` setting, applied when the client omits the field). Persistence rules, and every downstream reader of this column (the exclusion constraint above, `ReservationHistory`, availability search), are identical regardless of which path produced the value — the column carries no marker of its origin.
 
 Indexes
 
@@ -640,7 +690,7 @@ Indexes
 * status
 * composite (branchId, reservationDate, status) — the primary availability-search query filters by branch and date and excludes cancelled/expired reservations; this composite index directly serves that query without a full scan
 * composite (tableId, reservationDate, reservationStartTime) — supports the conflict-check query executed inside the advisory-locked transaction (ADR-013) that verifies no overlapping reservation exists for a specific table before insert
-* exclusion constraint EXCLUDE USING gist (tableId WITH =, tstzrange(reservationStartTime, reservationEndTime) WITH &&) WHERE status NOT IN ('Cancelled', 'Expired', 'Rejected') — the database-level safety net from ADR-013; requires the `btree_gist` extension
+* exclusion constraint EXCLUDE USING gist (tableId WITH =, tstzrange(reservationStartTime, reservationEndTime) WITH &&) WHERE status NOT IN ('Cancelled', 'Expired', 'Rejected', 'Pending') — the database-level safety net from ADR-013; guards only `Approved`/`Completed`/`NoShow` rows, matching "a table cannot have overlapping **confirmed** reservations" below — `Pending` is deliberately excluded so two overlapping Pending reservations for the same table may coexist (per the business rule immediately below), resolved at approval time, not blocked at creation time; requires the `btree_gist` extension
 
 Notes
 
@@ -1554,6 +1604,18 @@ Restaurant
 ↓
 
 Restaurant Gallery
+
+Restaurant
+
+↓
+
+Restaurant Cuisine Categories (many-to-many via `CuisineCategories`, platform-managed reference data — Phase 4.5)
+
+Restaurant
+
+↓
+
+Restaurant Occasion Categories (many-to-many via `OccasionCategories`, platform-managed reference data — Phase 4.5)
 
 Restaurant
 

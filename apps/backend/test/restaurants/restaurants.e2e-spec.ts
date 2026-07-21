@@ -13,6 +13,8 @@ function uniqueId(): string {
   return randomUUID().split('-')[0];
 }
 
+const validJpegBuffer = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, 0)]);
+
 describe('/api/v1/restaurants (e2e)', () => {
   let app: INestApplication | undefined;
   let dbAvailable = false;
@@ -28,6 +30,17 @@ describe('/api/v1/restaurants (e2e)', () => {
 
   afterAll(async () => {
     if (dbAvailable) {
+      // Files created for gallery images have no FK relation to Restaurant
+      // (polymorphic ownerId/ownerType, matching the Files aggregate's own
+      // design) - not cascade-deleted, so clean them up explicitly before
+      // deleting the restaurants themselves.
+      const testRestaurants = await prisma.restaurant.findMany({
+        where: { slug: { startsWith: TEST_PREFIX } },
+        select: { id: true },
+      });
+      await prisma.file.deleteMany({
+        where: { ownerType: 'Restaurant', ownerId: { in: testRestaurants.map((r) => r.id) } },
+      });
       await prisma.restaurant.deleteMany({ where: { slug: { startsWith: TEST_PREFIX } } });
       await prisma.organizationMember.deleteMany({
         where: { organization: { name: { startsWith: TEST_PREFIX } } },
@@ -398,6 +411,7 @@ describe('/api/v1/restaurants (e2e)', () => {
     maxGuestsPerReservation: 12,
     cancellationWindowMinutes: 120,
     pendingReservationTimeoutMinutes: 30,
+    defaultReservationDurationMinutes: 120,
     autoApproval: true,
     timezone: 'Europe/Istanbul',
     defaultCurrency: 'TRY',
@@ -425,6 +439,7 @@ describe('/api/v1/restaurants (e2e)', () => {
       maxGuestsPerReservation: 20,
       cancellationWindowMinutes: 60,
       pendingReservationTimeoutMinutes: 15,
+      defaultReservationDurationMinutes: 90,
       autoApproval: false,
       timezone: 'UTC',
       defaultCurrency: null,
@@ -684,5 +699,199 @@ describe('/api/v1/restaurants (e2e)', () => {
 
     const stillTwoRows = await prisma.workingHours.count({ where: { restaurantId } });
     expect(stillTwoRows).toBe(2);
+  });
+
+  it('POST /restaurants/{id}/gallery adds an image with a caption and writes an audit log entry', async () => {
+    if (!dbAvailable || !app) return;
+
+    const owner = await registerAndLoginOwner('gallery-add');
+    const createResponse = await request(app.getHttpServer())
+      .post('/api/v1/restaurants')
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({ ...validCreateBody, slug: `${TEST_PREFIX}${uniqueId()}` })
+      .expect(201);
+    const restaurantId = createResponse.body.data.restaurantId as string;
+
+    const response = await request(app.getHttpServer())
+      .post(`/api/v1/restaurants/${restaurantId}/gallery`)
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .field('caption', 'Our dining room')
+      .attach('file', validJpegBuffer, { filename: 'dining-room.jpg', contentType: 'image/jpeg' })
+      .expect(201);
+
+    expect(response.body.data.caption).toBe('Our dining room');
+    expect(response.body.data.sortOrder).toBe(0);
+    expect(response.body.data.imageUrl).toBeTruthy();
+
+    const auditEntry = await prisma.auditLog.findFirst({
+      where: { targetId: restaurantId, action: 'restaurant.gallery.image_added' },
+    });
+    expect(auditEntry).not.toBeNull();
+    expect(auditEntry?.actorId).toBe(owner.userId);
+  });
+
+  it('GET /restaurants/{id}/gallery returns images sorted by sortOrder', async () => {
+    if (!dbAvailable || !app) return;
+
+    const owner = await registerAndLoginOwner('gallery-list');
+    const createResponse = await request(app.getHttpServer())
+      .post('/api/v1/restaurants')
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({ ...validCreateBody, slug: `${TEST_PREFIX}${uniqueId()}` })
+      .expect(201);
+    const restaurantId = createResponse.body.data.restaurantId as string;
+
+    const emptyResponse = await request(app.getHttpServer())
+      .get(`/api/v1/restaurants/${restaurantId}/gallery`)
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .expect(200);
+    expect(emptyResponse.body.data).toEqual({ restaurantId, items: [] });
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/restaurants/${restaurantId}/gallery`)
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .attach('file', validJpegBuffer, { filename: 'a.jpg', contentType: 'image/jpeg' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/v1/restaurants/${restaurantId}/gallery`)
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .attach('file', validJpegBuffer, { filename: 'b.jpg', contentType: 'image/jpeg' })
+      .expect(201);
+
+    const listResponse = await request(app.getHttpServer())
+      .get(`/api/v1/restaurants/${restaurantId}/gallery`)
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .expect(200);
+
+    expect(listResponse.body.data.items).toHaveLength(2);
+    expect(listResponse.body.data.items[0].sortOrder).toBe(0);
+    expect(listResponse.body.data.items[1].sortOrder).toBe(1);
+  });
+
+  it('DELETE /restaurants/{id}/gallery/{galleryItemId} removes the row, the File, and the storage object', async () => {
+    if (!dbAvailable || !app) return;
+
+    const owner = await registerAndLoginOwner('gallery-delete');
+    const createResponse = await request(app.getHttpServer())
+      .post('/api/v1/restaurants')
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({ ...validCreateBody, slug: `${TEST_PREFIX}${uniqueId()}` })
+      .expect(201);
+    const restaurantId = createResponse.body.data.restaurantId as string;
+
+    const addResponse = await request(app.getHttpServer())
+      .post(`/api/v1/restaurants/${restaurantId}/gallery`)
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .attach('file', validJpegBuffer, { filename: 'to-delete.jpg', contentType: 'image/jpeg' })
+      .expect(201);
+    const galleryItemId = addResponse.body.data.galleryItemId as string;
+
+    await request(app.getHttpServer())
+      .delete(`/api/v1/restaurants/${restaurantId}/gallery/${galleryItemId}`)
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .expect(204);
+
+    const rowGone = await prisma.restaurantGallery.findUnique({ where: { id: galleryItemId } });
+    expect(rowGone).toBeNull();
+
+    const deleteAudit = await prisma.auditLog.findFirst({
+      where: { targetId: restaurantId, action: 'restaurant.gallery.image_removed' },
+    });
+    expect(deleteAudit).not.toBeNull();
+
+    // deleting again (already removed) is not idempotent - 404
+    await request(app.getHttpServer())
+      .delete(`/api/v1/restaurants/${restaurantId}/gallery/${galleryItemId}`)
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .expect(404);
+  });
+
+  it('POST /restaurants/{id}/gallery rejects the 21st image with 409 GALLERY_LIMIT_EXCEEDED', async () => {
+    if (!dbAvailable || !app) return;
+
+    const owner = await registerAndLoginOwner('gallery-limit');
+    const createResponse = await request(app.getHttpServer())
+      .post('/api/v1/restaurants')
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({ ...validCreateBody, slug: `${TEST_PREFIX}${uniqueId()}` })
+      .expect(201);
+    const restaurantId = createResponse.body.data.restaurantId as string;
+
+    for (let i = 0; i < 20; i += 1) {
+      await request(app.getHttpServer())
+        .post(`/api/v1/restaurants/${restaurantId}/gallery`)
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .attach('file', validJpegBuffer, { filename: `${i}.jpg`, contentType: 'image/jpeg' })
+        .expect(201);
+    }
+
+    const response = await request(app.getHttpServer())
+      .post(`/api/v1/restaurants/${restaurantId}/gallery`)
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .attach('file', validJpegBuffer, { filename: '21.jpg', contentType: 'image/jpeg' })
+      .expect(409);
+    expect(response.body.code).toBe('GALLERY_LIMIT_EXCEEDED');
+
+    const count = await prisma.restaurantGallery.count({ where: { restaurantId } });
+    expect(count).toBe(20);
+  }, 60000);
+
+  it('POST /restaurants/{id}/gallery rejects a missing file with 400', async () => {
+    if (!dbAvailable || !app) return;
+
+    const owner = await registerAndLoginOwner('gallery-missing-file');
+    const createResponse = await request(app.getHttpServer())
+      .post('/api/v1/restaurants')
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({ ...validCreateBody, slug: `${TEST_PREFIX}${uniqueId()}` })
+      .expect(201);
+    const restaurantId = createResponse.body.data.restaurantId as string;
+
+    const response = await request(app.getHttpServer())
+      .post(`/api/v1/restaurants/${restaurantId}/gallery`)
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .field('caption', 'No file attached')
+      .expect(400);
+    expect(response.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it("two different organizations never see each other's gallery - POST/GET/DELETE all return 404 across tenants", async () => {
+    if (!dbAvailable || !app) return;
+
+    const ownerA = await registerAndLoginOwner('gallery-isolation-a');
+    const ownerB = await registerAndLoginOwner('gallery-isolation-b');
+
+    const createResponse = await request(app.getHttpServer())
+      .post('/api/v1/restaurants')
+      .set('Authorization', `Bearer ${ownerA.accessToken}`)
+      .send({ ...validCreateBody, slug: `${TEST_PREFIX}${uniqueId()}` })
+      .expect(201);
+    const restaurantId = createResponse.body.data.restaurantId as string;
+
+    const addResponse = await request(app.getHttpServer())
+      .post(`/api/v1/restaurants/${restaurantId}/gallery`)
+      .set('Authorization', `Bearer ${ownerA.accessToken}`)
+      .attach('file', validJpegBuffer, { filename: 'a.jpg', contentType: 'image/jpeg' })
+      .expect(201);
+    const galleryItemId = addResponse.body.data.galleryItemId as string;
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/restaurants/${restaurantId}/gallery`)
+      .set('Authorization', `Bearer ${ownerB.accessToken}`)
+      .attach('file', validJpegBuffer, { filename: 'b.jpg', contentType: 'image/jpeg' })
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/restaurants/${restaurantId}/gallery`)
+      .set('Authorization', `Bearer ${ownerB.accessToken}`)
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .delete(`/api/v1/restaurants/${restaurantId}/gallery/${galleryItemId}`)
+      .set('Authorization', `Bearer ${ownerB.accessToken}`)
+      .expect(404);
+
+    const stillOneRow = await prisma.restaurantGallery.count({ where: { restaurantId } });
+    expect(stillOneRow).toBe(1);
   });
 });

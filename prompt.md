@@ -1,89 +1,27 @@
-Proceed with Option 1.
+Before writing any code, resolve these two open points explicitly and record your
+resolution in the Phase 7.0 decision note (same TASKS.md format as prior sub-phases):
 
-This is an explicit architecture decision.
+1. Authorization scope: confirm whether Owner/Admin-only (OrganizationMemberGuard +
+   RequireOrgRole) is a deliberate Phase 7.0 scoping decision, given
+   AUTHORIZATION_ARCHITECTURE.md §5 documents employees:manage as an operational RBAC
+   permission typically held by Manager. If it's deliberate, state the reason (e.g.
+   "creating accounts with role/permission grants warrants org-admin trust for this
+   first increment; Manager-driven employees:manage access is deferred to a future
+   sub-phase") explicitly in the note. If it's not deliberate and Manager access via
+   employees:manage should actually be wired now, say so and adjust the guard stack
+   accordingly before implementing.
 
-==================================================
-Architecture Decision
-==================================================
+2. Session/token invalidation on Remove/Deactivate Employee: confirm whether removing
+   or deactivating an Employee should bump the linked User's sessionVersion (forcing
+   their active sessions to be rejected on next request/refresh), mirroring
+   AUTHENTICATION_ARCHITECTURE.md's existing "Admin suspends user → all sessions"
+   revocation trigger. If yes, add that step to RemoveEmployeeUseCase/the deactivate
+   path now, inside the same transaction as the deletedAt write. If there's a reason
+   to defer this (e.g. it's out of scope because Employee suspension is judged
+   lower-severity than full User suspension), state that reasoning explicitly rather
+   than leaving the gap silent.
 
-Phase 4.3 implements ONLY Restaurant-level Working Hours.
-
-Branch-level Working Hours are explicitly deferred to Phase 5 (Branch Module).
-
-Do NOT implement any Branch Working Hours logic.
-
-Do NOT implement branch overrides.
-
-Do NOT introduce any dependency on the Branch module.
-
-Do NOT expand scope.
-
-==================================================
-Existing Documentation Conflict
-==================================================
-
-Treat the current documentation conflict as follows:
-
-- DOMAIN_MODEL.md is authoritative for aggregate ownership in this phase.
-- Restaurant owns Working Hours in Phase 4.
-- Branch-level Working Hours become part of Phase 5 when the Branch aggregate is implemented.
-
-Do NOT redesign the architecture.
-
-Do NOT introduce a dual-parent aggregate now.
-
-==================================================
-Branch.openingHours
-==================================================
-
-The existing undocumented Branch.openingHours Json? field is acknowledged as a pre-existing inconsistency.
-
-Do NOT use it.
-
-Do NOT remove it.
-
-Do NOT migrate it.
-
-Do NOT build around it.
-
-Simply document it in the final report as deferred technical debt outside the scope of Phase 4.
-
-==================================================
-Business Rules
-==================================================
-
-Where business rules are not explicitly documented
-(day validation,
-time validation,
-cross-midnight,
-overlap detection,
-etc.)
-
-derive the smallest possible implementation that is fully consistent with the existing Restaurant architecture.
-
-Do NOT invent future functionality.
-
-Do NOT add optional features.
-
-Keep the implementation intentionally minimal.
-
-==================================================
-Documentation
-==================================================
-
-If a documentation clarification is required,
-
-update only the documentation necessary to reconcile Phase 4.3 with this explicit decision.
-
-Do not create ADRs.
-
-==================================================
-Continue from Step 5.
-
-Implement Restaurant Working Hours only.
-
-After implementation execute the full verification pipeline exactly as in previous phases.
-
-Stop after the final engineering report.
-
-Do not begin Phase 5.
+Once both are resolved and recorded, proceed with implementation exactly as planned —
+the rest of the plan (entity methods, repository methods, use cases, controller,
+first-login linking, events, folder structure) is approved as-is. Implement Phase 7.0
+in full, then stop for review before touching any Phase 7.1 (Reservation Core) code.

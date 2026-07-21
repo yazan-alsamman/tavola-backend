@@ -29,10 +29,14 @@ import {
   InMemoryUserRepository,
   SequentialIdGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
+import { InMemoryEmployeeRepository } from '../../../../../test/authorization/support/in-memory-employee.repository';
 import { SYSTEM_CONFIG_KEYS } from '@shared/application/ports/system-configuration.port';
 import { DeviceSession } from '../../domain/entities/device-session.entity';
 import { SessionPolicy } from '../../domain/services/authentication-policies';
 import { TIMING_SAFE_DUMMY_PASSWORD_HASH } from '../../domain/services/timing-safe-dummy';
+import { Employee } from '@modules/authorization/domain/entities/employee.entity';
+import { EmployeeStatus } from '@modules/authorization/domain/enums/authorization.enums';
+import { EmployeeId } from '@shared/domain/value-objects/identifiers.vo';
 
 describe('LoginUseCase', () => {
   const fixedNow = new Date('2026-07-07T18:00:00.000Z');
@@ -67,6 +71,7 @@ describe('LoginUseCase', () => {
     systemConfiguration?: InMemorySystemConfiguration;
     organizationReader?: InMemoryLoginOrganizationReader;
     employeeAccessResolver?: InMemoryEmployeeAccessResolver;
+    employeeRepository?: InMemoryEmployeeRepository;
     unitOfWork?: ImmediateUnitOfWork;
     auditLogWriter?: CollectingAuditLogWriter;
   }) {
@@ -102,6 +107,7 @@ describe('LoginUseCase', () => {
       new FixedAuthTokenTtl(900),
       overrides?.organizationReader ?? new InMemoryLoginOrganizationReader(),
       overrides?.employeeAccessResolver ?? new InMemoryEmployeeAccessResolver(),
+      overrides?.employeeRepository ?? new InMemoryEmployeeRepository(),
       auditLogWriter,
     );
 
@@ -522,5 +528,75 @@ describe('LoginUseCase', () => {
     // The org-admin relationship is still surfaced informationally even when
     // the JWT actorType is Employee - see AccessTokenClaimsBuilder's doc comment.
     expect(result.organization?.role).toBe('Owner');
+  });
+
+  it('links a pending Invited Employee record to the User on first login (Phase 7.0)', async () => {
+    const employeeRepository = new InMemoryEmployeeRepository();
+    const pendingEmployeeId = '99999999-9999-4999-8999-999999999991';
+    await employeeRepository.save(
+      Employee.create({
+        id: pendingEmployeeId,
+        restaurantId: 'restaurant-1',
+        roleId: 'role-1',
+        userId: null,
+        permissionsVersion: 1,
+        firstName: 'Jane',
+        lastName: 'Doe',
+        email: 'login@example.com',
+        phone: null,
+        status: EmployeeStatus.Invited,
+        assignedBranchIds: [],
+        createdAt: fixedNow,
+        updatedAt: fixedNow,
+        deletedAt: null,
+      }),
+    );
+    const { useCase, userRepository } = createUseCase({ employeeRepository });
+    await userRepository.save(createActiveUser());
+
+    await useCase.execute({
+      email: 'login@example.com',
+      password,
+      ipAddress: '127.0.0.1',
+    });
+
+    const linked = await employeeRepository.findById(EmployeeId.create(pendingEmployeeId));
+    expect(linked?.status).toBe(EmployeeStatus.Active);
+    expect(linked?.userId?.value).toBe(userId);
+  });
+
+  it('does not link an Employee record for a different email', async () => {
+    const employeeRepository = new InMemoryEmployeeRepository();
+    const otherEmployeeId = '99999999-9999-4999-8999-999999999992';
+    await employeeRepository.save(
+      Employee.create({
+        id: otherEmployeeId,
+        restaurantId: 'restaurant-1',
+        roleId: 'role-1',
+        userId: null,
+        permissionsVersion: 1,
+        firstName: 'Someone',
+        lastName: 'Else',
+        email: 'unrelated@example.com',
+        phone: null,
+        status: EmployeeStatus.Invited,
+        assignedBranchIds: [],
+        createdAt: fixedNow,
+        updatedAt: fixedNow,
+        deletedAt: null,
+      }),
+    );
+    const { useCase, userRepository } = createUseCase({ employeeRepository });
+    await userRepository.save(createActiveUser());
+
+    await useCase.execute({
+      email: 'login@example.com',
+      password,
+      ipAddress: '127.0.0.1',
+    });
+
+    const untouched = await employeeRepository.findById(EmployeeId.create(otherEmployeeId));
+    expect(untouched?.status).toBe(EmployeeStatus.Invited);
+    expect(untouched?.userId).toBeNull();
   });
 });

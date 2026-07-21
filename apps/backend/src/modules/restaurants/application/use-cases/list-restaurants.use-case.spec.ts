@@ -4,6 +4,7 @@ import { AccessTokenActorType } from '@modules/authentication/domain/services/ac
 import {
   CollectingEventPublisher,
   FixedClock,
+  ImmediateUnitOfWork,
   UuidGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
@@ -32,6 +33,7 @@ describe('ListRestaurantsUseCase', () => {
       new FixedClock(fixedNow),
       new UuidGenerator(),
       new CollectingEventPublisher(),
+      new ImmediateUnitOfWork(),
     );
     for (let i = 0; i < count; i += 1) {
       await createUseCase.execute({

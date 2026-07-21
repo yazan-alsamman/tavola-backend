@@ -29,6 +29,17 @@ import {
   RestaurantSuspendedEvent,
   RestaurantUpdatedEvent,
 } from '@modules/restaurants/domain/events/restaurant.events';
+import {
+  BranchCreatedEvent,
+  BranchDeletedEvent,
+  BranchUpdatedEvent,
+} from '@modules/branches/domain/events/branch.events';
+import {
+  TableCreatedEvent,
+  TableDeletedEvent,
+  TableUpdatedEvent,
+} from '@modules/tables/domain/events/table.events';
+import { ReservationCreatedEvent } from '@modules/reservations/domain/events/reservation.events';
 import { LoggingEventPublisher } from './logging-event-publisher';
 
 /**
@@ -291,6 +302,90 @@ export class AuditingEventPublisher implements EventPublisherPort {
         action: 'restaurant.suspended',
         targetType: 'Restaurant',
         targetId: event.payload.restaurantId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof BranchCreatedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'User',
+        action: 'branch.created',
+        targetType: 'Branch',
+        targetId: event.payload.branchId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof BranchUpdatedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'User',
+        action: 'branch.updated',
+        targetType: 'Branch',
+        targetId: event.payload.branchId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof BranchDeletedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'User',
+        action: 'branch.deleted',
+        targetType: 'Branch',
+        targetId: event.payload.branchId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof TableCreatedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'User',
+        action: 'table.created',
+        targetType: 'Table',
+        targetId: event.payload.tableId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof TableUpdatedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'User',
+        action: 'table.updated',
+        targetType: 'Table',
+        targetId: event.payload.tableId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof TableDeletedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'User',
+        action: 'table.deleted',
+        targetType: 'Table',
+        targetId: event.payload.tableId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof ReservationCreatedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.userId,
+        actorType: 'User',
+        action: 'reservation.created',
+        targetType: 'Reservation',
+        targetId: event.payload.reservationId,
         ipAddress: null,
       };
     }

@@ -535,6 +535,8 @@ Mechanics:
 
 Affects: Reservation Aggregate, `ReservationAvailabilityService` domain service, Reservation repository/migration (exclusion constraint), Phase 7 (Reservation Engine) implementation, CODING_STANDARDS.md (short-transaction rule), NON_FUNCTIONAL_REQUIREMENTS.md (clarifies how "conflicts must never occur" is technically satisfied).
 
+**Phase 7 pre-implementation decision note (2026-07-19) amendment:** the exclusion constraint's `WHERE` clause is corrected to `status NOT IN ('Cancelled', 'Expired', 'Rejected', 'Pending')` - `Pending` was missing from the original exclusion list, which would have made DOMAIN_MODEL.md's "two overlapping Pending reservations may coexist, resolved at approval time" rule unreachable at the database level (documentation-bug fix, not a new mechanism). New `Table.reserve(reservationId, at)` / `Table.release(at)` domain methods (Phase 7 decision note item 6) call inside the same advisory-locked transaction as the reservation write - `Table.transitionStatus` (Phase 6.3) is unmodified; only these two new methods may set/clear `TableStatus.Reserved`.
+
 ---
 
 ## ADR-014
@@ -823,6 +825,8 @@ Product scope includes reservation waiting list, reminders, late-arrival handlin
 * Positive: Clear separation between booked reservations and queue state.
 * Negative: Additional queue management UI and position recomputation logic.
 * Impact: Phase 7–9, `DATABASE_SCHEMA.md`, `EVENTS.md`, `DOMAIN_MODEL.md`.
+
+**Phase 7 pre-implementation decision note (2026-07-19) amendment:** mapped to sub-phases - waitlist itself is **Phase 7.5** (automatic promotion trigger on `ReservationCancelled`/`ReservationNoShow`/`ReservationExpired`, plus manual staff trigger); reminders/late-arrival/table-ready are **Phase 7.6**, with `GuestLateArrivalNotified`/`TableReadyNotified` confirmed as real domain event classes (named `NotificationDispatcher` consumer already documented here), not audit-only.
 
 ---
 

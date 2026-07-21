@@ -41,6 +41,18 @@ export class UpdateRestaurantSettingsRequestDto {
   @Max(1440)
   pendingReservationTimeoutMinutes!: number;
 
+  @ApiProperty({
+    example: 90,
+    minimum: 15,
+    maximum: 480,
+    description:
+      'Fallback used to derive Reservation.reservationEndTime whenever the client omits it (Phase 7.1 architecture decision).',
+  })
+  @IsInt()
+  @Min(15)
+  @Max(480)
+  defaultReservationDurationMinutes!: number;
+
   @ApiProperty({ example: false })
   @IsBoolean()
   autoApproval!: boolean;

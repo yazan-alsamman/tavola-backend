@@ -4,6 +4,7 @@ export interface RestaurantSettingsResult {
   maxGuestsPerReservation: number;
   cancellationWindowMinutes: number;
   pendingReservationTimeoutMinutes: number;
+  defaultReservationDurationMinutes: number;
   autoApproval: boolean;
   timezone: string;
   defaultCurrency: string | null;

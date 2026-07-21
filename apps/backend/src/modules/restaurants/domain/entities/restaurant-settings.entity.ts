@@ -9,6 +9,7 @@ export interface RestaurantSettingsProps {
   maxGuestsPerReservation: number;
   cancellationWindowMinutes: number;
   pendingReservationTimeoutMinutes: number;
+  defaultReservationDurationMinutes: number;
   autoApproval: boolean;
   timezone: string;
   defaultCurrency: string | null;
@@ -46,6 +47,7 @@ export class RestaurantSettings extends Entity<RestaurantSettingsProps> {
       maxGuestsPerReservation: 20,
       cancellationWindowMinutes: 60,
       pendingReservationTimeoutMinutes: 15,
+      defaultReservationDurationMinutes: 90,
       autoApproval: false,
       timezone: 'UTC',
       defaultCurrency: null,
@@ -78,6 +80,10 @@ export class RestaurantSettings extends Entity<RestaurantSettingsProps> {
     return this.props.pendingReservationTimeoutMinutes;
   }
 
+  get defaultReservationDurationMinutes(): number {
+    return this.props.defaultReservationDurationMinutes;
+  }
+
   get autoApproval(): boolean {
     return this.props.autoApproval;
   }
@@ -106,6 +112,7 @@ export class RestaurantSettings extends Entity<RestaurantSettingsProps> {
       maxGuestsPerReservation: number;
       cancellationWindowMinutes: number;
       pendingReservationTimeoutMinutes: number;
+      defaultReservationDurationMinutes: number;
       autoApproval: boolean;
       timezone: string;
       defaultCurrency: string | null;
@@ -145,6 +152,14 @@ function validate(props: RestaurantSettingsProps): void {
   if (props.pendingReservationTimeoutMinutes < 1 || props.pendingReservationTimeoutMinutes > 1440) {
     throw new InvalidRestaurantSettingsException(
       'pendingReservationTimeoutMinutes must be between 1 and 1440.',
+    );
+  }
+  if (
+    props.defaultReservationDurationMinutes < 15 ||
+    props.defaultReservationDurationMinutes > 480
+  ) {
+    throw new InvalidRestaurantSettingsException(
+      'defaultReservationDurationMinutes must be between 15 and 480.',
     );
   }
   if (props.timezone.trim().length === 0) {

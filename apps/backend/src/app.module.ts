@@ -13,6 +13,10 @@ import { AuditModule } from './infrastructure/audit/audit.module';
 import { AuthenticationModule } from './modules/authentication/authentication.module';
 import { UsersModule } from './modules/users/users.module';
 import { RestaurantsModule } from './modules/restaurants/restaurants.module';
+import { BranchesModule } from './modules/branches/branches.module';
+import { TablesModule } from './modules/tables/tables.module';
+import { EmployeesModule } from './modules/employees/employees.module';
+import { ReservationsModule } from './modules/reservations/reservations.module';
 
 @Module({
   imports: [
@@ -30,6 +34,10 @@ import { RestaurantsModule } from './modules/restaurants/restaurants.module';
     AuthenticationModule,
     UsersModule,
     RestaurantsModule,
+    BranchesModule,
+    TablesModule,
+    EmployeesModule,
+    ReservationsModule,
   ],
 })
 export class AppModule {}

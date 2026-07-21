@@ -7,6 +7,7 @@ import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import {
   CollectingEventPublisher,
   FixedClock,
+  ImmediateUnitOfWork,
   SequentialIdGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
@@ -42,6 +43,7 @@ describe('CreateRestaurantUseCase', () => {
       new FixedClock(fixedNow),
       new SequentialIdGenerator([restaurantId, settingsId, eventId]),
       eventPublisher,
+      new ImmediateUnitOfWork(),
     );
     return { useCase, restaurantRepository, restaurantSettingsRepository, eventPublisher };
   }
@@ -85,6 +87,7 @@ describe('CreateRestaurantUseCase', () => {
     expect(settings?.maxGuestsPerReservation).toBe(20);
     expect(settings?.cancellationWindowMinutes).toBe(60);
     expect(settings?.pendingReservationTimeoutMinutes).toBe(15);
+    expect(settings?.defaultReservationDurationMinutes).toBe(90);
     expect(settings?.autoApproval).toBe(false);
     expect(settings?.timezone).toBe('UTC');
     expect(settings?.defaultCurrency).toBeNull();
@@ -121,6 +124,7 @@ describe('CreateRestaurantUseCase', () => {
       new FixedClock(fixedNow),
       new SequentialIdGenerator(['44444444-4444-4444-8444-444444444444']),
       new CollectingEventPublisher(),
+      new ImmediateUnitOfWork(),
     );
 
     await expect(

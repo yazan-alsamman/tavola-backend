@@ -31,6 +31,7 @@ Configuration differences between environments are expressed exclusively through
 * `PORT`
 * `API_VERSION` (e.g., `v1`, per API_GUIDELINES.md)
 * `CORS_ALLOWED_ORIGINS`
+* `NGINX_HOST_PORT` (optional, default `80`) — consumed by the `nginx` container's own port mapping in `docker-compose.yml`, not the NestJS app; only `docker/.env.test` sets it (to `10080`), so the strict-verification stack's reverse proxy doesn't collide with the dev stack's, which keeps the default `80`
 
 ## Database
 

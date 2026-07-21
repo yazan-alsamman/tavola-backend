@@ -2,7 +2,7 @@
 
 # Enterprise Restaurant Reservation Platform
 
-Current Status: **Phase 4.3 — Restaurant Module: Working Hours COMPLETE, LIVE-VERIFIED** — Phase 3 — User Module remains fully verified with zero known defects (see its own reports below). Phase 4's first three sub-scopes are now complete: Restaurant CRUD (`POST`/`GET`/`PATCH`/`DELETE /api/v1/restaurants`, `GET /api/v1/restaurants/:id`, see "Phase 4.1" report), Restaurant Settings (`GET`/`PATCH /api/v1/restaurants/:id/settings`, a new `RestaurantSettings` child entity auto-created with defaults alongside every new restaurant, see "Phase 4.2" report), and Working Hours (`GET`/`PATCH /api/v1/restaurants/:id/working-hours`, a new 1:many `WorkingHours` child entity, Restaurant-level default only — branch-level override explicitly deferred to Phase 5, see "Phase 4.3" report), all implemented and live-verified end-to-end (unit, non-strict and strict integration/E2E against two genuinely separate stacks, Docker health, and a manual HTTP flow through Nginx). Restaurant Settings and Working Hours each required one additive Prisma migration and reuse the exact same `OrganizationMemberGuard`/`@RequireOrgRole(Owner, Admin)` authorization already built in Phase 4.1. The remaining Phase 4 sub-scopes (Gallery, Taxonomy) remain `⏳ Pending` and unapproved - do not begin without explicit approval.
+Current Status: **Phase 5 — Branch Module COMPLETE** — Phase 3 — User Module and Phase 4 — Restaurant Module (all five sub-scopes) remain fully verified with zero known defects (see their own reports below). Phase 5 — Branch Module is now fully complete: Branch CRUD (Phase 5.1), Working Schedule (Phase 5.2), and Geo Coordinates (Phase 5.3 — `latitude`/`longitude` now exposed via `POST`/`PATCH /api/v1/restaurants/:restaurantId/branches[/:branchId]`, both-or-neither paired, range-validated, with a new composite `(latitude, longitude)` B-tree index per ADR-018/DATABASE_SCHEMA.md's own note - no new migration for the columns themselves, they existed unused since Phase 2.1) are all implemented and live-verified end-to-end. The actual bounding-box "nearby restaurant search" query is explicitly out of this sub-phase's scope - ADR-018 attributes that consuming logic to a separate, unscheduled Discovery module (Phase 15.5). Neither `Branch` nor `BranchWorkingHours` carries a direct `organizationId` column - every use case resolves the parent Restaurant (and, for working hours, the parent Branch too) via the already-tenant-scoped repositories first. **Address is reclassified as complete** (documentation-only reconciliation, no new implementation): `PRODUCT_REQUIREMENTS.md` FR-04.2 requires only address/city/district/country/timezone/currency/geo coordinates, all of which Phase 5.1 and Phase 5.3 already fully deliver - `DOMAIN_MODEL.md`'s `Address` Value Object is a generic, aggregate-unbound illustrative example, not a requirement bound to `Branch`, and does not require `postalCode`, a formal `Address` Value Object, or any aggregate refactoring. **Maps is frozen by architectural decision**: it is not a backend responsibility - backend responsibility ends at exposing accurate geographic coordinates (already delivered, Phase 5.3); rendering maps, provider selection, URL generation, and navigation are client responsibilities. No Maps module/entity/Value Object/provider port/adapter/schema/API change was made or is required. A future backend-specific map capability (server-side geocoding, provider integration, signed URLs, etc.) would require its own Product Requirement and ADR. **Phase 5 — Branch Module is fully verified with zero known defects and is now COMPLETE.**
 
 This document is the **single authoritative phase list** for the project. PROJECT_ROADMAP.md and README.md reference the phase numbers defined here rather than maintaining their own numbering (see ADR context in DECISIONS.md and the Phase 0 architecture review).
 
@@ -290,60 +290,332 @@ Status: ✅ Fully Verified — User Profile, Avatar Upload, Favorites, and Prefe
 
 # Phase 4 — Restaurant Module
 
-Status: 🟡 In Progress — Restaurant CRUD, Restaurant Settings, and Working Hours sub-scopes complete and live-verified (see "Phase 4.1 — Restaurant Module: Restaurant CRUD", "Phase 4.2 — Restaurant Module: Restaurant Settings", and "Phase 4.3 — Restaurant Module: Working Hours" reports below); Gallery and Taxonomy remain `⏳ Pending` and unapproved
+Status: ✅ COMPLETE — all five Restaurant Module sub-scopes implemented and live-verified (see "Phase 4.1 — Restaurant Module: Restaurant CRUD", "Phase 4.2 — Restaurant Module: Restaurant Settings", "Phase 4.3 — Restaurant Module: Working Hours", "Phase 4.4 — Restaurant Module: Gallery", and "Phase 4.5 — Restaurant Module: Cuisine & Occasion Taxonomy Assignment" reports below)
 
 - [x] Restaurant CRUD — `POST`/`GET`/`PATCH`/`DELETE /api/v1/restaurants`, `GET /api/v1/restaurants/:id` (see "Phase 4.1 — Restaurant Module: Restaurant CRUD" report below)
 - [x] Restaurant Settings — `GET`/`PATCH /api/v1/restaurants/:id/settings` (see "Phase 4.2 — Restaurant Module: Restaurant Settings" report below)
 - [x] Working Hours (Restaurant-level default only; branch-level override deferred to Phase 5 — see "Phase 4.3 — Restaurant Module: Working Hours" report below)
-- [ ] Gallery
-- [ ] Cuisine & Occasion Taxonomy Assignment (ADR-018)
+- [x] Gallery (Restaurant-level only, max 20 images, reuses the Files module completely — see "Phase 4.4 — Restaurant Module: Gallery" report below)
+- [x] Cuisine & Occasion Taxonomy Assignment (ADR-018) (see "Phase 4.5 — Restaurant Module: Cuisine & Occasion Taxonomy Assignment" report below)
 
 ---
 
 # Phase 5 — Branch Module
 
-Status: ⏳ Pending
+Status: ✅ **COMPLETE** — Branch CRUD, Working Schedule, Geo Coordinates, and Address all complete and live-verified; Maps frozen by architectural decision (not a backend responsibility)
 
-- [ ] Branch CRUD
-- [ ] Maps
-- [ ] Address
-- [ ] Working Schedule
-- [ ] Geo Coordinates for Nearby Search (ADR-018)
+- [x] Branch CRUD — `POST`/`GET`/`PATCH`/`DELETE /api/v1/restaurants/:restaurantId/branches[/:branchId]` (see "Phase 5.1 — Branch Module: Branch CRUD" report below)
+- [x] Maps — **Frozen by architectural decision (2026-07-16), not a backend implementation task.** Maps is not a backend feature: backend responsibility ends at exposing accurate `latitude`/`longitude` (already delivered, Phase 5.3). Rendering maps, selecting a map provider, generating map URLs, launching navigation apps, and visual map presentation are client responsibilities. No Maps module, entity, Value Object, provider port, infrastructure adapter, schema change, or API change is required. If a future product requirement introduces genuinely backend-specific map functionality (server-side geocoding, provider integration, static map generation, signed URLs), it must be proposed as a new feature with its own Product Requirement and ADR - not resumed under this checklist item. No ADR was required for this decision itself - see the closure note immediately below.
+- [x] Address — reclassified complete (documentation-only reconciliation, 2026-07-16, no new implementation): `PRODUCT_REQUIREMENTS.md` FR-04.2 requires only address/city/district/country/timezone/currency/geo coordinates, all already fully delivered across Phase 5.1 (address/city/district/countryCode/timezone/currency) and Phase 5.3 (latitude/longitude). `DOMAIN_MODEL.md`'s `Address` Value Object is a generic, aggregate-unbound illustrative example - it is NOT bound to the Branch aggregate and must not be interpreted as requiring `postalCode`, a formal `Address` Value Object, or aggregate refactoring.
+- [x] Working Schedule — `GET`/`PATCH /api/v1/restaurants/:restaurantId/branches/:branchId/working-hours` (branch-level override, a separate `BranchWorkingHours` child entity - see "Phase 5.2 — Branch Module: Working Schedule" report below)
+- [x] Geo Coordinates for Nearby Search (ADR-018) — `latitude`/`longitude` exposed via Branch CRUD's own `POST`/`PATCH`, composite index added; the actual nearby-search query is out of scope, deferred to the Discovery module (Phase 15.5) per ADR-018 itself (see "Phase 5.3 — Branch Module: Geo Coordinates for Nearby Search" report below)
+
+## Phase 5 closure note — Maps frozen (documentation only, no implementation)
+
+Reviewed `docs/CHANGE_POLICY.md`'s "When a New ADR Is Required" list against this decision: it does not alter a locked decision, does not introduce a new external dependency (it explicitly declines to), does not change tenant isolation, authentication/authorization, data retention, or concurrency guarantees, is not a breaking API change, does not adopt a Future-Decisions technology, does not weaken a security control, and does not split a microservice. **No ADR is required.** This closure is recorded here and in `README.md`/`docs/PROJECT_ROADMAP.md` only. If a future phase introduces genuine backend map functionality (server-side geocoding, provider integration, signed URLs), that future work would independently trigger ADR criterion 2 ("introduces a new external dependency") and must get its own ADR at that time - this closure note does not pre-approve that future work.
+
+**PHASE 5 COMPLETE**
 
 ---
 
 # Phase 6 — Table Module
 
-Status: ⏳ Pending
+Status: 🔶 In Progress — Phase 6.1 (Floor Plan & Table CRUD), Phase 6.2 (Move Table), and Status Management all complete; Phase 6.3 (Live Docker Verification) additionally re-confirmed Status Management against freshly rebuilt, freshly restarted containers on both stacks (2026-07-19 - see "Phase 6.3 — Live Docker Verification" report below); Merge Tables and Split Tables are deferred until the Reservation Engine architecture has been approved and frozen (2026-07-17 architecture decision - see "Phase 6 — Merge/Split Tables Deferral" note below).
 
-- [ ] Create Table
-- [ ] Update Table
-- [ ] Delete Table
-- [ ] Move Table
-- [ ] Merge Tables
-- [ ] Split Tables
-- [ ] Floor Plan
-- [ ] Status Management
+- [x] Create Table — `POST /api/v1/restaurants/:restaurantId/branches/:branchId/tables` (see "Phase 6.1 — Table Module: Floor Plan & Table CRUD" report below)
+- [x] Update Table — `PATCH /api/v1/tables/:tableId` (full-replace profile fields; never `floorPlanId`/`status`)
+- [x] Delete Table — `DELETE /api/v1/tables/:tableId` (soft delete)
+- [x] Move Table — `POST /api/v1/tables/:tableId/move` (Domain Action; changes only `floorPlanId`, within the same Branch; see "Phase 6.2 — Table Module: Move Table" report below)
+- [ ] Merge Tables — **deferred until the Reservation Engine architecture has been approved and frozen** (not cancelled; intentionally removed from the active implementation sequence; must not be implemented before that milestone - see decision note below)
+- [ ] Split Tables — **deferred until the Reservation Engine architecture has been approved and frozen** (not cancelled; intentionally removed from the active implementation sequence; must not be implemented before that milestone - see decision note below)
+- [x] Floor Plan — Create/List/Activate (`POST`/`GET /api/v1/restaurants/:restaurantId/branches/:branchId/floor-plans`, `PATCH .../floor-plans/:floorPlanId/activate`)
+- [x] Status Management — `POST /tables/:tableId/status` (Domain Action; `Available`/`Occupied`/`Cleaning`/`Disabled`; restrictive state machine, `Available` ↔ each of the other three only; see "Phase 6 — Status Management" report below)
+
+## Phase 6 — Merge/Split Tables Deferral (approved architecture decision, 2026-07-17)
+
+**Decision: Merge Tables and Split Tables are deferred until the Reservation Engine architecture has been approved and frozen.** They are **not cancelled** - both remain on the Phase 6 checklist above, unchecked, and are intentionally removed from the active implementation sequence until that milestone.
+
+Rationale (full dependency analysis on record in this session's architecture review):
+
+1. Their documented purpose - `DOMAIN_MODEL.md`'s "a single reservable unit with combined capacity" - has no meaning independent of the Reservation Aggregate, which does not yet exist. Unlike prior deferred restrictions (`Branch.softDelete()`'s reservation check, Move Table's reservation check), Merge/Split have no standalone value once that dependency is set aside - there is nothing left to build that isn't dormant state.
+2. Implementing `mergeGroupId` assignment now would produce persisted state with no functional consumer anywhere in the system - dormant, unverifiable, and risking the appearance of a broken feature.
+3. Merge/Split require extending the Phase 6.1-frozen `TableStatus` enum (`Available` only) with a `Merged` value - an extension that belongs together with the separate, not-yet-reviewed Status Management checklist item, not fragmented into Merge/Split alone.
+4. Any conflict-checking logic built now without a real Reservation Aggregate would have to be replaced, not extended, once the Reservation Engine architecture exists - guaranteed rework.
+5. No consumer exists today for a `TableMergedEvent`/`TableSplitEvent` beyond the same audit-log mechanism every other Table event already uses.
+
+**Must not be implemented before the Reservation Engine architecture is approved and frozen.** Revisit only at that point, with its own dedicated architecture decision session (mirroring how `TableStatus`/`TableShape` and Move Table were each resolved).
+
+## Phase 6.1 — Pre-implementation architecture decisions (approved, frozen)
+
+Scoped to Floor Plan + Table CRUD (Create/Update/Delete) - Move/Merge/Split/Status Management beyond soft-delete remain later Phase 6.x sub-phases, not part of 6.1. The following six decisions are final and must not be re-debated during implementation:
+
+1. **Dedicated `TablesModule`** owns `Table` and `FloorPlan` - their use cases, controllers, repositories, DTOs, and application layer all live there, not inside `BranchesModule`. It reuses `RestaurantRepository`/`BranchRepository` (via the same cross-module export pattern `BranchesModule` already uses for `RestaurantRepository`) for tenant validation only. Aggregate ownership (Branch owns Table/FloorPlan per DOMAIN_MODEL.md) does not require module ownership - this mirrors the existing pattern where Gallery reuses Files' repositories without Files owning Gallery's business logic.
+2. **`Table.floorPlanId` is required, never nullable.** Every Table belongs to exactly one FloorPlan; a Branch with a single physical floor still gets one `FloorPlan` row (e.g., "Main Floor"). See `DATABASE_SCHEMA.md`'s "Restaurant Tables"/"Floor Plans" and `DOMAIN_MODEL.md`'s Branch Aggregate Notes.
+3. **`DeleteBranchUseCase` must cascade to Tables and FloorPlans**, not only Tables as previously documented - both are Branch Aggregate child entities, so this is aggregate consistency, not new scope. In scope for Phase 6.1 (not deferred), since Table/FloorPlan won't exist to cascade to until this sub-phase ships them.
+4. **A read capability for "all Tables belonging to one FloorPlan" is architecturally required** (FloorPlan owns the table layout) - `TableRepository` must support a `floorPlanId`-scoped lookup. Exact endpoint shape is an implementation-time decision, not fixed by this note.
+5. **FloorPlan activation is an Aggregate Invariant, not an optional validation** - four rules, all mandatory:
+   - The first FloorPlan created for a Branch becomes `isActive = true` automatically; no manual activation step exists.
+   - Activating another FloorPlan atomically deactivates the previously active one in the same operation - at most one active FloorPlan per Branch at all times (already backed by `DATABASE_SCHEMA.md`'s partial unique index on `branchId` WHERE `isActive`).
+   - A FloorPlan cannot be deleted while any (non-soft-deleted) Table still references it via `floorPlanId` - the operation must be rejected, not silently reassign or orphan those Tables.
+   - The last remaining FloorPlan of a Branch cannot be deleted - every Branch must always own at least one FloorPlan (this is also why Rule 1 exists: a Branch's first FloorPlan is never in an ambiguous unset-active state).
+6. **The Branch soft-delete cascade (Tables + FloorPlans) must execute inside one database transaction** - partial completion is forbidden. The system must never reach a state where the Branch is deleted but its Tables and/or FloorPlans are not, or any other partially-applied combination. Uses the same `PrismaContext.runInTransaction` pattern already established by `PrismaWorkingHoursRepository.replaceAllForRestaurant`/`PrismaBranchWorkingHoursRepository.replaceAllForBranch` (delete-then-recreate inside one transaction) - not a new transactional mechanism.
+7. **`Table.status`/`Table.shape` value sets (resolved 2026-07-17, documentation gap closure)** - `DATABASE_SCHEMA.md`/`DOMAIN_MODEL.md` documented both fields without ever defining their allowed values, unlike every other enum-like field in those documents. Resolved as two minimal, explicit architecture decisions rather than invented at implementation time:
+   - **`TableStatus`** defines exactly one value, `Available`. `Create Table` always produces it; no Phase 6.1 use case or endpoint transitions status. `Occupied`/`Reserved`/`Cleaning`/`Disabled`/etc. remain undefined, deferred to the future Status Management sub-phase, which must extend the enum through its own explicit architectural decision.
+   - **`TableShape`** is presentation metadata only (floor-plan rendering; no bearing on reservation rules, capacity, or merge/split) and defines exactly two values, `Rectangle` and `Round`. A square table is represented as `Rectangle` with `width == height` - there is no separate `Square` value. `Oval`/`Triangle`/`Hexagon`/`Custom`/etc. are not defined; any extension requires its own future explicit architectural decision.
+
+No further architectural ambiguity remains for Phase 6.1 as of this note; see the corresponding Phase 6.1 Architecture Freeze Report for the complete picture.
+
+## Phase 6.2 — Move Table: Pre-implementation architecture decisions (approved, frozen)
+
+`DOMAIN_MODEL.md`/`PRODUCT_REQUIREMENTS.md`/`EVENTS.md` referenced "Move Table" by name only, with zero functional specification - resolved via a dedicated architecture proposal and approval session (2026-07-17), summarized here. The following decisions are final and must not be re-debated during implementation:
+
+1. **Move Table is a dedicated Domain Action, not a generic resource update.** It reassigns an existing Table's `floorPlanId` to a different FloorPlan within the same Branch. It changes **only** `floorPlanId` - `branchId`, `tableNumber`, `capacity`, `shape`, position/rotation/dimensions, `status`, and `mergeGroupId` are all untouched by this operation.
+2. **`Update Table` (`PATCH /tables/:tableId`) remains responsible only for a Table's own attributes and must never change `floorPlanId`.** Move Table is the only operation that does - the two use cases stay fully separate, each with its own single responsibility.
+3. **API endpoint: `POST /tables/{tableId}/move`, not `PATCH`.** Move represents a business command rather than a partial resource update (API_GUIDELINES.md's Domain Actions convention, already established by `POST /reservations/:id/reschedule`), so it is deliberately kept off the full-replace `PATCH /tables/:tableId` contract.
+4. **Scope:** cross-branch and cross-restaurant movement are not allowed (a FloorPlan belongs to exactly one Branch; moving across that boundary would mean re-parenting the Table to a different Branch aggregate entirely, which nothing documents). The target FloorPlan need not be the branch's currently active one (`isActive` governs rendering precedence, not assignment eligibility - consistent with `Create Table`'s own existing behavior), but must not be soft-deleted (rejected exactly like `Create Table`'s existing `FloorPlanNotFoundException` case).
+5. **Reservation-conflict checks are deferred, unconditional operation for now** - the Reservation aggregate does not exist until Phase 7, matching `Branch.softDelete()`'s own established "deferred, not silently dropped" precedent.
+6. **No FloorPlan-bounds or collision-detection validation exists or is planned** - `FloorPlan` carries no bounds/dimensions columns at all (nothing to validate against), and no document anywhere specifies collision detection between Tables; overlapping positions are a client-rendering concern, not a backend invariant.
+7. **No `TableMovedEvent` domain event class exists.** Move Table produces a direct audit-log entry only (`table.moved`), following the same direct-audit-write pattern already used when no dedicated event class is warranted (e.g. `restaurant.settings.updated`) - there are currently no consumers that require one. `EVENTS.md`'s "Table Events" list no longer includes `TableMoved`; reintroducing it requires its own future explicit architectural decision, not silent reinstatement.
+8. **Authorization is reused unchanged** - `JwtAuthGuard` → `SessionVersionGuard` → `OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)`, identical to every other Table/FloorPlan mutation route.
+
+No further architectural ambiguity remains for Phase 6.2 as of this note. Implementation followed, documentation-first, per this project's established Phase 6.1 precedent - see the report immediately below.
+
+## Phase 6.2 — Table Module: Move Table
+
+Implemented exactly the eight frozen decisions above, nothing else. `MoveTableUseCase` (flat route, tenant chain Table → Branch → Restaurant, identical to `GetTableUseCase`/`UpdateTableUseCase`/`DeleteTableUseCase`) resolves the target FloorPlan via the existing `FloorPlanRepository.findByIdAndBranchId(targetFloorPlanId, table.branchId)` - the same compound lookup already used by `CreateTableUseCase`, so unknown/cross-branch/soft-deleted targets all collapse to `FloorPlanNotFoundException` (404) with no extra code path. A new `Table.moveToFloorPlan(floorPlanId, at)` domain method changes only `floorPlanId`+`updatedAt`, mirroring `softDelete()`'s narrow-mutation shape. No new repository method, no schema/migration change - `TableRepository.save()` already persists any field change. Produces a direct `table.moved` audit-log entry only (no domain event class, per decision #7); `AuditingEventPublisher` was not touched (this write bypasses domain events entirely, unlike `TableCreated`/`Updated`/`Deleted`).
+
+**Files created:** `application/dto/move-table.command.ts`, `application/use-cases/move-table.use-case.ts` (+ `.spec.ts`), `presentation/dto/move-table.request.dto.ts`.
+
+**Files modified:** `domain/entities/table.entity.ts` (new `moveToFloorPlan` method; updated stale doc comments referencing "Move Table out of scope"), `presentation/controllers/table.controller.ts` (new `POST :tableId/move` route), `tables.module.ts` (provider registration), `test/tables/tables.e2e-spec.ts` (2 new tests), `test/tables/prisma-table.integration-spec.ts` (1 new test).
+
+**API:** `POST /api/v1/tables/{tableId}/move`, body `{ targetFloorPlanId }`, response `TableResponseDto` (200).
+
+**Testing:** 6 new unit tests (happy path; unknown/cross-branch/soft-deleted target rejections; audit-only side effect, no event published), 1 new integration test (floorPlanId round-trip via `save()`), 2 new e2e tests (full HTTP flow incl. all three rejection cases and audit-log verification; cross-organization IDOR).
+
+**Verification results:** `tsc --noEmit`: 0 errors. `eslint`: 0 errors after `--fix`. `nest build`: clean. `prisma format`/`validate`/`generate`/`migrate status`: clean, no schema drift (no migration was needed or created). Unit: **667/667** (full repo, +6 from this phase). Integration (non-strict): **149/149**. Integration (strict): **149/149**. E2E (strict): **238/238** across 21 suites (+2 from this phase); non-strict E2E confirmed via the same `tables.e2e-spec.ts` run. Docker: image rebuilt, only the backend container recreated (Postgres/Redis/MinIO/Nginx untouched), reports healthy. Swagger: `GET /api/v1/docs-json` includes `POST /tables/{tableId}/move`. Health/Metrics: both green. `pnpm audit`: no known vulnerabilities.
+
+**Manual HTTP verification:** live `curl` flow against the rebuilt container - successful move (Main Floor → Patio, same branch, only `floorPlanId` changed) → unknown-floor-plan attempt (404) → cross-branch floor-plan attempt (404) → soft-deleted-floor-plan attempt (404, floor plan soft-deleted via direct `psql` between requests) → confirmed via `psql` the table's `floor_plan_id` was untouched by all three rejected attempts (still Patio) → confirmed a `table.moved` audit-log row exists with the correct `actor_id` → registered a second organization's owner and confirmed `POST /tables/:id/move` from that token returns 404 with the table's `floor_plan_id` unchanged (cross-org IDOR). All temporary scratch data cleaned up afterward.
+
+**Bugs found:** none. **Bugs fixed:** none - implementation matched the frozen architecture decisions exactly on the first pass; only routine Prettier formatting was auto-fixed via `eslint --fix` (not a defect).
+
+**Remaining technical debt:** unchanged from Phase 6.1, plus: Merge Tables and Split Tables remain fully unimplemented (Status Management was implemented in a later sub-phase - see its own report below); Move Table's reservation-conflict check remains deferred to Phase 7, per this phase's own explicit, documented decision (not an oversight).
+
+**Production readiness:** Move Table's declared scope is production-ready - tested at every tier (strict and non-strict), tenant-isolated and IDOR-hardened identically to every other Table route, audited, Swagger-documented, and introduces zero schema or architectural debt.
+
+**PHASE 6.2 COMPLETE, LIVE-VERIFIED.**
+
+## Phase 6 — Status Management: Pre-implementation architecture decisions (approved, frozen)
+
+`DOMAIN_MODEL.md`/`PRODUCT_REQUIREMENTS.md`/`EVENTS.md` referenced Status Management ("Disable Table", "Change Table Status") without a defined enum, state machine, or API shape - resolved via a dedicated architecture proposal and approval session (2026-07-17), summarized here. The following decisions are final and must not be re-debated during implementation:
+
+1. **`TableStatus` for Phase 6 consists of exactly `Available`, `Occupied`, `Cleaning`, `Disabled`.** No additional values may be introduced without their own explicit architectural decision.
+2. **`Reserved` is excluded from Phase 6.** It is exclusively a Reservation Engine concept and will be introduced only after the Reservation Engine architecture has been approved and frozen, through its own explicit architectural decision - not by silent migration, and not bundled into this one.
+3. **Status Management exposes exactly one Domain Action: `POST /tables/{tableId}/status`**, body `{ "status": "<TableStatus>" }`. There are no separate `POST /tables/{tableId}/disable` or `POST /tables/{tableId}/enable` endpoints - disabling and enabling are state transitions within the Table lifecycle, not independent business capabilities, so one dedicated action owns every transition.
+4. **`Update Table` (`PATCH /tables/:tableId`) continues to never modify `status`.** This is unchanged from Phase 6.1/6.2 and remains the case here - `POST /tables/{tableId}/status` is the only operation that transitions status.
+5. **The state machine is explicit and restrictive - no implicit transitions.** Authoritative allowed transitions: `Available → Occupied`, `Occupied → Available`, `Available → Cleaning`, `Cleaning → Available`, `Available → Disabled`, `Disabled → Available`. Every other combination is forbidden, including but not limited to `Cleaning → Occupied`, `Cleaning → Disabled`, `Occupied → Cleaning`, `Occupied → Disabled`, `Disabled → Occupied`, `Disabled → Cleaning`. Every invalid transition must be rejected with a business validation error.
+6. **No `TablePolicy` is introduced.** The existing `OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)` stack is sufficient, matching every other Table Module route through Phase 6.2. `AUTHORIZATION_ARCHITECTURE.md`'s documented-but-never-built `TablePolicy` remains a future, holistic decision, not introduced piecemeal here.
+7. **No domain events.** `TableDisabled`/`TableEnabled`/`TableStatusChanged` are not implemented as domain event classes - status transitions produce a `table.status_changed` audit-log entry only, following the same direct-audit-write pattern as `table.moved`. If a future phase needs a dedicated event, it requires its own explicit architectural decision.
+
+No further architectural ambiguity remains for Status Management as of this note. Implementation has not started - documentation was synchronized first, per this project's established Phase 6.1/6.2 precedent.
+
+## Phase 6 — Status Management
+
+Implemented exactly the seven frozen decisions above, nothing else. `ChangeTableStatusUseCase` (flat route, tenant chain Table → Branch → Restaurant, identical to `GetTableUseCase`/`UpdateTableUseCase`/`DeleteTableUseCase`/`MoveTableUseCase`) delegates the state-machine invariant to a new `Table.transitionStatus(target, at)` domain method - the only method that changes `status`, mirroring `moveToFloorPlan`'s narrow-mutation shape exactly. A transition is valid if and only if the current or target status is `Available` and the two differ; every other combination (including a same-status "transition") throws `InvalidTableStatusTransitionException` (`VALIDATION_ERROR`, 400) - the same `InvalidXException` + `VALIDATION_ERROR` convention already used for every other domain-rule violation in this codebase. `TableStatus` was extended from `Available`-only to `Available`/`Occupied`/`Cleaning`/`Disabled` via one additive migration (`ALTER TYPE ... ADD VALUE`, no other schema change). Produces a direct `table.status_changed` audit-log entry only (no domain event class); `AuditingEventPublisher` was not touched.
+
+**Files created:** `application/dto/change-table-status.command.ts`, `application/use-cases/change-table-status.use-case.ts` (+ `.spec.ts`), `presentation/dto/change-table-status.request.dto.ts`.
+
+**Files modified:** `domain/enums/table.enums.ts` (three new `TableStatus` values), `domain/entities/table.entity.ts` (new `transitionStatus` method + state-machine validator function; stale doc comments updated), `domain/exceptions/invalid-table-status-transition.exception.ts` (new), `presentation/controllers/table.controller.ts` (new `POST :tableId/status` route; stale Update-Table description fixed), `presentation/dto/table.response.dto.ts` (stale `status` Swagger description fixed), `tables.module.ts` (provider registration), `prisma/schema.prisma` (`TableStatus` enum extension), one new migration, `test/tables/tables.e2e-spec.ts` (+7 tests), `test/tables/prisma-table.integration-spec.ts` (+1 test).
+
+**Database impact:** migration `20260717190000_status_management_extend_table_status` - `ALTER TYPE "TableStatus" ADD VALUE 'Occupied'/'Cleaning'/'Disabled'` only. No other column, index, or table change. Applied to both the dev (`localhost:5433`) and isolated strict-verification (`localhost:15433`) databases before running any tests.
+
+**API:** `POST /api/v1/tables/{tableId}/status`, body `{ status }`, response `TableResponseDto` (200). No `disable`/`enable` endpoints exist.
+
+**State machine implementation:** enforced entirely inside `Table.transitionStatus` (domain layer), not duplicated in the use case or controller - `Available ↔ Occupied`, `Available ↔ Cleaning`, `Available ↔ Disabled` only; every other combination, including same-status, rejected.
+
+**Validation:** `status` must be a valid `TableStatus` enum member (`@IsEnum`) - `Reserved`/`Merged` are rejected as invalid enum values (they aren't defined on the enum at all). The transition itself is validated by the domain entity as above.
+
+**Authorization:** unchanged - `JwtAuthGuard` → `SessionVersionGuard` → `OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)`. No `TablePolicy` introduced.
+
+**Testing:** 13 new unit tests (three happy-path transitions, return-to-Available, all 6 forbidden direct combinations via `it.each`, same-status rejection, unknown-table 404, audit-only assertion), 1 new integration test (status persists via existing `save()`), 7 new e2e tests (full transition cycle with audit-log check; forbidden-transition rejection with table left untouched; `Reserved` rejected as an invalid enum value; `PATCH /tables/:tableId` confirmed to never change status - including proof that the global `whitelist`/`forbidNonWhitelisted` `ValidationPipe` rejects an extraneous `status` field outright rather than silently ignoring it; cross-organization IDOR).
+
+**Verification results:** `tsc --noEmit`: 0 errors. `eslint`: 0 errors after `--fix`. `nest build`: clean. `prisma format`/`validate`/`generate`/`migrate status`: clean, migration applied to both databases. Unit: **680/680** (full repo, +13). Integration (non-strict): **150/150**. Integration (strict): **150/150**. E2E (strict): **243/243** across 21 suites (+7, after fixing one incorrect test expectation - see Bugs found). Docker: image rebuilt, only the backend container recreated, reports healthy. Swagger: `POST /tables/{tableId}/status` present with the documented enum/description. Health/Metrics: both green. `pnpm audit`: no known vulnerabilities.
+
+**Bugs found:** one test-expectation bug (not a production defect) - a e2e test assumed an unrecognized `status` field sent to `PATCH /tables/:tableId` would be silently ignored (expecting 200); the global `ValidationPipe`'s `whitelist: true, forbidNonWhitelisted: true` configuration actually rejects it outright (400, `VALIDATION_ERROR`) - a stronger guarantee than originally assumed. **Fixed** by correcting the test to assert the 400 rejection and separately verify a legitimate PATCH (no `status` field) leaves `status` untouched.
+
+**Remaining technical debt:** unchanged from Phase 6.1/6.2, plus: `Reserved` remains excluded pending the Reservation Engine architecture freeze; `TablePolicy` remains a documented-but-unbuilt component, deferred as a future holistic decision; Merge Tables/Split Tables remain deferred per the separate ADR.
+
+**Production readiness:** Status Management's declared scope is production-ready - tested at every tier (strict and non-strict), tenant-isolated and IDOR-hardened identically to every other Table route, audited, Swagger-documented, and required only one additive, non-destructive migration.
+
+**PHASE 6 STATUS MANAGEMENT COMPLETE, LIVE-VERIFIED.**
+
+## Phase 6.3 — Live Docker Verification
+
+No new implementation, architecture, or business logic - this sub-phase closes out the one item Phase 6's own verification pass could not complete at the time: manual HTTP verification against a running Docker container serving the *current* source. At that point `tavla-backend-1`/`tavla-strict-backend-1` were running images built 2026-07-17, before the Status Management endpoint existed in source, and a rebuild attempt failed due to a transient loss of registry access from inside the build context. That access has since been restored.
+
+**Docker rebuild:** both stacks rebuilt from current source via the project's existing compose workflow (`docker compose -p tavla ... build backend`, `docker compose -p tavla-strict ... build backend`). Confirmed **not** stale by image ID: `tavla-backend` → `b5c9cb303c9f` (previously `43df7d0e551f`), `tavla-strict-backend` → `9d90d37009a0` (previously `6247e2917dea`) - both newly built, both containers recreated (`--force-recreate`), and `docker inspect <container> --format '{{.Image}}'` confirmed each running container's image matches the freshly built one exactly.
+
+**Container health:** all 11 containers across both stacks reported healthy after recreation - `tavla-backend-1`/`tavla-strict-backend-1` (healthy), `tavla-postgres-1`/`tavla-strict-postgres-1` (healthy), `tavla-redis-1`/`tavla-strict-redis-1` (healthy), `tavla-minio-1`/`tavla-strict-minio-1` (healthy), `tavla-nginx-1`/`tavla-strict-nginx-1` (up, proxying), `minio-init` one-shot jobs exited 0 as designed.
+
+**Swagger:** `GET /api/v1/docs-json` against the live, rebuilt `tavla-backend-1` (via `tavla-nginx-1`) now lists `POST /api/v1/tables/{tableId}/status`; confirmed identically against the strict stack directly on `:13000`.
+
+**Manual HTTP verification (live Docker, not Jest):** registered a real owner (`intent: owner`, email-verified via direct `psql` update, mirroring the e2e helper), logged in, created a restaurant, branch, floor plan, and table via HTTP. Against the live table: `Available → Occupied → Available` (200/200), `Available → Cleaning → Available` (200/200), `Available → Disabled → Available` (200/200) - all six confirmed by the `status` field in each response body. Forbidden transitions confirmed rejected (400, `VALIDATION_ERROR`): same-status `Available → Available`, direct swap `Occupied → Cleaning`, and `Available → Reserved` (rejected at the DTO's `@IsEnum` before reaching the domain layer, since `Reserved` isn't a member of `TableStatus`). `PATCH /tables/:tableId` with an extraneous `status` field returned 400 (`property status should not exist`) rather than silently accepting it; the table's status was independently confirmed unchanged. A `table.status_changed` audit row was confirmed present in `audit_logs` for each transition (correct `target_id`/`actor_id`/`organization_id`). Cross-organization IDOR: a second organization's owner calling the same endpoint against the first organization's table received 404 (not 403 - existence not leaked), and the table's status was confirmed unchanged afterward; an unauthenticated call returned 401.
+
+**Confirmation running containers match current source:** yes - both stacks' running backend containers were recreated from images built in this session from the current working tree, and both serve the Status Management endpoint identically to what the Jest e2e suites already validated against source directly.
+
+**Remaining issues:** none found. A handful of manual-verification rows (two organizations, restaurants, branches, floor plans, tables) now exist in `tavla_dev`/local dev data - harmless, not cleaned up, same category as routine local dev testing.
+
+**Production readiness:** confirmed - Status Management is now verified against live, current-source Docker containers on both stacks, in addition to the automated test coverage already in place.
+
+**PHASE 6.3 COMPLETE. LIVE VERIFIED. PRODUCTION VERIFIED. READY FOR THE NEXT PHASE.**
 
 ---
 
 # Phase 7 — Reservation Engine
 
-Status: ⏳ Pending
+Status: 🔶 In Progress — pre-implementation architecture decisions approved and frozen (2026-07-19); **Phase 7.0 (Employee Management) complete, live-verified at every test tier** (2026-07-20, see "Phase 7.0 — Employee Management" report below). **Phase 7.1 (Reservation Core) is now complete, live-verified, and production-verified** (2026-07-20, see "Phase 7.1 — Reservation Core" report below) - Search Availability, Create Reservation, and the ADR-013 concurrency mechanism (advisory lock + exclusion constraint) are implemented and tested end-to-end. **Phase 7.2 (Approval Workflow)'s architecture is now fully frozen** (2026-07-20, see "Phase 7.2 — Approval Workflow: Architecture Freeze" report below) - Approve, Reject, the auto-approval branch of Create Reservation, `Table.reserve()`/`Table.release()`, and `TableStatus.Reserved` are all fully specified with no remaining architectural blockers, but implementation itself has not started, pending its own separate implementation-plan approval.
 
-- [ ] Reservation Workflow
-- [ ] Reservation Approval
-- [ ] Reservation Rejection
-- [ ] Reservation Cancellation
-- [ ] Reservation Completion
-- [ ] Reservation Expiration
-- [ ] Phone Reservations
-- [ ] Walk-In Reservations
-- [ ] Reservation Waitlist (ADR-019)
-- [ ] Reservation Reminders (BullMQ)
-- [ ] Late Arrival & Table Ready Signals (ADR-019)
-- [ ] Conflict Detection
-- [ ] Transaction Locking
+- [x] **Phase 7.0 — Employee Management** (prerequisite) — Invite Employee, Assign Role, Assign Employee to Branch, Remove Employee / Remove from Branch. Required before any staff-side Reservation action can authorize via the actual `Employee` actor + `reservations:*` permission + branch scope that AUTHORIZATION_ARCHITECTURE.md already specifies, rather than reusing `OrganizationMember`. See "Phase 7.0 — Employee Management" report below.
+- [x] **Phase 7.1 — Reservation Core** (originally: Conflict Detection, Transaction Locking, part of Reservation Workflow) — Search Availability, Create Reservation, advisory lock + exclusion constraint (ADR-013). `Table.reserve()` deferred to Phase 7.2 per the approved Scope Amendment. See "Phase 7.1 — Reservation Core" report below.
+- [ ] **Phase 7.2 — Approval Workflow** (originally: Reservation Approval, Reservation Rejection) — Approve (calls `Table.reserve()`, incl. auto-rejection of overlapping Pending reservations), Reject (no Table operation - see "Phase 7.2 — Approval Workflow: Architecture Correction" note below). **Unlocks Merge/Split Tables** once shipped (see "Phase 6 — Merge/Split Tables Deferral" note).
+- [ ] **Phase 7.3 — Lifecycle** (originally: Reservation Cancellation, Completion, Expiration, remainder of Reservation Workflow) — Cancel, Reschedule (FR-06.3), Complete, No-Show, Expiration job.
+- [ ] **Phase 7.4 — Phone & Walk-In Reservations** (originally: Phone Reservations, Walk-In Reservations) — same `POST /reservations` endpoint, `source: Phone|WalkIn` + `reservationGuest` payload.
+- [ ] **Phase 7.5 — Reservation Waitlist** (ADR-019) (originally: Reservation Waitlist) — `WaitlistPromotionService`, automatic trigger on Cancelled/NoShow/Expired + manual staff trigger.
+- [ ] **Phase 7.6 — Operational Signals** (ADR-019) (originally: Reservation Reminders (BullMQ), Late Arrival & Table Ready Signals) — domain/event side only; actual notification delivery may be better sequenced alongside Phase 9 (`NotificationProvider`).
+
+## Phase 7 — Reservation Engine: Pre-implementation architecture decisions (approved, frozen, 2026-07-19)
+
+ADR-013 (Reservation Concurrency Strategy) and ADR-019 (Waitlist & Operational Signals) already freeze the concurrency mechanism, schema, and waitlist aggregate — this note resolves what those ADRs, DATABASE_SCHEMA.md, DOMAIN_MODEL.md, EVENTS.md, and AUTHORIZATION_ARCHITECTURE.md left genuinely open, following the same review-then-freeze discipline as Phase 6.1/6.2/Status Management. No new ADR was required for any of the following — items 1–5, 7–12 implement already-accepted, already-locked designs exactly as specified (CHANGE_POLICY.md's "not required" carve-out); item 6 (`Table.reserve()`/`Table.release()`) is the one item that touches a locked domain document's frozen state machine and the ADR-013 transaction boundary, and is recorded here as its own explicit decision per DOMAIN_MODEL.md's own "through its own explicit architectural decision" clause for `Reserved`, rather than as a new numbered ADR. The following decisions are final and must not be re-debated during implementation:
+
+1. **`ReservationStatus` enum (new): `Pending | Approved | Rejected | Cancelled | Completed | Expired | NoShow`** — 7 values, matching DOMAIN_MODEL.md's business rules and EVENTS.md's event list exactly. State machine: `Pending → {Approved, Rejected, Expired, Cancelled}`; `Approved → {Completed, Cancelled, NoShow}`. Every other combination is rejected with a new `InvalidReservationStatusTransitionException`, the same convention as `InvalidTableStatusTransitionException`. A completed reservation cannot return to Pending; a cancelled reservation cannot be approved (both already stated as invariants in DOMAIN_MODEL.md).
+2. **Auto-approval (`RestaurantSettings.autoApproval`):** when true, `CreateReservationUseCase` inserts the row directly as `Approved` (skipping `Pending` entirely) and calls `Table.reserve()` in the same transaction. `ReservationPending`/`ReservationCreated`-as-pending only fires on the manual-approval path - there is no redundant `Pending → Approved` transition when a reservation is born already-approved.
+3. **API surface** (flat resource, following Phase 6.1's convention): `GET /reservations/availability` (Search Availability), `POST /reservations` (Create - covers Online/Phone/WalkIn via `source`), `POST /reservations/:id/approve`, `POST /reservations/:id/reject`, `POST /reservations/:id/cancel`, `POST /reservations/:id/complete`, `POST /reservations/:id/no-show`, `POST /reservations/:id/reschedule` (already named verbatim in API_GUIDELINES.md). One dedicated Domain Action per lifecycle transition, not a single generic status endpoint like Table's - unlike `TableStatus`, each Reservation transition carries materially different side effects (approve writes `Table.reserve()`; cancel/expire call `Table.release()` only if a table was actually reserved - i.e. only for a previously-`Approved` reservation, never a `Pending` one, see the "Phase 7.2 — Approval Workflow: Architecture Correction" note below; reject and complete/no-show do not touch Table state at all), so collapsing them into one action would hide distinct business operations. There is no `PATCH /reservations/:id` - every change is a Domain Action.
+4. **Advisory lock key:** `hashtextextended` over the composite `(branchId, tableId, reservationDate, timeSlotBucket)`, computed in the Infrastructure-layer repository (`ReservationAvailabilityService` defines *what* must be locked per DOMAIN_MODEL.md; the repository actually calls `pg_advisory_xact_lock`).
+5. **Cancellation-window clock resolves against the Branch's timezone**, not the Restaurant's - consistent with Branch already owning currency/working-hours (Phase 5 precedent).
+6. **`Table.reserve(reservationId, at)` / `Table.release(at)`: new, narrow domain methods on `Table`, separate from `transitionStatus`.** `TableStatus.Reserved` is added to the enum, but `Table.transitionStatus`'s validator (frozen Phase 6.3) is untouched and continues to reject `Reserved` exactly as today - `POST /tables/:tableId/status` remains unable to set or clear `Reserved`; only the Reservation write path may. **Timing, stated explicitly to leave no ambiguity:** `Table.reserve()` is called only at Approval (manual path) or at creation time for auto-approval (per decision #2) - never at Pending creation. During the Pending window, `Table.status` remains `Available`; two overlapping Pending reservations for the same table may coexist (DOMAIN_MODEL.md's own rule), resolved only at approval time, not by `TableStatus`. Double-booking prevention during Pending is exclusively the advisory lock + exclusion constraint's job (ADR-013) - this required correcting a genuine contradiction found in `DATABASE_SCHEMA.md`'s exclusion constraint, which did not previously exclude `Pending` from its guarded `WHERE` clause and would otherwise have made the "two pending reservations may coexist" rule unreachable at the database level (fixed: `WHERE status NOT IN ('Cancelled', 'Expired', 'Rejected', 'Pending')`, documentation-bug fix, not a new architectural decision). `Table.release(at)` is called on Cancel (of an Approved reservation), Expire (only relevant to auto-approved-then-expired, if that path is ever reachable), and after Complete/NoShow if the table should return to `Available` for the next service window - exact trigger points to be finalized during Phase 7.2/7.3 implementation, not fixed further by this note. **Reject is deliberately excluded from this list - see the "Phase 7.2 — Approval Workflow: Architecture Correction" note below, which corrects this item's original text (this original decision note is left otherwise unmodified as the historical record; the correction note is authoritative on this specific point).**
+7. **Phone/walk-in:** `POST /reservations` with `source: 'Phone' | 'WalkIn'` and a `reservationGuest` payload instead of a caller-derived `userId` - same endpoint, not separate sub-routes, since `DATABASE_SCHEMA.md`'s `source` enum already unifies them on one table.
+8. **Waitlist promotion trigger (Phase 7.5):** automatic on `ReservationCancelled`/`ReservationNoShow`/`ReservationExpired` (a freed table re-checks the waitlist), plus a manual staff-triggered promotion endpoint - both call the same `WaitlistPromotionService` (ADR-019).
+9. **Expiration mechanism:** a BullMQ delayed job scheduled at creation time for `reservationDate + pendingReservationTimeout`, cancelled/rescheduled alongside reminder jobs on any status change - the same mechanism ADR-019 already assumes for reminders, not a separate periodic sweep.
+10. **Event classes vs audit-only:** `ReservationCreated`/`ReservationApproved`/`ReservationRejected`/`ReservationCancelled`/`ReservationRescheduled`/`ReservationCompleted`/`ReservationExpired`/`ReservationNoShow` become real domain event classes - unlike Move Table/Status Management's audit-only precedent (which applied specifically because those actions had no consumers), these already have named consumers in `EVENTS.md`/`DOMAIN_MODEL.md` (Analytics, Notifications, WebSocket per Phase 8/9/14). `GuestLateArrivalNotified`/`TableReadyNotified` (Phase 7.6) are likewise real event classes, since ADR-019 explicitly names `NotificationDispatcher` as a consumer.
+11. **Employee Management is a prerequisite sub-phase (Phase 7.0), inserted before Phase 7.2 (Approval).** Staff-side reservation actions (approve/reject/phone/walk-in/no-show) authorize via the real `Employee` actor + `reservations:*` permission slugs + branch scope - exactly as `AUTHORIZATION_ARCHITECTURE.md` already specifies (`ReservationPolicy.canApprove` pseudocode, `reservations:approve` slug, `BranchScopeGuard`) - not `OrganizationMember` + `RequireOrgRole` as Table/Branch/Restaurant use today. This is necessary because no Employee record can be created yet (`modules/employees/` is an empty scaffold; `prisma/seed.ts` states outright "Customer is an implicit actor (no Employee/Roles row)"), even though the `RbacPermissionResolver`/`EmployeeAccessResolverPort` chain has been fully wired at Login/Refresh since Phase 2 with zero consuming use cases until now.
+12. **Merge/Split Tables unlock condition:** resumes only once **Phase 7.2 (Approval Workflow)** ships - not merely once this decision note is approved - since `DOMAIN_MODEL.md`'s merge/split rules depend on querying a table's active confirmed/pending reservations, a capability that doesn't exist until Reservation creation and approval are both live.
+
+No further architectural ambiguity remains for Phase 7 as of this note. `DECISIONS.md` (ADR-013/ADR-019 Impact lines) and `EVENTS.md` (Reservation Events section) were updated to stay synchronized with this note; `DATABASE_SCHEMA.md`'s exclusion constraint was corrected (decision #6); `DOMAIN_MODEL.md` was not otherwise touched. Implementation begins with **Phase 7.0 — Employee Management**, presented for its own separate approval before any code is written, per this project's established precedent.
+
+## Phase 7.0 — Employee Management: Pre-implementation architecture decisions (approved, frozen, 2026-07-19)
+
+Reuses the `Employee`/`Role`/`Permission`/`RolePermission`/`EmployeeBranchAssignment` domain entities, enums, and Prisma schema already built in Phase 2 (zero new migration) - this note resolves the two open implementation-shape questions raised while reviewing the plan, plus one documented invariant surfaced in the same review. The following decisions are final and must not be re-debated during implementation:
+
+1. **Remove Employee is a soft-delete only (`deletedAt`), matching every other aggregate's ADR-010 convention.** `EmployeeStatus.Deactivated` remains available in the enum but is not set by this action - `Employee.canAuthenticate()`'s existing `isActive()` check already blocks on `deletedAt` alone, so no separate status flip is needed for Remove Employee specifically. A distinct future "Deactivate Employee" (reversible, status-only) action is not part of this sub-phase.
+2. **Authorization for all Employee-management endpoints (Invite, Update, Assign Role, Assign/Remove Branch, Remove) is `JwtAuthGuard → SessionVersionGuard → OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)` - deliberately, not an oversight**, even though the seeded `Restaurant Manager` role already carries `employees:manage` (`prisma/seed.ts`) and AUTHORIZATION_ARCHITECTURE.md §19 names `EmployeePolicy` as the eventual owner of this responsibility. Reasoning, both parts required:
+   - **Bootstrap necessity:** a brand-new Restaurant has zero Employees; only Owner/Admin (`OrganizationMember`) is guaranteed to exist at that point, so something must be able to authorize inviting the very first one.
+   - **No multi-actor-type "OR" guard composition exists yet.** Every guard chain built so far (Table/Branch/Restaurant, and this sub-phase) checks exactly one actor type. Allowing "`OrganizationMember` with OrgRole **OR** `Employee` with `employees:manage` + branch scope" on the same route would require a new composed-guard mechanism - itself a guard-behavior change under CHANGE_POLICY.md criterion #4 (mandatory new ADR), which this sub-phase deliberately does not take on.
+   - **Deferred, not cancelled:** Manager-driven `employees:manage` access is deferred to its own future, explicitly-scoped increment once multi-actor-type guard composition is designed - not silently bundled into Phase 7.0.
+3. **Remove/Deactivate Employee does not bump the linked `User.sessionVersion`.** `sessionVersion` is a single global per-`User` field (`AUTHENTICATION_ARCHITECTURE.md` §4.5) - bumping it would force-logout every unrelated session the same person holds (e.g., their own separate Organization as Owner, or a Customer session), disproportionate to a single-restaurant Employee-role change. AUTHORIZATION_ARCHITECTURE.md §17 (locked) already calibrates exactly this class of change: "Role change, grant, revoke, branch assignment change" bumps `permissionsVersion` (`Users`/`Employees`), not `sessionVersion`, and explicitly tolerates staleness "until expiry (≤15 min); refresh always re-resolves" - by design, not a gap. `RemoveEmployeeUseCase`, `AssignEmployeeRoleUseCase`, and the branch-assignment use cases call the existing `Employee.bumpPermissionsVersion(at)` method; `RefreshSessionUseCase` already re-resolves `employeeAccessResolver.resolveForUserId` on every refresh (wired since Phase 2), so a removed/deactivated Employee's stale claims evaporate at the very next refresh - the same ≤15-minute tolerated window already accepted platform-wide for every other permission change, per §17. `AUTHENTICATION_ARCHITECTURE.md` §1.8's "Admin suspends user → all sessions" trigger remains reserved for full `User`-account suspension, a materially different severity than one restaurant's Employee record ending.
+4. **`RemoveEmployeeUseCase` enforces "cannot remove the last Manager"** - a documented invariant (AUTHORIZATION_ARCHITECTURE.md §19, `EmployeePolicy` responsibilities) surfaced during this review, not previously called out in this sub-phase's plan. Enforced as a domain/use-case-layer check (count non-deleted, `Active`/`Invited` Employees with the `manager` role slug for the Restaurant; reject if the target is the last one), not a new `EmployeePolicy` class - consistent with decision #2's guard-level scoping, this is a data invariant, not an authorization rule.
+5. **First-login linking is additive to `LoginUseCase` only, not `RefreshSessionUseCase`.** Linking (`Invited` → `Active` + `userId` set) is a one-time event that belongs at the moment of authentication, not silently during a token refresh of an already-linked session.
+
+No further architectural ambiguity remains for Phase 7.0 as of this note. Implementation follows immediately below.
+
+## Phase 7.0 — Employee Management
+
+Implemented exactly the five frozen decisions above, nothing else. Reused the `Employee`/`Role`/`Permission`/`RolePermission` domain entities, `EmployeeStatus`/`RoleScope` enums, `PrismaEmployeeRepository`/`PrismaRolePermissionRepository`, and `RbacPermissionResolver` built in Phase 2 - all previously wired at Login/Refresh with zero consuming use cases until now. `InviteEmployeeUseCase`/`AssignEmployeeRoleUseCase`/`AssignEmployeeToBranchUseCase`/`RemoveEmployeeFromBranchUseCase`/`RemoveEmployeeUseCase` all resolve tenant ownership by walking Employee → Restaurant via the already-tenant-scoped `RestaurantRepository` first (the same relation-path pattern Branch/Table use), then `EmployeeRepository.findByIdAndRestaurantId`. `Employee` gained five new domain methods (`changeRole`, `assignBranch`, `unassignBranch`, `activateAndLink`, `softDelete`) alongside the existing `bumpPermissionsVersion`. First-login linking is a small additive step inside `LoginUseCase` (decision #5) - not a new use case of its own.
+
+**Files created:** `modules/authorization/domain/exceptions/{employee-not-found,employee-email-already-exists,cannot-remove-last-manager,role-not-found}.exception.ts`, `modules/authorization/infrastructure/persistence/{role.prisma-mapper,prisma-role.repository}.ts`, `modules/employees/application/dto/*.command.ts` (5) + `employee.result.ts`, `modules/employees/application/mappers/employee-result.mapper.ts`, `modules/employees/application/use-cases/*.use-case.ts` (5) + `.spec.ts` (5), `modules/employees/presentation/dto/*.request.dto.ts` (3) + `employee.response.dto.ts`, `modules/employees/presentation/controllers/{employees.controller,employee-response.mapper}.ts`, `test/authorization/support/{in-memory-employee.repository,in-memory-role.repository}.ts`, `test/employees/{prisma-employee.integration-spec,employees.e2e-spec}.ts`.
+
+**Files modified:** `modules/authorization/domain/entities/employee.entity.ts` (5 new methods + 7 new getters), `modules/authorization/domain/repositories/authorization.repositories.ts` (`EmployeeRepository` extended with 6 new methods), `modules/authorization/domain/events/authorization.events.ts` (new `EmployeeInvitedEvent`; existing `RoleAssignedEvent` reused, not modified), `modules/authorization/infrastructure/persistence/prisma-employee.repository.ts` (implements the 6 new interface methods), `modules/authorization/application/tokens/authorization.tokens.ts` (new `ROLE_REPOSITORY`), `modules/authorization/authorization.module.ts` (wires `PrismaRoleRepository`), `modules/employees/employees.module.ts` (scaffold → full wiring), `app.module.ts` (registers `EmployeesModule`), `modules/authentication/application/use-cases/login.use-case.ts` (first-login linking step, +1 constructor param), plus the two existing `LoginUseCase` unit/integration test call sites and `authorization/application/resolvers/rbac-permission-resolver.spec.ts`'s local fake, updated for the extended `EmployeeRepository` interface.
+
+**Database impact:** none. Every backing table (`employees`, `roles`, `permissions`, `role_permissions`, `employee_branch_assignments`) already existed from the Phase 2.1 migration - zero new migration.
+
+**API:** `POST /api/v1/restaurants/:restaurantId/employees` (Invite), `POST .../employees/:employeeId/role` (Assign Role), `POST .../employees/:employeeId/branches` (Assign Branch), `DELETE .../employees/:employeeId/branches/:branchId` (Remove from Branch), `DELETE .../employees/:employeeId` (Remove, soft delete). Nested under `restaurants/:restaurantId` (Branch's own convention - Employee carries a direct `restaurantId` column, one hop, unlike Table's later flat routes). No `PATCH`/Update Employee endpoint - out of this sub-phase's explicitly approved scope (only Invite/Assign Role/Assign Branch/Remove were named).
+
+**Authorization:** `JwtAuthGuard` → `SessionVersionGuard` → `OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)` on every route, per decision #2 - not the seeded `Restaurant Manager` role's `employees:manage` permission.
+
+**Audit/Events:** `EmployeeInvitedEvent` (new) and `RoleAssignedEvent` (existing, first real consumer) are published as proper domain events via the existing `AuditingEventPublisher`, not direct audit-log writes - both already had named consumers, unlike Move Table/Status Management's audit-only precedent.
+
+**Testing:** 5 new use-case unit-test files (entity methods, tenant isolation, idempotency, the "cannot remove last Manager" invariant), 7 new integration tests (`PrismaEmployeeRepository`'s 6 new methods + soft-delete round-trip), 6 new e2e tests (invite → assign role → assign branch → remove-from-branch; duplicate-email conflict; first-login linking against a real second `User`; last-Manager rejection; cross-organization IDOR; unauthenticated 401). Plus 2 new `LoginUseCase` unit tests for first-login linking (positive and negative-email cases).
+
+**Bugs found:** one real IDOR vulnerability, caught by the new cross-organization e2e test, not shipped. `AssignEmployeeRoleUseCase`, `AssignEmployeeToBranchUseCase`, `RemoveEmployeeFromBranchUseCase`, and `RemoveEmployeeUseCase` initially validated tenant ownership only via `EmployeeRepository.findByIdAndRestaurantId`, which filters by whatever `restaurantId` the caller supplies without ever confirming that restaurant belongs to the caller's own organization - unlike `InviteEmployeeUseCase`, which already had the correct `RestaurantRepository.findById` gate. A second organization's Owner could supply another organization's real `restaurantId` and successfully act on its employees. **Fixed** by adding the same tenant-isolation gate (`RestaurantRepository.findById` first, `RestaurantNotFoundException` if it resolves to null) to all four use cases, matching `InviteEmployeeUseCase`'s and every prior module's own established relation-path pattern - closed before any code shipped, verified by both the fix's own new unit tests and the e2e IDOR test now passing. A second, minor test-only bug (not production code) was also found and fixed: the first e2e "last Manager" test used a randomly-generated role slug instead of the literal seeded `manager` slug `RemoveEmployeeUseCase` keys off, so the invariant never actually triggered in that test - fixed via `prisma.role.upsert` on the real `manager` slug.
+
+**Verification results:** `tsc --noEmit`: 0 errors. `eslint`: 0 errors after `--fix`. `nest build`: clean. Unit: **707/707** (full repo, +18 from this phase - net of 5 new use-case spec files with 27 tests, 2 new LoginUseCase tests, and updated fakes). Integration (non-strict): **157/157** (+7). Integration (strict): **157/157**. E2E (non-strict): **250/250** across 22 suites (+6, two unrelated pre-existing suites flaked once under full-parallel load and passed on isolated re-run, consistent with prior sessions' documented flake, not a regression). E2E (strict): **250/250** across 22 suites. `pnpm audit`: no known vulnerabilities. Live Docker/manual HTTP verification was **not** performed this round - the running `tavla-backend-1`/`tavla-strict-backend-1` container images predate this phase's code (last rebuilt for Phase 6.3); a rebuild+restart was judged out of scope for this sub-phase's approval boundary and was not requested. All test tiers above ran against live Postgres/Redis/MinIO containers via the current TypeScript source directly (ts-jest), not through the built Docker image.
+
+**Remaining technical debt:** Manager-driven `employees:manage` access remains deferred (decision #2) - no multi-actor-type "OR" guard composition exists yet. Update Employee (DOMAIN_MODEL.md's own use-case list) was not built - out of this sub-phase's explicitly approved scope. `EmployeeStatus.Deactivated` remains defined but unused by any code path. The Docker image staleness noted above should be resolved (rebuild) before Phase 7.1 if live-container verification becomes necessary then.
+
+**Production readiness:** Phase 7.0's declared scope is production-ready - tested at every tier (strict and non-strict, unit/integration/e2e), tenant-isolated and IDOR-hardened (after the fix above, verified), audited via real domain events, Swagger-documented, and required zero schema changes. Unblocks Phase 7.2 (Approval Workflow) to authorize staff-side reservation actions via the real `Employee` actor once Phase 7.1 exists.
+
+## Phase 7.1 — Reservation Core: Architecture Freeze (approved, frozen, 2026-07-20)
+
+The Reservation Core Architecture Review (2026-07-20) identified two genuine documentation gaps blocking Phase 7.1 implementation - `reservationEndTime` derivation and the Availability Search response contract. Both are now resolved and recorded verbatim below. Everything else required for Phase 7.1 (concurrency mechanism, schema, state model, authorization, events, table-assignment model) was already frozen by ADR-013 and the "Phase 7 — Reservation Engine: Pre-implementation architecture decisions" note above - not re-litigated here.
+
+**Decision 1 — Reservation End Time (approved, final):** The Reservation aggregate SHALL always persist a concrete `reservationEndTime`. If the client provides `reservationEndTime`, the backend validates it and stores it. If the client omits `reservationEndTime`, the backend derives it from the Restaurant's reservation default duration (Restaurant Settings). The backend is the single source of truth for the final persisted value. Validation must guarantee `reservationEndTime > reservationStartTime` and that `reservationEndTime` satisfies any Restaurant reservation-duration constraints (if configured). No downstream component may need to know whether the end time came from the client or was derived.
+
+**Decision 2 — Availability Search Contract (approved, final):** Availability Search SHALL NOT hide reserved tables. The search returns every table matching the search criteria; every table includes an availability indicator; tables having `Pending` or `Approved` reservations remain visible, marked as Reserved/Unavailable. The UI is responsible for displaying that state. Availability Search is informational only - reservation conflict prevention remains exclusively enforced by Reservation creation (ADR-013 advisory locking + exclusion constraint).
+
+**Phase 7.1 architecture status: all architectural blockers are now resolved.** No remaining architectural decisions block implementation. `DOMAIN_MODEL.md`, `DATABASE_SCHEMA.md`, `API_GUIDELINES.md`, `README.md`, and `PROJECT_ROADMAP.md` were synchronized with both decisions (documentation only - no schema, migration, code, or test changes) at the time of this freeze. Implementation followed this freeze and is now complete - see the "Phase 7.1 — Reservation Core" report below.
+
+## Phase 7.1 — Reservation Core: Scope Amendment (approved, 2026-07-20)
+
+A genuine contradiction was found at implementation-plan time between this Phase's own frozen scope (checklist item above: "...`Table.reserve()`", and decision note item 6, which requires `Table.reserve()` to fire at Create time on the auto-approval branch) and an explicit instruction narrowing Phase 7.1's implementation scope to exclude `Reserved TableStatus`. Since auto-approval's `Table.reserve()` call is unreachable without `TableStatus.Reserved` existing, the two cannot both hold. Flagged rather than silently resolved; the following amendment is now approved:
+
+**Auto-approval is deferred in full to Phase 7.2, alongside Approve.** Phase 7.1's `CreateReservationUseCase` always produces a `Pending` reservation, regardless of `RestaurantSettings.autoApproval` - that setting is not read by Phase 7.1 code at all. Consequently, in Phase 7.1: `Table.reserve()`/`Table.release()` are **not** implemented; `TableStatus.Reserved` is **not** added to the enum; `Table.transitionStatus` (frozen Phase 6.3) is untouched, exactly as it already is today. The `ReservationStatus` enum itself is still defined in full (all 7 values, per decision note item 1 - a data-type definition, not a use case, and was already frozen as one indivisible decision, unlike `TableStatus`'s own incremental history), but Phase 7.1 exercises only the `Pending` value; no transition-validating method exists yet (`Reservation.create()` sets `Pending` unconditionally, with no `transitionStatus`-equivalent method - that belongs to Phase 7.2, where Approve/Reject first make transitions reachable). Phase 7.2's own scope now explicitly includes: Approve (manual path, calls `Table.reserve()`), Reject, **and** the auto-approval branch of Create Reservation (calls `Table.reserve()` at creation time) - all three call sites for `Table.reserve()` are consolidated into Phase 7.2, none remain in 7.1.
+
+No further architectural ambiguity remains for Phase 7.1 as of this amendment. Implementation follows immediately below.
+
+## Phase 7.1 — Reservation Core
+
+Implemented exactly Decision 1 (Reservation End Time), Decision 2 (Availability Search Contract), and ADR-013's concurrency mechanism, per the Scope Amendment above - nothing from Phase 7.2 (Approve/Reject/auto-approval/`Table.reserve()`/`TableStatus.Reserved`) was touched. New `Reservation` aggregate (`modules/reservations`) follows the same Clean Architecture layering as every prior module (domain entities/enums/exceptions/services/repositories/events → application use-cases/DTOs/mappers → infrastructure Prisma repository/mapper → presentation controller/DTOs). Reused the customer-facing "own resource" authorization precedent (`JwtAuthGuard` + `SessionVersionGuard` only, no `OrganizationMemberGuard`) first established by `UsersController` - the first time this pattern applies to a newly-created module.
+
+**Database impact:** one new migration (`20260720170250_phase_7_1_reservation_core`) - new `reservations` table (matches `DATABASE_SCHEMA.md` exactly: nullable `reservationGuestId`/`rescheduledFromReservationId` as plain unrelated UUID columns, same deferred-FK precedent as `Table.mergeGroupId`), new `ReservationStatus`/`ReservationSource` enums, new `RestaurantSettings.defaultReservationDurationMinutes` (default 90, bounds 15-480) for Decision 1's fallback. Per ADR-013: `CREATE EXTENSION IF NOT EXISTS btree_gist` + a `EXCLUDE USING gist` constraint on `(table_id, tstzrange(reservation_start_time, reservation_end_time))` rejecting overlaps for any status other than `Cancelled`/`Expired`/`Rejected`/`Pending` - applied and verified against both `tavla_dev` and `tavla_test`.
+
+**API:** `GET /api/v1/reservations/availability` (Availability Search, Decision 2 - returns every matching table with an `isAvailable` indicator, never hides reserved ones) and `POST /api/v1/reservations` (Create, always produces `Pending`/`Online`). Both `JwtAuthGuard` + `SessionVersionGuard` only - any authenticated `User` may search/book, matching this sub-phase's customer-facing scope.
+
+**Files created:** `modules/reservations/domain/{enums/reservation.enums,entities/reservation.entity(+.spec),services/reservation-availability.service(+.spec),repositories/reservation.repository,events/reservation.events,exceptions/*}.ts` (5 exceptions), `modules/reservations/infrastructure/persistence/{reservation.prisma-mapper,prisma-reservation.repository}.ts`, `modules/reservations/application/{dto/*.ts (4), mappers/reservation-result.mapper.ts, use-cases/{search-availability,create-reservation}.use-case(+.spec).ts}`, `modules/reservations/presentation/{dto/*.ts (4), controllers/{reservations.controller,reservation-response.mapper}.ts}`, `modules/reservations/reservations.module.ts`, `test/reservations/support/in-memory-reservation.repository.ts`, `test/reservations/{prisma-reservation.integration-spec,reservations.e2e-spec}.ts`. New `ReservationId` value object added to the shared `identifiers.vo.ts`.
+
+**Files modified:** `app.module.ts` (registers `ReservationsModule`), `modules/tables/domain/repositories/table.repository.ts` + `infrastructure/persistence/prisma-table.repository.ts` + `test/tables/support/in-memory-table.repository.ts` (new `findManyAvailableByBranchIdAndMinCapacity`), `modules/authentication/infrastructure/events/auditing-event-publisher.ts` (new explicit `ReservationCreatedEvent` branch), `prisma/schema.prisma` (`Reservation` model + enums + `RestaurantSettings.defaultReservationDurationMinutes` + reverse relations on `Restaurant`/`Branch`/`Table`/`User`), and the full `RestaurantSettings` plumbing chain for the new field (entity, DTOs, mappers, both Prisma repository methods, controller, and their existing test suites) - required to carry Decision 1's fallback value end-to-end.
+
+**Authorization:** `JwtAuthGuard` + `SessionVersionGuard` only, no org/employee guard - the customer books their own reservation, mirroring `UsersController`'s precedent. `CreateReservationUseCase` resolves `Table` via `findByIdAndBranchId` (IDOR-safe: a table from another branch 404s) and does **not** resolve `Restaurant` via the tenant-scoped `RestaurantRepository`, since that repository is tenant-scoped and would incorrectly reject every customer actor (no `organizationId`).
+
+**Audit/Events:** `ReservationCreatedEvent` (new) published via the existing `AuditingEventPublisher`; `organizationId` is resolved by `TenantContextService`, not the event payload (the payload carries no `organizationId` field at all, by design).
+
+**Testing:** unit (`Reservation` entity validation, `ReservationAvailabilityService` lock-key/bucket derivation, both use-cases with an in-memory fake repository), integration (`PrismaReservationRepository` against live Postgres - proves the advisory lock is acquired, two overlapping `Pending` reservations legitimately coexist, the pre-check SELECT throws `ReservationConflictException` when a confirmed overlap is already visible before insert, a raw insert independently proves the exclusion constraint itself rejects an overlapping `Approved` row at the DB level, and - as of the ADR-013 compliance fix below - `createWithLock`'s own insert-time catch maps a genuine database-level exclusion-constraint violation into `ReservationConflictException` too, not just the pre-check), e2e (availability search with/without an existing reservation, create with derived vs. client-supplied `reservationEndTime`, end-time/capacity validation rejections, `Pending`-coexistence via real HTTP, cross-branch IDOR 404, unauthenticated 401, audit-log row verification).
+
+**ADR-013 compliance fix (2026-07-20):** a post-completion consistency review found that `PrismaReservationRepository.createWithLock`'s `INSERT` was not wrapped in a `try/catch` - ADR-013 (`DECISIONS.md`) explicitly requires that if the advisory lock/pre-check is ever bypassed and the database exclusion constraint fires at insert time, "the failure is a caught Postgres error mapped to `ReservationConflictException`, not silent data corruption." Without the wrap, such a violation would have escaped as a raw `PrismaClientUnknownRequestError`. Fixed by wrapping only the `create()` call in `try/catch`, detecting the specific `reservations_no_overlapping_confirmed_excl` constraint by name in the error message (Prisma does not assign this raw-SQL-only constraint a known error code) and re-throwing `ReservationConflictException`; every other database error still propagates unchanged. The pre-check and advisory lock are untouched - this affects only the previously-unreachable defense-in-depth path. One new integration test added (`test/reservations/prisma-reservation.integration-spec.ts`) that seeds a real committed `Approved` row, forces the pre-check to a false negative for that one call only (a minimal test double simulating ADR-013's own named "pre-check bypassed" scenario), and proves the real, unmodified `create()` call hits the real exclusion constraint and the repository's new catch block maps it to `ReservationConflictException` rather than leaking the raw error. No schema, migration, domain, use-case, controller, or DTO changes.
+
+**Bugs found and fixed:** (1) `PrismaRestaurantSettingsRepository.save()`'s `update:` object literal (explicit field list, not a spread) was missing `defaultReservationDurationMinutes` - `PATCH /restaurants/:id/settings` silently never persisted this one field, always returning the created default instead of the patched value. Caught by the existing `restaurants.e2e-spec.ts` full-replace test once the new field was added to its assertions; reproduced in isolation twice before concluding it was a real defect, not flake; fixed by adding the missing line. (2) `PrismaReservationRepository.createWithLock` initially used `$queryRaw` for `SELECT pg_advisory_xact_lock(...)`, which throws (`pg_advisory_xact_lock` returns `void`, which `$queryRaw` cannot deserialize) - fixed by switching to `$executeRaw`, confirmed against live Postgres via the integration test. (3) Near-bug caught before it shipped, not an actual defect: an initial draft of `CreateReservationUseCase` injected `RestaurantRepository` to resolve `organizationId` for the event payload; since `Restaurant` (unlike `Reservation`/`Branch`/`Table`/`RestaurantSettings`) IS in `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS`, every customer actor (no `organizationId`) would have received `null` back and been incorrectly rejected with `RestaurantNotFoundException` on every request. Removed before any test ran against it, once `AuditingEventPublisher`'s actual `organizationId` source (`TenantContextService`, not the event payload) was confirmed.
+
+**Verification results:** `tsc --noEmit`: 0 errors. `eslint`: 0 errors. `nest build`: clean. `prisma format`/`validate`/`generate`: clean; `migrate status`: up to date on both `tavla_dev` and `tavla_test`. Unit: **730/730**. Integration (non-strict and strict): **161/161** each. E2E (non-strict and strict): **258/258** each across 23 suites, confirmed via serial (`--runInBand`) re-run after one full-parallel run showed the widespread resource-contention flake this project has documented before (only bug (1) above was a genuine, reproducible failure - everything else, including the new `reservations.e2e-spec.ts`, passed cleanly in isolation). `pnpm audit --prod`: no known vulnerabilities. Docker: both `tavla-backend-1` (dev) and `tavla-strict-backend-1` (strict) images rebuilt and containers recreated; both report `healthy` with `database`/`redis`/`minio` all `up` via `/api/v1/health`; Prometheus metrics flowing on both via `/api/v1/metrics`. Swagger (`/api/v1/docs-json`) confirmed to list `GET /reservations/availability` and `POST /reservations` on both live containers. Manual HTTP verification performed end-to-end against the live rebuilt dev container: registered an owner and a separate customer `User`, created a real restaurant/branch/floor-plan/table, ran availability search (table visible, `isAvailable: true`), created a reservation (returned `Pending`/`Online`, `reservationEndTime` correctly derived as +90 minutes from `RestaurantSettings`'s default), confirmed the persisted `reservations` row and the `reservation.created` audit-log row (attributed to the `User` actor) directly via `psql`, then re-ran availability search over the overlapping window and confirmed the table remained visible but `isAvailable: false` (Decision 2's "never hidden, always marked" contract). All manually-created test data was deleted afterward.
+
+**Remaining technical debt:** none introduced by this sub-phase beyond what the Scope Amendment already named as deferred - `Table.reserve()`/`Table.release()`, `TableStatus.Reserved`, Approve/Reject, and auto-approval all remain Phase 7.2 work by design. `RestaurantSettings.autoApproval` is not read by any Phase 7.1 code path.
+
+**Production readiness:** Phase 7.1's declared scope is production-ready - tested at every tier (strict and non-strict, unit/integration/e2e), the ADR-013 concurrency mechanism is verified end-to-end against a real Postgres database (advisory lock + exclusion constraint + application-level mapping), tenant/IDOR-safe for customer actors, audited via a real domain event, Swagger-documented, and live-verified via both rebuilt Docker images and a manual HTTP flow. Unblocks Phase 7.2 (Approval Workflow: Approve, Reject, auto-approval, `Table.reserve()`/`release()`, `TableStatus.Reserved`).
+
+**PHASE 7.1 COMPLETE / LIVE VERIFIED / PRODUCTION VERIFIED / READY FOR THE NEXT PHASE.**
+
+## Phase 7.2 — Approval Workflow: Architecture Correction (approved, 2026-07-20)
+
+A genuine contradiction was found while reviewing Phase 7.2 readiness, between three already-frozen facts: (1) decision #1's state machine, where `Reject` is reachable only from `Pending` (`Pending → {Approved, Rejected, Expired, Cancelled}` - there is no `Approved → Rejected` transition); (2) decision #6's own `Table.reserve()` timing rule, "`Table.reserve()` is called only at Approval (manual path) or at creation time for auto-approval... During the Pending window, `Table.status` remains `Available`"; and (3) decision #6's original text, which nonetheless listed `Table.release()` as firing "on Reject." Since every rejected reservation was, by (1), still `Pending` at the moment of rejection, and by (2) a `Pending` reservation never held `Table.status = Reserved` in the first place, there is nothing for a Reject action to release - (3) was an error, not a reachable case. Flagged rather than silently resolved; the following correction is now approved:
+
+**`Table.release()` SHALL NOT be executed on Reject.** Reason: a reservation can only be rejected while still `Pending`; `Pending` reservations never call `Table.reserve()`; therefore there is nothing to release. This applies identically to the automatic rejection of overlapping `Pending` reservations during Approval (DOMAIN_MODEL.md's "approving the first automatically rejects any other pending reservation" rule) - those auto-rejected reservations never reserved the table either, so auto-rejection also performs no `Table.release()`.
+
+**Final Table lifecycle (supersedes decision #6's original Reject clause; all other parts of decision #6 stand unmodified):**
+
+| Reservation transition | Table operation |
+|---|---|
+| Approve | `Table.reserve()` |
+| Reject (manual or automatic) | No table operation |
+| Cancel (of an `Approved` reservation) | `Table.release()` |
+| Expire (of an auto-approved-then-expired reservation, if reachable) | `Table.release()` |
+| While `Pending` | Table remains `Available` |
+| After `Rejected` | Table remains unchanged |
+
+Decision #6's and decision #3's original text above are corrected in place to remove the erroneous "Reject" entries (struck from the release()-trigger lists), with an inline pointer back to this note; this note is the authoritative record of why. No new ADR required (CHANGE_POLICY.md: this corrects an internal documentation contradiction rather than altering a locked decision, introducing a dependency, or changing the concurrency/authorization/tenancy model). `DOMAIN_MODEL.md` and `DATABASE_SCHEMA.md` were reviewed for the same error; one further instance was found and corrected in `DOMAIN_MODEL.md` (a `Pending` reservation's expiration was also incorrectly described as releasing the table, under the identical root cause) - see that document's own Reservation Aggregate Notes. `DATABASE_SCHEMA.md` contained no affected text and was not modified.
+
+No further architectural ambiguity remains for this specific contradiction. Phase 7.2 planning may proceed once separately requested.
+
+## Phase 7.2 — Approval Workflow: Architecture Freeze (approved, frozen, 2026-07-20)
+
+The Phase 7.2 Planning Report (reviewed against `TASKS.md`, `README.md`, `docs/PROJECT_ROADMAP.md`, `DOMAIN_MODEL.md`, `DATABASE_SCHEMA.md`, `API_GUIDELINES.md`, `EVENTS.md`, `AUTHORIZATION_ARCHITECTURE.md`, and `DECISIONS.md`) found **no new architectural gap or contradiction** - unlike Phase 7.1, which required two new decisions to close genuine open questions, Phase 7.2's entire scope (Approve, Reject, the auto-approval branch of Create Reservation, `Table.reserve()`/`Table.release()`, `TableStatus.Reserved`) was already fully specified by the Phase 7 pre-implementation decision note (items 1, 2, 3, 6, 10, 11 above) and the Phase 7.2 Architecture Correction (Reject/auto-reject perform no Table operation). This freeze records no new decision - it confirms the existing ones are complete and consistent, and closes the loop on the Planning Report review.
+
+**Phase 7.2 architecture status: all architectural blockers are resolved.** No remaining architectural decisions block implementation. `DATABASE_SCHEMA.md` and `DOMAIN_MODEL.md` (the `Reserved` `TableStatus` exclusion notes) and `API_GUIDELINES.md` (the Domain Action convention list) were synchronized to reflect that `Reserved`, `Table.reserve()`/`Table.release()`, and the `/approve`/`/reject` routes are now approved and frozen for Phase 7.2 - documentation only, no schema, migration, code, or test changes. Implementation has not started; Phase 7.2 remains unchecked above pending its own separate implementation approval, per this project's established precedent.
 
 ---
 
@@ -2973,3 +3245,844 @@ Updated `docs/DATABASE_SCHEMA.md` (Working Hours section + Relationships diagram
 **PHASE 4.3 COMPLETE**
 
 **READY FOR THE NEXT RESTAURANT PHASE**
+
+---
+
+# Phase 4.4 — Restaurant Module: Gallery
+
+Explicitly approved as the fourth Phase 4 sub-scope, with six explicit architecture decisions pre-approved by the user before implementation began: (1) Restaurant-only ownership, no Branch; (2) complete reuse of the existing Files module (`FileRepository`, `StoragePort`, `FileRecord`, `FileOwnerType`, upload pipeline, MinIO integration, MIME detection, validation) - no second upload subsystem; (3) the existing public bucket, no new bucket/storage strategy; (4) a hard cap of 20 images per restaurant enforced in the application layer, no `SystemConfiguration` row, no feature flag; (5) `sortOrder` set only at append time (max existing + 1), no reorder endpoint, no automatic reordering; (6) deletion removes the `RestaurantGallery` row, the underlying `File` row (soft-delete), and the MinIO object together, via the existing Files infrastructure. Taxonomy is the only remaining Phase 4 checklist item and was not touched. Also explicitly out of scope and untouched: Social Links, Branch Gallery, Reviews, Menus, any photo storage outside Restaurant Gallery, and all Phase 5+ work.
+
+## Pre-implementation review
+
+Reviewed `TASKS.md`, `README.md`, `docs/PROJECT_ROADMAP.md`, `docs/DATABASE_SCHEMA.md`, `docs/DOMAIN_MODEL.md`, `docs/EVENTS.md`, `docs/API_GUIDELINES.md`, `docs/AUTHORIZATION_ARCHITECTURE.md`, the Files module (`modules/files/`), the Phase 3.2 Avatar Upload precedent (`UploadCurrentUserAvatarUseCase`), and the full Phase 4.1-4.3 Restaurant implementation before writing anything.
+
+**Phase confirmation**: TASKS.md's Phase 4 checklist's first unchecked item after Working Hours is "Gallery" (`[ ]`, fourth of five). No contradiction between TASKS.md/README.md/PROJECT_ROADMAP.md.
+
+**No documentation conflict this time** (unlike Working Hours): `DATABASE_SCHEMA.md`'s "Restaurant Gallery" section (`id`, `restaurantId`, `fileId`, `caption`, `sortOrder`, `createdAt`, `updatedAt`, indexed on `restaurantId`) and `DOMAIN_MODEL.md`'s Restaurant Aggregate child-entity list (`RestaurantGallery`) agree cleanly - single parent, no Branch ambiguity. `FileOwnerType` already includes `'Restaurant'` (predates this phase), confirming the Files module was designed with Restaurant-owned files in mind. No `RestaurantGallery` Prisma model existed yet (not pre-built, same starting state as `WorkingHours`).
+
+**Undocumented judgment calls, disclosed** (`DOMAIN_MODEL.md` has no business rules for Gallery beyond the bare field list, same category of gap as Working Hours): no max-images limit was documented anywhere - the user's explicit architecture decision (20) resolved this directly, so no independent judgment call was needed here. No caption length limit is documented; left unbounded, matching `Restaurant.description`'s own established precedent (verified: that field has no `@MaxLength` anywhere in the codebase either). No avatar-scale size/MIME-type limit is documented for gallery images specifically; reused Phase 3.2's exact avatar values (5MB, JPEG/PNG/WebP) as the only precedent in the codebase, under a gallery-scoped policy constant rather than importing the Users module's avatar-specific policy file (`gallery-upload.policy.ts`, disclosed in the code's own doc comment).
+
+## Architecture decisions (implementation detail within the six user-approved decisions)
+
+1. **Collection full-append, not full-replace**: unlike `WorkingHours`'s full-replace `PATCH`, Gallery uses `POST` (append one image), `GET` (list), `DELETE` (remove one image) - no bulk replace, because each row represents an actual uploaded file with a real storage object that must be individually managed, not a cheap-to-regenerate time value.
+2. **No auto-provisioning at restaurant creation**: a freshly created restaurant has zero gallery images (`GET` returns `{ restaurantId, items: [] }`) until the owner explicitly uploads one - `CreateRestaurantUseCase` was not touched.
+3. **Tenant isolation strategy**: identical pattern to `RestaurantSettings`/`WorkingHours` - `RestaurantGallery` carries no direct `organizationId`, is not added to `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS`, every use case resolves the parent `Restaurant` via the already-tenant-scoped `RestaurantRepository` first.
+4. **IDOR defense-in-depth on delete**: `RestaurantGalleryRepository.findById(id, restaurantId)` filters by both the gallery item id AND the restaurant id in the same query - a gallery item belonging to a different restaurant (even one in the same organization) resolves to `null`, never leaks and is never deletable through the wrong parent path.
+5. **REST shape**: `POST`/`GET /restaurants/:id/gallery` (collection), `DELETE /restaurants/:id/gallery/:galleryItemId` (item) - one level of nesting under the owning resource, matching `API_GUIDELINES.md`'s convention and the precedent already established by Settings/Working Hours.
+6. **Audit, not a new domain event**: `EVENTS.md` has no named Gallery domain event class. Follows `UpdateRestaurantSettingsUseCase`/`UpdateWorkingHoursUseCase`'s own precedent exactly: direct `restaurant.gallery.image_added`/`restaurant.gallery.image_removed` audit-log writes, no invented domain event class.
+7. **Compensating transactions on upload failure**: mirrors `UploadCurrentUserAvatarUseCase`'s exact pattern - if `FileRepository.create()` fails after a successful MinIO upload, the uploaded object is deleted; if `RestaurantGalleryRepository.add()` fails after the File row was created, both the File row (soft-deleted) and the MinIO object are cleaned up. Proven by dedicated unit tests with a failing repository double, not just asserted.
+8. **New error code**: `GALLERY_LIMIT_EXCEEDED` (409) was added to `API_GUIDELINES.md`'s documented error-code list - a required doc update for new behavior (`CHANGE_POLICY.md`'s "New/changed endpoint" row), not an ADR trigger (none of the 10 ADR-required conditions apply: no locked decision altered, no new external dependency, no tenant/auth model change).
+
+## Database/schema design
+
+`RestaurantGallery` (`restaurant_gallery` table): `id`, `restaurant_id` (required FK to `restaurants`, `onDelete: Cascade`), `file_id` (plain UUID, no Prisma relation - matching `Restaurant.logoId`/`coverImageId`'s existing denormalized-pointer precedent and `File`'s own polymorphic design), `caption` (nullable text, unbounded), `sort_order` (Int), `created_at`, `updated_at`. `@@index([restaurantId])`. One additive migration (`20260716140000_phase_4_4_add_restaurant_gallery`) - new table only, no existing table altered. Applied and status-confirmed against both the dev and the isolated strict-verification Postgres instances.
+
+## Files created
+
+* `apps/backend/src/modules/restaurants/domain/entities/restaurant-gallery-image.entity.ts` (+`.spec.ts`)
+* `apps/backend/src/modules/restaurants/domain/exceptions/invalid-restaurant-gallery-image.exception.ts`, `restaurant-gallery-item-not-found.exception.ts`, `restaurant-gallery-limit-exceeded.exception.ts`, `missing-gallery-image-file.exception.ts`, `gallery-image-file-too-large.exception.ts`, `unsupported-gallery-image-file-type.exception.ts`, `invalid-gallery-image-file.exception.ts`, `gallery-storage-unavailable.exception.ts`
+* `apps/backend/src/modules/restaurants/domain/repositories/restaurant-gallery.repository.ts`
+* `apps/backend/src/modules/restaurants/infrastructure/persistence/prisma-restaurant-gallery.repository.ts`, `restaurant-gallery.prisma-mapper.ts`
+* `apps/backend/src/modules/restaurants/application/policies/gallery-upload.policy.ts`
+* `apps/backend/src/modules/restaurants/application/tokens/restaurants.tokens.ts` (`GALLERY_BUCKET`)
+* `apps/backend/src/modules/restaurants/application/dto/add-restaurant-gallery-image.command.ts`, `list-restaurant-gallery.command.ts`, `remove-restaurant-gallery-image.command.ts`, `restaurant-gallery-image.result.ts`
+* `apps/backend/src/modules/restaurants/application/mappers/restaurant-gallery-image-result.mapper.ts`
+* `apps/backend/src/modules/restaurants/application/use-cases/add-restaurant-gallery-image.use-case.ts` (+`.spec.ts`), `list-restaurant-gallery.use-case.ts` (+`.spec.ts`), `remove-restaurant-gallery-image.use-case.ts` (+`.spec.ts`)
+* `apps/backend/src/modules/restaurants/presentation/dto/add-restaurant-gallery-image.request.dto.ts`, `restaurant-gallery-image.response.dto.ts`
+* `apps/backend/prisma/migrations/20260716140000_phase_4_4_add_restaurant_gallery/migration.sql`
+* `apps/backend/test/restaurants/support/in-memory-file-repository.ts`, `fake-storage-port.ts`, `in-memory-restaurant-gallery.repository.ts`
+* `apps/backend/test/restaurants/prisma-restaurant-gallery.integration-spec.ts`
+
+## Files modified
+
+* `apps/backend/prisma/schema.prisma` - added `RestaurantGallery` model + `Restaurant.gallery` back-relation.
+* `apps/backend/src/modules/restaurants/presentation/controllers/restaurants.controller.ts` - added `POST`/`GET :id/gallery` and `DELETE :id/gallery/:galleryItemId` routes (multipart via `FileInterceptor`, mirroring `UsersController.uploadAvatar`) + response mappers.
+* `apps/backend/src/modules/restaurants/presentation/controllers/restaurants.controller.spec.ts`, `restaurants.controller.swagger.spec.ts` - new provider mocks + `addGalleryImage`/`listGallery`/`removeGalleryImage` coverage.
+* `apps/backend/src/modules/restaurants/restaurants.module.ts` - imports `FilesModule`/`ConfigModule`, registers the three new use cases, `PrismaRestaurantGalleryRepository`/`RESTAURANT_GALLERY_REPOSITORY` binding, and the `GALLERY_BUCKET` factory (resolves to the same public bucket `AVATAR_BUCKET` uses).
+* `apps/backend/test/restaurants/restaurants.e2e-spec.ts` - 6 new gallery e2e tests + explicit `File` row cleanup in `afterAll` (Files have no cascade FK to Restaurant).
+* `docs/API_GUIDELINES.md` - added `GALLERY_LIMIT_EXCEEDED` to the documented error-code list.
+
+## Security review
+
+* **Tenant isolation**: `RestaurantGalleryRepository` performs zero tenant filtering by itself - every use case gates through the already-proven `RestaurantRepository.findById()` first. Proven live, e2e, real HTTP, two real organizations (`POST`/`GET`/`DELETE` on another organization's restaurant's gallery all → `404`, the target restaurant's own row provably unchanged afterward).
+* **IDOR (item-level)**: `findById(galleryItemId, restaurantId)` filters by both ids together - a gallery item belonging to a different restaurant resolves to `404`, proven by a dedicated unit test.
+* **Mass assignment**: `AddRestaurantGalleryImageRequestDto` is an explicit allowlist (only `caption`); global `forbidNonWhitelisted` rejects any extra field with `400`.
+* **Multipart upload validation**: identical rigor to avatars - missing file (`400`), oversized file (`413`), unsupported declared MIME type (`415`), and a magic-byte signature check that rejects both malformed files and spoofed Content-Type headers (`400`), all proven live via e2e and unit tests with a real `<html>` payload masquerading as an image.
+* **Capacity enforcement**: the 20-image cap is enforced server-side in the application layer before any upload happens - proven live, e2e, by actually uploading 20 real images and confirming the 21st is rejected with `409 GALLERY_LIMIT_EXCEEDED` and the database still shows exactly 20 rows.
+* **Audit logging**: every successful `POST`/`DELETE` writes exactly one audit-log entry (`restaurant.gallery.image_added`/`restaurant.gallery.image_removed`) with the correct `actorId`/`organizationId` - proven live via both the e2e suite and a manual `psql` query during Docker verification.
+* **JWT actor handling**: identity/organization exclusively from `@CurrentActor()`, typed `AuthenticatedOrganizationMemberActor`, matching every other Restaurant route.
+
+## Tenant review
+
+`RestaurantGallery` is **transitively Organization-tenant-owned** through its parent `Restaurant` (ADR-011's ownership classification extended one level, identical to `RestaurantSettings`/`WorkingHours`) - never directly tenant-scoped, never user-owned, never branch-owned. Verified explicitly, live, e2e: two real organizations, cross-tenant `POST`/`GET`/`DELETE` on another organization's restaurant's gallery all → `404`, the target row provably unchanged afterward.
+
+## Audit review
+
+Both `restaurant.gallery.image_added` and `restaurant.gallery.image_removed` proven to write exactly once per successful operation, with the correct `actorId`, `actorType: 'User'`, `targetType: 'Restaurant'`, `targetId`, and `organizationId` - proven via unit tests (`CollectingAuditLogWriter`), e2e tests (real Postgres `auditLog` query), and a manual `psql` query against the live dev database during Docker verification (two real rows found, correct actor).
+
+## Test results
+
+* **Unit**: **536/536 passed, 69/69 suites** (full repo, zero regressions). New Gallery coverage: domain entity 8 tests, application (add/list/remove use cases) 22 tests, controller +8 tests, Swagger +2 assertions.
+* **Integration** (dev stack): **25/25 suites, 107/107 tests** (was 24/102 after Phase 4.3; +1 suite, +5 tests: new `prisma-restaurant-gallery.integration-spec.ts`). New: round-trip persistence sorted by `sortOrder`, `findById` restaurant-scoping proof, `remove()` proof, no-tenant-filtering-by-design proof.
+* **Strict integration verify** (isolated stack, fail-closed): **25/25 suites, 107/107 tests** - identical to non-strict, after applying the new migration to the strict Postgres instance.
+* **E2E** (dev stack): **19/19 suites, 190/190 tests** (was 18/184). New: 6 gallery e2e tests (add-with-caption + audit log, list-sorted-by-sortOrder, delete-full-cycle + not-idempotent-404, 21st-image-rejected-409, missing-file-400, cross-org isolation across POST/GET/DELETE).
+* **Strict E2E verify** (isolated stack): **18/18 suites, 190/190 tests** - identical to non-strict (suite count differs by one from the dev-stack figure only because the strict config excludes `test/phase1.e2e-spec.ts`'s dev-only assertions, consistent with every prior phase's own reporting).
+* No tests skipped, none vacuous.
+
+## Docker verification
+
+Both dev and strict backend images rebuilt with the new code and migration and both containers recreated healthy. Live Swagger JSON (`/api/v1/docs-json`) confirmed `/restaurants/{id}/gallery` (`post`, `get`) and `/restaurants/{id}/gallery/{galleryItemId}` (`delete`) mapped on **both** stacks (dev via Nginx on port 80, strict directly on port 13000). `dist/` contents inside both containers explicitly verified to contain the new Gallery module files (69 gallery-related compiled files found in the strict container) before trusting either build - not just the `docker compose` exit code, per the lesson learned in Phase 4.3. Health/metrics endpoints green on the dev stack, direct and through Nginx. The pre-existing, unrelated `tavla-strict-nginx-1` crash-loop (disclosed in the Phase 4.3 report) remains present and still does not block any required verification step, since `test:integration:verify`/`test:e2e:verify` talk to the strict backend directly.
+
+## Manual HTTP verification (through Nginx, dev stack)
+
+Real `curl` flow: register → activate (dev has no real email delivery) → login → `POST /restaurants` (201) → `GET /restaurants/:id/gallery` (200, empty `items` array on a brand-new restaurant) → `POST .../gallery` with a real minimal JPEG file and a caption via multipart form (`-F`) (201, returns a freshly-signed MinIO `imageUrl`, `sortOrder: 0`) → `GET .../gallery` (200, confirms persistence, same signed URL pattern) → `DELETE .../gallery/:galleryItemId` (204) → `DELETE` again on the same id (404, not idempotent, matching every other Restaurant delete route's convention) → `GET .../gallery` (200, empty again). Direct `psql` query confirmed both `restaurant.gallery.image_added` and `restaurant.gallery.image_removed` audit rows with the correct actor, and confirmed the underlying `File` row was soft-deleted (`deleted_at` populated) rather than hard-deleted. All manually-created test data cleaned up afterward (file row, restaurant, organization, membership, sessions, user - zero rows remain).
+
+## Prisma/migration verification
+
+`prisma format`: clean. `prisma validate`: clean. `prisma generate`: succeeded. `prisma migrate status` (dev stack): "Database schema is up to date" after `migrate deploy` applied the new migration. Same migration applied and status-confirmed against the strict-verification Postgres instance.
+
+## Regression results
+
+Full `pnpm exec jest` (unit): 536/536, zero regressions in Authentication/Authorization/Tenancy/Users/Restaurants CRUD/Settings/Working Hours. Full `pnpm exec eslint --max-warnings 0`: zero errors/warnings, full repo (34 initial Prettier-formatting violations across 6 newly-added files, auto-fixed via `eslint --fix`, then re-verified with a clean lint run and a full test re-run - zero behavioral change). Full `pnpm exec tsc --noEmit`: zero errors, full repo. `nest build`: clean. `pnpm audit --prod`: no known vulnerabilities.
+
+## Static quality audit
+
+Searched every file touched this phase for `TODO`/`FIXME`/`HACK`/`@ts-ignore`/`eslint-disable`/`.skip`/`.only`/`console.log`: none found.
+
+## Bugs found and fixed
+
+1. **ESLint/Prettier formatting** (self-inflicted, not a logic bug): 34 formatting violations across 6 newly-written files, caught by the mandatory full-repo `eslint --max-warnings 0` run, fixed with `eslint --fix`, then re-verified with a clean lint run and a full test re-run.
+2. **Test-data collision** (self-inflicted, caught before being reported passing): the IDOR unit test for `RemoveRestaurantGalleryImageUseCase` originally seeded two restaurants with the identical auto-derived name/slug ("The Old Mill"), causing a spurious `RestaurantSlugAlreadyExistsException`. Fixed by parameterizing the seed helper with distinct names.
+3. **Docker Desktop daemon hang** (infrastructure, not a code bug, significant this phase): after the first dev-backend image build succeeded, a second *concurrent* build of the strict-backend image caused the Docker daemon to start returning `500` errors on every API call (`_ping` included). A full Docker Desktop restart was required; the daemon remained unresponsive for over 30 minutes even after that restart before recovering on its own. All subsequent image builds were run strictly sequentially (never concurrently) to avoid recurrence. This also caused an earlier "successful" build (exit code 0) to silently produce a stale image with no Gallery code - caught only because `dist/` contents inside the container were explicitly checked rather than trusting the build/container status, consistent with the verification discipline established in the Phase 4.3 report.
+4. **npm registry network stalls** (infrastructure, not a code bug): a `--no-cache` retry attempt (taken to rule out a stale-cache explanation for bug #3) failed outright with an npm registry timeout after ~4 minutes; a subsequent normal (cached) build succeeded but took roughly 25 minutes due to extremely slow registry connectivity (confirmed independently via a direct `curl` request to `registry.npmjs.org` taking the full 10-second timeout for a single small request). Not a code defect; disclosed as a session-specific infrastructure condition. The strict-backend rebuild that followed, benefiting from a now-warm `pnpm` store cache, completed in under a minute.
+
+## Tests skipped or not executed
+
+None against live infrastructure in the end - Docker recovered and every tier (unit/integration/strict-integration/E2E/strict-E2E/Docker/manual-HTTP) executed for real, despite the extended infrastructure outage documented above under Bugs found.
+
+## Remaining risks and limitations
+
+* `RestaurantGalleryRepository` provides no tenant isolation by itself, by design (see Architecture decisions) - identical, disclosed trade-off to `RestaurantSettingsRepository`/`WorkingHoursRepository`; every current and future consumer must resolve the parent `Restaurant` first.
+* `ListRestaurantGalleryUseCase` performs a bounded, disclosed N+1 (`FileRepository.findById()` per gallery item, capped at `GALLERY_MAX_IMAGES_PER_RESTAURANT` = 20) to resolve each image's signed URL, since `RestaurantGallery` deliberately does not denormalize `bucket`/`objectKey` (not in `DATABASE_SCHEMA.md`'s documented field list; the Files aggregate remains the sole owner of that data). Acceptable at the current hard cap; would need batching (`FileRepository.findByIds`) if the cap were ever raised - not built here, as that would be Files-module scope expansion beyond "reuse completely."
+* Gallery images have no consumer yet on the customer-facing side (no public restaurant-profile read API exists - that's a future phase) - images are stored and returned via the owner-only management API but not yet displayed anywhere public. Expected and disclosed, not a gap in this phase's own scope.
+* The pre-existing `tavla-strict-nginx-1` crash-loop (first disclosed in Phase 4.3) remains unresolved - pre-existing, unrelated, does not block any current verification path.
+* Docker Desktop's demonstrated fragility under concurrent builds and slow-network conditions (see Bugs found #3-4) is an environment characteristic worth keeping in mind for future phases - sequential (never concurrent) image builds are now the established practice.
+* Carried forward, unchanged from Phase 4.1-4.3: `AuditingEventPublisher`'s growing cross-module dependency on Restaurant domain events; Employee-driven restaurant management remains unimplemented; subscription-limit enforcement remains unimplemented (Phase 12); the Engineering Baseline's disclosed Git configuration issue remains unresolved.
+
+## Documentation synchronization
+
+Updated `docs/API_GUIDELINES.md` (added `GALLERY_LIMIT_EXCEEDED` to the documented error-code list - required for a new endpoint's behavior, no ADR triggered), `TASKS.md` (status line, Phase 4 checklist, this report), `README.md`, `docs/PROJECT_ROADMAP.md`. No new ADR. No new documentation file created, per explicit instruction.
+
+## Final completion decision
+
+**PHASE 4.4 COMPLETE, LIVE-VERIFIED.** Every criterion passed with real, non-vacuous evidence against live infrastructure, twice (non-strict and strict, two genuinely separate stacks): unit 536/536, integration 107/107, strict integration 107/107, E2E 190/190, strict E2E 190/190, Docker (both stacks rebuilt, recreated, and health-verified with `dist/` contents explicitly confirmed - not just container status), a full manual HTTP flow through Nginx proving the complete upload/list/delete/audit/cleanup lifecycle with a real image file, and zero regressions anywhere in Phase 2/3/4.1-4.3. Tenant isolation, item-level IDOR protection, mass-assignment protection, multipart file validation, capacity enforcement, and audit logging were all proven live against two real organizations and real uploaded files, not merely asserted. Gallery required exactly one additive Prisma migration and no tenant-scoping extension change, completely reusing the Files module/MinIO/authorization stack per the user's explicit architecture decisions - no second upload subsystem was built. This phase also surfaced and worked through a significant Docker Desktop infrastructure outage (concurrent-build daemon hang + slow-network build stalls, both disclosed above), none of which trace back to a code defect.
+
+## Next phase/sub-phase per TASKS.md
+
+**Phase 4 — Cuisine & Occasion Taxonomy Assignment (ADR-018)** is the only remaining unchecked Phase 4 sub-item. Do not begin without explicit user approval, per this same reconciliation process. Phase 5 (Branch Module) and beyond remain untouched.
+
+**PHASE 4.4 COMPLETE**
+
+---
+
+# Phase 4.5 — Restaurant Module: Cuisine & Occasion Taxonomy Assignment
+
+Explicitly approved as the fifth and final Phase 4 sub-scope, following the same reconciliation process as every prior Phase 4 sub-scope. Scoped strictly to **assignment** - platform-managed `CuisineCategory`/`OccasionCategory` reference tables (seeded at deploy) linked to a restaurant via `RestaurantCuisineCategory`/`RestaurantOccasionCategory` join tables. Explicitly excluded and untouched: search/discovery filtering by cuisine/occasion (ADR-018's PostgreSQL discovery-query strategy - a separate, unscheduled Discovery phase), the comparison API (ADR-018 §3), category CRUD/admin management (categories are seed-only in this phase, no admin endpoint), and all Phase 5+ work.
+
+## Pre-implementation review
+
+Reviewed `TASKS.md`, `README.md`, `docs/PROJECT_ROADMAP.md`, `docs/PRODUCT_REQUIREMENTS.md` (FR-07.3/FR-07.4), `docs/DATABASE_SCHEMA.md`, `docs/DOMAIN_MODEL.md`, `docs/DECISIONS.md` (ADR-018), `docs/AUTHORIZATION_ARCHITECTURE.md`, `docs/CHANGE_POLICY.md`, `docs/MIGRATION_POLICY.md`, `docs/ARCHITECTURE_LOCK.md`, and the full Phase 4.1-4.4 Restaurant implementation before writing anything.
+
+**Phase confirmation**: TASKS.md's Phase 4 checklist's only unchecked item after Gallery is "Cuisine & Occasion Taxonomy Assignment (ADR-018)" (`[ ]`, fifth of five). README.md and PROJECT_ROADMAP.md agree - no contradiction found.
+
+**No documentation conflict**: `DATABASE_SCHEMA.md` already fully specified all four tables (`Cuisine Categories`, `Restaurant Cuisine Categories`, `Occasion Categories`, `Restaurant Occasion Categories`) ahead of time, and `PRODUCT_REQUIREMENTS.md` FR-07.3/FR-07.4 map them directly to "multi-select per restaurant" - confirming assignment (not search) is this phase's scope. ADR-018 ("Search & Restaurant Discovery Strategy") already covers the taxonomy tables as a "Consequence" but does not require an ADR change for assignment-only work - no new ADR was created. One pre-existing documentation gap found and fixed as a documentation-clarification (`CHANGE_POLICY.md`'s "documentation clarification" path, not an architectural change, matching Phase 4.3's precedent): the two join-table sections omitted the synthetic `id (UUID)` primary key that `Favorites` (the closest existing precedent - `FavoriteRestaurant`, a near-identical many-to-many join) already documents; corrected to match the implementation.
+
+## Architecture decisions
+
+1. **Full-replace assignment, not add/remove**: `PATCH :id/cuisine-categories`/`PATCH :id/occasion-categories` accept the complete desired set (`cuisineCategoryIds`/`occasionCategoryIds`) and replace it atomically (delete + recreate in one transaction) - identical semantics to `UpdateWorkingHoursUseCase`'s established full-replace convention, appropriate because a taxonomy assignment is a cheap-to-regenerate set of ids (unlike Gallery's real uploaded files, which use append/remove instead).
+2. **Reference data is read-only from this module**: `CuisineCategory`/`OccasionCategory` are seeded via `prisma/seed.ts` (`upsert`-by-`slug`, identical pattern to the existing `Permission`/`Role` seed catalog) - no create/update/delete endpoint exists for the categories themselves in this phase, matching `DATABASE_SCHEMA.md`'s "seeded at deploy" note.
+3. **Public reference-data listing**: `GET /cuisine-categories` and `GET /occasion-categories` carry no auth guard (new `TaxonomyCategoriesController`) - the only unauthenticated routes in the Restaurant Module, justified because the data is non-tenant, non-sensitive platform reference data a client needs to render a picker before/without authenticating.
+4. **Tenant isolation strategy**: identical pattern to `RestaurantSettings`/`WorkingHours`/`RestaurantGallery` - the join tables carry no direct `organizationId`, are NOT added to `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS`, every use case resolves the parent `Restaurant` via the already-tenant-scoped `RestaurantRepository` first. `CuisineCategory`/`OccasionCategory` reference tables are not tenant-owned at all (platform-wide).
+5. **Validation, not silent filtering**: an unknown or inactive category id in a `PATCH` request is rejected with `400 VALIDATION_ERROR` (`UnknownCuisineCategoryException`/`UnknownOccasionCategoryException`), never silently dropped - `SetRestaurant*CategoriesUseCase` compares the resolved active-category count against the deduplicated input count before persisting anything.
+6. **Audit, not a new domain event**: `EVENTS.md` has no named taxonomy domain event class. Follows `UpdateRestaurantSettingsUseCase`/`UpdateWorkingHoursUseCase`'s own precedent exactly: direct `restaurant.cuisine_categories.updated`/`restaurant.occasion_categories.updated` audit-log writes, no invented domain event class.
+7. **Authorization reused unchanged**: `OrganizationMemberGuard`/`@RequireOrgRole(Owner, Admin)` on every restaurant-scoped route, identical to Settings/Working Hours/Gallery - never combined with `PermissionsGuard`/`@RequirePermission`.
+
+## Database/schema design
+
+Four new tables, exactly as `DATABASE_SCHEMA.md` already specified (with the `id` clarification above): `cuisine_categories`/`occasion_categories` (`id`, `slug` unique, `name`, `is_active` default `true`, `sort_order` default `0`, `created_at`, `updated_at`) and `restaurant_cuisine_categories`/`restaurant_occasion_categories` (`id`, `restaurant_id` FK `onDelete: Cascade`, `cuisine_category_id`/`occasion_category_id` FK `onDelete: Cascade`, `created_at`; composite unique on `(restaurantId, categoryId)`, given an explicit short `map` name since Prisma's default auto-generated name would exceed PostgreSQL's 63-byte identifier limit for these particular field-name lengths). One additive migration (`20260716150000_phase_4_5_add_cuisine_occasion_taxonomy`) - four new tables only, no existing table altered. Hand-authored (Docker was not yet running when the schema was written) and cross-checked field-by-field against `prisma format`/`validate`/`generate` output before being applied; applied and status-confirmed clean against both the dev and the isolated strict-verification Postgres instances with zero drift.
+
+## Files created
+
+* `apps/backend/src/modules/restaurants/domain/entities/cuisine-category.entity.ts` (+`.spec.ts`), `occasion-category.entity.ts` (+`.spec.ts`), `restaurant-cuisine-category.entity.ts` (+`.spec.ts`), `restaurant-occasion-category.entity.ts` (+`.spec.ts`)
+* `apps/backend/src/modules/restaurants/domain/exceptions/unknown-cuisine-category.exception.ts`, `unknown-occasion-category.exception.ts`
+* `apps/backend/src/modules/restaurants/domain/repositories/cuisine-category.repository.ts`, `occasion-category.repository.ts`, `restaurant-cuisine-category.repository.ts`, `restaurant-occasion-category.repository.ts`
+* `apps/backend/src/modules/restaurants/infrastructure/persistence/{cuisine-category,occasion-category,restaurant-cuisine-category,restaurant-occasion-category}.prisma-mapper.ts` and `prisma-{cuisine-category,occasion-category,restaurant-cuisine-category,restaurant-occasion-category}.repository.ts`
+* `apps/backend/src/modules/restaurants/application/dto/{cuisine-category,occasion-category,restaurant-cuisine-categories,restaurant-occasion-categories}.result.ts`, `{get,set}-restaurant-{cuisine,occasion}-categories.command.ts`
+* `apps/backend/src/modules/restaurants/application/mappers/{cuisine-category,occasion-category}-result.mapper.ts`
+* `apps/backend/src/modules/restaurants/application/use-cases/{list-cuisine-categories,list-occasion-categories,get-restaurant-cuisine-categories,set-restaurant-cuisine-categories,get-restaurant-occasion-categories,set-restaurant-occasion-categories}.use-case.ts` (each +`.spec.ts`)
+* `apps/backend/src/modules/restaurants/presentation/dto/{cuisine-category,occasion-category}.response.dto.ts`, `set-restaurant-{cuisine,occasion}-categories.request.dto.ts`
+* `apps/backend/src/modules/restaurants/presentation/controllers/taxonomy-categories.controller.ts`
+* `apps/backend/prisma/migrations/20260716150000_phase_4_5_add_cuisine_occasion_taxonomy/migration.sql`
+* `apps/backend/test/restaurants/support/in-memory-{cuisine-category,occasion-category,restaurant-cuisine-category,restaurant-occasion-category}.repository.ts`
+* `apps/backend/test/restaurants/prisma-cuisine-taxonomy.integration-spec.ts`, `prisma-occasion-taxonomy.integration-spec.ts`, `taxonomy.e2e-spec.ts`
+
+## Files modified
+
+* `apps/backend/prisma/schema.prisma` - added the four models + `Restaurant.cuisineCategories`/`Restaurant.occasionCategories` back-relations.
+* `apps/backend/prisma/seed.ts` - added `CUISINE_CATEGORIES`/`OCCASION_CATEGORIES` catalogs (12 + 7 entries) and `seedCuisineCategories()`/`seedOccasionCategories()`, called from `main()`, reusing the existing `upsert`-by-`slug` pattern.
+* `apps/backend/src/modules/restaurants/presentation/controllers/restaurants.controller.ts` - added `GET`/`PATCH :id/cuisine-categories` and `GET`/`PATCH :id/occasion-categories` routes + response mappers.
+* `apps/backend/src/modules/restaurants/presentation/controllers/restaurants.controller.spec.ts`, `restaurants.controller.swagger.spec.ts` - new provider mocks + coverage for the four new routes and the new `TaxonomyCategoriesController`'s two public routes.
+* `apps/backend/src/modules/restaurants/restaurants.module.ts` - registers the six new use cases, four new repositories/tokens, and the new `TaxonomyCategoriesController`.
+* `apps/backend/test/restaurants/restaurants.e2e-spec.ts` - untouched (taxonomy e2e coverage lives in its own file, `taxonomy.e2e-spec.ts`, matching this phase's own scope boundary).
+* `docs/DATABASE_SCHEMA.md` - added the missing `id (UUID)` field to both join-table sections' field lists and two new "Relationships" diagram entries (documentation clarification, no ADR).
+
+## Security review
+
+* **Tenant isolation**: `RestaurantCuisineCategoryRepository`/`RestaurantOccasionCategoryRepository` perform zero tenant filtering by themselves - every use case gates through the already-proven `RestaurantRepository.findById()` first. Proven live, e2e, real HTTP, two real organizations (`GET`/`PATCH` on another organization's restaurant's taxonomy assignment both → `404`, the target restaurant's own row provably unchanged afterward - one assigned row remained, not deleted by the rejected cross-tenant `PATCH []`).
+* **Mass assignment**: `SetRestaurant{Cuisine,Occasion}CategoriesRequestDto` is an explicit allowlist (`cuisineCategoryIds`/`occasionCategoryIds` only, `IsUUID('4', { each: true })`, `ArrayUnique()`, `ArrayMaxSize(50)`); global `forbidNonWhitelisted` rejects any extra field with `400`.
+* **Input validation, not silent failure**: an unknown or inactive category id is rejected with `400 VALIDATION_ERROR` before any write happens, proven live via manual HTTP and by dedicated unit/e2e tests asserting zero rows persisted after a rejected request.
+* **Audit logging**: every successful `PATCH` writes exactly one audit-log entry (`restaurant.cuisine_categories.updated`/`restaurant.occasion_categories.updated`) with the correct `actorId`/`organizationId` - proven live via a manual `psql` query during Docker verification and via unit/e2e tests.
+* **JWT actor handling**: identity/organization exclusively from `@CurrentActor()`, typed `AuthenticatedOrganizationMemberActor`, matching every other Restaurant route.
+* **Public routes deliberately unauthenticated**: `GET /cuisine-categories`/`GET /occasion-categories` carry no guard by design (reference data, no PII, no tenant data) - confirmed via the Swagger document spec asserting `security: []` on both routes, distinguishing them from every other Restaurant Module endpoint.
+
+## Tenant review
+
+`RestaurantCuisineCategory`/`RestaurantOccasionCategory` are **transitively Organization-tenant-owned** through their parent `Restaurant` (ADR-011's ownership classification extended one level, identical to `RestaurantSettings`/`WorkingHours`/`RestaurantGallery`). `CuisineCategory`/`OccasionCategory` themselves are **not tenant-owned at all** - platform-wide shared reference data, per `DATABASE_SCHEMA.md`'s explicit "Not tenant-scoped" note, matching `SystemConfiguration`'s existing precedent. Verified explicitly, live, e2e: two real organizations, cross-tenant `GET`/`PATCH` on another organization's restaurant's taxonomy assignment both → `404`.
+
+## Audit review
+
+Both `restaurant.cuisine_categories.updated` and `restaurant.occasion_categories.updated` proven to write exactly once per successful `PATCH`, with the correct `actorId`, `actorType: 'User'`, `targetType: 'Restaurant'`, `targetId`, and `organizationId` - proven via unit tests (`CollectingAuditLogWriter`), e2e tests (real Postgres `auditLog` query), and a manual `psql` query against the live dev database during Docker verification.
+
+## Test results
+
+* **Unit** (full repo): **79/79 suites, 588/588 tests, zero regressions.** New taxonomy coverage: 4 domain entity specs, 6 use-case specs, controller +12 tests (4 new route describe blocks), Swagger +2 assertions.
+* **Integration** (dev stack): **27/27 suites, 121/121 tests** (was 25/107 after Phase 4.4; +2 suites, +14 tests: new `prisma-cuisine-taxonomy.integration-spec.ts` and `prisma-occasion-taxonomy.integration-spec.ts`, 7 tests each). New: `findAllActive`/`findByIds` reference-data proofs, full-replace-not-duplicate proof, empty-array-clears proof, no-tenant-filtering-by-design proof.
+* **Strict integration verify** (isolated stack, fail-closed): **27/27 suites, 121/121 tests** - identical to non-strict, after applying the new migration and re-running the seed against the strict Postgres instance.
+* **E2E** (dev stack): **19/19 suites, 199/199 tests** (was 19/190). New: `taxonomy.e2e-spec.ts`, 9 tests (public listing sorted by `sortOrder`, empty-assignment-on-creation, full-replace + audit log for both cuisine and occasion, unknown-id-400 for both, cross-tenant 404 on GET/PATCH with row-count proof, 401-without-auth).
+* **Strict E2E verify** (isolated stack): **19/19 suites, 199/199 tests** - identical to non-strict.
+* `pnpm audit --prod`: no known vulnerabilities.
+* No tests skipped, none vacuous.
+
+## Docker verification
+
+Both dev and strict backend images rebuilt with the new code and migration, both containers recreated healthy (`docker compose ... up -d --build backend` for dev on the default project, and the equivalent `-p tavla-strict -f docker-compose.yml -f docker-compose.strict-verify.override.yml` invocation for strict). Live Swagger JSON (`/api/v1/docs-json`) confirmed all four new paths (`/restaurants/{id}/cuisine-categories`, `/restaurants/{id}/occasion-categories`, `/cuisine-categories`, `/occasion-categories`) mapped on **both** stacks (dev via Nginx on port 80 and directly on port 3000, strict directly on port 13000). Health endpoints green on both stacks (`database`/`redis`/`minio` all `up`).
+
+## Manual HTTP verification (through Nginx, dev stack)
+
+Real `curl` flow: public `GET /cuisine-categories`/`GET /occasion-categories` (200, unauthenticated, returns the seeded catalog sorted by `sortOrder`) → register → activate (dev has no real email delivery) → login → `POST /restaurants` (201) → `GET /restaurants/:id/cuisine-categories` (200, empty `categories` array on a brand-new restaurant) → `PATCH .../cuisine-categories` with two real seeded category ids (200, full-replace, returns both categories) → `GET .../cuisine-categories` (200, confirms persistence) → `PATCH .../cuisine-categories` with a random unknown UUID (400, `VALIDATION_ERROR`) → `PATCH .../occasion-categories` (200) → registered a second organization owner → `GET`/`PATCH .../cuisine-categories` as the second owner against the first owner's restaurant (both 404, cross-tenant IDOR blocked). Direct `psql` query confirmed both `restaurant.cuisine_categories.updated` and `restaurant.occasion_categories.updated` audit rows with the correct actor. All manually-created test data cleaned up afterward (assignment rows, restaurant, organizations, memberships, sessions, users - zero rows remain; seeded reference categories intentionally left in place, matching the seed script's own idempotent `upsert` design).
+
+## Prisma/migration verification
+
+`prisma format`: clean. `prisma validate`: clean. `prisma generate`: succeeded. `prisma migrate status` (dev stack): "Database schema is up to date" after `migrate deploy` applied the new migration. Same migration applied and status-confirmed against the strict-verification Postgres instance. Seed script (`tsx prisma/seed.ts`) run successfully against both stacks; category counts confirmed via direct query (12 `cuisine_categories`, 7 `occasion_categories` on each).
+
+## Regression results
+
+Full unit suite: 588/588, zero regressions in Authentication/Authorization/Tenancy/Users/Restaurants CRUD/Settings/Working Hours/Gallery. Full `eslint --max-warnings 0` (touched files): zero errors/warnings after auto-fixing a handful of Prettier formatting violations, then re-verified with a clean lint run and a full test re-run - zero behavioral change. Full `tsc --noEmit` (whole repo): zero errors. `nest build`: clean.
+
+## Static quality audit
+
+Searched every file touched this phase for `TODO`/`FIXME`/`HACK`/`@ts-ignore`/`eslint-disable`/`.skip`/`.only`/`console.log`: none found.
+
+## Bugs found and fixed
+
+1. **ESLint/Prettier formatting** (self-inflicted, not a logic bug): a handful of formatting violations across newly-written repository/controller files, caught by the mandatory `eslint --max-warnings 0` run, fixed with `eslint --fix`, then re-verified with a clean lint run and a full test re-run.
+2. **Long auto-generated composite-unique index name** (caught before it could reach a live database): Prisma's default `@@unique([restaurantId, cuisineCategoryId])`/`@@unique([restaurantId, occasionCategoryId])` naming would exceed PostgreSQL's 63-byte identifier limit for these particular field-name lengths; fixed by giving both an explicit short `map` name in the schema, applied consistently to the hand-written migration SQL.
+3. **Test-only typing gap in the two new integration specs** (self-inflicted, caught by `ts-jest`'s stricter type-checking under `jest-integration.json`, which the default `jest` unit config does not exercise the same way): `categoryA`/`categoryB`/`inactiveCategory` were initially typed `{ id: string }` while the tests also read `.slug` off them; fixed by widening the type to `{ id: string; slug: string }`.
+4. **Garbled first draft of a manual-flow-style e2e assertion**, caught during self-review before running the suite (not a runtime bug - would have compiled and asserted something unintended): an overcomplicated inline expression for asserting sorted-by-`sortOrder` order was simplified to a plain array comparison using captured slug variables.
+
+## Tests skipped or not executed
+
+None. Every tier (unit/integration/strict-integration/E2E/strict-E2E/Docker/manual-HTTP) executed for real against live infrastructure.
+
+## Remaining risks and limitations
+
+* `RestaurantCuisineCategoryRepository`/`RestaurantOccasionCategoryRepository` provide no tenant isolation by themselves, by design (see Architecture decisions) - identical, disclosed trade-off to `RestaurantSettingsRepository`/`WorkingHoursRepository`/`RestaurantGalleryRepository`; every current and future consumer must resolve the parent `Restaurant` first.
+* No category CRUD/admin endpoint exists yet - categories are seed-only in this phase, matching `DATABASE_SCHEMA.md`'s "seeded at deploy" note; a future Platform Admin phase would need to add one if the catalog needs to change without a deploy.
+* Taxonomy assignment has no consumer yet on the customer-facing/search side - ADR-018's PostgreSQL discovery-query strategy (filtering restaurants by cuisine/occasion) is explicitly deferred to a future, unscheduled Discovery phase; the tables exist and are populated, but nothing queries them for search yet. Expected and disclosed, not a gap in this phase's own scope.
+* Carried forward, unchanged from Phase 4.1-4.4: `AuditingEventPublisher`'s growing cross-module dependency on Restaurant domain events; Employee-driven restaurant management remains unimplemented; subscription-limit enforcement remains unimplemented (Phase 12); the Engineering Baseline's disclosed Git configuration issue remains unresolved; the entire Phase 4.4 Gallery implementation (and this phase's own changes) remained uncommitted to git at the start of this session - a pre-existing condition from a prior session, not introduced here, and not resolved as part of this phase's own scope (commits are the user's call).
+
+## Documentation synchronization
+
+Updated `docs/DATABASE_SCHEMA.md` (added the missing `id` field to both join-table sections, two new Relationships entries - documentation clarification, no ADR), `TASKS.md` (status line, Phase 4 checklist now fully checked, this report), `README.md`, `docs/PROJECT_ROADMAP.md`. No new ADR (ADR-018 already covered the taxonomy tables as a documented consequence). No new documentation file created, per explicit instruction.
+
+## Final completion decision
+
+**PHASE 4.5 COMPLETE, LIVE-VERIFIED. RESTAURANT MODULE COMPLETE.** Every criterion passed with real, non-vacuous evidence against live infrastructure, twice (non-strict and strict, two genuinely separate stacks): unit 588/588, integration 121/121, strict integration 121/121, E2E 199/199, strict E2E 199/199, Docker (both stacks rebuilt, recreated, and health-verified, all four new Swagger paths confirmed present on both), a full manual HTTP flow through Nginx proving the complete public-listing/assign/validate/audit/cross-tenant-isolation/cleanup lifecycle, and zero regressions anywhere in Phase 2/3/4.1-4.4. Tenant isolation, mass-assignment protection, input validation, and audit logging were all proven live against two real organizations, not merely asserted. Taxonomy assignment required exactly one additive Prisma migration (four tables) and no tenant-scoping extension change, reusing the established `OrganizationMemberGuard`/full-replace/audit-not-event patterns from Settings/Working Hours - no new architectural pattern was introduced. This closes every checklist item in Phase 4 - all five Restaurant Module sub-scopes (CRUD, Settings, Working Hours, Gallery, Taxonomy Assignment) are now complete and live-verified.
+
+## Next phase per TASKS.md
+
+**Phase 5 — Branch Module** is the next unchecked phase after Phase 4. Do not begin without explicit user approval, per this same reconciliation process.
+
+**PHASE 4.5 COMPLETE**
+
+**RESTAURANT MODULE COMPLETE**
+
+**READY FOR PHASE 5**
+
+---
+
+# Phase 5.1 — Branch Module: Branch CRUD
+
+Explicitly approved as the first Phase 5 sub-scope, following the same reconciliation process as every prior phase. Scoped strictly to **CRUD over the pre-existing `Branch` table**: `city`, `district`, `address`, `countryCode`, `currency`, `timezone`, `phone`. Explicitly excluded and untouched: `latitude`/`longitude` (deferred to "Geo Coordinates for Nearby Search"), `openingHours` (deferred to "Working Schedule"), Maps integration, structured Address validation, and all Phase 5.2+/Phase 6+ work.
+
+## Pre-implementation review
+
+Reviewed `TASKS.md`, `README.md`, `docs/PROJECT_ROADMAP.md`, `docs/PRODUCT_REQUIREMENTS.md`, `docs/DATABASE_SCHEMA.md`, `docs/DOMAIN_MODEL.md`, `docs/AUTHORIZATION_ARCHITECTURE.md`, `docs/AUTHENTICATION_ARCHITECTURE.md`, `docs/API_GUIDELINES.md`, `docs/EVENTS.md`, `docs/DECISIONS.md`, `docs/CHANGE_POLICY.md`, `docs/MIGRATION_POLICY.md`, `docs/ARCHITECTURE_LOCK.md`, and every completed Restaurant Module implementation (4.1–4.5), Users Module, Authentication/Authorization, Files, Audit, Tenancy, Prisma schema, and existing test infrastructure before writing anything.
+
+**Phase confirmation**: TASKS.md's Phase 4 checklist is fully checked; Phase 5's checklist had all five items unchecked, "Branch CRUD" first. `apps/backend/src/modules/branches/branches.module.ts` was confirmed to still be the empty `@Module({})` scaffold (its own comment: "Not registered in AppModule until its owning phase is explicitly approved"), not registered in `app.module.ts` — matches the "not started" claim. No contradiction found between documentation and implementation.
+
+**Pre-existing condition, not introduced this phase**: the entire Phase 4.4/4.5 Restaurant Gallery/Taxonomy implementation remained uncommitted to git at the start of this session (same disclosed condition as Phase 4.5's own report). Left untouched; not resolved as part of this phase's scope (commits are the user's call).
+
+**No documentation conflict, one scope judgment call made explicit**: `DATABASE_SCHEMA.md`'s "Branches" section and `schema.prisma`'s `Branch` model already agreed field-for-field (`id, restaurantId, city, district, address, latitude, longitude, countryCode, currency, openingHours, timezone, phone, createdAt, updatedAt, deletedAt`) — the table was created whole in the Phase 2.1 foundation migration, unlike Restaurant's incremental per-sub-phase child tables. Since TASKS.md's Phase 5 checklist names "Branch CRUD", "Maps", "Address", "Working Schedule", and "Geo Coordinates for Nearby Search" as separate sub-items but the schema has only one `Branch` table, a field-level scope split was required: the four `NOT NULL` columns (`city`, `address`, `countryCode`, `timezone`) must ship with CRUD (a `Branch` row cannot exist without them); `district`/`currency`/`phone` are nullable with no dedicated later sub-phase name, so they ship with CRUD too (matching Restaurant's own precedent of including nullable-but-undesignated attributes in its base CRUD phase); `latitude`/`longitude` and `openingHours` are nullable **and** literally name later sub-phases ("Geo Coordinates for Nearby Search", "Working Schedule"), so they are excluded from this phase's entity/DTOs entirely — Prisma leaves omitted nullable columns as `NULL` on create and untouched on update, so no migration or mapper change is required when those later phases add them.
+
+## Architecture decisions
+
+1. **Routing: nested under `/restaurants/:restaurantId/branches`, not a flat top-level `/branches`.** Presented to the user as an explicit choice (flat vs. nested); the user selected nested. Matches the existing precedent set by Restaurant Gallery's own two-level nesting (`/restaurants/:id/gallery/:galleryItemId`, Phase 4.4) and API_GUIDELINES.md's own nesting example, rather than introducing a new top-level resource pattern nothing else in the codebase uses.
+2. **`BranchesModule` is its own top-level feature module**, not folded into `RestaurantsModule` (unlike Settings/Working Hours/Gallery/Taxonomy, which are Restaurant child features living inside `restaurants/`). This matches TASKS.md's own framing ("Phase 5 — Branch Module") and the pre-existing scaffold structure. `RestaurantsModule` now `exports: [RESTAURANT_REPOSITORY]` (previously exported nothing) so `BranchesModule` can import it and resolve the parent Restaurant for tenant isolation — the same relation-path pattern `WorkingHours`/`RestaurantSettings` use, just crossing a module boundary here.
+3. **Tenant isolation strategy**: `Branch` carries no direct `organizationId` column (confirmed in `schema.prisma`) and is deliberately **not** added to `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS` — exactly what that extension's own long-standing doc comment anticipated ("extend... when Phase 5 builds Branch's first repository... do not guess at the shape now"). Every use case resolves the parent Restaurant via the already-tenant-scoped `RestaurantRepository.findById()` first; a restaurant belonging to another organization resolves to `null` there exactly like any other cross-tenant lookup, before the `Branch` row is ever touched.
+4. **IDOR protection via compound lookup, not post-hoc comparison**: `BranchRepository.findByIdAndRestaurantId(id, restaurantId)` filters by both columns in one query (also `deletedAt: null`, matching `PrismaRestaurantRepository.findById`'s own convention) — a branch belonging to a different restaurant than the URL names is indistinguishable from "does not exist", never fetched-then-compared.
+5. **No Unit of Work**: unlike `CreateRestaurantUseCase` (which atomically writes `Restaurant` + `RestaurantSettings`), Branch CRUD writes to exactly one table per operation, so no transaction wrapper is needed beyond Prisma's own single-statement atomicity.
+6. **Unconditional soft delete**: DOMAIN_MODEL.md's business rule ("a Branch may only be soft-deleted if it has no Pending or Approved reservations with a future date/time") is not enforced — the Reservation aggregate does not exist until Phase 7, so the rule is currently unimplementable. Disclosed, deferred, not silently dropped, same precedent as Restaurant's own unconditional `softDelete()` in Phase 4.1.
+7. **Subscription-limit enforcement not implemented**: matches Restaurant's own Phase 4.1 precedent and TASKS.md's existing disclosure that subscription-limit enforcement is deferred to Phase 12.
+8. **Authorization reused unchanged**: `OrganizationMemberGuard`/`@RequireOrgRole(Owner, Admin)` on every route, identical stack to `RestaurantsController`, never combined with `PermissionsGuard`/`@RequirePermission`.
+9. **Audit, not a new domain event class beyond the three EVENTS.md already names**: `BranchCreatedEvent`/`BranchUpdatedEvent`/`BranchDeletedEvent` were added (EVENTS.md already reserved these three names with no documented payload shape) and wired into `AuditingEventPublisher.toAuditEntry` alongside the existing Restaurant event branches (`branch.created`/`branch.updated`/`branch.deleted`, `targetType: 'Branch'`) — the same single audit-mapping point every other module's events already use, no per-module audit writer.
+
+## Database/schema design
+
+No new migration. The `branches` table already exists (`prisma/migrations/20260707150000_phase_2_1_database_foundation`), and this phase's entity/mapper/repository deliberately touch only `city`, `district`, `address`, `countryCode`, `currency`, `timezone`, `phone`, `createdAt`, `updatedAt`, `deletedAt` — `latitude`, `longitude`, `openingHours` are left as `NULL`, untouched by any code this phase wrote, ready for a later phase to populate without a mapper rewrite. `prisma format`/`validate`/`generate`/`migrate status` all confirmed clean against the live dev database.
+
+## Files created
+
+* `apps/backend/src/modules/branches/domain/entities/branch.entity.ts`
+* `apps/backend/src/modules/branches/domain/exceptions/branch-not-found.exception.ts`
+* `apps/backend/src/modules/branches/domain/events/branch.events.ts`
+* `apps/backend/src/modules/branches/domain/repositories/branch.repository.ts`
+* `apps/backend/src/modules/branches/application/dto/{create,get,update,delete,list}-branch{es,}.command.ts`, `branch.result.ts`, `branch-list.result.ts`
+* `apps/backend/src/modules/branches/application/mappers/branch-result.mapper.ts`
+* `apps/backend/src/modules/branches/application/use-cases/{create,get,list,update,delete}-branch{es,}.use-case.ts` (each +`.spec.ts`)
+* `apps/backend/src/modules/branches/infrastructure/persistence/branch.prisma-mapper.ts`, `prisma-branch.repository.ts`
+* `apps/backend/src/modules/branches/presentation/dto/{create,update}-branch.request.dto.ts`, `branch.response.dto.ts`, `branch-list.response.dto.ts`, `list-branches.query.dto.ts`
+* `apps/backend/src/modules/branches/presentation/controllers/branches.controller.ts`
+* `apps/backend/test/branches/support/in-memory-branch.repository.ts`
+* `apps/backend/test/branches/prisma-branch.integration-spec.ts`
+* `apps/backend/test/branches/branches.e2e-spec.ts`
+
+## Files modified
+
+* `apps/backend/src/modules/branches/branches.module.ts` — replaced the empty scaffold with the full provider/controller wiring.
+* `apps/backend/src/modules/restaurants/restaurants.module.ts` — added `exports: [RESTAURANT_REPOSITORY]` for `BranchesModule` to consume.
+* `apps/backend/src/app.module.ts` — registered `BranchesModule`.
+* `apps/backend/src/modules/authentication/infrastructure/events/auditing-event-publisher.ts` — added the three `Branch*Event` `instanceof` branches to `toAuditEntry`.
+
+## Security review
+
+* **Mass assignment**: `CreateBranchRequestDto`/`UpdateBranchRequestDto` are explicit allowlists (no `restaurantId`, `id`, `createdAt`, or `deletedAt` field on either); global `forbidNonWhitelisted` rejects any extra field with `400`.
+* **Tenant isolation**: proven live, e2e, real HTTP, two real organizations — cross-tenant `GET`/`LIST`/`PATCH`/`DELETE` on another organization's restaurant's branch all → `404`, target branch provably unchanged afterward (`deletedAt` still `null`).
+* **IDOR (same organization, different restaurant)**: proven live, e2e — `GET`/`PATCH`/`DELETE` a branch through a sibling restaurant's URL (same organization) all → `404`.
+* **Input validation**: `countryCode` (`^[A-Z]{2}$`), `currency` (`^[A-Z]{3}$`) rejected with `400 VALIDATION_ERROR` for malformed input, proven via unit, e2e, and manual HTTP tests.
+* **JWT actor handling**: identity/organization exclusively from `@CurrentActor()`, typed `AuthenticatedOrganizationMemberActor`; no request field ever supplies `organizationId`.
+* **Audit logging**: every successful create/update/delete writes exactly one audit-log entry (`branch.created`/`branch.updated`/`branch.deleted`) with the correct `actorId`, proven via a manual `psql` query during Docker verification and via e2e tests.
+
+## Authorization review
+
+Identical stack to every Restaurant route: `JwtAuthGuard` → `SessionVersionGuard` → `OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)`. Never combined with `PermissionsGuard`/`@RequirePermission` on the same route (AUTHORIZATION_ARCHITECTURE.md §2.1/§14).
+
+## Tenant review
+
+`Branch` is **transitively** Organization-tenant-owned via `restaurantId → Restaurant.organizationId` (TENANCY.md), not directly — correctly left out of `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS`, matching the extension's own long-standing doc comment. `PrismaBranchRepository` provides **no** tenant isolation by itself, by design; every consuming use case resolves the parent Restaurant first. Verified explicitly, live, e2e: two real organizations, cross-tenant GET/LIST/PATCH/DELETE all → 404.
+
+## Audit review
+
+`branch.created`/`branch.updated`/`branch.deleted` proven to write exactly once per successful operation, with the correct `actorId`, `actorType: 'User'`, `targetType: 'Branch'`, `targetId`, and `organizationId` — proven via e2e tests (real Postgres `auditLog` query) and a manual `psql` query against the live dev database during Docker verification.
+
+## Transaction review
+
+Each Branch write (`create`/`update`/soft-`delete`) is a single Prisma `upsert` call — atomic by Postgres's own single-statement guarantee, no explicit `$transaction`/Unit-of-Work needed (unlike Restaurant's Create, which atomically writes two tables).
+
+## Test results
+
+* **Unit** (full repo): **84 suites, 609 tests, zero regressions.** New: 5 Branch use-case spec files, 21 tests (create/get/list/update/delete, each covering the happy path, tenant-not-found, IDOR-via-different-restaurant, and event publication).
+* **Integration** (dev stack, live Postgres on `localhost:5433`): **28 suites, 128 tests** (was 27/121; +1 suite, +7 tests: `prisma-branch.integration-spec.ts` — round-trip persistence, cross-restaurant isolation, pagination/sort, update-in-place, soft-delete filtering, no-tenant-filtering-by-design proof).
+* **Strict integration verify** (`--runInBand`, fail-closed `REQUIRE_LIVE_DATABASE`): **28/28 suites, 128/128 tests** — identical to non-strict.
+* **E2E** (dev stack): **20 suites, 210 tests** (was 19/199; +1 suite, +11 tests: `branches.e2e-spec.ts` — full lifecycle, pagination, cross-tenant isolation, same-org cross-restaurant IDOR, validation, 401/404/400, nullable-field acceptance).
+* **Strict E2E verify**: **20/20 suites, 210/210 tests** — identical to non-strict (no hang reproduced this run, contrary to a previously-disclosed flaky-hang risk in Phase 2.12's report — not investigated further, out of this phase's scope).
+* `pnpm audit --prod`: no known vulnerabilities.
+* No tests skipped, none vacuous.
+
+## Docker verification
+
+Dev backend image rebuilt (`docker compose --env-file ../.env.development build backend`) and container recreated (`up -d backend`); startup logs confirm `BranchesController {/api/restaurants/:restaurantId/branches}` mapped with all five routes, `Nest application successfully started`. Health endpoint green (`database`/`redis`/`minio` all `up`). Live Swagger JSON (`/api/v1/docs-json`) confirmed both Branch paths present. Metrics endpoint (`/api/v1/metrics`) returns Prometheus-format output including live per-route histograms.
+
+## Manual HTTP verification
+
+Real `curl` flow against the rebuilt dev container: register → activate (dev has no real email delivery, matching every other phase's approach) → login → `POST /restaurants` (201) → `POST .../branches` (201) → `GET .../branches/:id` (200) → `GET .../branches` (200, one item) → `PATCH .../branches/:id` (200, full-replace confirmed) → `DELETE .../branches/:id` (204) → `GET .../branches/:id` (404, confirms soft delete) → unauthenticated `POST` (401). Direct `psql` query confirmed `branch.created`/`branch.updated`/`branch.deleted` audit rows with the correct actor. All manually-created test data (branch, restaurant, organization, membership, sessions, user) cleaned up afterward.
+
+## Prisma/migration verification
+
+`prisma format`: clean. `prisma validate`: clean. `prisma generate`: succeeded. `prisma migrate status`: "Database schema is up to date" — no new migration was required, confirming the pre-implementation scope decision that the `branches` table already exists.
+
+## Regression results
+
+Full unit suite: 609/609, zero regressions in Authentication/Authorization/Tenancy/Users/Restaurants (CRUD/Settings/Working Hours/Gallery/Taxonomy). Full integration/e2e suites (non-strict and strict): zero regressions. `tsc --noEmit` (whole repo): zero errors. `eslint` on every file this phase touched: zero errors after auto-fixing Prettier formatting violations with `--fix`, then re-verified with a clean lint run and a full test re-run. `nest build`: clean.
+
+**One pre-existing, out-of-scope lint issue noted, not fixed**: a single Prettier formatting violation in `apps/backend/src/modules/restaurants/application/use-cases/remove-restaurant-gallery-image.use-case.ts` (part of the uncommitted Phase 4.4 Gallery work, untracked in git, predates this session) surfaces on a full-repo `eslint` run. Left untouched per this phase's "do not refactor unrelated modules" scope boundary — the same uncommitted-Phase-4.4-state condition already disclosed in Phase 4.4/4.5's own reports.
+
+## Static quality audit
+
+Searched every file created/modified this phase for `TODO`/`FIXME`/`HACK`/`@ts-ignore`/`eslint-disable`/`.skip`/`.only`/`console.log`: none found.
+
+## Bugs found and fixed
+
+1. **Invalid UUID placeholders in test doubles** (self-inflicted, caught by `SequentialIdGenerator`'s own UUID-format guard): several use-case specs initially used non-UUID strings (`'evt-create'`, `'evt-1'`, etc.) and non-UUID ids in a `list-branches` spec's bulk-seed helper; fixed by using valid UUID literals (and `randomUUID()` for the bulk case).
+2. **Invalid unit-level tenant-isolation test** (design gap, not a runtime bug): an initial `CreateBranchUseCase` spec tried to prove "restaurant belongs to another organization" using `InMemoryRestaurantRepository`, which — like the real `Restaurant` module's own test double — does not replicate the Prisma tenant-scoping extension's automatic `organizationId` filtering; the assertion instead threw `InvalidUuidException` from a non-UUID placeholder org id. Removed; this scenario is correctly proven only at the e2e level against real Postgres (see the e2e cross-tenant test), matching Restaurant's own test-suite precedent of never attempting this at the unit level.
+3. **Prettier formatting violations** across newly-written files, caught by the mandatory `eslint` run, fixed with `eslint --fix`, then re-verified with a clean lint run and a full test re-run - zero behavioral change.
+
+## Tests skipped or not executed
+
+None. Every tier (unit/integration/strict-integration/E2E/strict-E2E/Docker/manual-HTTP) executed for real against live infrastructure.
+
+## Remaining risks and limitations
+
+* `PrismaBranchRepository` provides no tenant isolation by itself, by design (see Architecture decisions) — every current and future consumer must resolve the parent Restaurant first, identical disclosed trade-off to `RestaurantSettingsRepository`/`WorkingHoursRepository`/`RestaurantGalleryRepository`.
+* Branch deletion does not yet enforce the "no future Pending/Approved reservations" rule — unimplementable until Phase 7 builds the Reservation aggregate. Disclosed, deferred, not a silent gap.
+* `latitude`/`longitude`/`openingHours` remain `NULL` for every branch created this phase — by design, deferred to "Geo Coordinates for Nearby Search" and "Working Schedule" respectively.
+* Subscription-limit enforcement (`maxBranchesPerRestaurant`) is not implemented — deferred to Phase 12, matching Restaurant's own precedent.
+* Carried forward, unchanged from Phase 4.1–4.5: `AuditingEventPublisher`'s growing cross-module dependency on Restaurant/Branch domain events; Employee-driven restaurant/branch management remains unimplemented; the Engineering Baseline's disclosed Git configuration issue remains unresolved; the Phase 4.4/4.5 Restaurant Gallery/Taxonomy implementation (and this phase's own changes) remained uncommitted to git at the start of this session — a pre-existing condition from a prior session, not introduced here, not resolved as part of this phase's own scope (commits are the user's call); the single pre-existing lint nit noted above in `remove-restaurant-gallery-image.use-case.ts`.
+
+## Documentation synchronization
+
+Updated `TASKS.md` (status line, Phase 5 checklist, this report), `README.md`, `docs/PROJECT_ROADMAP.md`, `docs/DATABASE_SCHEMA.md` (added a Phase 5.1 scope note to the "Branches" section clarifying which fields are CRUD-exposed vs. deferred — documentation clarification, no ADR). No new ADR created (`CHANGE_POLICY.md`'s "implementing a documented design exactly as specified" exemption applies — the `Branch` table, its domain-event names, and its tenant-scoping strategy were all already documented before this phase began). No new documentation file created, per explicit instruction.
+
+## Final completion decision
+
+**PHASE 5.1 COMPLETE, LIVE-VERIFIED.** Every criterion passed with real, non-vacuous evidence against live infrastructure (non-strict and strict): unit 609/609, integration 128/128, strict integration 128/128, E2E 210/210, strict E2E 210/210, Docker (image rebuilt, container recreated healthy, both new routes confirmed in live Swagger JSON), a full manual HTTP flow proving the complete create/read/list/update/delete/audit/cleanup lifecycle, and zero regressions anywhere in Phase 2/3/4. Tenant isolation, same-organization cross-restaurant IDOR protection, mass-assignment protection, input validation, and audit logging were all proven live against two real organizations and a same-organization two-restaurant scenario, not merely asserted. Branch CRUD required zero new migrations (the table already existed) and no tenant-scoping extension change, reusing the established `OrganizationMemberGuard`/relation-path-tenant-check/audit-mapping patterns from Restaurant Settings/Working Hours — no new architectural pattern was introduced beyond crossing a module boundary for the parent-Restaurant lookup (`RestaurantsModule` now exports `RESTAURANT_REPOSITORY`).
+
+**Is Branch CRUD production-ready?** Yes, within its declared scope (city/district/address/countryCode/currency/timezone/phone). It excludes geo coordinates, opening hours, Maps integration, and reservation-aware deletion by explicit, disclosed design — none of those are silent gaps.
+
+**Is there any architectural debt?** No new debt introduced. The one pre-existing debt item (Phase 4.4/4.5's uncommitted git state) is unchanged and not this phase's to resolve.
+
+**Are there any remaining blockers before continuing Phase 5?** None. The four remaining Phase 5 sub-items (Maps, Address, Working Schedule, Geo Coordinates for Nearby Search) are unstarted but unblocked — each can build additively on the `Branch` entity/repository this phase established.
+
+**Can the next Branch sub-phase begin safely?** Yes, pending explicit user approval per the established reconciliation process.
+
+PHASE 5.1 COMPLETE
+
+BRANCH CRUD VERIFIED
+
+READY FOR THE NEXT BRANCH PHASE
+
+---
+
+# Phase 5.2 — Branch Module: Working Schedule
+
+## Pre-implementation review and contradiction found
+
+Reviewed `TASKS.md`, `README.md`, `docs/PROJECT_ROADMAP.md`, `docs/DATABASE_SCHEMA.md`, `docs/DOMAIN_MODEL.md`, `docs/PRODUCT_REQUIREMENTS.md`, `docs/API_GUIDELINES.md`, `docs/EVENTS.md`, `docs/DECISIONS.md`, `docs/AUTHORIZATION_ARCHITECTURE.md`, `docs/AUTHENTICATION_ARCHITECTURE.md`, `docs/CHANGE_POLICY.md`, `docs/MIGRATION_POLICY.md`, `docs/ARCHITECTURE_LOCK.md`, and the Phase 5.1 Branch CRUD implementation before writing anything.
+
+**Contradiction found and STOPped on before any code was written**: the requested phase, "Branch Settings", does not exist anywhere in the documentation. TASKS.md's Phase 5 checklist (the single authoritative phase list) names exactly four remaining sub-items after Branch CRUD - `Maps`, `Address`, `Working Schedule`, `Geo Coordinates for Nearby Search` - with no `Branch Settings` entry. `DOMAIN_MODEL.md`'s Branch Aggregate section lists no `BranchSettings` child entity (only `Table`, `FloorPlan`, `EmployeeBranchAssignment`); the only `*Settings` entity anywhere in the codebase is `RestaurantSettings` (Phase 4.2), a Restaurant-level concept whose own `defaultCurrency` field is documented as existing specifically *because* Branch has no separate settings object. `DATABASE_SCHEMA.md`, `PRODUCT_REQUIREMENTS.md`, `DECISIONS.md`, and `API_GUIDELINES.md` were also grepped for "branch settings" in either word order - zero matches.
+
+Reported to the user as a STOP condition, per this project's established reconciliation process (mirroring the Phase 3.3/4.3 contradiction precedents). The user resolved it with an explicit scope decision, presented as a choice among the four documented Phase 5 sub-items plus an open option: **"Working Schedule" is Phase 5.2** - the Branch-level `WorkingHours` override that Phase 4.3's own report explicitly deferred ("Branch-level Working Hours become part of Phase 5 when the Branch aggregate is implemented... will be added as a separate, additive migration at that time").
+
+## Scope
+
+**Included**: `GET`/`PATCH /api/v1/restaurants/:restaurantId/branches/:branchId/working-hours` - a new `BranchWorkingHours` 1:many child entity of the Branch aggregate (one row per day-of-week per branch), full-replace `PATCH` semantics, identical validation rules to Restaurant's own `WorkingHours` (HH:mm format, 0-6 dayOfWeek, optional paired break times, cross-midnight hours allowed).
+
+**Excluded**: Maps, Address, Geo Coordinates for Nearby Search (separate, later Phase 5 sub-items, untouched). Any fallback/precedence logic between a Branch's override and its Restaurant's default (e.g. "if the branch has no override, use the restaurant's hours") - not needed by CRUD itself and has no consumer yet (Reservation Engine, Phase 7, is the natural future consumer of such logic).
+
+**Deferred**: resolving Branch-vs-Restaurant working-hours precedence to whichever future phase actually needs to read effective hours for a booking flow.
+
+## Architecture decisions
+
+1. **A new, separate table (`BranchWorkingHours`/`branch_working_hours`), not a nullable `branchId` added to the existing `WorkingHours` table.** This is the key design fork this phase resolved: the dual-parent design (nullable `restaurantId` + nullable `branchId` on one shared table) was the design Phase 4.3 explicitly rejected as premature. Each aggregate now owns its own child entity/table - `Restaurant` owns `WorkingHours`, `Branch` owns `BranchWorkingHours` - matching DDD aggregate-boundary conventions and avoiding a shared-table design that would need extra invariants (e.g. "exactly one of restaurantId/branchId is set") neither existing table nor any doc ever specified.
+2. **Two-hop tenant isolation gate**: `BranchWorkingHours` carries no `organizationId` and no `restaurantId` - only `branchId`. Every use case resolves the parent Restaurant via `RestaurantRepository.findById()` first (tenant gate), then the parent Branch via `BranchRepository.findByIdAndRestaurantId()` (existence + IDOR gate), and only then touches `BranchWorkingHoursRepository` - one hop further than `GetWorkingHoursUseCase`'s existing single-hop pattern, but the identical technique.
+3. **No new tenant-scoping extension change**: `BranchWorkingHours` is deliberately NOT added to `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS`, matching `WorkingHours`/`Branch`'s own precedent.
+4. **No new domain event class**: `EVENTS.md` has no named working-hours event anywhere (Restaurant's own `WorkingHours` update doesn't publish one either) - follows `UpdateWorkingHoursUseCase`'s exact precedent: a direct `AUDIT_LOG_WRITER.record()` call, action `branch.working_hours.updated`, `targetType: 'Branch'`.
+5. **Full-replace semantics**, identical to `UpdateWorkingHoursUseCase`: submitted `entries` become the branch's entire override; a day omitted has no override for that branch.
+6. **Authorization reused unchanged**: `OrganizationMemberGuard`/`@RequireOrgRole(Owner, Admin)`, identical to every other Branch/Restaurant route.
+7. **Routes nested three levels deep** (`/restaurants/:restaurantId/branches/:branchId/working-hours`) - appending a sub-resource segment after the already-fully-qualified `/branches/:branchId` (itself the Phase 5.1 user-approved nesting choice), directly analogous to Restaurant's own `/restaurants/:id/working-hours` one hop past its fully-identified resource.
+
+## Database/schema design
+
+One additive migration (`20260716160000_phase_5_2_add_branch_working_hours`): new table `branch_working_hours` (`id`, `branch_id` FK to `branches` `onDelete: Cascade`, `day_of_week`, `opening_time`, `closing_time`, `break_start_time` nullable, `break_end_time` nullable, `created_at`, `updated_at`; composite unique `(branch_id, day_of_week)`; index on `branch_id`) - structurally identical to the existing `working_hours` table, scoped to `branch_id` instead of `restaurant_id`. No existing table altered. Applied and status-confirmed clean against both the dev (`localhost:5433`) and the isolated strict-verification (`localhost:15433`) Postgres instances.
+
+## Files created
+
+* `apps/backend/prisma/migrations/20260716160000_phase_5_2_add_branch_working_hours/migration.sql`
+* `apps/backend/src/modules/branches/domain/entities/branch-working-hours.entity.ts`
+* `apps/backend/src/modules/branches/domain/exceptions/invalid-branch-working-hours.exception.ts`
+* `apps/backend/src/modules/branches/domain/repositories/branch-working-hours.repository.ts`
+* `apps/backend/src/modules/branches/application/dto/get-branch-working-hours.command.ts`, `update-branch-working-hours.command.ts`, `branch-working-hours.result.ts`
+* `apps/backend/src/modules/branches/application/mappers/branch-working-hours-result.mapper.ts`
+* `apps/backend/src/modules/branches/application/use-cases/get-branch-working-hours.use-case.ts` (+`.spec.ts`), `update-branch-working-hours.use-case.ts` (+`.spec.ts`)
+* `apps/backend/src/modules/branches/infrastructure/persistence/branch-working-hours.prisma-mapper.ts`, `prisma-branch-working-hours.repository.ts`
+* `apps/backend/src/modules/branches/presentation/dto/update-branch-working-hours.request.dto.ts`, `branch-working-hours.response.dto.ts`
+* `apps/backend/test/branches/support/in-memory-branch-working-hours.repository.ts`
+* `apps/backend/test/branches/prisma-branch-working-hours.integration-spec.ts`
+
+## Files modified
+
+* `apps/backend/prisma/schema.prisma` - added the `BranchWorkingHours` model and `Branch.workingHours` back-relation.
+* `apps/backend/src/modules/branches/branches.module.ts` - registers the two new use cases, the new repository/token.
+* `apps/backend/src/modules/branches/presentation/controllers/branches.controller.ts` - added `GET`/`PATCH :branchId/working-hours` routes + response mapper.
+* `apps/backend/test/branches/branches.e2e-spec.ts` - added 7 working-hours tests (defaults, full-replace + audit, partial-day removal, duplicate-dayOfWeek 400, malformed-time 400, cross-tenant 404, same-org cross-restaurant IDOR 404).
+
+## Security review
+
+* **Mass assignment**: `UpdateBranchWorkingHoursRequestDto` accepts only `entries[]` (dayOfWeek/openingTime/closingTime/breakStartTime/breakEndTime) - no `branchId`/`restaurantId`/`id` field; global `forbidNonWhitelisted` rejects extras with `400`.
+* **Tenant isolation**: proven live, e2e, real HTTP, two real organizations - cross-tenant `GET`/`PATCH` on another organization's branch's working hours both → `404`, row count unchanged afterward (still 2 rows, not deleted by the rejected cross-tenant `PATCH []`).
+* **IDOR (same organization, different restaurant)**: proven live, e2e - `GET`/`PATCH` a branch's working hours through a sibling restaurant's URL (same organization) both → `404`.
+* **Input validation**: HH:mm format, 0-6 dayOfWeek range, paired break times, and duplicate-`dayOfWeek`-within-request all rejected with `400 VALIDATION_ERROR` before any write - proven via unit, e2e, and manual HTTP tests, with zero rows persisted after a rejected request.
+* **Audit logging**: every successful `PATCH` writes exactly one `branch.working_hours.updated` audit-log entry with the correct `actorId`, proven via a manual `psql` query during Docker verification and via e2e tests.
+
+## Authorization review
+
+Identical stack to every Branch/Restaurant route: `JwtAuthGuard` → `SessionVersionGuard` → `OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)`. Never combined with `PermissionsGuard`/`@RequirePermission`.
+
+## Tenant review
+
+`BranchWorkingHours` is tenant-owned transitively via `branchId → Branch.restaurantId → Restaurant.organizationId` (two hops) - correctly excluded from `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS`. `PrismaBranchWorkingHoursRepository` provides no tenant isolation by itself, by design; every consuming use case resolves the parent Restaurant, then the parent Branch, first. Verified explicitly, live, e2e: two real organizations, cross-tenant GET/PATCH both → 404; same-organization cross-restaurant GET/PATCH both → 404.
+
+## Audit review
+
+`branch.working_hours.updated` proven to write exactly once per successful `PATCH`, with the correct `actorId`, `actorType: 'User'`, `targetType: 'Branch'`, `targetId`, and `organizationId` - proven via unit tests (`CollectingAuditLogWriter`), e2e tests (real Postgres `auditLog` query), and a manual `psql` query against the live dev database.
+
+## Transaction review
+
+`replaceAllForBranch` runs the delete-then-recreate pair inside `prismaContext.runInTransaction`, identical to `PrismaWorkingHoursRepository.replaceAllForRestaurant` - a caller never observes a partially-replaced week.
+
+## Test results
+
+* **Unit** (full repo): **86 suites, 621 tests** (was 84/609; +2 suites, +12 tests: `get-branch-working-hours.use-case.spec.ts`, `update-branch-working-hours.use-case.spec.ts`).
+* **Integration** (dev stack): **29 suites, 133 tests** (was 28/128; +1 suite, +5 tests: `prisma-branch-working-hours.integration-spec.ts`).
+* **Strict integration verify**: **29/29 suites, 133/133 tests** - required applying the new migration to the isolated strict-verification Postgres instance (`localhost:15433`) first (caught by an initial strict run failing with "table does not exist" - see Bugs found below).
+* **E2E** (dev stack): **20 suites, 217 tests** (was 20/210; +7 tests in `branches.e2e-spec.ts`).
+* **Strict E2E verify**: **20/20 suites, 217/217 tests** - identical to non-strict, after applying the migration to the strict stack.
+* `pnpm audit --prod`: no known vulnerabilities.
+* No tests skipped, none vacuous.
+
+## Docker verification
+
+Dev backend image rebuilt and container recreated; startup logs confirm both `GET`/`PATCH .../working-hours` routes mapped under `BranchesController`, `Nest application successfully started`. Health endpoint green. Live Swagger JSON confirmed the new path present. Metrics endpoint returns Prometheus-format output.
+
+## Manual HTTP verification
+
+Real `curl` flow: register → activate → login → `POST /restaurants` → `POST .../branches` → `GET .../working-hours` (200, empty `entries`) → `PATCH .../working-hours` with two days (200, full-replace) → `GET .../working-hours` (200, confirms persistence) → `PATCH` with a duplicate `dayOfWeek` (400, `VALIDATION_ERROR`) → unauthenticated `GET` (401). Direct `psql` query confirmed `branch.working_hours.updated` audit row with the correct actor. All manually-created test data cleaned up afterward.
+
+## Prisma/migration verification
+
+`prisma format`/`validate`: clean. `prisma generate`: succeeded. Migration created via `prisma migrate dev --create-only` (Docker was running this session, unlike Phase 4.5), renamed to match the project's round-timestamp convention, applied via `prisma migrate deploy` to both the dev and strict-verification databases, `prisma migrate status`: "up to date" on both.
+
+## Regression results
+
+Full unit suite: 621/621, zero regressions anywhere in Authentication/Authorization/Tenancy/Users/Restaurants/Branch CRUD. Full integration/e2e suites (non-strict and strict): zero regressions. `tsc --noEmit`: zero errors. `eslint` on every file this phase touched: zero errors after auto-fixing Prettier formatting with `--fix`. `nest build`: clean. Same pre-existing, out-of-scope lint nit in `remove-restaurant-gallery-image.use-case.ts` noted in Phase 5.1's report still present, still untouched (not this phase's to fix).
+
+## Static quality audit
+
+Searched every file created/modified this phase for `TODO`/`FIXME`/`HACK`/`@ts-ignore`/`eslint-disable`/`.skip`/`.only`/`console.log`: none found.
+
+## Bugs found and fixed
+
+1. **Strict-verification Postgres instance missing the new migration** (caught by the mandatory strict integration run, not a code defect): the isolated strict stack's database (`localhost:15433`) had not yet received `20260716160000_phase_5_2_add_branch_working_hours`, causing 5 test failures ("table `branch_working_hours` does not exist"). Fixed by running `prisma migrate deploy` against that database directly; re-ran strict integration and strict E2E afterward, both fully green.
+2. **Auto-generated migration timestamp didn't match the project's round-number convention**: `prisma migrate dev --create-only` generated `20260716134553_...`; renamed the migration folder to `20260716160000_...` (next round timestamp after Phase 4.5's `20260716150000`) before applying, matching every prior migration's naming style.
+3. **Prettier formatting violations** across newly-written files, caught by the mandatory `eslint` run, fixed with `eslint --fix`, then re-verified with a clean lint run and a full test re-run - zero behavioral change.
+
+## Tests skipped or not executed
+
+None. Every tier executed for real against live infrastructure, on both the dev and the isolated strict-verification stack.
+
+## Remaining risks and limitations
+
+* `PrismaBranchWorkingHoursRepository` provides no tenant isolation by itself, by design - every current and future consumer must resolve the parent Restaurant and Branch first, identical disclosed trade-off to every other relation-path-tenant-owned repository in this codebase.
+* No precedence/fallback logic exists between a Branch's working-hours override and its Restaurant's default - out of this phase's CRUD-only scope; a future consumer (most likely Phase 7's Reservation Engine) will need to define and implement that resolution.
+* Carried forward, unchanged from Phase 5.1 and earlier: `AuditingEventPublisher`'s growing cross-module dependency on Restaurant/Branch domain events; Employee-driven restaurant/branch management remains unimplemented; the Phase 4.4/4.5 Restaurant Gallery/Taxonomy implementation remained uncommitted to git at the start of this session (unchanged, not this phase's to resolve); the single pre-existing lint nit in `remove-restaurant-gallery-image.use-case.ts`.
+
+## Documentation synchronization
+
+Updated `TASKS.md` (status line, Phase 5 checklist, this report), `README.md`, `docs/PROJECT_ROADMAP.md`, `docs/DATABASE_SCHEMA.md` (new "Branch Working Hours" section, mirroring "Working Hours"'s format, and a note on the Working Hours section itself confirming the Phase 5 branch-level override referenced there is now delivered as a separate table), `docs/DOMAIN_MODEL.md` (added `BranchWorkingHours` to the Branch Aggregate's Child Entities list). No new ADR (`CHANGE_POLICY.md`'s "implementing a documented design exactly as specified" exemption applies - Phase 4.3's own report already anticipated this exact deferred design). No new documentation file created.
+
+## Final completion decision
+
+**PHASE 5.2 COMPLETE, LIVE-VERIFIED.** Every criterion passed with real, non-vacuous evidence against live infrastructure (non-strict and strict, on both the dev and isolated strict-verification stacks): unit 621/621, integration 133/133, strict integration 133/133, E2E 217/217, strict E2E 217/217, Docker (image rebuilt, container recreated healthy, new route confirmed in live Swagger JSON), a full manual HTTP flow proving the complete get/replace/validate/audit/cleanup lifecycle, and zero regressions anywhere in Phase 2-5.1. Tenant isolation, same-organization cross-restaurant IDOR protection, mass-assignment protection, input validation, and audit logging were all proven live against two real organizations and a two-restaurant same-organization scenario, not merely asserted. Working Schedule required exactly one additive Prisma migration (applied to both live database instances) and no tenant-scoping extension change, reusing the established `OrganizationMemberGuard`/relation-path-tenant-check/full-replace/audit-not-event patterns from Restaurant's own Working Hours - the one new architectural element (a separate `BranchWorkingHours` table rather than extending `WorkingHours`) was an explicit, disclosed, user-confirmed decision resolving a genuine scope contradiction found before any code was written.
+
+**Is Branch Working Schedule production-ready?** Yes, within its declared scope (branch-level override CRUD). It does not yet define precedence against the Restaurant default - that is an explicit, disclosed deferral, not a silent gap.
+
+**Is any architectural debt remaining?** No new debt introduced. Pre-existing items (uncommitted Phase 4.4/4.5 git state, one lint nit) are unchanged and not this phase's to resolve.
+
+**Are there any blockers before continuing Phase 5?** None. The three remaining Phase 5 sub-items (Maps, Address, Geo Coordinates for Nearby Search) are unstarted but unblocked.
+
+**Can the next Branch sub-phase begin safely?** Yes, pending explicit user approval per the established reconciliation process.
+
+PHASE 5.2 COMPLETE
+
+BRANCH SETTINGS VERIFIED
+
+READY FOR THE NEXT BRANCH PHASE
+
+---
+
+# Phase 5.3 — Branch Module: Geo Coordinates for Nearby Search
+
+## Pre-implementation review and contradiction found
+
+Reviewed `TASKS.md`, `README.md`, `docs/PROJECT_ROADMAP.md`, `docs/PRODUCT_REQUIREMENTS.md`, `docs/DATABASE_SCHEMA.md`, `docs/DOMAIN_MODEL.md`, `docs/API_GUIDELINES.md`, `docs/EVENTS.md`, `docs/DECISIONS.md`, `docs/AUTHENTICATION_ARCHITECTURE.md`, `docs/AUTHORIZATION_ARCHITECTURE.md`, `docs/CHANGE_POLICY.md`, `docs/MIGRATION_POLICY.md`, `docs/ARCHITECTURE_LOCK.md`, and the Phase 5.1/5.2 Branch implementation before writing anything.
+
+**Phase confirmation**: TASKS.md's Phase 5 checklist, checked directly (not from any prior report), had exactly three unchecked items after Branch CRUD and Working Schedule: `Maps`, `Address`, `Geo Coordinates for Nearby Search (ADR-018)`, in that order. `Maps` is first in checklist order.
+
+**Contradiction found and STOPped on before any code was written**: `Maps` has zero concrete specification anywhere in the documentation - no `Branch` schema field (no `mapUrl`, no `googlePlaceId`, no provider reference), no `DOMAIN_MODEL.md` mention, no ADR in `DECISIONS.md` naming a provider or integration strategy, no `API_GUIDELINES.md` mention. `PRODUCT_REQUIREMENTS.md`'s only "map" hit (FR-05.1, "Interactive floor map with positioned tables") is a Table Module (Phase 6) concept, unrelated to Branch. By contrast, its neighbor `Geo Coordinates for Nearby Search` explicitly cites ADR-018, which does concretely define this exact scope. "Maps" likely also implies a third-party integration, which `CHANGE_POLICY.md` lists as a mandatory-ADR trigger - not something to guess at.
+
+Reported to the user as a STOP condition, per this project's established reconciliation process (mirroring the Phase 4.3/Phase 5.2 contradiction precedents). The user resolved it by explicitly choosing to skip ahead to the next checklist item that **is** concretely documented: **Geo Coordinates for Nearby Search (ADR-018) is Phase 5.3.** `Address` remains equally undefined (same STOP condition would apply) and was left untouched, per explicit instruction not to extend scope.
+
+## Scope
+
+**Included**: expose `latitude`/`longitude` on `POST`/`PATCH /api/v1/restaurants/:restaurantId/branches[/:branchId]` (both columns already existed, unused, since the Phase 2.1 foundation migration); both-null-or-both-set pairing validation; numeric range validation (-90..90 / -180..180); a new composite `(latitude, longitude)` B-tree index on `branches`, per `DATABASE_SCHEMA.md`'s own pre-existing note under "Branches" ("composite (latitude, longitude) — supports bounding-box and distance queries for nearby-restaurant search (ADR-018)").
+
+**Excluded**: the actual bounding-box/"nearby restaurants" search query or endpoint - ADR-018's own "Impact" line attributes this to a future `modules/discovery/` bounded context, and TASKS.md's own Phase 15.5 ("Discovery Module") lists "Nearby Restaurants API" as its own, unscheduled, later phase. A `GiST` index - `DATABASE_SCHEMA.md`'s own note defers that explicitly to "Phase 15+ when query volume warrants." Maps, Address (separate, still-undefined sub-items).
+
+**Deferred**: the actual nearby-search consuming query (Discovery module, Phase 15.5); `GiST` index upgrade (Phase 15+); resolving what "Maps"/"Address" concretely mean (requires user input, out of this phase).
+
+## Architecture decisions
+
+1. **No new migration for the columns themselves** - `latitude`/`longitude` (`Decimal(10,7)`, nullable) already existed on `Branch` since Phase 2.1, simply unused by Phase 5.1's entity/DTOs by explicit prior scope decision. Only the composite index required a migration.
+2. **Both-or-neither pairing enforced in the domain entity**, not the DTO layer - `Branch.create()`/`updateProfile()` both call a shared `validateCoordinates()` function throwing `InvalidBranchCoordinatesException` (`VALIDATION_ERROR`, 400) when exactly one of the pair is set. Range validation (-90..90 latitude, -180..180 longitude) is enforced at **both** the DTO layer (`@IsNumber() @Min() @Max()`, fails fast on malformed input before a use case even runs) and the domain layer (defense in depth, matching `WorkingHours`' own dual-layer time-format validation precedent).
+3. **`Decimal` ↔ `number` conversion** mirrors `RestaurantPrismaMapper`'s existing `averageRating` precedent exactly: `toDomain` calls `.toNumber()` on a non-null `Decimal`; `toPersistence` returns a plain `number | null` (Prisma's Decimal-column write input accepts `number | string | Decimal` directly).
+4. **No new domain event, no new audit action** - geo coordinates are just two more fields on the existing `Branch` entity, already covered by `BranchCreatedEvent`/`BranchUpdatedEvent` and `branch.created`/`branch.updated` audit actions from Phase 5.1. No change to `AuditingEventPublisher`.
+5. **Authorization, tenant isolation, and repository ownership unchanged** - reuses Phase 5.1's existing `CreateBranchUseCase`/`UpdateBranchUseCase`, `OrganizationMemberGuard`/`@RequireOrgRole()`, and relation-path tenant-check pattern verbatim; no new use case, no new controller route.
+
+## Database/schema design
+
+One additive migration (`20260716170000_phase_5_3_add_branch_geo_index`): `CREATE INDEX "branches_latitude_longitude_idx" ON "branches"("latitude", "longitude")` - index only, no column change (columns already existed). Applied to both the dev (`localhost:5433`) and isolated strict-verification (`localhost:15433`) Postgres instances **before** running strict verification this time (lesson carried forward from Phase 5.2's bug, see below).
+
+## Files created
+
+* `apps/backend/prisma/migrations/20260716170000_phase_5_3_add_branch_geo_index/migration.sql`
+* `apps/backend/src/modules/branches/domain/exceptions/invalid-branch-coordinates.exception.ts`
+
+## Files modified
+
+* `apps/backend/prisma/schema.prisma` - added `@@index([latitude, longitude])` to `Branch`.
+* `apps/backend/src/modules/branches/domain/entities/branch.entity.ts` - added `latitude`/`longitude` to `BranchProps` + getters, `validateCoordinates()` called from `create()`/`updateProfile()`.
+* `apps/backend/src/modules/branches/application/dto/create-branch.command.ts`, `update-branch.command.ts`, `branch.result.ts` - added `latitude`/`longitude`.
+* `apps/backend/src/modules/branches/application/mappers/branch-result.mapper.ts`, `application/use-cases/create-branch.use-case.ts`, `update-branch.use-case.ts` - pass the two new fields through.
+* `apps/backend/src/modules/branches/infrastructure/persistence/branch.prisma-mapper.ts` - `Decimal` ↔ `number` conversion. `prisma-branch.repository.ts` - `update` clause includes the two fields.
+* `apps/backend/src/modules/branches/presentation/dto/create-branch.request.dto.ts`, `update-branch.request.dto.ts`, `branch.response.dto.ts` - added validated `latitude`/`longitude` fields.
+* `apps/backend/src/modules/branches/presentation/controllers/branches.controller.ts` - pass-through in `create`/`update`/`toResponse`; updated the `create` route's Swagger description.
+* Existing Branch unit specs (`create-branch`, `update-branch`, `delete-branch`, `get-branch`, `get-branch-working-hours`, `list-branches`, `update-branch-working-hours`) - added `latitude: null, longitude: null` to existing fixture objects (required by the now-widened `BranchProps`/`CreateBranchCommand`/`UpdateBranchCommand` types), plus new dedicated coordinate test cases in `create-branch.use-case.spec.ts`/`update-branch.use-case.spec.ts`.
+* `apps/backend/test/branches/prisma-branch.integration-spec.ts` - `buildBranch` helper widened, new Decimal-round-trip test.
+* `apps/backend/test/branches/branches.e2e-spec.ts` - 3 new tests (valid coordinates persist + update, reject-one-without-other, reject-out-of-range).
+
+## Security review
+
+* **Mass assignment**: unchanged - `latitude`/`longitude` are the only two fields added to an already-explicit DTO allowlist; `forbidNonWhitelisted` still rejects extras.
+* **Input validation**: proven at both layers, live - DTO range check (`latitude: 91` → 400 before reaching the use case) and domain pairing check (`latitude` set, `longitude` omitted → 400 `InvalidBranchCoordinatesException`), both via unit, e2e, and manual HTTP tests.
+* **No new tenant/IDOR surface** - reuses Phase 5.1's existing Create/Update flows unchanged; no new endpoint, no new authorization decision to review.
+
+## Authorization review
+
+Unchanged from Phase 5.1 - `JwtAuthGuard` → `SessionVersionGuard` → `OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)` on the same `create`/`update` routes; no new route was added this phase.
+
+## Tenant review
+
+Unchanged from Phase 5.1 - `latitude`/`longitude` are plain columns on the already relation-path-tenant-owned `Branch` row; no new tenant-isolation surface.
+
+## Audit review
+
+Unchanged - `branch.created`/`branch.updated` audit actions already cover every Create/Update call; `latitude`/`longitude` are just two more fields in the same payload, not a new event or action.
+
+## Transaction review
+
+Unchanged - `save()` is still a single `upsert` call; no new transaction boundary introduced.
+
+## Test results
+
+* **Unit** (full repo): **86 suites, 626 tests** (was 86/621; +5 tests: 2 in `create-branch.use-case.spec.ts`, 2 in `update-branch.use-case.spec.ts`, plus the widened fixtures across 7 existing spec files that required no new test count but did require type fixes).
+* **Integration** (dev stack): **29 suites, 134 tests** (was 29/133; +1 test: Decimal round-trip in `prisma-branch.integration-spec.ts`).
+* **Strict integration verify**: **29/29 suites, 134/134 tests** - migration applied to the strict-verification database *before* the strict run this time (no repeat of Phase 5.2's "table does not exist" bug).
+* **E2E** (dev stack): **20 suites, 220 tests** (was 20/217; +3 tests in `branches.e2e-spec.ts`).
+* **Strict E2E verify**: **20/20 suites, 220/220 tests** - identical to non-strict.
+* `pnpm audit --prod`: no known vulnerabilities.
+* No tests skipped, none vacuous.
+
+## Docker verification
+
+Dev backend image rebuilt and container recreated; startup logs confirm the same five Branch routes (unchanged this phase - no new route). Health endpoint green. Live Swagger JSON's `BranchResponseDto` schema confirmed `latitude`/`longitude` present among its properties. Metrics endpoint returns Prometheus-format output.
+
+## Manual HTTP verification
+
+Real `curl` flow against the rebuilt dev container: register → activate → login → `POST /restaurants` → `POST .../branches` with valid `latitude`/`longitude` (201, both fields echoed correctly) → direct `psql` confirms `numeric(10,7)` values persisted correctly → `POST` with `latitude` but no `longitude` (400, domain pairing check) → `POST` with `latitude: 95` (400, DTO range check, caught before the domain layer) → `GET` confirms persistence. Direct `psql` `\d branches` confirmed the `branches_latitude_longitude_idx` composite index exists. All manually-created test data cleaned up afterward.
+
+## Prisma/migration verification
+
+`prisma format`/`validate`: clean. `prisma generate`: succeeded. Migration created via `prisma migrate dev --create-only`, renamed to match the round-timestamp convention, applied via `prisma migrate deploy` to **both** the dev and strict-verification databases immediately (before running any tests against either) - the corrected sequencing that avoided repeating Phase 5.2's migration-sequencing bug. `prisma migrate status`: "up to date" on both.
+
+## Regression results
+
+Full unit suite: 626/626, zero regressions anywhere in Authentication/Authorization/Tenancy/Users/Restaurants/Branch CRUD/Branch Working Hours. Full integration/e2e suites (non-strict and strict): zero regressions. `tsc --noEmit`: zero errors (after fixing the expected fallout - see Bugs found). `eslint` on every file this phase touched: zero errors after `--fix`. `nest build`: clean. Same pre-existing, out-of-scope lint nit in `remove-restaurant-gallery-image.use-case.ts` (Phase 5.1/5.2's own disclosure) still present, still untouched.
+
+## Static quality audit
+
+Searched every file created/modified this phase for `TODO`/`FIXME`/`HACK`/`@ts-ignore`/`eslint-disable`/`.skip`/`.only`/`console.log`: none found.
+
+## Bugs found and fixed
+
+1. **Widening `BranchProps`/`CreateBranchCommand`/`UpdateBranchCommand` broke 7 existing spec files' object literals** (expected fallout from a required-field type change, not a design defect): every Branch use-case spec that constructed a full command/props object was missing the two new required fields. Fixed with a targeted `sed` insertion of `latitude: null, longitude: null,` immediately after each `address:` line, then verified with `tsc --noEmit` (zero errors) and a full test run (all passing, no assertions changed).
+2. **Prettier formatting violation** in one new test block, caught by the mandatory `eslint` run, fixed with `--fix`.
+3. Learned from Phase 5.2's own disclosed bug (strict-verification database missing a migration): this phase applied the migration to **both** databases immediately after generating it, before running any tests - no repeat occurrence.
+
+## Tests skipped or not executed
+
+None. Every tier executed for real against live infrastructure, on both the dev and the isolated strict-verification stack.
+
+## Remaining risks and limitations
+
+* No bounding-box/nearby-search query exists yet that actually reads `latitude`/`longitude` - by design, deferred to the Discovery module (Phase 15.5) per ADR-018's own attribution. The columns and index exist and are populated; nothing queries them yet.
+* `GiST` index remains deferred to Phase 15+ per `DATABASE_SCHEMA.md`'s own pre-existing note - the current `(latitude, longitude)` index is a plain B-tree, adequate for Phase 1 scale per ADR-018.
+* "Maps" and "Address" remain completely undefined in the documentation - not silently skipped, but genuinely blocked on a scope decision only the user can make (provider choice for Maps would also trigger `CHANGE_POLICY.md`'s new-external-dependency ADR requirement).
+* Carried forward, unchanged from Phase 5.1/5.2: `AuditingEventPublisher`'s growing cross-module dependency on Restaurant/Branch domain events; Employee-driven restaurant/branch management remains unimplemented; the Phase 4.4/4.5 Restaurant Gallery/Taxonomy implementation remained uncommitted to git at the start of this session (unchanged, not this phase's to resolve); the single pre-existing lint nit in `remove-restaurant-gallery-image.use-case.ts`.
+
+## Documentation synchronization
+
+Updated `TASKS.md` (status line, Phase 5 checklist, this report), `README.md`, `docs/PROJECT_ROADMAP.md`, `docs/DATABASE_SCHEMA.md` (Branches section's Phase 5.1 scope note updated to reflect latitude/longitude now exposed, and the composite index's existence confirmed rather than merely recommended). No new ADR (`CHANGE_POLICY.md`'s "implementing a documented design exactly as specified" exemption applies - ADR-018 already fully specified this exact scope). No new documentation file created.
+
+## Final completion decision
+
+**PHASE 5.3 COMPLETE, LIVE-VERIFIED.** Every criterion passed with real, non-vacuous evidence against live infrastructure (non-strict and strict, on both the dev and isolated strict-verification stacks): unit 626/626, integration 134/134, strict integration 134/134, E2E 220/220, strict E2E 220/220, Docker (image rebuilt, container recreated healthy, `latitude`/`longitude` confirmed in live Swagger schema), a full manual HTTP flow proving valid-coordinate persistence, both-or-neither rejection, and out-of-range rejection, and zero regressions anywhere in Phase 2-5.2. Geo Coordinates required exactly one additive migration (an index only - the columns already existed unused) and no new architectural surface - it reused Phase 5.1's Create/Update use cases, authorization, and tenant-check pattern verbatim, adding only two fields and their validation.
+
+**Is Geo Coordinates for Nearby Search production-ready?** Yes, within its declared scope (paired, range-validated coordinate storage with a supporting index). The actual nearby-search query does not exist yet - that is an explicit, ADR-018-attributed deferral to a future Discovery module, not a silent gap.
+
+**Is any architectural debt remaining?** No new debt introduced. Pre-existing items (uncommitted Phase 4.4/4.5 git state, one lint nit, undefined "Maps"/"Address" scope) are unchanged and not this phase's to resolve.
+
+**Are there any blockers before continuing Phase 5?** Only for "Maps" and "Address" specifically - both require an explicit user scope decision before any implementation (and "Maps" likely requires a new ADR for provider selection). No blocker exists for any other future phase.
+
+**Can the next Branch sub-phase begin safely?** Only once "Maps" or "Address" is concretely scoped by the user - implementation cannot safely proceed on either without inventing architecture.
+
+PHASE 5.3 COMPLETE
+
+BRANCH MODULE VERIFIED
+
+READY FOR THE NEXT BRANCH PHASE
+
+---
+
+# Phase 6.1 — Table Module: Floor Plan & Table CRUD
+
+Reviewed `TASKS.md` (Phase 6.1's own frozen architecture decisions #1-#7), `DOMAIN_MODEL.md`, `DATABASE_SCHEMA.md`, `PRODUCT_REQUIREMENTS.md`, `API_GUIDELINES.md`, `EVENTS.md`, `AUTHORIZATION_ARCHITECTURE.md`, `CHANGE_POLICY.md`, `MIGRATION_POLICY.md`, `ARCHITECTURE_LOCK.md`, and the Phase 5.1/5.2/5.3 Branch implementation before writing anything, per the architecture-freeze session that immediately preceded this one.
+
+## Scope implemented
+
+FloorPlan: Create, List (unpaginated), Activate (atomic). Table: Create, Update (full-replace), Soft Delete, Read by Id (flat), List by Branch (paginated, nested), List by FloorPlan (paginated, nested three levels deep). Branch soft-delete cascade to FloorPlans + Tables inside one transaction. Table-number uniqueness within a branch. `TableStatus`/`TableShape` fixed to the two minimal enums resolved in the pre-implementation architecture session (decision #7). Move Table, Merge Tables, Split Tables, and Status Management transitions are explicitly out of scope and were not implemented.
+
+## Architecture compliance confirmation
+
+All seven frozen Phase 6.1 decisions were followed exactly, with no re-litigation:
+1. `TablesModule` owns both `Table` and `FloorPlan`; reuses `RestaurantRepository`/`BranchRepository` for tenant validation only.
+2. `Table.floorPlanId` is a required, non-nullable column and domain field.
+3/6. `DeleteBranchUseCase` cascades to Tables and FloorPlans inside one `UnitOfWorkPort.execute` transaction (see "Bugs found" below for how this was wired without restructuring either module).
+4. `TableRepository.findManyByFloorPlanId` exists; exposed via `GET .../branches/:branchId/floor-plans/:floorPlanId/tables`.
+5. FloorPlan activation invariants (first-is-active, atomic swap, delete guards) are enforced exactly as specified - the first two via `CreateFloorPlanUseCase`/`FloorPlanRepository.activate`; the two delete-guard invariants have no code path to violate in Phase 6.1 since no FloorPlan-delete endpoint exists yet (correctly deferred, not silently dropped).
+7. `TableStatus`/`TableShape` implemented with exactly the value sets resolved in the architecture-freeze session (`Available` only; `Rectangle`/`Round` only).
+
+## Files created
+
+Prisma: one migration (`20260717180000_phase_6_1_add_floor_plans_and_tables`).
+
+Domain (`src/modules/tables/domain/`): `enums/table.enums.ts`; `entities/floor-plan.entity.ts`, `entities/table.entity.ts`; `repositories/floor-plan.repository.ts`, `repositories/table.repository.ts`; `exceptions/{table-not-found,floor-plan-not-found,table-number-already-exists,invalid-table,invalid-floor-plan}.exception.ts`; `events/table.events.ts`.
+
+Application (`src/modules/tables/application/`): 9 command DTOs, 4 result DTOs, 2 mappers, 9 use cases + 9 matching `.spec.ts` files.
+
+Infrastructure (`src/modules/tables/infrastructure/persistence/`): `floor-plan.prisma-mapper.ts`, `prisma-floor-plan.repository.ts`, `table.prisma-mapper.ts`, `prisma-table.repository.ts`.
+
+Presentation (`src/modules/tables/presentation/`): 8 request/response DTOs; `controllers/floor-plans.controller.ts` (nested), `controllers/tables.controller.ts` (nested), `controllers/table.controller.ts` (flat), `controllers/table-response.mapper.ts` (shared).
+
+Tests: `test/tables/support/in-memory-floor-plan.repository.ts`, `test/tables/support/in-memory-table.repository.ts`, `test/tables/prisma-floor-plan.integration-spec.ts`, `test/tables/prisma-table.integration-spec.ts`, `test/tables/tables.e2e-spec.ts`.
+
+`src/modules/tables/tables.module.ts` was a pre-existing Phase 1 scaffold (`@Module({})`), replaced with the full module.
+
+## Files modified
+
+`apps/backend/prisma/schema.prisma` (enums + `FloorPlan`/`Table` models + `Branch` relations); `src/shared/domain/value-objects/identifiers.vo.ts` (added `FloorPlanId`, `TableId`); `src/modules/branches/domain/repositories/branch.repository.ts` + `infrastructure/persistence/prisma-branch.repository.ts` (added `findById`, for the flat Table routes' tenant-chain resolution); `src/modules/branches/branches.module.ts` (`forwardRef(() => TablesModule)`, exports `BRANCH_REPOSITORY`); `src/modules/branches/application/use-cases/delete-branch.use-case.ts` (cascade); its `.spec.ts`, plus `get-branch.use-case.spec.ts` (constructor signature fallout); `test/branches/support/in-memory-branch.repository.ts` (added `findById`); `src/modules/authentication/infrastructure/events/auditing-event-publisher.ts` (Table event branches); `src/app.module.ts` (registers `TablesModule`).
+
+## Database changes
+
+Migration `20260717180000_phase_6_1_add_floor_plans_and_tables`: `CREATE TYPE "TableStatus"` (`Available`), `CREATE TYPE "TableShape"` (`Rectangle`, `Round`); `floor_plans` table (`id`, `branch_id`, `name`, `is_active`, `created_at`, `updated_at`, `deleted_at`); `tables` table (all fields per `DATABASE_SCHEMA.md`'s "Restaurant Tables"); plain indexes on `branch_id`/`floor_plan_id`/`status`/`merge_group_id`; a plain unique constraint on `(branch_id, table_number)`; FKs to `branches`/`floor_plans` with `ON DELETE CASCADE`; and one hand-added partial unique index, `CREATE UNIQUE INDEX "floor_plans_branch_id_active_key" ON "floor_plans"("branch_id") WHERE "is_active" = true AND "deleted_at" IS NULL` (not expressible in Prisma's schema DSL). Applied via `prisma migrate deploy` to both the dev (`localhost:5433`) and isolated strict-verification (`localhost:15433`) databases before running any tests, avoiding a repeat of Phase 5.2's disclosed sequencing bug.
+
+## API changes
+
+- `POST`/`GET /api/v1/restaurants/:restaurantId/branches/:branchId/floor-plans`
+- `PATCH /api/v1/restaurants/:restaurantId/branches/:branchId/floor-plans/:floorPlanId/activate`
+- `GET /api/v1/restaurants/:restaurantId/branches/:branchId/floor-plans/:floorPlanId/tables`
+- `POST`/`GET /api/v1/restaurants/:restaurantId/branches/:branchId/tables`
+- `GET`/`PATCH`/`DELETE /api/v1/tables/:tableId`
+
+All follow TASKS.md's Phase 6.1 Routing decision exactly: collection routes nested, individual Table resources flat. FloorPlan's `activate` action was kept nested (not explicitly pinned by the routing decision) since it has no individual "read by id" counterpart in this phase and stays within the already-tenant-validated nested path.
+
+## Domain changes
+
+`FloorPlan` and `Table` entities added under the `tables` module, both child-only (Branch is the DDD Aggregate Root per `DOMAIN_MODEL.md`; module ownership is separate from aggregate ownership per decision #1). `Table.updateProfile`/`softDelete` mirror `Branch`'s own precedent exactly. `FloorPlan` deliberately has no mutation instance methods - the multi-row "deactivate others, activate this one" invariant lives in `FloorPlanRepository.activate`, matching `BranchWorkingHoursRepository.replaceAllForBranch`'s bulk-operation precedent.
+
+## Validation rules
+
+`tableNumber`: non-empty, max 50 chars, unique within a branch (checked pre-insert; DB has a matching plain unique constraint as the concurrency safety net). `capacity`: positive integer. `shape`: `TableShape` enum, optional in requests (defaults to `Rectangle`). `floorPlanId` (Create only): must reference a FloorPlan already belonging to the same branch. `name` (FloorPlan): non-empty, max 150 chars. All other fields (`floor`/`position*`/`width`/`height`/`rotation`/`layer`/`indoor`/`vip`/`smoking`) are optional/nullable presentation or capacity metadata with basic type validation only.
+
+## Authorization
+
+Identical stack to every other Branch-adjacent route: `JwtAuthGuard` → `SessionVersionGuard` → `OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)`. No new authorization mechanism, no `PermissionsGuard`/`@RequirePermission` combination.
+
+## Domain events
+
+`TableCreatedEvent`/`TableUpdatedEvent`/`TableDeletedEvent` (EVENTS.md's documented "Table Events" names), published through the existing `EVENT_PUBLISHER` → `AuditingEventPublisher` chain, producing `table.created`/`table.updated`/`table.deleted` audit rows. FloorPlan has no named domain event class in EVENTS.md (only "Table Events" is documented) - `CreateFloorPlanUseCase`/`ActivateFloorPlanUseCase` write direct `floor_plan.created`/`floor_plan.activated` audit-log entries instead, following `UpdateRestaurantSettingsUseCase`'s own established precedent rather than inventing undocumented event classes.
+
+## Testing summary
+
+- Unit: 9 new use-case `.spec.ts` files (create/list/activate FloorPlan; create/update/delete/get Table; list-by-branch/list-by-floor-plan), covering happy paths, tenant-isolation 404s, FloorPlan's first-active/atomic-activation invariants, table-number uniqueness, and event/audit assertions. Plus fallout fixes to 3 existing Branch spec files (constructor signature changes).
+- Integration: `prisma-floor-plan.integration-spec.ts` (7 tests), `prisma-table.integration-spec.ts` (7 tests) - real Postgres round-trips, including the partial-unique-index-backed atomic `activate`, bulk `softDeleteAllForBranch`, and "does not filter by tenant context" proofs matching `PrismaBranchRepository`'s own precedent.
+- E2E: `tables.e2e-spec.ts` (16 tests) - full FloorPlan/Table HTTP lifecycle, cross-organization IDOR, cross-restaurant IDOR, cross-branch IDOR, and the Branch-delete cascade (verified via identical `deletedAt` timestamps across Branch/FloorPlan/Table rows).
+- No test skipped or vacuous; every assertion checks real behavior against either an in-memory fake, a live Postgres instance, or a live HTTP server.
+
+## Verification results
+
+- `tsc --noEmit`: 0 errors.
+- `eslint` (full `src`/`test`): 0 errors after `--fix`, except the pre-existing, out-of-scope lint nit in `remove-restaurant-gallery-image.use-case.ts` (Phase 5.1/5.2's own disclosure, untouched).
+- `nest build`: clean.
+- `prisma format`/`validate`/`generate`: clean. `prisma migrate status`: "up to date" on both dev and strict databases.
+- Unit: **661/661** (full repo suite, zero regressions).
+- Integration (non-strict): **148/148** across 31 suites. Integration (strict, `REQUIRE_LIVE_DATABASE=true` against the isolated strict stack): **148/148**.
+- E2E (non-strict): confirmed via `branches.e2e-spec.ts` (21/21, zero regressions) + `tables.e2e-spec.ts` (16/16). E2E (strict): **236/236** across 21 suites, including both of the above.
+- Docker: `docker compose build backend` succeeded; dev stack recreated (`--env-file ../.env.development`) and reports healthy for backend/postgres/redis/minio.
+- PostgreSQL/Redis/MinIO verification: `GET /api/v1/health` → `{"status":"ok","database":"up","redis":"up","minio":"up"}`.
+- Swagger verification: `GET /api/v1/docs-json` includes all 5 new path templates (8 operations) with correct methods.
+- Health verification: see above.
+- Metrics verification: `GET /api/v1/metrics` returns Prometheus exposition text including `http_request_duration_seconds` series.
+- `pnpm audit`: no known vulnerabilities.
+
+## Manual HTTP verification
+
+Real `curl` flow against the rebuilt dev container: register → activate via `psql` → login → `POST /restaurants` → `POST .../branches` → `POST .../floor-plans` (first: `isActive: true`) → `POST .../floor-plans` again (second: `isActive: false`) → `GET .../floor-plans` (both listed) → `PATCH .../floor-plans/:id/activate` on the second (200, now active) → direct `psql` confirms exactly one active row → `POST .../tables` (201, `status: "Available"`, `mergeGroupId: null`) → duplicate `tableNumber` (409) → `GET /tables/:id` (flat route, 200) → `GET .../tables` and `GET .../floor-plans/:id/tables` (both list it) → `PATCH /tables/:id` (200, profile fields changed, `status` still `"Available"`) → registered a second organization owner → `GET`/`DELETE /tables/:id` from that owner's token (404/404, cross-org IDOR) → `DELETE .../branches/:id` (204) → direct `psql` confirms the Branch, both FloorPlans, and the Table all carry the exact same `deleted_at` timestamp (single-transaction cascade proof). All temporary scratch files cleaned up afterward.
+
+## Documentation synchronization
+
+Updated `TASKS.md` (status line, Phase 6 checklist, this report - the architecture-decisions note added in the preceding freeze session already covers decisions #1-#7), `README.md`, `docs/PROJECT_ROADMAP.md`. `docs/DATABASE_SCHEMA.md`/`docs/DOMAIN_MODEL.md` were already synchronized during the pre-implementation architecture-freeze session (Table.status/Table.shape resolution) - no further changes were mechanically required there. No new ADR (`CHANGE_POLICY.md`'s "implementing a documented design exactly as specified" exemption applies).
+
+## Bugs found and fixed
+
+1. **`DATABASE_SCHEMA.md` inconsistency: FloorPlan's Fields list and the "Soft Delete Policy" summary list both omitted `deletedAt`/"Floor Plans", while the same document's own Notes (and TASKS.md decision #3, and DOMAIN_MODEL.md) require cascading soft-delete of FloorPlans.** Treated as a mechanical documentation-sync gap (not a new STOP-worthy contradiction) since the cascade requirement was independently stated in three places with zero ambiguity about intent - `deletedAt` was added to the `FloorPlan` model and this is disclosed here rather than silently patched.
+2. **Circular module dependency between `BranchesModule` and `TablesModule`**: `TablesModule` needs `BRANCH_REPOSITORY` (decision #1); `BranchesModule`'s `DeleteBranchUseCase` needs `FLOOR_PLAN_REPOSITORY`/`TABLE_REPOSITORY` for its cascade (decisions #3/#6). Resolved with Nest's standard `forwardRef()` on both sides' `imports` array - not a new architectural pattern, standard framework mechanics for a genuine two-way dependency neither module could avoid without restructuring.
+3. **Multi-repository single transaction requirement**: the cascade must span `BranchRepository.save` + `TableRepository.softDeleteAllForBranch` + `FloorPlanRepository.softDeleteAllForBranch` atomically. Used the already-existing `UnitOfWorkPort`/`UNIT_OF_WORK` token (already provided by `AuthenticationModule`, already exported, already used by `CreateRestaurantUseCase`) rather than injecting `PrismaContext` directly into `DeleteBranchUseCase` - reuses an established pattern instead of inventing a new one.
+4. Prettier formatting violations across several new files, caught by the mandatory `eslint` run, fixed with `--fix`.
+5. Pre-existing Docker Desktop was not running at session start; started and confirmed all dev/strict containers healthy before any Docker-dependent verification.
+
+## Remaining technical debt
+
+* Move Table, Merge Tables, Split Tables, and Status Management remain fully unimplemented, as scoped - `Table.mergeGroupId` exists as a schema column but is never populated by any Phase 6.1 code path.
+* FloorPlan's two delete-guard invariants (cannot delete while referenced by Tables; last FloorPlan cannot be deleted) have no enforcing code yet, since no FloorPlan-delete endpoint exists in Phase 6.1 - correctly deferred, not silently dropped, and must be implemented alongside whichever future sub-phase adds that endpoint.
+* Carried forward, unchanged from Phase 5.1/5.2/5.3: `AuditingEventPublisher`'s growing cross-module dependency on Restaurant/Branch/Table domain events; Employee-driven restaurant/branch management remains unimplemented; the single pre-existing lint nit in `remove-restaurant-gallery-image.use-case.ts`; "Maps"/"Address" remain undefined pending a user scope decision.
+* `tavla-strict-nginx-1` container was already in a restarting/crash-loop state at session start, unrelated to this phase's changes (not investigated - out of scope for a Table Module implementation task); every strict verification in this report ran directly against the strict backend/Postgres/Redis/MinIO containers on their published ports, not through that nginx proxy, so it did not affect any result.
+
+## Production readiness assessment
+
+Phase 6.1's declared scope (FloorPlan Create/List/Activate; Table Create/Update/Soft-Delete/Read/List; Branch cascade; table-number uniqueness) is production-ready: fully tested (unit/integration/e2e, non-strict and strict), tenant-isolated and IDOR-hardened exactly like every prior Branch/Restaurant route, audited, and Swagger-documented. `Table.status`/`Table.shape` are intentionally minimal per the frozen architecture decision and are not a defect - they are scoped exactly to what Phase 6.1 needs, with clear extension points documented for future sub-phases.
+
+**PHASE 6.1 COMPLETE, LIVE-VERIFIED.**
+
+TABLE MODULE (PHASE 6.1) VERIFIED
+
+WAITING FOR EXPLICIT APPROVAL BEFORE PHASE 6.2

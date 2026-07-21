@@ -206,7 +206,16 @@ Swagger documentation is mandatory.
 
 Keep endpoints predictable.
 
-Avoid deeply nested routes. Prefer at most one level of nesting for ownership that is otherwise ambiguous (e.g., `/branches/:branchId/tables` is acceptable because a table's identity is meaningless without its branch), but always provide a flat, directly-addressable resource route as well (`/tables/:id`) for read/update/delete once the resource's own ID is known. Never nest more than one level (e.g., never `/restaurants/:id/branches/:id/tables/:id`).
+Avoid deeply nested routes, but judge nesting by **aggregate boundaries**, not by raw URL segment count. A collection may be nested beneath its aggregate root when the child's identity is otherwise ambiguous without that root (e.g., a table is meaningless without its branch); that aggregate root may itself already be exposed through its own parent resource (e.g., a Branch, whose collection lives at `/restaurants/:restaurantId/branches` per Phase 5.1's approved, production-verified routing) - in that case the child's collection route naturally reflects the same path, and the resulting URL depth is not itself an architectural smell. What matters is that the nesting still traces a single, unbroken aggregate-ownership chain (Restaurant → Branch → Table), not an arbitrary combination of unrelated resources.
+
+Whatever the collection route's depth, once a resource's own id is known it must also be reachable through a flat, directly-addressable route for read/update/delete (`/tables/:id`), independent of its parents' ids. Never construct a route that skips a level of the ownership chain or combines resources that are not in a direct aggregate relationship.
+
+Example (Branch → Table, matching the implemented, production-verified architecture):
+
+* Collection, nested under the full aggregate-ownership chain: `POST /restaurants/:restaurantId/branches/:branchId/tables`, `GET /restaurants/:restaurantId/branches/:branchId/tables`
+* Individual resource, flat once the table's own id is known: `GET /tables/:tableId`, `PATCH /tables/:tableId`, `DELETE /tables/:tableId`
+
+Domain actions (business commands that don't fit generic CRUD) use `POST` on an action-suffixed sub-route, not `PATCH`, even when they mutate only one field - `PATCH` is reserved for partial updates of a resource's own attributes. This is already the documented pattern for `POST /reservations/:id/reschedule` (see Idempotency, above); `POST /reservations/:id/approve` and `POST /reservations/:id/reject` (Phase 7.2 — Approval Workflow, architecture frozen; there is no `PATCH /reservations/:id`) follow the identical convention - Approve and Reject are each their own dedicated Domain Action, not folded into a single generic status endpoint, since they carry materially different side effects (Approve calls `Table.reserve()`; Reject performs no Table operation at all - see TASKS.md's "Phase 7.2 — Approval Workflow: Architecture Correction" note); the Table Module's `POST /tables/:tableId/move` (Phase 6.2 architecture decision) follows the same convention - it reassigns a Table's `floorPlanId` to a different FloorPlan within the same Branch as a dedicated Domain Action, kept fully separate from `PATCH /tables/:tableId` (Update Table), which is responsible only for the Table's own attributes and never touches `floorPlanId`. `POST /tables/:tableId/status` (Status Management architecture decision) follows the identical convention for status transitions: one dedicated Domain Action covering every transition (`{ "status": "<TableStatus>" }`), not separate `disable`/`enable` sub-routes - disabling and enabling are state transitions within the Table lifecycle, not independent business capabilities. Restricted to the transitions `Available ↔ Occupied`, `Available ↔ Cleaning`, and `Available ↔ Disabled`; any other transition is rejected as a business validation error. Kept fully separate from `PATCH /tables/:tableId`, which never touches `status`.
 
 Prefer filtering over custom endpoints.
 
@@ -274,6 +283,8 @@ RESTAURANT_SUSPENDED
 
 ORGANIZATION_LIMIT_EXCEEDED
 
+GALLERY_LIMIT_EXCEEDED
+
 EMPLOYEE_BRANCH_NOT_ASSIGNED
 
 TENANT_CONTEXT_MISSING
@@ -297,6 +308,19 @@ UNSUPPORTED_FILE_TYPE
 INVALID_FILE
 
 STORAGE_UNAVAILABLE
+
+---
+
+# Reservation Availability Search Response Contract
+
+`GET /reservations/availability` (Phase 7.1 architecture decision, 2026-07-20) is informational only and never hides a table from the response.
+
+* The response includes every table matching the search criteria (branch, date/time, party size against capacity, `TableStatus = Available`).
+* Every table in the response carries an explicit availability indicator.
+* A table already holding a `Pending` or `Approved` reservation for the requested window is still returned, marked Reserved/Unavailable rather than omitted.
+* Clients must not infer availability merely from a table's presence in the response — presence means "matches the search criteria," not "bookable." Clients must read the availability indicator on each table.
+* The UI is responsible for how the Reserved/Unavailable state is displayed.
+* This endpoint performs no conflict check and reserves nothing. Reservation creation (`POST /reservations`) remains the sole authoritative conflict check, enforced at two independent layers per ADR-013 (an advisory lock and a database exclusion constraint) - a table shown as available here may no longer be available by the time a client submits a create request, and vice versa.
 
 ---
 

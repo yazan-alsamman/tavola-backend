@@ -11,10 +11,15 @@ import {
   Post,
   Query,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiExtraModels,
   ApiOperation,
   ApiParam,
@@ -42,19 +47,42 @@ import { GetRestaurantSettingsUseCase } from '../../application/use-cases/get-re
 import { UpdateRestaurantSettingsUseCase } from '../../application/use-cases/update-restaurant-settings.use-case';
 import { GetWorkingHoursUseCase } from '../../application/use-cases/get-working-hours.use-case';
 import { UpdateWorkingHoursUseCase } from '../../application/use-cases/update-working-hours.use-case';
+import { AddRestaurantGalleryImageUseCase } from '../../application/use-cases/add-restaurant-gallery-image.use-case';
+import { ListRestaurantGalleryUseCase } from '../../application/use-cases/list-restaurant-gallery.use-case';
+import { RemoveRestaurantGalleryImageUseCase } from '../../application/use-cases/remove-restaurant-gallery-image.use-case';
+import { GetRestaurantCuisineCategoriesUseCase } from '../../application/use-cases/get-restaurant-cuisine-categories.use-case';
+import { SetRestaurantCuisineCategoriesUseCase } from '../../application/use-cases/set-restaurant-cuisine-categories.use-case';
+import { GetRestaurantOccasionCategoriesUseCase } from '../../application/use-cases/get-restaurant-occasion-categories.use-case';
+import { SetRestaurantOccasionCategoriesUseCase } from '../../application/use-cases/set-restaurant-occasion-categories.use-case';
 import { RestaurantResult } from '../../application/dto/restaurant.result';
 import { RestaurantListResult } from '../../application/dto/restaurant-list.result';
 import { RestaurantSettingsResult } from '../../application/dto/restaurant-settings.result';
 import { WorkingHoursResult } from '../../application/dto/working-hours.result';
+import {
+  RestaurantGalleryImageResult,
+  RestaurantGalleryListResult,
+} from '../../application/dto/restaurant-gallery-image.result';
+import { RestaurantCuisineCategoriesResult } from '../../application/dto/restaurant-cuisine-categories.result';
+import { RestaurantOccasionCategoriesResult } from '../../application/dto/restaurant-occasion-categories.result';
+import { GALLERY_IMAGE_MAX_SIZE_BYTES } from '../../application/policies/gallery-upload.policy';
 import { CreateRestaurantRequestDto } from '../dto/create-restaurant.request.dto';
 import { UpdateRestaurantRequestDto } from '../dto/update-restaurant.request.dto';
 import { UpdateRestaurantSettingsRequestDto } from '../dto/update-restaurant-settings.request.dto';
 import { UpdateWorkingHoursRequestDto } from '../dto/update-working-hours.request.dto';
+import { AddRestaurantGalleryImageRequestDto } from '../dto/add-restaurant-gallery-image.request.dto';
+import { SetRestaurantCuisineCategoriesRequestDto } from '../dto/set-restaurant-cuisine-categories.request.dto';
+import { SetRestaurantOccasionCategoriesRequestDto } from '../dto/set-restaurant-occasion-categories.request.dto';
 import { ListRestaurantsQueryDto } from '../dto/list-restaurants.query.dto';
 import { RestaurantResponseDto } from '../dto/restaurant.response.dto';
 import { RestaurantListResponseDto } from '../dto/restaurant-list.response.dto';
 import { RestaurantSettingsResponseDto } from '../dto/restaurant-settings.response.dto';
 import { WorkingHoursResponseDto } from '../dto/working-hours.response.dto';
+import {
+  RestaurantGalleryImageResponseDto,
+  RestaurantGalleryListResponseDto,
+} from '../dto/restaurant-gallery-image.response.dto';
+import { RestaurantCuisineCategoriesResponseDto } from '../dto/cuisine-category.response.dto';
+import { RestaurantOccasionCategoriesResponseDto } from '../dto/occasion-category.response.dto';
 
 /**
  * Organization-administrative only (Phase 4.1 scope decision, disclosed in
@@ -81,6 +109,13 @@ export class RestaurantsController {
     private readonly updateRestaurantSettingsUseCase: UpdateRestaurantSettingsUseCase,
     private readonly getWorkingHoursUseCase: GetWorkingHoursUseCase,
     private readonly updateWorkingHoursUseCase: UpdateWorkingHoursUseCase,
+    private readonly addRestaurantGalleryImageUseCase: AddRestaurantGalleryImageUseCase,
+    private readonly listRestaurantGalleryUseCase: ListRestaurantGalleryUseCase,
+    private readonly removeRestaurantGalleryImageUseCase: RemoveRestaurantGalleryImageUseCase,
+    private readonly getRestaurantCuisineCategoriesUseCase: GetRestaurantCuisineCategoriesUseCase,
+    private readonly setRestaurantCuisineCategoriesUseCase: SetRestaurantCuisineCategoriesUseCase,
+    private readonly getRestaurantOccasionCategoriesUseCase: GetRestaurantOccasionCategoriesUseCase,
+    private readonly setRestaurantOccasionCategoriesUseCase: SetRestaurantOccasionCategoriesUseCase,
   ) {}
 
   @Post()
@@ -333,6 +368,7 @@ export class RestaurantsController {
       maxGuestsPerReservation: body.maxGuestsPerReservation,
       cancellationWindowMinutes: body.cancellationWindowMinutes,
       pendingReservationTimeoutMinutes: body.pendingReservationTimeoutMinutes,
+      defaultReservationDurationMinutes: body.defaultReservationDurationMinutes,
       autoApproval: body.autoApproval,
       timezone: body.timezone,
       defaultCurrency: body.defaultCurrency ?? null,
@@ -427,6 +463,305 @@ export class RestaurantsController {
     return this.toWorkingHoursResponse(result);
   }
 
+  @Post(':id/gallery')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
+  @RequireOrgRole(OrganizationMemberRole.Owner, OrganizationMemberRole.Admin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: GALLERY_IMAGE_MAX_SIZE_BYTES, files: 1 } }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        caption: { type: 'string' },
+      },
+      required: ['file'],
+    },
+  })
+  @ResponseMessage('Gallery image added successfully.')
+  @ApiOperation({
+    operationId: 'restaurantsAddGalleryImage',
+    summary: 'Add an image to a restaurant gallery',
+    description:
+      'Accepts a single multipart image file (JPEG/PNG/WebP, 5MB max, validated by magic-byte signature - not just Content-Type) plus an optional caption. Appended to the end of the gallery (existing sortOrder values are never reassigned - no reorder endpoint exists). Restaurant-level only, maximum 20 images per restaurant.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({
+    status: 201,
+    description: 'Gallery image added',
+    type: RestaurantGalleryImageResponseDto,
+  })
+  @ApiErrorResponse(400, 'Missing file or the file is not a valid supported image', [
+    'VALIDATION_ERROR',
+    'INVALID_FILE',
+  ])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller is not an Owner/Admin organization member', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Restaurant not found (or belongs to another organization)', ['NOT_FOUND'])
+  @ApiErrorResponse(409, 'Restaurant gallery already has the maximum number of images', [
+    'GALLERY_LIMIT_EXCEEDED',
+  ])
+  @ApiErrorResponse(413, 'Gallery image file exceeds the maximum allowed size', ['FILE_TOO_LARGE'])
+  @ApiErrorResponse(415, 'Unsupported gallery image file type', ['UNSUPPORTED_FILE_TYPE'])
+  @ApiErrorResponse(503, 'Gallery image storage is temporarily unavailable', [
+    'STORAGE_UNAVAILABLE',
+  ])
+  async addGalleryImage(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() body: AddRestaurantGalleryImageRequestDto,
+    @CurrentActor() actor: AuthenticatedOrganizationMemberActor,
+    @Req() request: Request,
+  ): Promise<RestaurantGalleryImageResponseDto> {
+    const result = await this.addRestaurantGalleryImageUseCase.execute({
+      actor,
+      restaurantId: id,
+      file: file ? { buffer: file.buffer, mimeType: file.mimetype, sizeBytes: file.size } : null,
+      caption: body.caption ?? null,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return this.toGalleryImageResponse(result);
+  }
+
+  @Get(':id/gallery')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
+  @RequireOrgRole(OrganizationMemberRole.Owner, OrganizationMemberRole.Admin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Restaurant gallery retrieved successfully.')
+  @ApiOperation({
+    operationId: 'restaurantsListGallery',
+    summary: 'List a restaurant gallery',
+    description:
+      'Ordered by sortOrder. Only restaurants belonging to the caller organization are ever visible - tenant scoping is automatic (TENANCY.md). A brand-new restaurant has an empty gallery until images are explicitly added.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({
+    status: 200,
+    description: 'Restaurant gallery retrieved',
+    type: RestaurantGalleryListResponseDto,
+  })
+  @ApiErrorResponse(400, 'id is not a valid UUID', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller is not an Owner/Admin organization member', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Restaurant not found (or belongs to another organization)', ['NOT_FOUND'])
+  async listGallery(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentActor() actor: AuthenticatedOrganizationMemberActor,
+  ): Promise<RestaurantGalleryListResponseDto> {
+    const result = await this.listRestaurantGalleryUseCase.execute({
+      actor,
+      restaurantId: id,
+    });
+    return this.toGalleryListResponse(result);
+  }
+
+  @Delete(':id/gallery/:galleryItemId')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
+  @RequireOrgRole(OrganizationMemberRole.Owner, OrganizationMemberRole.Admin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @SkipResponseEnvelope()
+  @ApiOperation({
+    operationId: 'restaurantsRemoveGalleryImage',
+    summary: 'Remove an image from a restaurant gallery',
+    description:
+      "Removes the RestaurantGallery row, the underlying File record, and the MinIO object, using the existing Files infrastructure. Not idempotent: removing an already-removed (or nonexistent, or another restaurant's) image returns 404.",
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiParam({ name: 'galleryItemId', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Gallery image removed' })
+  @ApiErrorResponse(400, 'id or galleryItemId is not a valid UUID', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller is not an Owner/Admin organization member', ['FORBIDDEN'])
+  @ApiErrorResponse(
+    404,
+    'Restaurant not found, or gallery image not found (or belongs to another restaurant)',
+    ['NOT_FOUND'],
+  )
+  async removeGalleryImage(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('galleryItemId', ParseUUIDPipe) galleryItemId: string,
+    @CurrentActor() actor: AuthenticatedOrganizationMemberActor,
+    @Req() request: Request,
+  ): Promise<void> {
+    await this.removeRestaurantGalleryImageUseCase.execute({
+      actor,
+      restaurantId: id,
+      galleryItemId,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+  }
+
+  @Get(':id/cuisine-categories')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
+  @RequireOrgRole(OrganizationMemberRole.Owner, OrganizationMemberRole.Admin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Restaurant cuisine categories retrieved successfully.')
+  @ApiOperation({
+    operationId: 'restaurantsGetCuisineCategories',
+    summary: 'Get a restaurant assigned cuisine categories',
+    description:
+      'Only restaurants belonging to the caller organization are ever visible - tenant scoping is automatic (TENANCY.md). A brand-new restaurant has an empty assignment until explicitly configured.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({
+    status: 200,
+    description: 'Restaurant cuisine categories retrieved',
+    type: RestaurantCuisineCategoriesResponseDto,
+  })
+  @ApiErrorResponse(400, 'id is not a valid UUID', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller is not an Owner/Admin organization member', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Restaurant not found (or belongs to another organization)', ['NOT_FOUND'])
+  async getCuisineCategories(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentActor() actor: AuthenticatedOrganizationMemberActor,
+  ): Promise<RestaurantCuisineCategoriesResponseDto> {
+    const result = await this.getRestaurantCuisineCategoriesUseCase.execute({
+      actor,
+      restaurantId: id,
+    });
+    return this.toCuisineCategoriesResponse(result);
+  }
+
+  @Patch(':id/cuisine-categories')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
+  @RequireOrgRole(OrganizationMemberRole.Owner, OrganizationMemberRole.Admin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Restaurant cuisine categories updated successfully.')
+  @ApiOperation({
+    operationId: 'restaurantsSetCuisineCategories',
+    summary: 'Replace a restaurant assigned cuisine categories (full-replace)',
+    description:
+      "Full-replace of the entire assignment: the submitted `cuisineCategoryIds` become the restaurant's complete cuisine assignment - an id omitted becomes unassigned. Every id must reference an active CuisineCategory (see GET /cuisine-categories). Only restaurants belonging to the caller organization can be updated - tenant scoping is automatic (TENANCY.md).",
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({
+    status: 200,
+    description: 'Restaurant cuisine categories updated',
+    type: RestaurantCuisineCategoriesResponseDto,
+  })
+  @ApiErrorResponse(400, 'Validation failure (invalid/duplicate id, or unknown category id)', [
+    'VALIDATION_ERROR',
+  ])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller is not an Owner/Admin organization member', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Restaurant not found (or belongs to another organization)', ['NOT_FOUND'])
+  async setCuisineCategories(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: SetRestaurantCuisineCategoriesRequestDto,
+    @CurrentActor() actor: AuthenticatedOrganizationMemberActor,
+    @Req() request: Request,
+  ): Promise<RestaurantCuisineCategoriesResponseDto> {
+    const result = await this.setRestaurantCuisineCategoriesUseCase.execute({
+      actor,
+      restaurantId: id,
+      cuisineCategoryIds: body.cuisineCategoryIds,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return this.toCuisineCategoriesResponse(result);
+  }
+
+  @Get(':id/occasion-categories')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
+  @RequireOrgRole(OrganizationMemberRole.Owner, OrganizationMemberRole.Admin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Restaurant occasion categories retrieved successfully.')
+  @ApiOperation({
+    operationId: 'restaurantsGetOccasionCategories',
+    summary: 'Get a restaurant assigned occasion categories',
+    description:
+      'Only restaurants belonging to the caller organization are ever visible - tenant scoping is automatic (TENANCY.md). A brand-new restaurant has an empty assignment until explicitly configured.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({
+    status: 200,
+    description: 'Restaurant occasion categories retrieved',
+    type: RestaurantOccasionCategoriesResponseDto,
+  })
+  @ApiErrorResponse(400, 'id is not a valid UUID', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller is not an Owner/Admin organization member', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Restaurant not found (or belongs to another organization)', ['NOT_FOUND'])
+  async getOccasionCategories(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentActor() actor: AuthenticatedOrganizationMemberActor,
+  ): Promise<RestaurantOccasionCategoriesResponseDto> {
+    const result = await this.getRestaurantOccasionCategoriesUseCase.execute({
+      actor,
+      restaurantId: id,
+    });
+    return this.toOccasionCategoriesResponse(result);
+  }
+
+  @Patch(':id/occasion-categories')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
+  @RequireOrgRole(OrganizationMemberRole.Owner, OrganizationMemberRole.Admin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Restaurant occasion categories updated successfully.')
+  @ApiOperation({
+    operationId: 'restaurantsSetOccasionCategories',
+    summary: 'Replace a restaurant assigned occasion categories (full-replace)',
+    description:
+      "Full-replace of the entire assignment: the submitted `occasionCategoryIds` become the restaurant's complete occasion assignment - an id omitted becomes unassigned. Every id must reference an active OccasionCategory (see GET /occasion-categories). Only restaurants belonging to the caller organization can be updated - tenant scoping is automatic (TENANCY.md).",
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({
+    status: 200,
+    description: 'Restaurant occasion categories updated',
+    type: RestaurantOccasionCategoriesResponseDto,
+  })
+  @ApiErrorResponse(400, 'Validation failure (invalid/duplicate id, or unknown category id)', [
+    'VALIDATION_ERROR',
+  ])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller is not an Owner/Admin organization member', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Restaurant not found (or belongs to another organization)', ['NOT_FOUND'])
+  async setOccasionCategories(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: SetRestaurantOccasionCategoriesRequestDto,
+    @CurrentActor() actor: AuthenticatedOrganizationMemberActor,
+    @Req() request: Request,
+  ): Promise<RestaurantOccasionCategoriesResponseDto> {
+    const result = await this.setRestaurantOccasionCategoriesUseCase.execute({
+      actor,
+      restaurantId: id,
+      occasionCategoryIds: body.occasionCategoryIds,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return this.toOccasionCategoriesResponse(result);
+  }
+
   private toResponse(result: RestaurantResult): RestaurantResponseDto {
     return {
       restaurantId: result.restaurantId,
@@ -460,6 +795,7 @@ export class RestaurantsController {
       maxGuestsPerReservation: result.maxGuestsPerReservation,
       cancellationWindowMinutes: result.cancellationWindowMinutes,
       pendingReservationTimeoutMinutes: result.pendingReservationTimeoutMinutes,
+      defaultReservationDurationMinutes: result.defaultReservationDurationMinutes,
       autoApproval: result.autoApproval,
       timezone: result.timezone,
       defaultCurrency: result.defaultCurrency,
@@ -479,6 +815,61 @@ export class RestaurantsController {
         breakEndTime: entry.breakEndTime,
         createdAt: entry.createdAt.toISOString(),
         updatedAt: entry.updatedAt.toISOString(),
+      })),
+    };
+  }
+
+  private toGalleryImageResponse(
+    result: RestaurantGalleryImageResult,
+  ): RestaurantGalleryImageResponseDto {
+    return {
+      galleryItemId: result.galleryItemId,
+      restaurantId: result.restaurantId,
+      caption: result.caption,
+      sortOrder: result.sortOrder,
+      imageUrl: result.imageUrl,
+      createdAt: result.createdAt.toISOString(),
+      updatedAt: result.updatedAt.toISOString(),
+    };
+  }
+
+  private toGalleryListResponse(
+    result: RestaurantGalleryListResult,
+  ): RestaurantGalleryListResponseDto {
+    return {
+      restaurantId: result.restaurantId,
+      items: result.items.map((item) => this.toGalleryImageResponse(item)),
+    };
+  }
+
+  private toCuisineCategoriesResponse(
+    result: RestaurantCuisineCategoriesResult,
+  ): RestaurantCuisineCategoriesResponseDto {
+    return {
+      restaurantId: result.restaurantId,
+      categories: result.categories.map((category) => ({
+        cuisineCategoryId: category.cuisineCategoryId,
+        slug: category.slug,
+        name: category.name,
+        sortOrder: category.sortOrder,
+        createdAt: category.createdAt.toISOString(),
+        updatedAt: category.updatedAt.toISOString(),
+      })),
+    };
+  }
+
+  private toOccasionCategoriesResponse(
+    result: RestaurantOccasionCategoriesResult,
+  ): RestaurantOccasionCategoriesResponseDto {
+    return {
+      restaurantId: result.restaurantId,
+      categories: result.categories.map((category) => ({
+        occasionCategoryId: category.occasionCategoryId,
+        slug: category.slug,
+        name: category.name,
+        sortOrder: category.sortOrder,
+        createdAt: category.createdAt.toISOString(),
+        updatedAt: category.updatedAt.toISOString(),
       })),
     };
   }

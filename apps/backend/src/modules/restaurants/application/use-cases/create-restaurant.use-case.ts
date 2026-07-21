@@ -2,11 +2,13 @@ import { Injectable, Inject } from '@nestjs/common';
 import { ClockPort } from '@shared/application/ports/clock.port';
 import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
 import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
+import { UnitOfWorkPort } from '@shared/application/ports/unit-of-work.port';
 import { RestaurantSlug } from '@shared/domain/value-objects/restaurant-slug.vo';
 import {
   CLOCK,
   ID_GENERATOR,
   EVENT_PUBLISHER,
+  UNIT_OF_WORK,
 } from '@modules/authentication/domain/tokens/authentication.tokens';
 import { Restaurant } from '../../domain/entities/restaurant.entity';
 import { RestaurantStatus } from '../../domain/enums/restaurant.enums';
@@ -35,6 +37,7 @@ export class CreateRestaurantUseCase {
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
+    @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
   ) {}
 
   async execute(command: CreateRestaurantCommand): Promise<RestaurantResult> {
@@ -62,20 +65,23 @@ export class CreateRestaurantUseCase {
       deletedAt: null,
     });
 
-    await this.restaurantRepository.save(restaurant);
-
     // Every Restaurant requires exactly one RestaurantSettings row
     // (DATABASE_SCHEMA.md's unique restaurantId constraint) - created here,
     // atomically alongside the Restaurant itself, per Phase 4.2's scope
     // decision (see TASKS.md's Phase 4.2 report) rather than lazily on
     // first access, so no consumer of this aggregate ever has to handle a
-    // "restaurant exists but has no settings" state.
+    // "restaurant exists but has no settings" state. Both saves run inside
+    // one transaction so a failure after the Restaurant write can never
+    // leave it without a RestaurantSettings row.
     const settings = RestaurantSettings.createDefault(
       this.idGenerator.generate(),
       restaurant.restaurantId.value,
       now,
     );
-    await this.restaurantSettingsRepository.save(settings);
+    await this.unitOfWork.execute(async () => {
+      await this.restaurantRepository.save(restaurant);
+      await this.restaurantSettingsRepository.save(settings);
+    });
 
     await this.eventPublisher.publish(
       new RestaurantCreatedEvent(

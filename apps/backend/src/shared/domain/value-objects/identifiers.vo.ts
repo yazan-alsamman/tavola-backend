@@ -99,3 +99,33 @@ export class FileId extends UuidId {
     return new FileId(value);
   }
 }
+
+export class FloorPlanId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'FloorPlanId');
+  }
+
+  static create(value: string): FloorPlanId {
+    return new FloorPlanId(value);
+  }
+}
+
+export class TableId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'TableId');
+  }
+
+  static create(value: string): TableId {
+    return new TableId(value);
+  }
+}
+
+export class ReservationId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'ReservationId');
+  }
+
+  static create(value: string): ReservationId {
+    return new ReservationId(value);
+  }
+}

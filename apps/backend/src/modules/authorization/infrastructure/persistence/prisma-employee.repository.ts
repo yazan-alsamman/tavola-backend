@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaContext } from '@infrastructure/prisma/prisma-context.service';
-import { EmployeeId, UserId } from '@shared/domain/value-objects/identifiers.vo';
+import {
+  BranchId,
+  EmployeeId,
+  RestaurantId,
+  RoleId,
+  UserId,
+} from '@shared/domain/value-objects/identifiers.vo';
 import { Employee } from '../../domain/entities/employee.entity';
 import { EmployeeStatus } from '../../domain/enums/authorization.enums';
 import {
@@ -27,6 +33,92 @@ export class PrismaEmployeeRepository implements EmployeeRepository {
       row,
       row.branchAssignments.map((assignment) => assignment.branchId),
     );
+  }
+
+  async findByIdAndRestaurantId(
+    id: EmployeeId,
+    restaurantId: RestaurantId,
+  ): Promise<Employee | null> {
+    const row = await this.prismaContext.client.employee.findFirst({
+      where: { id: id.value, restaurantId: restaurantId.value, deletedAt: null },
+      include: { branchAssignments: { select: { branchId: true } } },
+    });
+
+    if (!row) {
+      return null;
+    }
+
+    return EmployeePrismaMapper.toDomain(
+      row,
+      row.branchAssignments.map((assignment) => assignment.branchId),
+    );
+  }
+
+  async findByEmailAndRestaurantId(
+    email: string,
+    restaurantId: RestaurantId,
+  ): Promise<Employee | null> {
+    const row = await this.prismaContext.client.employee.findFirst({
+      where: { email, restaurantId: restaurantId.value, deletedAt: null },
+      include: { branchAssignments: { select: { branchId: true } } },
+    });
+
+    if (!row) {
+      return null;
+    }
+
+    return EmployeePrismaMapper.toDomain(
+      row,
+      row.branchAssignments.map((assignment) => assignment.branchId),
+    );
+  }
+
+  async findUnlinkedInvitedByEmail(email: string): Promise<Employee[]> {
+    const rows = await this.prismaContext.client.employee.findMany({
+      where: { email, status: EmployeeStatus.Invited, userId: null, deletedAt: null },
+      include: { branchAssignments: { select: { branchId: true } } },
+    });
+
+    return rows.map((row) =>
+      EmployeePrismaMapper.toDomain(
+        row,
+        row.branchAssignments.map((assignment) => assignment.branchId),
+      ),
+    );
+  }
+
+  async countActiveByRestaurantIdAndRoleId(
+    restaurantId: RestaurantId,
+    roleId: RoleId,
+  ): Promise<number> {
+    return this.prismaContext.client.employee.count({
+      where: {
+        restaurantId: restaurantId.value,
+        roleId: roleId.value,
+        deletedAt: null,
+        status: { not: EmployeeStatus.Deactivated },
+      },
+    });
+  }
+
+  async addBranchAssignment(employeeId: EmployeeId, branchId: BranchId, at: Date): Promise<void> {
+    await this.prismaContext.client.employeeBranchAssignment.upsert({
+      where: {
+        employeeId_branchId: { employeeId: employeeId.value, branchId: branchId.value },
+      },
+      create: {
+        employeeId: employeeId.value,
+        branchId: branchId.value,
+        assignedAt: at,
+      },
+      update: {},
+    });
+  }
+
+  async removeBranchAssignment(employeeId: EmployeeId, branchId: BranchId): Promise<void> {
+    await this.prismaContext.client.employeeBranchAssignment.deleteMany({
+      where: { employeeId: employeeId.value, branchId: branchId.value },
+    });
   }
 
   /**

@@ -50,6 +50,7 @@ export class UpdateRestaurantSettingsUseCase {
         maxGuestsPerReservation: command.maxGuestsPerReservation,
         cancellationWindowMinutes: command.cancellationWindowMinutes,
         pendingReservationTimeoutMinutes: command.pendingReservationTimeoutMinutes,
+        defaultReservationDurationMinutes: command.defaultReservationDurationMinutes,
         autoApproval: command.autoApproval,
         timezone: command.timezone,
         defaultCurrency: command.defaultCurrency,

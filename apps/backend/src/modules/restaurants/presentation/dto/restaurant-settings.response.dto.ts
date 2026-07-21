@@ -16,6 +16,9 @@ export class RestaurantSettingsResponseDto {
   @ApiProperty({ example: 15, minimum: 1, maximum: 1440 })
   pendingReservationTimeoutMinutes!: number;
 
+  @ApiProperty({ example: 90, minimum: 15, maximum: 480 })
+  defaultReservationDurationMinutes!: number;
+
   @ApiProperty({ example: false })
   autoApproval!: boolean;
 

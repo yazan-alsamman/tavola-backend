@@ -8,6 +8,7 @@ export function toRestaurantSettingsResult(settings: RestaurantSettings): Restau
     maxGuestsPerReservation: settings.maxGuestsPerReservation,
     cancellationWindowMinutes: settings.cancellationWindowMinutes,
     pendingReservationTimeoutMinutes: settings.pendingReservationTimeoutMinutes,
+    defaultReservationDurationMinutes: settings.defaultReservationDurationMinutes,
     autoApproval: settings.autoApproval,
     timezone: settings.timezone,
     defaultCurrency: settings.defaultCurrency,

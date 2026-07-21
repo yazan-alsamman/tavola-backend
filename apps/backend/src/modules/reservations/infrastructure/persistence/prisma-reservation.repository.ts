@@ -1,0 +1,99 @@
+import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { PrismaContext } from '@infrastructure/prisma/prisma-context.service';
+import { TableId } from '@shared/domain/value-objects/identifiers.vo';
+import { Reservation } from '../../domain/entities/reservation.entity';
+import { ReservationStatus } from '../../domain/enums/reservation.enums';
+import { ReservationConflictException } from '../../domain/exceptions/reservation-conflict.exception';
+import { ReservationRepository } from '../../domain/repositories/reservation.repository';
+import { ReservationPrismaMapper } from './reservation.prisma-mapper';
+
+/**
+ * ADR-013: the `reservations_no_overlapping_confirmed_excl` exclusion
+ * constraint is not modeled in `schema.prisma` (raw-SQL-only, see the Phase
+ * 7.1 migration), so Prisma cannot recognize it as a known error code (no
+ * `P2002`-style mapping) - a violation surfaces as a
+ * `PrismaClientUnknownRequestError` whose `message` embeds the raw
+ * PostgreSQL error, including SQLSTATE `23P01` (`exclusion_violation`) and
+ * the constraint name. Matched on the constraint name specifically (not just
+ * `23P01`) so only this exact constraint's violation is translated - any
+ * other database error is rethrown untouched.
+ */
+const EXCLUSION_CONSTRAINT_NAME = 'reservations_no_overlapping_confirmed_excl';
+
+function isReservationExclusionViolation(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientUnknownRequestError &&
+    error.message.includes(EXCLUSION_CONSTRAINT_NAME)
+  );
+}
+
+/**
+ * `Reservation` is not in `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS`
+ * (customer-facing writes are not organization-scoped) - the ordinary
+ * tenant-scoped `PrismaContext` client is a safe no-op passthrough here,
+ * exactly like `PrismaTableRepository`/`PrismaBranchRepository`'s own doc
+ * comments explain for their models.
+ */
+@Injectable()
+export class PrismaReservationRepository implements ReservationRepository {
+  constructor(private readonly prismaContext: PrismaContext) {}
+
+  async findOverlappingPendingOrApproved(
+    tableId: TableId,
+    startTime: Date,
+    endTime: Date,
+  ): Promise<Reservation[]> {
+    const rows = await this.prismaContext.client.reservation.findMany({
+      where: {
+        tableId: tableId.value,
+        status: { in: [ReservationStatus.Pending, ReservationStatus.Approved] },
+        reservationStartTime: { lt: endTime },
+        reservationEndTime: { gt: startTime },
+      },
+    });
+
+    return rows.map((row) => ReservationPrismaMapper.toDomain(row));
+  }
+
+  /**
+   * ADR-013: acquires `pg_advisory_xact_lock(hashtextextended(lockKey, 0))`,
+   * re-checks for an overlapping confirmed reservation, then inserts - all
+   * inside one transaction, no external I/O (CODING_STANDARDS.md's
+   * short-transaction rule). The lock is released automatically when the
+   * transaction commits or rolls back.
+   */
+  async createWithLock(reservation: Reservation, lockKey: string): Promise<void> {
+    await this.prismaContext.runInTransaction(async () => {
+      // `$executeRaw`, not `$queryRaw`: `pg_advisory_xact_lock` returns `void`,
+      // which Prisma cannot deserialize as a `$queryRaw` result column.
+      await this.prismaContext.client
+        .$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+
+      const conflicting = await this.prismaContext.client.reservation.findFirst({
+        where: {
+          tableId: reservation.tableId.value,
+          status: {
+            in: [ReservationStatus.Approved, ReservationStatus.Completed, ReservationStatus.NoShow],
+          },
+          reservationStartTime: { lt: reservation.reservationEndTime },
+          reservationEndTime: { gt: reservation.reservationStartTime },
+        },
+      });
+
+      if (conflicting !== null) {
+        throw new ReservationConflictException();
+      }
+
+      const data = ReservationPrismaMapper.toPersistence(reservation);
+      try {
+        await this.prismaContext.client.reservation.create({ data });
+      } catch (error) {
+        if (isReservationExclusionViolation(error)) {
+          throw new ReservationConflictException();
+        }
+        throw error;
+      }
+    });
+  }
+}

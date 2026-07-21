@@ -7,6 +7,7 @@ import { AccessTokenActorType } from '@modules/authentication/domain/services/ac
 import {
   CollectingEventPublisher,
   FixedClock,
+  ImmediateUnitOfWork,
   UuidGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
@@ -35,6 +36,7 @@ describe('DeleteRestaurantUseCase', () => {
       new FixedClock(fixedNow),
       new UuidGenerator(),
       new CollectingEventPublisher(),
+      new ImmediateUnitOfWork(),
     );
     const result = await createUseCase.execute({
       actor: baseActor(),

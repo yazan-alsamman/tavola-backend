@@ -160,10 +160,10 @@ Security events span Authentication and Authorization. Each includes: **producer
 * TableDeleted
 * TableMerged
 * TableSplit
-* TableMoved
-* TableDisabled
-* TableEnabled
-* TableStatusChanged
+
+`TableMoved` is deliberately not listed as a domain event class (Phase 6.2 architecture decision, TASKS.md) - Move Table produces an audit log entry only (`table.moved`), following the same direct-audit-write pattern already used elsewhere when no dedicated event class is warranted (e.g. `restaurant.settings.updated`). There are currently no consumers that require a dedicated `TableMovedEvent`. If a future phase (Reservations, Notifications, Analytics, etc.) needs one, it must be introduced through its own explicit architectural decision, not reintroduced silently.
+
+`TableDisabled`/`TableEnabled`/`TableStatusChanged` are likewise deliberately not listed as domain event classes (Status Management architecture decision, TASKS.md). Status Management exposes status transitions through a single generic Domain Action, `POST /tables/{tableId}/status` - there are no separate Disable/Enable actions, since disabling and enabling are state transitions within the Table lifecycle rather than independent business capabilities, so `TableDisabled`/`TableEnabled` no longer correspond to any distinct capability at all. Every status transition produces a `table.status_changed` audit-log entry only. There are currently no consumers that require a dedicated event class. If a future phase needs one, it must be introduced through its own explicit architectural decision, not reintroduced silently.
 
 ---
 
@@ -179,6 +179,8 @@ Security events span Authentication and Authorization. Each includes: **producer
 * ReservationCompleted
 * ReservationNoShow
 * ReservationUpdated
+
+**Phase 7 pre-implementation decision note (2026-07-19):** unlike `TableMoved`/`TableDisabled`/`TableEnabled`/`TableStatusChanged` above, every event in this list becomes a real domain event class, not an audit-only direct write. That audit-only precedent applied specifically because Move Table and Status Management had no consumers yet - Reservation events already have named consumers documented in this file and `DOMAIN_MODEL.md` (Analytics, Notifications, WebSocket fan-out per Phase 8/9/14), so publishing them as proper domain events (via `AuditingEventPublisher`, the same mechanism every other consumed event already uses) is required from the first implementation, not deferred.
 
 ---
 

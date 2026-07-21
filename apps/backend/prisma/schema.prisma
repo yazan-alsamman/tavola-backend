@@ -43,6 +43,39 @@ enum UserStatus {
   Anonymized
 }
 
+/**
+ * Status Management architecture decision (TASKS.md "Phase 6 — Status
+ * Management" note): four values only. `Create Table` always produces
+ * `Available`. Transitions happen exclusively through the single dedicated
+ * Domain Action `POST /tables/{tableId}/status`, restricted to
+ * `Available <-> Occupied`/`Available <-> Cleaning`/`Available <-> Disabled`
+ * only - every other combination is rejected. `Update Table` never
+ * transitions status. `Reserved` is deliberately excluded - it is
+ * exclusively a Reservation Engine concept, to be introduced only after the
+ * Reservation Engine architecture has been approved and frozen, through its
+ * own explicit architectural decision, not by silent migration. `Merged` is
+ * deliberately excluded - it belongs to the deferred Merge/Split feature.
+ */
+enum TableStatus {
+  Available
+  Occupied
+  Cleaning
+  Disabled
+}
+
+/**
+ * Phase 6.1 architecture decision (TASKS.md Phase 6.1 decision #7):
+ * presentation metadata only - describes floor-plan rendering, no bearing on
+ * reservation rules, capacity, or merge/split behavior. Intentionally
+ * minimal: a square table is represented as `Rectangle` with `width ==
+ * height`, not a separate value. Any additional shape requires its own
+ * future explicit architectural decision.
+ */
+enum TableShape {
+  Rectangle
+  Round
+}
+
 enum DeviceType {
   mobile
   web
@@ -170,6 +203,7 @@ model User {
   platformAdmin           PlatformAdmin?
   employees               Employee[]
   favorites               Favorite[]
+  reservations            Reservation[]
 
   @@unique([email])
   @@index([phone])
@@ -323,12 +357,16 @@ model Restaurant {
   updatedAt      DateTime  @updatedAt @map("updated_at")
   deletedAt      DateTime? @map("deleted_at")
 
-  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  branches     Branch[]
-  employees    Employee[]
-  favorites    Favorite[]
-  settings     RestaurantSettings?
-  workingHours WorkingHours[]
+  organization       Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branches           Branch[]
+  employees          Employee[]
+  favorites          Favorite[]
+  settings           RestaurantSettings?
+  workingHours       WorkingHours[]
+  gallery            RestaurantGallery[]
+  cuisineCategories  RestaurantCuisineCategory[]
+  occasionCategories RestaurantOccasionCategory[]
+  reservations       Reservation[]
 
   @@index([organizationId])
   @@index([slug])
@@ -349,17 +387,18 @@ model Restaurant {
 // ---------------------------------------------------------------------------
 
 model RestaurantSettings {
-  id                               String   @id @default(uuid()) @db.Uuid
-  restaurantId                     String   @unique @map("restaurant_id") @db.Uuid
-  reservationIntervalMinutes       Int      @default(30) @map("reservation_interval_minutes")
-  maxGuestsPerReservation          Int      @default(20) @map("max_guests_per_reservation")
-  cancellationWindowMinutes        Int      @default(60) @map("cancellation_window_minutes")
-  pendingReservationTimeoutMinutes Int      @default(15) @map("pending_reservation_timeout_minutes")
-  autoApproval                     Boolean  @default(false) @map("auto_approval")
-  timezone                         String   @default("UTC")
-  defaultCurrency                  String?  @map("default_currency")
-  createdAt                        DateTime @default(now()) @map("created_at")
-  updatedAt                        DateTime @updatedAt @map("updated_at")
+  id                                String   @id @default(uuid()) @db.Uuid
+  restaurantId                      String   @unique @map("restaurant_id") @db.Uuid
+  reservationIntervalMinutes        Int      @default(30) @map("reservation_interval_minutes")
+  maxGuestsPerReservation           Int      @default(20) @map("max_guests_per_reservation")
+  cancellationWindowMinutes         Int      @default(60) @map("cancellation_window_minutes")
+  pendingReservationTimeoutMinutes  Int      @default(15) @map("pending_reservation_timeout_minutes")
+  defaultReservationDurationMinutes Int      @default(90) @map("default_reservation_duration_minutes")
+  autoApproval                      Boolean  @default(false) @map("auto_approval")
+  timezone                          String   @default("UTC")
+  defaultCurrency                   String?  @map("default_currency")
+  createdAt                         DateTime @default(now()) @map("created_at")
+  updatedAt                         DateTime @updatedAt @map("updated_at")
 
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
@@ -395,6 +434,103 @@ model WorkingHours {
   @@unique([restaurantId, dayOfWeek])
   @@index([restaurantId])
   @@map("working_hours")
+}
+
+// ---------------------------------------------------------------------------
+// Restaurant Gallery (Phase 4.4 — Restaurant Module, DATABASE_SCHEMA.md
+// "Restaurant Gallery"). Tenant-owned transitively via restaurantId ->
+// Restaurant.organizationId, not directly - deliberately NOT added to
+// withTenantScoping's DIRECT_TENANT_OWNED_MODELS, same pattern as
+// RestaurantSettings/WorkingHours. `fileId` is a plain UUID pointer with no
+// Prisma relation to `File` (matching `Restaurant.logoId`/`coverImageId`'s
+// existing denormalized-pointer precedent and `File`'s own polymorphic,
+// relation-less `ownerId`/`ownerType` design) - the Files aggregate remains
+// the sole owner of file metadata/storage location.
+// ---------------------------------------------------------------------------
+
+model RestaurantGallery {
+  id           String   @id @default(uuid()) @db.Uuid
+  restaurantId String   @map("restaurant_id") @db.Uuid
+  fileId       String   @map("file_id") @db.Uuid
+  caption      String?
+  sortOrder    Int      @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId])
+  @@map("restaurant_gallery")
+}
+
+// ---------------------------------------------------------------------------
+// Cuisine & Occasion Taxonomy (Phase 4.5 — Restaurant Module, ADR-018,
+// DATABASE_SCHEMA.md "Cuisine Categories" / "Restaurant Cuisine Categories" /
+// "Occasion Categories" / "Restaurant Occasion Categories"). Reference tables
+// are platform-managed, NOT tenant-scoped - shared data seeded at deploy via
+// prisma/seed.ts, never created/edited through this module's API. The join
+// tables are tenant-owned transitively via restaurantId -> Restaurant, same
+// pattern as WorkingHours/RestaurantGallery: NOT added to withTenantScoping's
+// DIRECT_TENANT_OWNED_MODELS allowlist - callers must resolve the parent
+// Restaurant via the already-tenant-scoped RestaurantRepository first.
+// ---------------------------------------------------------------------------
+
+model CuisineCategory {
+  id        String   @id @default(uuid()) @db.Uuid
+  slug      String   @unique
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  restaurants RestaurantCuisineCategory[]
+
+  @@index([isActive])
+  @@map("cuisine_categories")
+}
+
+model RestaurantCuisineCategory {
+  id                String   @id @default(uuid()) @db.Uuid
+  restaurantId      String   @map("restaurant_id") @db.Uuid
+  cuisineCategoryId String   @map("cuisine_category_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  restaurant      Restaurant      @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  cuisineCategory CuisineCategory @relation(fields: [cuisineCategoryId], references: [id], onDelete: Cascade)
+
+  @@unique([restaurantId, cuisineCategoryId], map: "restaurant_cuisine_category_unique")
+  @@index([cuisineCategoryId])
+  @@map("restaurant_cuisine_categories")
+}
+
+model OccasionCategory {
+  id        String   @id @default(uuid()) @db.Uuid
+  slug      String   @unique
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  restaurants RestaurantOccasionCategory[]
+
+  @@index([isActive])
+  @@map("occasion_categories")
+}
+
+model RestaurantOccasionCategory {
+  id                 String   @id @default(uuid()) @db.Uuid
+  restaurantId       String   @map("restaurant_id") @db.Uuid
+  occasionCategoryId String   @map("occasion_category_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  restaurant       Restaurant       @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  occasionCategory OccasionCategory @relation(fields: [occasionCategoryId], references: [id], onDelete: Cascade)
+
+  @@unique([restaurantId, occasionCategoryId], map: "restaurant_occasion_category_unique")
+  @@index([occasionCategoryId])
+  @@map("restaurant_occasion_categories")
 }
 
 // ---------------------------------------------------------------------------
@@ -446,11 +582,207 @@ model Branch {
 
   restaurant                Restaurant                 @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   employeeBranchAssignments EmployeeBranchAssignment[]
+  workingHours              BranchWorkingHours[]
+  floorPlans                FloorPlan[]
+  tables                    Table[]
+  reservations              Reservation[]
 
   @@index([restaurantId])
   @@index([city])
   @@index([countryCode])
+  @@index([latitude, longitude])
   @@map("branches")
+}
+
+// ---------------------------------------------------------------------------
+// Branch Working Hours (Phase 5.2 — Branch Module, DATABASE_SCHEMA.md "Branch
+// Working Hours"). A separate table from `WorkingHours` (Restaurant-level,
+// Phase 4.3), not a nullable `branchId` added to it - each aggregate owns its
+// own child entity table, avoiding the dual-parent design Phase 4.3 explicitly
+// deferred as premature. Tenant-owned transitively via
+// branchId -> Branch.restaurantId -> Restaurant.organizationId (two hops), not
+// directly - deliberately NOT added to withTenantScoping's
+// DIRECT_TENANT_OWNED_MODELS, same pattern as WorkingHours/RestaurantSettings.
+// A Branch with zero rows here has no override; whether that means "closed"
+// or "falls back to the Restaurant default" is an application-layer/consumer
+// decision for a future phase (e.g. Reservation Engine) - out of this phase's
+// own CRUD-only scope, same as Restaurant's own WorkingHours precedent.
+// ---------------------------------------------------------------------------
+
+model BranchWorkingHours {
+  id             String   @id @default(uuid()) @db.Uuid
+  branchId       String   @map("branch_id") @db.Uuid
+  dayOfWeek      Int      @map("day_of_week")
+  openingTime    String   @map("opening_time")
+  closingTime    String   @map("closing_time")
+  breakStartTime String?  @map("break_start_time")
+  breakEndTime   String?  @map("break_end_time")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, dayOfWeek])
+  @@index([branchId])
+  @@map("branch_working_hours")
+}
+
+// ---------------------------------------------------------------------------
+// Floor Plans (Phase 6.1 — Table Module, DATABASE_SCHEMA.md "Floor Plans").
+// Child entity of Branch (not of Table): a Branch may define more than one
+// floor layout over time; only one FloorPlan per Branch is `isActive` at a
+// time, enforced by a partial unique index on (branchId) WHERE isActive =
+// true added by hand in this phase's migration SQL - Prisma's schema DSL
+// cannot express a WHERE-filtered unique index. Tenant-owned transitively via
+// branchId -> Branch.restaurantId -> Restaurant.organizationId, not directly
+// - NOT added to withTenantScoping's DIRECT_TENANT_OWNED_MODELS, same pattern
+// as Branch/BranchWorkingHours. `deletedAt` exists because
+// DeleteBranchUseCase's cascade (TASKS.md Phase 6.1 decisions #3/#6) must
+// soft-delete FloorPlans alongside Tables inside one transaction.
+// ---------------------------------------------------------------------------
+
+model FloorPlan {
+  id        String    @id @default(uuid()) @db.Uuid
+  branchId  String    @map("branch_id") @db.Uuid
+  name      String
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  branch Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  tables Table[]
+
+  @@index([branchId])
+  @@map("floor_plans")
+}
+
+// ---------------------------------------------------------------------------
+// Restaurant Tables (Phase 6.1 — Table Module, DATABASE_SCHEMA.md "Restaurant
+// Tables"). Child entity of Branch; every Table belongs to exactly one
+// FloorPlan (`floorPlanId` required, never nullable - TASKS.md Phase 6.1
+// decision #2). Tenant-owned transitively via branchId ->
+// Branch.restaurantId -> Restaurant.organizationId - NOT added to
+// withTenantScoping's DIRECT_TENANT_OWNED_MODELS, same pattern as Branch.
+// `status`/`shape` value sets are intentionally minimal (Phase 6.1
+// architecture decision, TASKS.md Phase 6.1 decision #7) - see the
+// `TableStatus`/`TableShape` enum doc comments above. `mergeGroupId` is a
+// plain nullable UUID value (not a FK - no MergeGroup table exists), reserved
+// for the future Merge/Split sub-phase; never populated by any Phase 6.1 use
+// case. `(branchId, tableNumber)` is a plain (non-partial) unique constraint,
+// exactly as DATABASE_SCHEMA.md's index table documents it - a soft-deleted
+// table's number is not released for reuse.
+// ---------------------------------------------------------------------------
+
+model Table {
+  id           String      @id @default(uuid()) @db.Uuid
+  branchId     String      @map("branch_id") @db.Uuid
+  floorPlanId  String      @map("floor_plan_id") @db.Uuid
+  tableNumber  String      @map("table_number")
+  capacity     Int
+  floor        Int?
+  positionX    Float?      @map("position_x")
+  positionY    Float?      @map("position_y")
+  width        Float?
+  height       Float?
+  rotation     Float?
+  shape        TableShape  @default(Rectangle)
+  layer        Int?
+  indoor       Boolean     @default(true)
+  vip          Boolean     @default(false)
+  smoking      Boolean     @default(false)
+  status       TableStatus @default(Available)
+  mergeGroupId String?     @map("merge_group_id") @db.Uuid
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+  deletedAt    DateTime?   @map("deleted_at")
+
+  branch       Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  floorPlan    FloorPlan     @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+  reservations Reservation[]
+
+  @@unique([branchId, tableNumber])
+  @@index([branchId])
+  @@index([floorPlanId])
+  @@index([status])
+  @@index([mergeGroupId])
+  @@map("tables")
+}
+
+// ---------------------------------------------------------------------------
+// Reservations (Phase 7.1 — Reservation Core, DATABASE_SCHEMA.md
+// "Reservations"). Scope frozen 2026-07-19/2026-07-20 (TASKS.md's Phase 7 /
+// Phase 7.1 decision notes + Phase 7.1 Scope Amendment): Search Availability
+// + Create Reservation only. Every reservation this phase produces is
+// `status = Pending`, `source = Online`, `userId` set (never
+// `reservationGuestId`) - Approval (manual or auto), Reject, Cancel,
+// Reschedule, Complete, No-Show, Phone/WalkIn, and Waitlist are later
+// sub-phases. `reservationGuestId`/`rescheduledFromReservationId` are plain
+// nullable UUID columns with no FK relation yet - mirroring `Table.mergeGroupId`'s
+// own precedent for a documented-but-not-yet-built future sub-phase (Phase
+// 7.4/7.3 respectively) - `ReservationGuest`/reschedule-as-new-row do not
+// exist as tables/flows yet. The `EXCLUDE USING gist` constraint (ADR-013)
+// cannot be expressed in the Prisma schema language itself; it is added via
+// raw SQL in this model's own migration, immediately after enabling the
+// `btree_gist` extension (MIGRATION_POLICY.md).
+// ---------------------------------------------------------------------------
+
+enum ReservationStatus {
+  Pending
+  Approved
+  Rejected
+  Cancelled
+  Completed
+  Expired
+  NoShow
+}
+
+enum ReservationSource {
+  Online
+  Phone
+  WalkIn
+  Staff
+  WaitlistConversion
+}
+
+model Reservation {
+  id                           String            @id @default(uuid()) @db.Uuid
+  userId                       String?           @map("user_id") @db.Uuid
+  reservationGuestId           String?           @map("reservation_guest_id") @db.Uuid
+  restaurantId                 String            @map("restaurant_id") @db.Uuid
+  branchId                     String            @map("branch_id") @db.Uuid
+  tableId                      String            @map("table_id") @db.Uuid
+  reservationDate              DateTime          @map("reservation_date") @db.Date
+  reservationStartTime         DateTime          @map("reservation_start_time") @db.Timestamptz
+  reservationEndTime           DateTime          @map("reservation_end_time") @db.Timestamptz
+  guests                       Int
+  status                       ReservationStatus @default(Pending)
+  source                       ReservationSource @default(Online)
+  notes                        String?
+  createdBy                    String            @map("created_by") @db.Uuid
+  approvedBy                   String?           @map("approved_by") @db.Uuid
+  approvedAt                   DateTime?         @map("approved_at")
+  cancelledAt                  DateTime?         @map("cancelled_at")
+  completedAt                  DateTime?         @map("completed_at")
+  noShowAt                     DateTime?         @map("no_show_at")
+  lateArrivalNotifiedAt        DateTime?         @map("late_arrival_notified_at")
+  tableReadyNotifiedAt         DateTime?         @map("table_ready_notified_at")
+  rescheduledFromReservationId String?           @map("rescheduled_from_reservation_id") @db.Uuid
+  createdAt                    DateTime          @default(now()) @map("created_at")
+  updatedAt                    DateTime          @updatedAt @map("updated_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  branch     Branch     @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  table      Table      @relation(fields: [tableId], references: [id], onDelete: Restrict)
+  user       User?      @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([reservationDate])
+  @@index([tableId])
+  @@index([branchId])
+  @@index([status])
+  @@index([branchId, reservationDate, status])
+  @@index([tableId, reservationDate, reservationStartTime])
+  @@map("reservations")
 }
 
 // ---------------------------------------------------------------------------

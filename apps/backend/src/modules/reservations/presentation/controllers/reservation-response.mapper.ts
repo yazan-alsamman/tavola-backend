@@ -1,0 +1,35 @@
+import { ReservationResult } from '../../application/dto/reservation.result';
+import { TableAvailabilityResult } from '../../application/dto/table-availability.result';
+import { ReservationResponseDto } from '../dto/reservation.response.dto';
+import { TableAvailabilityResponseDto } from '../dto/table-availability.response.dto';
+
+export function toReservationResponse(result: ReservationResult): ReservationResponseDto {
+  return {
+    reservationId: result.reservationId,
+    userId: result.userId,
+    restaurantId: result.restaurantId,
+    branchId: result.branchId,
+    tableId: result.tableId,
+    reservationDate: result.reservationDate.toISOString().slice(0, 10),
+    reservationStartTime: result.reservationStartTime.toISOString(),
+    reservationEndTime: result.reservationEndTime.toISOString(),
+    guests: result.guests,
+    status: result.status,
+    source: result.source,
+    notes: result.notes,
+    createdAt: result.createdAt.toISOString(),
+    updatedAt: result.updatedAt.toISOString(),
+  };
+}
+
+export function toTableAvailabilityResponse(
+  result: TableAvailabilityResult,
+): TableAvailabilityResponseDto {
+  return {
+    tableId: result.tableId,
+    tableNumber: result.tableNumber,
+    capacity: result.capacity,
+    shape: result.shape,
+    isAvailable: result.isAvailable,
+  };
+}

@@ -89,6 +89,7 @@ describe('RestaurantSettings round-trip via PrismaRestaurantSettingsRepository (
     expect(found?.maxGuestsPerReservation).toBe(20);
     expect(found?.cancellationWindowMinutes).toBe(60);
     expect(found?.pendingReservationTimeoutMinutes).toBe(15);
+    expect(found?.defaultReservationDurationMinutes).toBe(90);
     expect(found?.autoApproval).toBe(false);
     expect(found?.timezone).toBe('UTC');
     expect(found?.defaultCurrency).toBeNull();
@@ -107,6 +108,7 @@ describe('RestaurantSettings round-trip via PrismaRestaurantSettingsRepository (
         maxGuestsPerReservation: 12,
         cancellationWindowMinutes: 120,
         pendingReservationTimeoutMinutes: 30,
+        defaultReservationDurationMinutes: 120,
         autoApproval: true,
         timezone: 'Europe/Istanbul',
         defaultCurrency: 'TRY',

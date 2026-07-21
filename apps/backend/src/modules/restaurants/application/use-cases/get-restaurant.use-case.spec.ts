@@ -5,6 +5,7 @@ import { AccessTokenActorType } from '@modules/authentication/domain/services/ac
 import {
   CollectingEventPublisher,
   FixedClock,
+  ImmediateUnitOfWork,
   SequentialIdGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
@@ -38,6 +39,7 @@ describe('GetRestaurantUseCase', () => {
         '99999999-9999-4999-8999-999999999999',
       ]),
       new CollectingEventPublisher(),
+      new ImmediateUnitOfWork(),
     );
     await createUseCase.execute({
       actor: baseActor(),

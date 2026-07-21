@@ -53,6 +53,8 @@ import {
   EmployeeAccessResolverPort,
   EMPLOYEE_ACCESS_RESOLVER,
 } from '../ports/employee-access-resolver.port';
+import { EmployeeRepository } from '@modules/authorization/domain/repositories/authorization.repositories';
+import { EMPLOYEE_REPOSITORY } from '@modules/authorization/application/tokens/authorization.tokens';
 import { LoginCommand } from '../dto/login.command';
 import { LoginResult } from '../dto/login.result';
 import {
@@ -87,6 +89,7 @@ export class LoginUseCase {
     private readonly loginOrganizationReader: LoginOrganizationReaderPort,
     @Inject(EMPLOYEE_ACCESS_RESOLVER)
     private readonly employeeAccessResolver: EmployeeAccessResolverPort,
+    @Inject(EMPLOYEE_REPOSITORY) private readonly employeeRepository: EmployeeRepository,
     @Inject(AUDIT_LOG_WRITER) private readonly auditLogWriter: AuditLogWriterPort,
   ) {}
 
@@ -211,6 +214,19 @@ export class LoginUseCase {
 
     if (activeSessionCount >= maxActiveSessions) {
       throw new TooManySessionsException(maxActiveSessions);
+    }
+
+    // Phase 7.0 (Employee Management) first-login linking
+    // (AUTHENTICATION_ARCHITECTURE.md §1.2: "Employee invite: Pre-created
+    // Employee linked on first login") - must complete before
+    // `employeeAccessResolver.resolveForUserId` below, which only resolves
+    // claims for an already-linked (`userId` set), `Active` Employee row.
+    // Never done in `RefreshSessionUseCase` (TASKS.md Phase 7.0 decision note
+    // item 5) - linking is a one-time event that belongs at authentication,
+    // not silently during a token refresh.
+    const pendingInvites = await this.employeeRepository.findUnlinkedInvitedByEmail(email.value);
+    for (const pendingEmployee of pendingInvites) {
+      await this.employeeRepository.save(pendingEmployee.activateAndLink(user.userId.value, now));
     }
 
     const [organization, employeeAccess] = await Promise.all([

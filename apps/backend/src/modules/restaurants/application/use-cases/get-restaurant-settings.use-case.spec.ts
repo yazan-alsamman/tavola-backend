@@ -5,6 +5,7 @@ import { AccessTokenActorType } from '@modules/authentication/domain/services/ac
 import {
   CollectingEventPublisher,
   FixedClock,
+  ImmediateUnitOfWork,
   UuidGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
@@ -36,6 +37,7 @@ describe('GetRestaurantSettingsUseCase', () => {
       new FixedClock(fixedNow),
       new UuidGenerator(),
       new CollectingEventPublisher(),
+      new ImmediateUnitOfWork(),
     );
     const result = await createUseCase.execute({
       actor: baseActor(),
@@ -64,6 +66,7 @@ describe('GetRestaurantSettingsUseCase', () => {
       maxGuestsPerReservation: 20,
       cancellationWindowMinutes: 60,
       pendingReservationTimeoutMinutes: 15,
+      defaultReservationDurationMinutes: 90,
       autoApproval: false,
       timezone: 'UTC',
       defaultCurrency: null,

@@ -14,6 +14,16 @@ import { GetRestaurantSettingsUseCase } from '../../application/use-cases/get-re
 import { UpdateRestaurantSettingsUseCase } from '../../application/use-cases/update-restaurant-settings.use-case';
 import { GetWorkingHoursUseCase } from '../../application/use-cases/get-working-hours.use-case';
 import { UpdateWorkingHoursUseCase } from '../../application/use-cases/update-working-hours.use-case';
+import { AddRestaurantGalleryImageUseCase } from '../../application/use-cases/add-restaurant-gallery-image.use-case';
+import { ListRestaurantGalleryUseCase } from '../../application/use-cases/list-restaurant-gallery.use-case';
+import { RemoveRestaurantGalleryImageUseCase } from '../../application/use-cases/remove-restaurant-gallery-image.use-case';
+import { GetRestaurantCuisineCategoriesUseCase } from '../../application/use-cases/get-restaurant-cuisine-categories.use-case';
+import { SetRestaurantCuisineCategoriesUseCase } from '../../application/use-cases/set-restaurant-cuisine-categories.use-case';
+import { GetRestaurantOccasionCategoriesUseCase } from '../../application/use-cases/get-restaurant-occasion-categories.use-case';
+import { SetRestaurantOccasionCategoriesUseCase } from '../../application/use-cases/set-restaurant-occasion-categories.use-case';
+import { ListCuisineCategoriesUseCase } from '../../application/use-cases/list-cuisine-categories.use-case';
+import { ListOccasionCategoriesUseCase } from '../../application/use-cases/list-occasion-categories.use-case';
+import { TaxonomyCategoriesController } from './taxonomy-categories.controller';
 
 /**
  * Boots only RestaurantsController against the real @nestjs/swagger document
@@ -31,11 +41,15 @@ describe('RestaurantsController Swagger document', () => {
     { path: '/restaurants/{id}', methods: ['get', 'patch', 'delete'] },
     { path: '/restaurants/{id}/settings', methods: ['get', 'patch'] },
     { path: '/restaurants/{id}/working-hours', methods: ['get', 'patch'] },
+    { path: '/restaurants/{id}/gallery', methods: ['post', 'get'] },
+    { path: '/restaurants/{id}/gallery/{galleryItemId}', methods: ['delete'] },
+    { path: '/restaurants/{id}/cuisine-categories', methods: ['get', 'patch'] },
+    { path: '/restaurants/{id}/occasion-categories', methods: ['get', 'patch'] },
   ];
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
-      controllers: [RestaurantsController],
+      controllers: [RestaurantsController, TaxonomyCategoriesController],
       providers: [
         { provide: CreateRestaurantUseCase, useValue: {} },
         { provide: GetRestaurantUseCase, useValue: {} },
@@ -46,6 +60,15 @@ describe('RestaurantsController Swagger document', () => {
         { provide: UpdateRestaurantSettingsUseCase, useValue: {} },
         { provide: GetWorkingHoursUseCase, useValue: {} },
         { provide: UpdateWorkingHoursUseCase, useValue: {} },
+        { provide: AddRestaurantGalleryImageUseCase, useValue: {} },
+        { provide: ListRestaurantGalleryUseCase, useValue: {} },
+        { provide: RemoveRestaurantGalleryImageUseCase, useValue: {} },
+        { provide: GetRestaurantCuisineCategoriesUseCase, useValue: {} },
+        { provide: SetRestaurantCuisineCategoriesUseCase, useValue: {} },
+        { provide: GetRestaurantOccasionCategoriesUseCase, useValue: {} },
+        { provide: SetRestaurantOccasionCategoriesUseCase, useValue: {} },
+        { provide: ListCuisineCategoriesUseCase, useValue: {} },
+        { provide: ListOccasionCategoriesUseCase, useValue: {} },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -147,5 +170,47 @@ describe('RestaurantsController Swagger document', () => {
     expect(pathItem).toBeDefined();
     expect(pathItem.get).toBeDefined();
     expect(pathItem.patch).toBeDefined();
+  });
+
+  it('documents POST and GET /restaurants/{id}/gallery, and DELETE /restaurants/{id}/gallery/{galleryItemId}', () => {
+    const collectionPathItem = document.paths['/restaurants/{id}/gallery'];
+    expect(collectionPathItem).toBeDefined();
+    expect(collectionPathItem.post).toBeDefined();
+    expect(collectionPathItem.get).toBeDefined();
+
+    const itemPathItem = document.paths['/restaurants/{id}/gallery/{galleryItemId}'];
+    expect(itemPathItem).toBeDefined();
+    expect(itemPathItem.delete).toBeDefined();
+  });
+
+  it('documents 201 for POST /restaurants/{id}/gallery and 204 for DELETE .../gallery/{galleryItemId}', () => {
+    expect(document.paths['/restaurants/{id}/gallery'].post?.responses['201']).toBeDefined();
+    expect(
+      document.paths['/restaurants/{id}/gallery/{galleryItemId}'].delete?.responses['204'],
+    ).toBeDefined();
+  });
+
+  it('documents GET and PATCH /restaurants/{id}/cuisine-categories and /occasion-categories', () => {
+    const cuisinePathItem = document.paths['/restaurants/{id}/cuisine-categories'];
+    expect(cuisinePathItem).toBeDefined();
+    expect(cuisinePathItem.get).toBeDefined();
+    expect(cuisinePathItem.patch).toBeDefined();
+
+    const occasionPathItem = document.paths['/restaurants/{id}/occasion-categories'];
+    expect(occasionPathItem).toBeDefined();
+    expect(occasionPathItem.get).toBeDefined();
+    expect(occasionPathItem.patch).toBeDefined();
+  });
+
+  it('documents public GET /cuisine-categories and /occasion-categories with no bearer auth', () => {
+    const cuisinePathItem = document.paths['/cuisine-categories'];
+    expect(cuisinePathItem).toBeDefined();
+    expect(cuisinePathItem.get).toBeDefined();
+    expect(cuisinePathItem.get?.security ?? []).toEqual([]);
+
+    const occasionPathItem = document.paths['/occasion-categories'];
+    expect(occasionPathItem).toBeDefined();
+    expect(occasionPathItem.get).toBeDefined();
+    expect(occasionPathItem.get?.security ?? []).toEqual([]);
   });
 });

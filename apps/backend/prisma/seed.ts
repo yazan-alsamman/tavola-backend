@@ -133,6 +133,51 @@ const ROLES: Array<{
   },
 ];
 
+const CUISINE_CATEGORIES: Array<{ slug: string; name: string; sortOrder: number }> = [
+  { slug: 'italian', name: 'Italian', sortOrder: 0 },
+  { slug: 'japanese', name: 'Japanese', sortOrder: 1 },
+  { slug: 'chinese', name: 'Chinese', sortOrder: 2 },
+  { slug: 'indian', name: 'Indian', sortOrder: 3 },
+  { slug: 'mexican', name: 'Mexican', sortOrder: 4 },
+  { slug: 'french', name: 'French', sortOrder: 5 },
+  { slug: 'turkish', name: 'Turkish', sortOrder: 6 },
+  { slug: 'lebanese', name: 'Lebanese', sortOrder: 7 },
+  { slug: 'american', name: 'American', sortOrder: 8 },
+  { slug: 'seafood', name: 'Seafood', sortOrder: 9 },
+  { slug: 'vegetarian', name: 'Vegetarian', sortOrder: 10 },
+  { slug: 'steakhouse', name: 'Steakhouse', sortOrder: 11 },
+];
+
+const OCCASION_CATEGORIES: Array<{ slug: string; name: string; sortOrder: number }> = [
+  { slug: 'date-night', name: 'Date Night', sortOrder: 0 },
+  { slug: 'business-lunch', name: 'Business Lunch', sortOrder: 1 },
+  { slug: 'family', name: 'Family', sortOrder: 2 },
+  { slug: 'birthday', name: 'Birthday', sortOrder: 3 },
+  { slug: 'group-gathering', name: 'Group Gathering', sortOrder: 4 },
+  { slug: 'casual', name: 'Casual', sortOrder: 5 },
+  { slug: 'fine-dining', name: 'Fine Dining', sortOrder: 6 },
+];
+
+async function seedCuisineCategories(): Promise<void> {
+  for (const category of CUISINE_CATEGORIES) {
+    await prisma.cuisineCategory.upsert({
+      where: { slug: category.slug },
+      create: { slug: category.slug, name: category.name, sortOrder: category.sortOrder },
+      update: { name: category.name, sortOrder: category.sortOrder },
+    });
+  }
+}
+
+async function seedOccasionCategories(): Promise<void> {
+  for (const category of OCCASION_CATEGORIES) {
+    await prisma.occasionCategory.upsert({
+      where: { slug: category.slug },
+      create: { slug: category.slug, name: category.name, sortOrder: category.sortOrder },
+      update: { name: category.name, sortOrder: category.sortOrder },
+    });
+  }
+}
+
 async function seedSystemConfiguration(): Promise<void> {
   for (const entry of SYSTEM_CONFIGURATION) {
     await prisma.systemConfiguration.upsert({
@@ -213,6 +258,8 @@ async function main(): Promise<void> {
   await seedSystemConfiguration();
   const permissionIds = await seedPermissions();
   await seedRoles(permissionIds);
+  await seedCuisineCategories();
+  await seedOccasionCategories();
 }
 
 main()

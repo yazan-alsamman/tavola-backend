@@ -37,6 +37,7 @@ export class PrismaRestaurantSettingsRepository implements RestaurantSettingsRep
         maxGuestsPerReservation: data.maxGuestsPerReservation,
         cancellationWindowMinutes: data.cancellationWindowMinutes,
         pendingReservationTimeoutMinutes: data.pendingReservationTimeoutMinutes,
+        defaultReservationDurationMinutes: data.defaultReservationDurationMinutes,
         autoApproval: data.autoApproval,
         timezone: data.timezone,
         defaultCurrency: data.defaultCurrency,
