@@ -4,7 +4,6 @@ export interface SystemConfigurationPort {
 }
 
 export const SYSTEM_CONFIG_KEYS = {
-  emailVerificationTokenTtlHours: 'emailVerificationTokenTtlHours',
   passwordResetTokenTtlHours: 'passwordResetTokenTtlHours',
   passwordHistoryCount: 'passwordHistoryCount',
   termsOfServiceVersion: 'termsOfServiceVersion',
@@ -13,4 +12,12 @@ export const SYSTEM_CONFIG_KEYS = {
   accountLockDurationMinutes: 'accountLockDurationMinutes',
   maxActiveSessionsPerUser: 'maxActiveSessionsPerUser',
   refreshTokenTtlDays: 'refreshTokenTtlDays',
+  // ADR-022 (Phase 2.23) — frozen defaults (5 min / 5 attempts / 60s),
+  // following the exact existing pattern of maxFailedLoginAttempts/
+  // accountLockDurationMinutes: DB-seeded, business-configurable, not an
+  // env var (env vars are reserved for rate-limit window/max pairs in this
+  // repository's existing convention — see auth.config.ts).
+  otpExpiryMinutes: 'otpExpiryMinutes',
+  otpMaxIncorrectAttempts: 'otpMaxIncorrectAttempts',
+  otpResendCooldownSeconds: 'otpResendCooldownSeconds',
 } as const;

@@ -3,6 +3,7 @@ import request from 'supertest';
 import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { createTestApp } from '../helpers/test-app.factory';
+import { hashTestPassword, seedOwnerAndOrganization } from '../helpers/owner-fixture';
 import { isDatabaseReachable, skipUnlessDatabaseAvailable } from '../support/live-database';
 
 const prisma = new PrismaClient();
@@ -18,6 +19,7 @@ const validJpegBuffer = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Bu
 describe('/api/v1/restaurants (e2e)', () => {
   let app: INestApplication | undefined;
   let dbAvailable = false;
+  let passwordHash = 'argon2id$test';
 
   beforeAll(async () => {
     dbAvailable = await isDatabaseReachable();
@@ -25,6 +27,7 @@ describe('/api/v1/restaurants (e2e)', () => {
       console.warn('PostgreSQL not reachable — restaurants e2e tests NOT EXECUTED.');
       return;
     }
+    passwordHash = await hashTestPassword(PASSWORD);
     app = await createTestApp();
   });
 
@@ -67,23 +70,11 @@ describe('/api/v1/restaurants (e2e)', () => {
     suffix: string,
   ): Promise<{ accessToken: string; organizationId: string; userId: string }> {
     const email = `${TEST_PREFIX}${suffix}-${uniqueId()}@example.com`;
-    const registerResponse = await request(app!.getHttpServer())
-      .post('/api/v1/auth/register')
-      .send({
-        intent: 'owner',
-        email,
-        password: PASSWORD,
-        firstName: 'Owner',
-        lastName: suffix,
-        organizationName: `${TEST_PREFIX}Org ${suffix} ${uniqueId()}`,
-        consents: { termsOfService: true, privacyPolicy: true },
-      })
-      .expect(201);
-    const userId = registerResponse.body.data.userId as string;
-
-    await prisma.user.update({
-      where: { id: userId },
-      data: { status: 'Active', emailVerified: true },
+    const { userId } = await seedOwnerAndOrganization(prisma, {
+      email,
+      passwordHash,
+      lastName: suffix,
+      organizationName: `${TEST_PREFIX}Org ${suffix} ${uniqueId()}`,
     });
 
     const loginResponse = await request(app!.getHttpServer())

@@ -199,7 +199,7 @@ describe('JwtAuthGuard', () => {
     });
   });
 
-  it('rejects PlatformAdmin claims - no request-actor shape exists for them yet', async () => {
+  it('rejects PlatformAdmin claims under the ordinary pipeline (ADR-022 §"Platform Admin Authentication" - a genuinely separate issuer/audience/guard exists for this actor; this guard never accepts it)', async () => {
     const claims: AccessTokenClaims = {
       sub: userId,
       actorType: AccessTokenActorType.PlatformAdmin,

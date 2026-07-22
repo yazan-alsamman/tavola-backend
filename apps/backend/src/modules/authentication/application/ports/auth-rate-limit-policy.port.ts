@@ -12,7 +12,20 @@
  * reusing `resetPassword`'s numbers per the same precedent that policy set.
  */
 export type RateLimitPolicyName =
-  'login' | 'refresh' | 'forgotPassword' | 'resetPassword' | 'register' | 'changePassword';
+  | 'login'
+  | 'refresh'
+  | 'forgotPassword'
+  | 'resetPassword'
+  | 'register'
+  | 'changePassword'
+  // ADR-022 (Phase 2.23) — Customer phone-first registration/recovery.
+  | 'customerRegisterSend'
+  | 'customerRegisterVerify'
+  | 'customerPasswordResetSend'
+  | 'customerPasswordResetVerify';
+// Customer login reuses the existing 'login' policy above (same IP-scoped
+// brute-force rationale as Owner/staff login) rather than a new policy -
+// ADR-022 does not freeze a distinct number for it.
 
 export interface RateLimitPolicyConfig {
   readonly max: number;

@@ -16,6 +16,7 @@ import { RateLimiterPort } from '../../domain/services/rate-limiter.port';
 import { RATE_LIMITER } from '../../domain/tokens/authentication.tokens';
 import { RATE_LIMIT_KEY } from '../decorators/rate-limit.decorator';
 import { resolveClientIp } from '../utils/resolve-client-ip.util';
+import { PhoneNumber } from '@shared/domain/value-objects/phone-number.vo';
 import {
   AUTHENTICATED_ACTOR_KEY,
   AuthenticatedActor,
@@ -78,7 +79,47 @@ const IDENTIFIER_STRATEGIES: Record<RateLimitPolicyName, IdentifierStrategy> = {
       AuthenticatedActor | undefined;
     return rawStringOrUnknown(actor?.userId);
   },
+  // ADR-022 (Phase 2.23): send/resend policies key per-phone. Normalized to
+  // canonical E.164 via the same `PhoneNumber` VO the use cases themselves
+  // use (never a second normalization mechanism) so that two requests for
+  // the same real-world phone submitted in different but equivalent raw
+  // formats (e.g. with/without a leading trunk zero) land in the same
+  // bucket - keying on the raw, pre-validation string would let an attacker
+  // bypass the "5 sends/hour/phone" limit purely by varying formatting.
+  // Falls back to the raw pair (`unknownPhoneKey`) only when the submitted
+  // value doesn't even parse as a phone number - the request will fail
+  // validation in the use case regardless, so any single shared bucket for
+  // "not a real phone" is sufficient here.
+  customerRegisterSend: (request) => normalizedPhoneKey(request),
+  customerPasswordResetSend: (request) => normalizedPhoneKey(request),
+  // Verify policies are scoped "per phone/IP" (AUTHENTICATION_ARCHITECTURE.md
+  // §15.6/§15.11) - a compound key requiring a match on both, the more
+  // conservative reading: it throttles a single IP hammering many phones
+  // AND a single phone being hammered from many IPs, whichever the request
+  // hits first.
+  customerRegisterVerify: (request) => `${normalizedPhoneKey(request)}:${resolveClientIp(request)}`,
+  customerPasswordResetVerify: (request) =>
+    `${normalizedPhoneKey(request)}:${resolveClientIp(request)}`,
 };
+
+function normalizedPhoneKey(request: Request): string {
+  const body = request.body as { countryCode?: unknown; phoneNumber?: unknown } | undefined;
+  const countryCode = typeof body?.countryCode === 'string' ? body.countryCode : '';
+  const phoneNumber = typeof body?.phoneNumber === 'string' ? body.phoneNumber : '';
+  try {
+    return PhoneNumber.create(countryCode, phoneNumber).value;
+  } catch {
+    return unknownPhoneKey(countryCode, phoneNumber);
+  }
+}
+
+function unknownPhoneKey(countryCode: string, phoneNumber: string): string {
+  const trimmedCountryCode = countryCode.trim();
+  const trimmedPhoneNumber = phoneNumber.trim();
+  return trimmedCountryCode || trimmedPhoneNumber
+    ? `invalid:${trimmedCountryCode}:${trimmedPhoneNumber}`
+    : 'unknown';
+}
 
 @Injectable()
 export class RateLimitGuard implements CanActivate {

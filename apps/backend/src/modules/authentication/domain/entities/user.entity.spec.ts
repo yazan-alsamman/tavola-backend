@@ -8,6 +8,7 @@ describe('User entity — updateProfile', () => {
     lastName: 'Doe',
     email: 'jane@example.com',
     phone: null,
+    username: null,
     passwordHash: 'argon2id$fake$SecurePass123!',
     language: 'en',
     preferredCurrency: null,
@@ -85,7 +86,7 @@ describe('User entity — updateProfile', () => {
     expect(updated.status).toBe(user.status);
     expect(updated.sessionVersion).toBe(user.sessionVersion);
     expect(updated.permissionsVersion).toBe(user.permissionsVersion);
-    expect(updated.email.value).toBe(user.email.value);
+    expect(updated.email?.value).toBe(user.email?.value);
   });
 
   it('allows clearing phone and preferredCurrency back to null', () => {
@@ -112,6 +113,7 @@ describe('User entity — updatePreferences', () => {
     lastName: 'Doe',
     email: 'jane@example.com',
     phone: null,
+    username: null,
     passwordHash: 'argon2id$fake$SecurePass123!',
     language: 'en',
     preferredCurrency: null,

@@ -22,6 +22,7 @@ export class RegistrationPolicy {
       lastName: input.lastName.trim(),
       email: input.email.value,
       phone: input.phone,
+      username: null,
       passwordHash: input.passwordHash.value,
       language: input.language,
       preferredCurrency: null,

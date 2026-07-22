@@ -19,11 +19,6 @@ const SYSTEM_CONFIGURATION: Array<{
   description: string;
 }> = [
   {
-    key: 'emailVerificationTokenTtlHours',
-    value: 24,
-    description: 'Email verification link lifetime in hours',
-  },
-  {
     key: 'passwordResetTokenTtlHours',
     value: 1,
     description: 'Password reset link lifetime in hours',
@@ -52,6 +47,21 @@ const SYSTEM_CONFIGURATION: Array<{
     key: 'refreshTokenTtlDays',
     value: 30,
     description: 'Refresh token lifetime in days',
+  },
+  {
+    key: 'otpExpiryMinutes',
+    value: 5,
+    description: 'ADR-022: WhatsApp OTP lifetime in minutes (registration and password recovery)',
+  },
+  {
+    key: 'otpMaxIncorrectAttempts',
+    value: 5,
+    description: 'ADR-022: max incorrect OTP attempts before the code becomes unusable',
+  },
+  {
+    key: 'otpResendCooldownSeconds',
+    value: 60,
+    description: 'ADR-022: minimum seconds between OTP resend requests for the same phone',
   },
 ];
 

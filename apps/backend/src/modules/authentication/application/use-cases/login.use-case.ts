@@ -322,9 +322,13 @@ export class LoginUseCase {
       refreshTokenExpiresAt,
       user: {
         userId: props.id,
-        email: props.email,
-        firstName: props.firstName,
-        lastName: props.lastName,
+        // Non-null assertions are safe here: this use case only ever
+        // reaches this line for a user resolved via `findByEmail` above
+        // (ADR-022, Phase 2.23 — Customer rows have no email and never
+        // authenticate through this email/password path).
+        email: props.email!,
+        firstName: props.firstName!,
+        lastName: props.lastName!,
         status: props.status,
         emailVerified: props.emailVerified,
       },

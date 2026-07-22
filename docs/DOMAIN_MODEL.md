@@ -119,7 +119,16 @@ User
 ### Notes
 
 * Preferences (`language`, `preferredCurrency`, `notificationOptIn`, `marketingOptIn`) are plain fields on the `User` aggregate root, not a separate child entity — this corrects a pre-Phase-3.1 design that documented a standalone `UserPreference` child entity/table but was superseded once `language`/`preferredCurrency` shipped directly on `User` (Phase 3.1) and `notificationOptIn`/`marketingOptIn` followed the same shape (Phase 3.4). User-level preferences never affect another user's experience and are never tenant-scoped, distinct from `RestaurantSettings`.
-* **Account status lifecycle** (`Pending`, `Active`, `Suspended`, `Locked`, `Deleted`, `Anonymized`) is defined in AUTHENTICATION_ARCHITECTURE.md §3 and DATABASE_SCHEMA.md. `Pending` users cannot log in until email verification; `Locked` is a temporary brute-force state distinct from `Suspended`.
+* **Account status lifecycle** (`Pending`, `Active`, `Suspended`, `Locked`, `Deleted`, `Anonymized`) is defined in AUTHENTICATION_ARCHITECTURE.md §3 and DATABASE_SCHEMA.md. ~~`Pending` users cannot log in until email verification~~ — **per ADR-022** (2026-07-22), this applies only in the sense that a customer `User` row is never created before phone verification + password-setting complete (there is no `Pending` customer row to log into); a `Pending` Restaurant Owner row does not occur either, since administratively-provisioned Owners are created directly `Active`. `Locked` is a temporary brute-force state distinct from `Suspended`, unaffected by ADR-022.
+* **Identity attributes by actor, per ADR-022:** `email` is the Restaurant Owner/staff identity attribute (unique, required for that path only); `phone` and `username` are the customer identity attributes (both nullable-unique on the shared `User` table, present only for customer-registered rows — no actor-discriminator column). `PhoneNumber` (below) is the value object customer `phone` is validated through.
+
+### Pending Customer Registration (new, ADR-022 — not part of the `User` Aggregate)
+
+A **separate, small entity** — not a child of the `User` aggregate, since it exists *before* any `User` identity does. Mirrors the existing precedent of `Employee.userId` being nullable so an `Employee` can be invited/persisted ahead of the `User` it will later link to (Authorization/Employee module). Fields (minimal, per ADR-022 — no unnecessary fields): `username`, canonical E.164 `phone`, OTP `codeHash`, `codeExpiresAt`, `incorrectAttemptCount`, verification state + timestamp, consumed/completed state, `createdAt`/`updatedAt`. Promoted into a real `User` row only on successful `COMPLETE`; never itself becomes or is mistaken for a `User`. **At most one active record per canonical phone** (frozen, ADR-022 Decision #18) — a repeated Start restarts/reissues the same record rather than creating a second one. Abandoned-row cleanup retention duration is an open item (ADR-022 "Remaining Open Items").
+
+### Customer Password Reset Challenge (new, ADR-022 Decision #16 — not part of the `User` Aggregate, but references it)
+
+A separate entity from `Pending Customer Registration` above, since it always references an **existing** `User` (`userId` FK) rather than staging a not-yet-existing identity — shaped like the existing `PasswordResetToken` plus the OTP fields already frozen for registration (`codeHash`, `codeExpiresAt`, `incorrectAttemptCount`, `verifiedAt`, `consumedAt`). Reuses every OTP security rule frozen for registration OTPs unmodified. Never reused for, or by, Restaurant Owner/staff recovery, which keeps the existing email-based `PasswordResetToken` flow unchanged.
 
 ---
 
@@ -386,7 +395,7 @@ This example is illustrative only and is not currently mapped to any implemented
 
 PhoneNumber
 
-Validates formatting and country code.
+Validates formatting and country code. **Formalized by ADR-022** (2026-07-22, Decision #13 — supersedes an earlier "no default-country inference" shorthand): the mobile Country Code Picker defaults to Syria (+963), changeable by the customer to any other supported country; this is a UX default only, never a backend nationality assumption. The backend is the authoritative normalization boundary — it validates the selected calling code against the entered national number and produces canonical E.164 regardless of which country was selected, never trusting client-side formatting alone and never substituting `+963` for an explicitly selected different code. Canonical E.164 (never the raw local number, never client-assembled input) is used identically for customer identity uniqueness, WhatsApp/Fonnte OTP delivery target, verification, account promotion, and login lookup. **Approved implementation library (ADR-022 Decision #14, installed and in production use):** `libphonenumber-js`, wrapped by the shared `PhoneNumber` value object (`src/shared/domain/value-objects/phone-number.vo.ts`) — hand-rolled parsing was explicitly rejected and never introduced.
 
 ---
 

@@ -1,0 +1,12 @@
+-- ADR-022 (Phase 2.23): retires the public Owner self-registration +
+-- email-verification subsystem. No surviving actor requires the
+-- `email_verification_tokens` table: Customers never have an email
+-- (registration COMPLETE gates on phone/OTP instead - see
+-- pending_customer_registrations), and Restaurant Owners are now
+-- administratively provisioned by Platform Admin directly `Active`/
+-- `email_verified: true` with no verification step at all
+-- (AUTHENTICATION_ARCHITECTURE.md SS15.2). The `users.email_verified`
+-- column itself is deliberately KEPT (not dropped) - it is no longer
+-- consulted by the login gate, but removing it would touch ~35
+-- out-of-scope files across other modules for no functional benefit.
+DROP TABLE "email_verification_tokens";

@@ -68,7 +68,7 @@ Coverage is measured on the Domain and Application layers primarily — Infrastr
 
 # External Provider Policy
 
-Real third-party providers (OneSignal, payment gateways, MinIO in its hosted form) are **never called from any automated test**, including E2E tests. Two fake implementations are required, both satisfying the same interface as the real Infrastructure adapter (`NotificationProvider`, `PaymentGateway`, `FileStorageService`):
+Real third-party providers (OneSignal, payment gateways, MinIO in its hosted form, and — as of ADR-022 — Fonnte) are **never called from any automated test**, including E2E tests. No real WhatsApp message is ever sent by a test. Fake implementations are required, both satisfying the same interface as the real Infrastructure adapter (`NotificationProvider`, `PaymentGateway`, `FileStorageService`, and `VerificationMessagingPort` once implemented):
 
 * **In-memory fake**, used by unit and most integration tests — records calls made to it for assertions, returns configurable canned responses.
 * **Local sandboxed equivalent**, used by E2E tests where a closer-to-real integration matters — e.g., MinIO's own Docker image running locally (already part of the Docker Compose stack per ARCHITECTURE.md) rather than a fake for file storage, since MinIO is self-hosted and safe to run in CI; OneSignal and payment providers remain fully faked in all test tiers since they are external SaaS services with no safe local equivalent.

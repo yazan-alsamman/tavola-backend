@@ -11,6 +11,7 @@ describe('envValidationSchema', () => {
     MINIO_PRIVATE_BUCKET: 'private',
     JWT_ACCESS_SECRET: 'dev-access-secret-at-least-32-characters-long',
     JWT_REFRESH_SECRET: 'dev-refresh-secret-at-least-32-characters-long',
+    PLATFORM_ADMIN_JWT_SECRET: 'dev-platform-admin-secret-at-least-32-chars',
   };
 
   it('accepts a minimal valid configuration', () => {

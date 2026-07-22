@@ -42,7 +42,10 @@ Multi-tenant SaaS enabling restaurants to manage reservations, operations, custo
 
 | ID | Requirement | Architecture reference |
 |---|---|---|
-| FR-01.1 | Email/password registration with email verification gate | `AUTHENTICATION_ARCHITECTURE.md`, ADR-016 |
+| FR-01.1 | ~~Email/password registration with email verification gate~~ **Superseded by ADR-022** (2026-07-22) — split into FR-01.1a/FR-01.1b below. | `AUTHENTICATION_ARCHITECTURE.md` §15, ADR-016 (partially superseded), ADR-022 |
+| FR-01.1a | Customer registration is phone-first: username + phone, WhatsApp OTP via Fonnte, password set only after verification succeeds. No email is collected or required. Mobile Country Code Picker defaults to Syria (+963) but supports any other supported country; backend normalizes the selected code + national number into canonical E.164 (a UX default, never a nationality restriction). | `AUTHENTICATION_ARCHITECTURE.md` §15.1/§15.10, ADR-022 |
+| FR-01.1b | Restaurant Owner accounts are provisioned administratively by a Platform Admin (email + password) via `POST /platform-admin/restaurant-owners`; no public self-registration; no email-verification step; password delivery to the Owner is an out-of-band operational responsibility, outside backend scope. | `AUTHENTICATION_ARCHITECTURE.md` §15.2, ADR-022 |
+| FR-01.1c | Customer password recovery uses the same phone/WhatsApp OTP mechanism as registration (`START → VERIFY → COMPLETE`), never the Owner's email-based reset flow. Owner/staff password recovery remains the existing email-based flow, unchanged. | `AUTHENTICATION_ARCHITECTURE.md` §15.11, ADR-022 |
 | FR-01.2 | Login, refresh token rotation, logout, logout-all | ADR-016, `DeviceSession`, `TokenFamily` |
 | FR-01.3 | Password reset, password history, Argon2id hashing | ADR-008, `PasswordHistory` |
 | FR-01.4 | Device session management | `DeviceSession` |

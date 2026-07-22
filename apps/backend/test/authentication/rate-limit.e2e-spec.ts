@@ -393,10 +393,12 @@ describe('Redis-backed auth rate limiting (e2e)', () => {
   it('leaves endpoints without a @RateLimit policy unrestricted', async () => {
     if (!ready || !app) return;
 
+    // /auth/logout carries no @RateLimit decorator (see auth.controller.ts) -
+    // repeated unauthenticated calls must 401, never 429.
     for (let i = 0; i < 5; i += 1) {
       const response = await request(app.getHttpServer())
-        .post('/api/v1/auth/verify-email')
-        .send({ token: 'nonexistent-verification-token' });
+        .post('/api/v1/auth/logout')
+        .set('Authorization', 'Bearer not-a-real-token');
       expect(response.status).not.toBe(429);
     }
   });

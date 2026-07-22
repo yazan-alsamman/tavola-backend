@@ -243,3 +243,84 @@ export class PasswordResetCompletedEvent extends DomainEvent {
     super(eventId, occurredAt, correlationId);
   }
 }
+
+// ---------------------------------------------------------------------------
+// ADR-022 (Phase 2.23) — Customer phone-first registration & recovery.
+// `CustomerPhoneVerificationRequested`/`CustomerPhoneVerified` deliberately
+// do NOT use `AuthEventPayload` (which mandates `userId`) - no `User` row
+// exists yet at these two points in the lifecycle (ADR Note A). Never
+// carries the OTP itself, only the canonical phone.
+// ---------------------------------------------------------------------------
+
+export interface CustomerPhoneEventPayload {
+  phone: string;
+  correlationId?: string;
+}
+
+export class CustomerPhoneVerificationRequestedEvent extends DomainEvent {
+  public readonly eventName = 'CustomerPhoneVerificationRequested';
+
+  constructor(
+    eventId: string,
+    public readonly payload: CustomerPhoneEventPayload,
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+  }
+}
+
+export class CustomerPhoneVerifiedEvent extends DomainEvent {
+  public readonly eventName = 'CustomerPhoneVerified';
+
+  constructor(
+    eventId: string,
+    public readonly payload: CustomerPhoneEventPayload,
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+  }
+}
+
+export class CustomerRegistrationCompletedEvent extends DomainEvent {
+  public readonly eventName = 'CustomerRegistrationCompleted';
+  public readonly payload: AuthEventPayload & { phone: string };
+
+  constructor(
+    eventId: string,
+    payload: AuthEventPayload & { phone: string },
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+    this.payload = payload;
+    this.seal();
+  }
+}
+
+export class CustomerPasswordResetRequestedEvent extends DomainEvent {
+  public readonly eventName = 'CustomerPasswordResetRequested';
+
+  constructor(
+    eventId: string,
+    public readonly payload: AuthEventPayload,
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+  }
+}
+
+export class CustomerPasswordResetCompletedEvent extends DomainEvent {
+  public readonly eventName = 'CustomerPasswordResetCompleted';
+
+  constructor(
+    eventId: string,
+    public readonly payload: AuthEventPayload,
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+  }
+}

@@ -3,6 +3,7 @@ import request from 'supertest';
 import { PrismaClient, RoleScope } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { createTestApp } from '../helpers/test-app.factory';
+import { hashTestPassword, seedOwnerAndOrganization } from '../helpers/owner-fixture';
 import { isDatabaseReachable, skipUnlessDatabaseAvailable } from '../support/live-database';
 
 const prisma = new PrismaClient();
@@ -18,6 +19,7 @@ describe('/api/v1/restaurants/:restaurantId/employees (e2e)', () => {
   let dbAvailable = false;
   let managerRoleId: string;
   let receptionistRoleId: string;
+  let passwordHash = 'argon2id$test';
 
   beforeAll(async () => {
     dbAvailable = await isDatabaseReachable();
@@ -25,6 +27,7 @@ describe('/api/v1/restaurants/:restaurantId/employees (e2e)', () => {
       console.warn('PostgreSQL not reachable — employees e2e tests NOT EXECUTED.');
       return;
     }
+    passwordHash = await hashTestPassword(PASSWORD);
     app = await createTestApp();
 
     // Literal `manager` slug on purpose - `RemoveEmployeeUseCase`'s
@@ -93,23 +96,11 @@ describe('/api/v1/restaurants/:restaurantId/employees (e2e)', () => {
     suffix: string,
   ): Promise<{ accessToken: string; organizationId: string; userId: string; email: string }> {
     const email = `${TEST_PREFIX}${suffix}-${uniqueId()}@example.com`;
-    const registerResponse = await request(app!.getHttpServer())
-      .post('/api/v1/auth/register')
-      .send({
-        intent: 'owner',
-        email,
-        password: PASSWORD,
-        firstName: 'Owner',
-        lastName: suffix,
-        organizationName: `${TEST_PREFIX}Org ${suffix} ${uniqueId()}`,
-        consents: { termsOfService: true, privacyPolicy: true },
-      })
-      .expect(201);
-    const userId = registerResponse.body.data.userId as string;
-
-    await prisma.user.update({
-      where: { id: userId },
-      data: { status: 'Active', emailVerified: true },
+    const { userId } = await seedOwnerAndOrganization(prisma, {
+      email,
+      passwordHash,
+      lastName: suffix,
+      organizationName: `${TEST_PREFIX}Org ${suffix} ${uniqueId()}`,
     });
 
     const loginResponse = await request(app!.getHttpServer())

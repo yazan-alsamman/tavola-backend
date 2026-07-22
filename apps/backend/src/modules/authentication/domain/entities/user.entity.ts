@@ -9,10 +9,21 @@ import { UserStatus } from '../enums/authentication.enums';
 
 export interface UserProps {
   id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
+  // ADR-022 (Phase 2.23): nullable — Customer registration never collects a
+  // name (frozen identity is username + phone + password only).
+  firstName: string | null;
+  lastName: string | null;
+  // ADR-022 (Phase 2.23): nullable — required in practice only for
+  // administratively-provisioned Restaurant Owner/staff accounts; Customer
+  // accounts never have one. No actor-discriminator column exists on User -
+  // callers distinguish the two by which identity field is populated.
+  email: string | null;
+  // ADR-022: canonical E.164, required in practice only for Customer
+  // accounts.
   phone: string | null;
+  // ADR-022: Customer identity attribute, stored lowercase-normalized
+  // (Username VO). Absent for Owner/staff accounts.
+  username: string | null;
   passwordHash: string;
   language: string;
   preferredCurrency: string | null;
@@ -38,7 +49,16 @@ export class User extends Entity<UserProps> {
   }
 
   static create(props: UserProps): User {
-    Email.create(props.email);
+    // ADR-022 (Phase 2.23): email is no longer mandatory — only validated
+    // when present (Restaurant Owner/staff). A Customer row is created with
+    // email = null and must instead carry a validated phone/username
+    // (enforced by the callers that build a Customer — StartCustomerRegistrationUseCase/
+    // CompleteCustomerRegistrationUseCase — via the Username/PhoneNumber
+    // value objects before this factory is ever invoked, not re-validated
+    // here to avoid duplicating VO validation rules).
+    if (props.email !== null) {
+      Email.create(props.email);
+    }
     PasswordHash.create(props.passwordHash);
     if (props.sessionVersion < 1 || props.permissionsVersion < 1) {
       throw new Error('Version counters must be >= 1.');
@@ -54,20 +74,24 @@ export class User extends Entity<UserProps> {
     return UserId.create(this.props.id);
   }
 
-  get email(): Email {
-    return Email.create(this.props.email);
+  get email(): Email | null {
+    return this.props.email !== null ? Email.create(this.props.email) : null;
   }
 
-  get firstName(): string {
+  get firstName(): string | null {
     return this.props.firstName;
   }
 
-  get lastName(): string {
+  get lastName(): string | null {
     return this.props.lastName;
   }
 
   get phone(): string | null {
     return this.props.phone;
+  }
+
+  get username(): string | null {
+    return this.props.username;
   }
 
   get language(): string {
@@ -146,11 +170,23 @@ export class User extends Entity<UserProps> {
         throw new AccountLockedException(this.props.lockedUntil);
       }
     } else if (this.props.status !== UserStatus.Active) {
+      // Covers any non-Active status not already handled above (e.g. a
+      // legacy `Pending` row). Reuses the pre-existing `EmailNotVerifiedException`
+      // name/error-code (API_GUIDELINES.md's `AUTH_EMAIL_NOT_VERIFIED`
+      // contract) as the general "account not yet Active" signal - not
+      // renamed here, since renaming a locked API error code is out of this
+      // retirement's scope.
       throw new EmailNotVerifiedException();
     }
-    if (!this.props.emailVerified) {
-      throw new EmailNotVerifiedException();
-    }
+    // ADR-022 (Phase 2.23) — RETIRED: the emailVerified-specific login gate
+    // is removed. No surviving actor requires it: Customers never have an
+    // email (registration COMPLETE already gates on phone verification);
+    // Restaurant Owners are administratively provisioned already `Active`/
+    // `emailVerified: true` with no verification step at all
+    // (AUTHENTICATION_ARCHITECTURE.md §15.2). Existing legacy Owner rows
+    // that may still have `emailVerified: false` remain able to log in
+    // after this change (their password is still required) - this is the
+    // explicit, approved consequence of retiring the gate, not an oversight.
   }
 
   verifyEmail(at: Date = new Date()): User {

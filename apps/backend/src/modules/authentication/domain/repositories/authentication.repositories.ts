@@ -25,15 +25,6 @@ export interface PasswordHistoryRecord {
   createdAt: Date;
 }
 
-export interface EmailVerificationTokenRecord {
-  id: string;
-  userId: string;
-  tokenHash: string;
-  expiresAt: Date;
-  consumedAt: Date | null;
-  createdAt: Date;
-}
-
 export interface PasswordResetTokenRecord {
   id: string;
   userId: string;
@@ -53,6 +44,10 @@ export interface UserRepository {
   findById(id: UserId): Promise<User | null>;
   findByEmail(email: Email): Promise<User | null>;
   existsByEmail(email: Email): Promise<boolean>;
+  /** ADR-022 (Phase 2.23): Customer login/lookup by canonical E.164 phone. */
+  findByPhone(phone: string): Promise<User | null>;
+  existsByPhone(phone: string): Promise<boolean>;
+  existsByUsername(username: string): Promise<boolean>;
   save(user: User): Promise<void>;
   incrementSessionVersion(userId: UserId, at: Date): Promise<number | null>;
   updatePasswordIfCurrentHashMatches(input: {
@@ -136,17 +131,85 @@ export interface PasswordHistoryRepository {
   pruneBeyondLimit(userId: UserId, keep: number): Promise<void>;
 }
 
-export interface EmailVerificationRepository {
-  findByTokenHash(tokenHash: string): Promise<EmailVerificationTokenRecord | null>;
-  findActiveByUserId(userId: UserId, now: Date): Promise<EmailVerificationTokenRecord | null>;
-  save(record: EmailVerificationTokenRecord): Promise<void>;
-  invalidateActiveByUserId(userId: UserId): Promise<void>;
-  consumeIfActive(id: string, consumedAt: Date): Promise<boolean>;
-}
-
 export interface PasswordResetRepository {
   findByTokenHash(tokenHash: string): Promise<PasswordResetTokenRecord | null>;
   save(record: PasswordResetTokenRecord): Promise<void>;
   invalidateActiveByUserId(userId: UserId): Promise<void>;
   consumeIfActive(id: string, consumedAt: Date): Promise<boolean>;
+}
+
+// ---------------------------------------------------------------------------
+// ADR-022 (Phase 2.23) — Customer phone-first registration & recovery
+// ---------------------------------------------------------------------------
+
+export interface PendingCustomerRegistrationRecord {
+  id: string;
+  username: string;
+  phone: string;
+  codeHash: string;
+  codeExpiresAt: Date;
+  incorrectAttemptCount: number;
+  verifiedAt: Date | null;
+  consumedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface PendingCustomerRegistrationRepository {
+  findByPhone(phone: string): Promise<PendingCustomerRegistrationRecord | null>;
+  findById(id: string): Promise<PendingCustomerRegistrationRecord | null>;
+  /**
+   * ADR-022 Decision #18 (repeated START / concurrency): atomically inserts
+   * a fresh pending registration for `phone`, or - if an active one already
+   * exists - overwrites its username/codeHash/codeExpiresAt and resets
+   * incorrectAttemptCount/verifiedAt, all in a single database statement
+   * (a Prisma `upsert` keyed on the unique `phone` column). Two concurrent
+   * callers for the same phone race on the database's own unique
+   * constraint, not application-level locking, so exactly one active row
+   * can ever exist per phone. Throws `UsernameAlreadyExistsException` if
+   * `username` collides with a *different* phone's active registration
+   * (translated from the table's own unique-on-username constraint).
+   */
+  upsertActive(input: {
+    username: string;
+    phone: string;
+    codeHash: string;
+    codeExpiresAt: Date;
+    now: Date;
+  }): Promise<PendingCustomerRegistrationRecord>;
+  incrementAttemptCount(id: string): Promise<void>;
+  markVerified(id: string, at: Date): Promise<void>;
+  /** Atomic conditional consume - only the first caller for a given id can succeed. */
+  consumeIfVerifiedAndUnconsumed(
+    id: string,
+    at: Date,
+  ): Promise<PendingCustomerRegistrationRecord | null>;
+  /** Frees the phone/username slot once promoted into a real User (ADR-022: pending registrations are not retained after COMPLETE, unlike EmailVerificationToken's forever-kept consumed rows - phone is a reusable, non-random unique key here, so the row must not permanently occupy it). */
+  deleteById(id: string): Promise<void>;
+  existsByUsername(username: string): Promise<boolean>;
+  existsByPhone(phone: string): Promise<boolean>;
+}
+
+export interface CustomerPasswordResetTokenRecord {
+  id: string;
+  userId: string;
+  codeHash: string;
+  codeExpiresAt: Date;
+  incorrectAttemptCount: number;
+  verifiedAt: Date | null;
+  consumedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CustomerPasswordResetRepository {
+  findActiveByUserId(userId: UserId, now: Date): Promise<CustomerPasswordResetTokenRecord | null>;
+  save(record: CustomerPasswordResetTokenRecord): Promise<void>;
+  invalidateActiveByUserId(userId: UserId): Promise<void>;
+  incrementAttemptCount(id: string): Promise<void>;
+  markVerified(id: string, at: Date): Promise<void>;
+  consumeIfVerifiedAndUnconsumed(
+    id: string,
+    at: Date,
+  ): Promise<CustomerPasswordResetTokenRecord | null>;
 }

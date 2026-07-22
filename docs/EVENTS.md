@@ -46,19 +46,26 @@ Every event should include:
 
 # Authentication Events
 
-* UserRegistered
-* UserVerified (alias: EmailVerified — same event, canonical name `UserVerified`)
+* UserRegistered — as of ADR-022 (2026-07-22), fires for administratively-provisioned Restaurant Owner accounts; customer account creation instead fires `CustomerRegistrationCompleted` (below).
+* UserVerified (alias: EmailVerified — same event, canonical name `UserVerified`) — **no remaining producer as of ADR-022** (deprecation candidate alongside the email-verification subsystem itself, `AUTHENTICATION_ARCHITECTURE.md` §1.3).
 * UserLoggedIn
 * UserLoggedOut
 * PasswordChanged
 * PasswordResetRequested
 * PasswordResetCompleted
-* EmailVerified (retained for backward compatibility; prefer `UserVerified`)
+* EmailVerified (retained for backward compatibility; prefer `UserVerified`) — same deprecation-candidate status as `UserVerified`.
 * SessionCreated
 * SessionRefreshed
 * SessionRevoked
+* CustomerPhoneVerificationRequested (new, ADR-022) — OTP sent via Fonnte; producer: the Start/Resend Domain Actions.
+* CustomerPhoneVerified (new, ADR-022) — OTP verified successfully for a pending registration.
+* CustomerRegistrationCompleted (new, ADR-022) — real customer `User` row created after password-setting; the customer-flow analogue of `UserRegistered`.
+* CustomerPasswordResetRequested (new, ADR-022 Decision #16) — phone-based recovery OTP sent via Fonnte; the customer-flow analogue of `PasswordResetRequested`, never fired for Owner/staff (who keep the existing email event).
+* CustomerPasswordResetCompleted (new, ADR-022 Decision #16) — password changed after successful OTP verification; the customer-flow analogue of `PasswordResetCompleted`.
 
-See AUTHENTICATION_ARCHITECTURE.md §10 for payloads and consumers.
+Restaurant Owner provisioning (ADR-022 Decision #15) reuses the existing `UserRegistered` event unchanged — no new event is introduced for it.
+
+See AUTHENTICATION_ARCHITECTURE.md §10 and §15 for payloads and consumers. Event payloads for the three new ADR-022 events are not fully specified in this documentation pass (implementation-phase detail); their names and triggers are frozen.
 
 ---
 

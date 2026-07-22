@@ -63,6 +63,35 @@ export default registerAs('auth', () => ({
       max: parseInt(process.env.RATE_LIMIT_CHANGE_PASSWORD_MAX ?? '10', 10),
       windowSeconds: parseInt(process.env.RATE_LIMIT_CHANGE_PASSWORD_WINDOW_SECONDS ?? '900', 10),
     },
+    // ADR-022 (Phase 2.23) — Customer phone-first registration/recovery.
+    customerRegisterSend: {
+      max: parseInt(process.env.RATE_LIMIT_CUSTOMER_REGISTER_SEND_MAX ?? '5', 10),
+      windowSeconds: parseInt(
+        process.env.RATE_LIMIT_CUSTOMER_REGISTER_SEND_WINDOW_SECONDS ?? '3600',
+        10,
+      ),
+    },
+    customerRegisterVerify: {
+      max: parseInt(process.env.RATE_LIMIT_CUSTOMER_REGISTER_VERIFY_MAX ?? '10', 10),
+      windowSeconds: parseInt(
+        process.env.RATE_LIMIT_CUSTOMER_REGISTER_VERIFY_WINDOW_SECONDS ?? '900',
+        10,
+      ),
+    },
+    customerPasswordResetSend: {
+      max: parseInt(process.env.RATE_LIMIT_CUSTOMER_PASSWORD_RESET_SEND_MAX ?? '5', 10),
+      windowSeconds: parseInt(
+        process.env.RATE_LIMIT_CUSTOMER_PASSWORD_RESET_SEND_WINDOW_SECONDS ?? '3600',
+        10,
+      ),
+    },
+    customerPasswordResetVerify: {
+      max: parseInt(process.env.RATE_LIMIT_CUSTOMER_PASSWORD_RESET_VERIFY_MAX ?? '10', 10),
+      windowSeconds: parseInt(
+        process.env.RATE_LIMIT_CUSTOMER_PASSWORD_RESET_VERIFY_WINDOW_SECONDS ?? '900',
+        10,
+      ),
+    },
   },
 }));
 
@@ -90,5 +119,9 @@ export interface AuthConfig {
     resetPassword: AuthRateLimitPolicyConfig;
     register: AuthRateLimitPolicyConfig;
     changePassword: AuthRateLimitPolicyConfig;
+    customerRegisterSend: AuthRateLimitPolicyConfig;
+    customerRegisterVerify: AuthRateLimitPolicyConfig;
+    customerPasswordResetSend: AuthRateLimitPolicyConfig;
+    customerPasswordResetVerify: AuthRateLimitPolicyConfig;
   };
 }

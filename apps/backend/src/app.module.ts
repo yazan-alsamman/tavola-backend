@@ -11,6 +11,7 @@ import { MetricsModule } from './infrastructure/metrics/metrics.module';
 import { TenancyModule } from './infrastructure/tenancy/tenancy.module';
 import { AuditModule } from './infrastructure/audit/audit.module';
 import { AuthenticationModule } from './modules/authentication/authentication.module';
+import { PlatformAdminModule } from './modules/platform-admin/platform-admin.module';
 import { UsersModule } from './modules/users/users.module';
 import { RestaurantsModule } from './modules/restaurants/restaurants.module';
 import { BranchesModule } from './modules/branches/branches.module';
@@ -32,6 +33,7 @@ import { ReservationsModule } from './modules/reservations/reservations.module';
     MetricsModule,
     HealthModule,
     AuthenticationModule,
+    PlatformAdminModule,
     UsersModule,
     RestaurantsModule,
     BranchesModule,

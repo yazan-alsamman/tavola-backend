@@ -6,6 +6,8 @@ import redisConfig from './redis.config';
 import storageConfig from './storage.config';
 import loggingConfig from './logging.config';
 import authConfig from './auth.config';
+import fonnteConfig from './fonnte.config';
+import platformAdminAuthConfig from './platform-admin-auth.config';
 import { envValidationSchema } from './env.validation';
 
 const nodeEnv = process.env.NODE_ENV ?? 'development';
@@ -21,7 +23,16 @@ const nodeEnv = process.env.NODE_ENV ?? 'development';
       // there and only matters when running the app directly on a host
       // without Docker (`pnpm start:dev`).
       envFilePath: [`.env.${nodeEnv}`],
-      load: [appConfig, databaseConfig, redisConfig, storageConfig, loggingConfig, authConfig],
+      load: [
+        appConfig,
+        databaseConfig,
+        redisConfig,
+        storageConfig,
+        loggingConfig,
+        authConfig,
+        fonnteConfig,
+        platformAdminAuthConfig,
+      ],
       validationSchema: envValidationSchema,
       validationOptions: {
         abortEarly: false,

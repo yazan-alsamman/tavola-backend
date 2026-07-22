@@ -1,29 +1,20 @@
 import { PrismaClient, UserStatus as PrismaUserStatus } from '@prisma/client';
 import { randomUUID } from 'crypto';
-import { RegisterOrganizationOwnerUseCase } from '@modules/authentication/application/use-cases/register-organization-owner.use-case';
-import { VerifyEmailUseCase } from '@modules/authentication/application/use-cases/verify-email.use-case';
 import { RefreshSessionUseCase } from '@modules/authentication/application/use-cases/refresh-session.use-case';
 import { LogoutAllDevicesUseCase } from '@modules/authentication/application/use-cases/logout-all-devices.use-case';
 import { ResetPasswordUseCase } from '@modules/authentication/application/use-cases/reset-password.use-case';
 import { ChangePasswordUseCase } from '@modules/authentication/application/use-cases/change-password.use-case';
 import { PrismaUserRepository } from '@modules/authentication/infrastructure/persistence/prisma-user.repository';
-import { PrismaEmailVerificationRepository } from '@modules/authentication/infrastructure/persistence/prisma-user.repository';
 import { PrismaDeviceSessionRepository } from '@modules/authentication/infrastructure/persistence/prisma-device-session.repository';
 import { PrismaTokenFamilyRepository } from '@modules/authentication/infrastructure/persistence/prisma-token-family.repository';
 import { PrismaPasswordHistoryRepository } from '@modules/authentication/infrastructure/persistence/prisma-password-history.repository';
 import { PrismaPasswordResetRepository } from '@modules/authentication/infrastructure/persistence/prisma-password-reset.repository';
 import { PrismaSystemConfiguration } from '@modules/authentication/infrastructure/persistence/prisma-system-configuration';
 import { PrismaUnitOfWork } from '@modules/authentication/infrastructure/persistence/prisma-unit-of-work';
-import { PrismaUserConsentRepository } from '@modules/authentication/infrastructure/persistence/prisma-user-consent.repository';
-import { PrismaOrganizationRepository } from '@modules/organizations/infrastructure/persistence/prisma-organization.repository';
-import { PrismaOrganizationMemberRepository } from '@modules/organizations/infrastructure/persistence/prisma-organization-member.repository';
-import { TenantContextService } from '@infrastructure/tenancy/tenant-context.service';
 import { Sha256OpaqueTokenService } from '@modules/authentication/infrastructure/security/sha256-opaque-token.service';
 import {
   DeviceSessionRepository,
-  EmailVerificationRepository,
   TokenFamilyRepository,
-  UserRepository,
 } from '@modules/authentication/domain/repositories/authentication.repositories';
 import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
 import { Password } from '@shared/domain/value-objects/password.vo';
@@ -52,9 +43,7 @@ import { createPrismaIntegrationModule } from '../support/prisma-integration-tes
  * implementation. This proves that when Postgres receives a genuine thrown
  * error mid-transaction, every prior write inside that same transaction is
  * actually rolled back on the real database, not just "would be rolled back
- * in principle" per in-memory unit tests (see
- * register-organization-owner.integration-spec.ts, which only exercises an
- * in-memory snapshot/restore UnitOfWork).
+ * in principle" per in-memory unit tests.
  */
 
 const prisma = new PrismaClient();
@@ -65,17 +54,12 @@ const INJECTED_FAILURE = 'INJECTED_ROLLBACK_FAILURE';
 describe('PostgreSQL transaction rollback injection (integration)', () => {
   let dbAvailable = false;
   let userRepository: PrismaUserRepository;
-  let emailVerificationRepository: PrismaEmailVerificationRepository;
   let deviceSessionRepository: PrismaDeviceSessionRepository;
   let tokenFamilyRepository: PrismaTokenFamilyRepository;
   let passwordHistoryRepository: PrismaPasswordHistoryRepository;
   let passwordResetRepository: PrismaPasswordResetRepository;
   let systemConfiguration: PrismaSystemConfiguration;
   let unitOfWork: PrismaUnitOfWork;
-  let userConsentRepository: PrismaUserConsentRepository;
-  let organizationRepository: PrismaOrganizationRepository;
-  let organizationMemberRepository: PrismaOrganizationMemberRepository;
-  let tenantContextService: TenantContextService;
   const passwordHasher = new FakePasswordHasher();
 
   beforeAll(async () => {
@@ -86,30 +70,21 @@ describe('PostgreSQL transaction rollback injection (integration)', () => {
 
     const moduleRef = await createPrismaIntegrationModule([
       PrismaUserRepository,
-      PrismaEmailVerificationRepository,
       PrismaDeviceSessionRepository,
       PrismaTokenFamilyRepository,
       PrismaPasswordHistoryRepository,
       PrismaPasswordResetRepository,
       PrismaSystemConfiguration,
       PrismaUnitOfWork,
-      PrismaUserConsentRepository,
-      PrismaOrganizationRepository,
-      PrismaOrganizationMemberRepository,
     ]);
 
     userRepository = moduleRef.get(PrismaUserRepository);
-    emailVerificationRepository = moduleRef.get(PrismaEmailVerificationRepository);
     deviceSessionRepository = moduleRef.get(PrismaDeviceSessionRepository);
     tokenFamilyRepository = moduleRef.get(PrismaTokenFamilyRepository);
     passwordHistoryRepository = moduleRef.get(PrismaPasswordHistoryRepository);
     passwordResetRepository = moduleRef.get(PrismaPasswordResetRepository);
     systemConfiguration = moduleRef.get(PrismaSystemConfiguration);
     unitOfWork = moduleRef.get(PrismaUnitOfWork);
-    userConsentRepository = moduleRef.get(PrismaUserConsentRepository);
-    organizationRepository = moduleRef.get(PrismaOrganizationRepository);
-    organizationMemberRepository = moduleRef.get(PrismaOrganizationMemberRepository);
-    tenantContextService = moduleRef.get(TenantContextService);
   });
 
   afterAll(async () => {
@@ -129,171 +104,8 @@ describe('PostgreSQL transaction rollback injection (integration)', () => {
     await prisma.tokenFamily.deleteMany({
       where: { user: { email: { startsWith: TEST_PREFIX } } },
     });
-    await prisma.emailVerificationToken.deleteMany({
-      where: { user: { email: { startsWith: TEST_PREFIX } } },
-    });
-    await prisma.userConsent.deleteMany({
-      where: { user: { email: { startsWith: TEST_PREFIX } } },
-    });
-    await prisma.organizationMember.deleteMany({
-      where: { user: { email: { startsWith: TEST_PREFIX } } },
-    });
-    await prisma.organization.deleteMany({
-      where: { slug: { startsWith: TEST_PREFIX } },
-    });
     await prisma.user.deleteMany({ where: { email: { startsWith: TEST_PREFIX } } });
     await prisma.$disconnect();
-  });
-
-  it('Registration: rolls back User + Organization + OrganizationMember + UserConsent + EmailVerificationToken writes when the last transaction step fails', async () => {
-    if (!dbAvailable) return;
-
-    const email = `${TEST_PREFIX}register-${randomUUID()}@example.com`;
-    const organizationSlug = `${TEST_PREFIX}register-${randomUUID()}`;
-
-    // Every dependency below is now a real Prisma-backed repository — no
-    // in-memory stand-ins remain on the Registration persistence path (see
-    // PrismaOrganizationRepository, PrismaOrganizationMemberRepository,
-    // PrismaUserConsentRepository). Only the last transaction step
-    // (EmailVerificationToken.save) is stubbed to throw, so this proves the
-    // real Postgres transaction rolls back every prior real write —
-    // including Organization/OrganizationMember/UserConsent, which previously
-    // had no Prisma repository to verify against real Postgres at all.
-    const failingEmailVerificationRepository: EmailVerificationRepository = {
-      findByTokenHash: emailVerificationRepository.findByTokenHash.bind(
-        emailVerificationRepository,
-      ),
-      findActiveByUserId: emailVerificationRepository.findActiveByUserId.bind(
-        emailVerificationRepository,
-      ),
-      invalidateActiveByUserId: emailVerificationRepository.invalidateActiveByUserId.bind(
-        emailVerificationRepository,
-      ),
-      consumeIfActive: emailVerificationRepository.consumeIfActive.bind(
-        emailVerificationRepository,
-      ),
-      save: async () => {
-        throw new Error(INJECTED_FAILURE);
-      },
-    };
-
-    const eventPublisher = new CollectingEventPublisher();
-    const useCase = new RegisterOrganizationOwnerUseCase(
-      userRepository,
-      organizationRepository,
-      organizationMemberRepository,
-      failingEmailVerificationRepository,
-      userConsentRepository,
-      passwordHasher,
-      opaqueTokenService,
-      unitOfWork,
-      eventPublisher,
-      new FixedClock(new Date()),
-      new UuidGenerator(),
-      systemConfiguration,
-      tenantContextService,
-    );
-
-    await expect(
-      useCase.execute({
-        email,
-        password: 'RollbackTest1Pass!',
-        firstName: 'Rollback',
-        lastName: 'Test',
-        organizationName: `Rollback Org ${randomUUID()}`,
-        organizationSlug,
-        consents: { termsOfService: true, privacyPolicy: true },
-        ipAddress: '127.0.0.1',
-      }),
-    ).rejects.toThrow(INJECTED_FAILURE);
-
-    // Phase 2.19: events must never be published when the transaction rolls
-    // back - proven directly here, not just inferred from code structure.
-    expect(eventPublisher.events).toHaveLength(0);
-
-    const persistedUser = await prisma.user.findFirst({ where: { email } });
-    expect(persistedUser).toBeNull();
-
-    const tokenCount = await prisma.emailVerificationToken.count({
-      where: { user: { email } },
-    });
-    expect(tokenCount).toBe(0);
-
-    const organizationCount = await prisma.organization.count({
-      where: { slug: organizationSlug },
-    });
-    expect(organizationCount).toBe(0);
-
-    const consentCount = await prisma.userConsent.count({
-      where: { user: { email } },
-    });
-    expect(consentCount).toBe(0);
-  });
-
-  it('Email Verification: rolls back token consumption when the User save fails', async () => {
-    if (!dbAvailable) return;
-
-    const userId = randomUUID();
-    const email = `${TEST_PREFIX}verify-${userId}@example.com`;
-    const tokenId = randomUUID();
-    const rawToken = `verify-token-${userId}`;
-    const tokenHash = opaqueTokenService.hash(rawToken);
-
-    await prisma.user.create({
-      data: {
-        id: userId,
-        firstName: 'Verify',
-        lastName: 'Rollback',
-        email,
-        passwordHash: 'argon2id$placeholder',
-        language: 'en',
-        status: PrismaUserStatus.Pending,
-        emailVerified: false,
-      },
-    });
-    await prisma.emailVerificationToken.create({
-      data: {
-        id: tokenId,
-        userId,
-        tokenHash,
-        expiresAt: new Date(Date.now() + 3_600_000),
-        consumedAt: null,
-      },
-    });
-
-    const failingUserRepository: UserRepository = {
-      findById: userRepository.findById.bind(userRepository),
-      findByEmail: userRepository.findByEmail.bind(userRepository),
-      existsByEmail: userRepository.existsByEmail.bind(userRepository),
-      incrementSessionVersion: userRepository.incrementSessionVersion.bind(userRepository),
-      updatePasswordIfCurrentHashMatches:
-        userRepository.updatePasswordIfCurrentHashMatches.bind(userRepository),
-      getAvatarId: userRepository.getAvatarId.bind(userRepository),
-      updateAvatarId: userRepository.updateAvatarId.bind(userRepository),
-      save: async () => {
-        throw new Error(INJECTED_FAILURE);
-      },
-    };
-
-    const eventPublisher = new CollectingEventPublisher();
-    const useCase = new VerifyEmailUseCase(
-      failingUserRepository,
-      emailVerificationRepository,
-      opaqueTokenService,
-      unitOfWork,
-      eventPublisher,
-      new FixedClock(new Date()),
-      new UuidGenerator(),
-    );
-
-    await expect(useCase.execute({ token: rawToken })).rejects.toThrow(INJECTED_FAILURE);
-    expect(eventPublisher.events).toHaveLength(0);
-
-    const tokenRow = await prisma.emailVerificationToken.findUnique({ where: { id: tokenId } });
-    expect(tokenRow?.consumedAt).toBeNull();
-
-    const userRow = await prisma.user.findUnique({ where: { id: userId } });
-    expect(userRow?.emailVerified).toBe(false);
   });
 
   it('Refresh (replay/reuse detection): rolls back TokenFamily compromise when session revocation fails', async () => {

@@ -1,0 +1,3186 @@
+{
+  "info": {
+    "_postman_id": "7f2a1c3e-4b6d-4e8a-9c2f-1a2b3c4d5e6f",
+    "name": "TAVLA API",
+    "description": "Enterprise Restaurant Reservation Platform - REST API (v1).\n\n**Base URL**: `{{baseUrl}}` -> `http://187.127.76.76:3000/api/v1`\n\n**Response envelope** (all business endpoints unless noted):\n```json\n{ \"success\": true, \"message\": \"...\", \"data\": { }, \"meta\": { } }\n```\n\n**Error shape**:\n```json\n{ \"success\": false, \"message\": \"...\", \"code\": \"VALIDATION_ERROR\", \"errors\": [], \"timestamp\": \"\", \"path\": \"\" }\n```\n\n**Auth**: `Authorization: Bearer <accessToken>`. Collection-level Bearer auth reads `{{accessToken}}` automatically; public endpoints override this with `noauth`.\n\n**Suggested first run (organization owner flow)**:\n1. Authentication > Register Organization Owner\n2. Verify the account (paste the emailed token into `verificationToken`) > Verify Email\n3. Authentication > Login - this auto-captures `accessToken`, `refreshToken`, `sessionId`, `organizationId`, `userId` into collection variables\n4. Restaurants > Create Restaurant - auto-captures `restaurantId`\n5. Branches > Create Branch - auto-captures `branchId`\n6. Floor Plans > Create Floor Plan - auto-captures `floorPlanId`\n7. Tables > Create Table - auto-captures `tableId`\n8. Reservations > Create Reservation - auto-captures `reservationId`\n\nEvery other request in the collection then works without manual edits, since ids are chained automatically via test scripts (`pm.collectionVariables`).\n\n**Idempotency**: `POST /reservations` accepts an optional `Idempotency-Key` header (client-generated UUID) - included but disabled by default; enable it and set a fixed value to test replay behavior.\n\n**Correlation**: Mutating requests include a disabled `X-Correlation-Id` header (`{{$guid}}`) for distributed tracing - enable it if you want to correlate a request with server-side logs.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('Response time is acceptable', function () {",
+          "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://187.127.76.76:3000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "apiRoot",
+      "value": "http://187.127.76.76:3000/api",
+      "type": "string"
+    },
+    {
+      "key": "ownerEmail",
+      "value": "owner@example.com",
+      "type": "string"
+    },
+    {
+      "key": "ownerPassword",
+      "value": "SecurePass123!",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sessionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sessionVersion",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "otherSessionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "resetToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "organizationId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "organizationSlug",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "restaurantId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "restaurantSlug",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "branchId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "floorPlanId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tableId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "employeeId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "roleId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "galleryItemId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "cuisineCategoryId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "occasionCategoryId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "reservationId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "customerUsername",
+      "value": "jane_doe",
+      "type": "string"
+    },
+    {
+      "key": "customerCountryCode",
+      "value": "SY",
+      "type": "string"
+    },
+    {
+      "key": "customerPhoneNumber",
+      "value": "0912345678",
+      "type": "string"
+    },
+    {
+      "key": "customerPassword",
+      "value": "SecurePass123!",
+      "type": "string"
+    },
+    {
+      "key": "customerNewPassword",
+      "value": "BrandNewPass1!",
+      "type": "string"
+    },
+    {
+      "key": "customerOtp",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "customerUserId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "customerAccessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "customerRefreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "customerSessionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "platformAdminEmail",
+      "value": "admin@tavla.internal",
+      "type": "string"
+    },
+    {
+      "key": "platformAdminPassword",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "platformAdminAccessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "newOwnerEmail",
+      "value": "owner@example.com",
+      "type": "string"
+    },
+    {
+      "key": "newOwnerPassword",
+      "value": "SecurePass123!",
+      "type": "string"
+    },
+    {
+      "key": "newOrganizationName",
+      "value": "Acme Restaurant Group",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "description": "Registration, login, session/token lifecycle, and password management. Base path: `/auth`.",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{ownerEmail}}\",\n  \"password\": \"{{ownerPassword}}\",\n  \"deviceName\": \"Postman Desktop\",\n  \"deviceType\": \"web\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Issues a new access/refresh token pair and creates a device session. Rate limited to 10 requests/15min/IP. Auto-captures accessToken/refreshToken/sessionId/userId/organizationId into collection variables."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login succeeded (200)', function () { pm.response.to.have.status(200); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data) {",
+                  "    const d = jsonData.data;",
+                  "    pm.collectionVariables.set('accessToken', d.accessToken);",
+                  "    pm.collectionVariables.set('refreshToken', d.refreshToken);",
+                  "    pm.collectionVariables.set('sessionId', d.sessionId);",
+                  "    pm.collectionVariables.set('sessionVersion', String(d.sessionVersion));",
+                  "    if (d.user) { pm.collectionVariables.set('userId', d.user.userId); }",
+                  "    if (d.organization) {",
+                  "        pm.collectionVariables.set('organizationId', d.organization.organizationId);",
+                  "        pm.collectionVariables.set('organizationSlug', d.organization.slug);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh Session",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Rotates the refresh token and issues a new access token. Reusing an already-rotated refresh token revokes the entire token family. Rate limited to 30 requests/min per token."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Refresh succeeded (200)', function () { pm.response.to.have.status(200); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data) {",
+                  "    const d = jsonData.data;",
+                  "    pm.collectionVariables.set('accessToken', d.accessToken);",
+                  "    pm.collectionVariables.set('refreshToken', d.refreshToken);",
+                  "    pm.collectionVariables.set('sessionId', d.sessionId);",
+                  "    pm.collectionVariables.set('sessionVersion', String(d.sessionVersion));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{ownerEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/forgot-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "forgot-password"
+              ]
+            },
+            "description": "Always returns a generic 200 acceptance response regardless of whether the email is registered, to avoid leaking account existence. Rate limited to 3 requests/hour per email."
+          },
+          "response": []
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"newPassword\": \"NewSecurePass123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "reset-password"
+              ]
+            },
+            "description": "Consumes the single-use token emailed by Forgot Password, sets a new password, and revokes all existing sessions. Paste the token from the reset email/log into `resetToken` first."
+          },
+          "response": []
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{ownerPassword}}\",\n  \"newPassword\": \"BrandNewPass123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/change-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "change-password"
+              ]
+            },
+            "description": "Requires the current password. Rotates the session version (revoking all other device sessions) and issues a fresh access token for the current session. Rate limited to 10 requests/15min per authenticated user."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Password changed (200)', function () { pm.response.to.have.status(200); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data && jsonData.data.accessToken) {",
+                  "    pm.collectionVariables.set('accessToken', jsonData.data.accessToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout Current Session",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Revokes the device session tied to the current access token only; other sessions are unaffected. Returns 204 No Content."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout All Devices",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "logout-all"
+              ]
+            },
+            "description": "Revokes every device session for the authenticated user and bumps the session version, invalidating already-issued access tokens on other devices immediately. Returns 204 No Content."
+          },
+          "response": []
+        },
+        {
+          "name": "List Active Sessions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "sessions"
+              ]
+            },
+            "description": "Returns every non-revoked, non-expired device session, flagging which one is the current session. Auto-captures a non-current session id into `otherSessionId` for use by Revoke Session."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Sessions retrieved (200)', function () { pm.response.to.have.status(200); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data && jsonData.data.sessions) {",
+                  "    const other = jsonData.data.sessions.find(function (s) { return !s.isCurrentSession; });",
+                  "    if (other) { pm.collectionVariables.set('otherSessionId', other.sessionId); }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Revoke Session",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/sessions/:sessionId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "sessions",
+                ":sessionId"
+              ],
+              "variable": [
+                {
+                  "key": "sessionId",
+                  "value": "{{otherSessionId}}"
+                }
+              ]
+            },
+            "description": "Revokes the targeted session by id. Only the owning user may revoke their own sessions - an unknown or foreign sessionId resolves to 404. Returns 204 No Content."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Customer Authentication",
+      "item": [
+        {
+          "name": "Customer Register - Start",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{customerUsername}}\",\n  \"countryCode\": \"{{customerCountryCode}}\",\n  \"phoneNumber\": \"{{customerPhoneNumber}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/customer/register/start",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "customer",
+                "register",
+                "start"
+              ]
+            },
+            "description": "Validates username/phone availability and sends a 6-digit WhatsApp OTP via Fonnte. Does not create a User. Rate limited to 5 sends/hour/phone."
+          },
+          "response": []
+        },
+        {
+          "name": "Customer Register - Resend",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"countryCode\": \"{{customerCountryCode}}\",\n  \"phoneNumber\": \"{{customerPhoneNumber}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/customer/register/resend",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "customer",
+                "register",
+                "resend"
+              ]
+            },
+            "description": "Invalidates the previous OTP and issues a new one. Subject to a 60s cooldown and the same 5/hour/phone limit as the initial send."
+          },
+          "response": []
+        },
+        {
+          "name": "Customer Register - Verify",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"countryCode\": \"{{customerCountryCode}}\",\n  \"phoneNumber\": \"{{customerPhoneNumber}}\",\n  \"code\": \"{{customerOtp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/customer/register/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "customer",
+                "register",
+                "verify"
+              ]
+            },
+            "description": "Marks the pending registration verified using the code received via WhatsApp (paste it into the customerOtp variable). Does not create the User yet. Max 5 incorrect attempts per issued OTP."
+          },
+          "response": []
+        },
+        {
+          "name": "Customer Register - Complete",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"countryCode\": \"{{customerCountryCode}}\",\n  \"phoneNumber\": \"{{customerPhoneNumber}}\",\n  \"password\": \"{{customerPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/customer/register/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "customer",
+                "register",
+                "complete"
+              ]
+            },
+            "description": "Requires a verified, unconsumed pending registration for this exact phone. Creates the real Customer User (username + canonical phone + password, no email) and consumes the pending registration atomically."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Registration completed (201)', function () { pm.response.to.have.status(201); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data) {",
+                  "    pm.collectionVariables.set('customerUserId', jsonData.data.userId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer Login",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"countryCode\": \"{{customerCountryCode}}\",\n  \"phoneNumber\": \"{{customerPhoneNumber}}\",\n  \"password\": \"{{customerPassword}}\",\n  \"deviceName\": \"Postman Desktop\",\n  \"deviceType\": \"web\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/customer/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "customer",
+                "login"
+              ]
+            },
+            "description": "Authenticates a Customer by phone + password. A fully separate contract from the Owner/staff /auth/login route. Auto-captures customerAccessToken/customerRefreshToken/customerSessionId."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer login succeeded (200)', function () { pm.response.to.have.status(200); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data) {",
+                  "    const d = jsonData.data;",
+                  "    pm.collectionVariables.set('customerAccessToken', d.accessToken);",
+                  "    pm.collectionVariables.set('customerRefreshToken', d.refreshToken);",
+                  "    pm.collectionVariables.set('customerSessionId', d.sessionId);",
+                  "    if (d.user) { pm.collectionVariables.set('customerUserId', d.user.userId); }",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer Password Reset - Start",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"countryCode\": \"{{customerCountryCode}}\",\n  \"phoneNumber\": \"{{customerPhoneNumber}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/customer/password-reset/start",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "customer",
+                "password-reset",
+                "start"
+              ]
+            },
+            "description": "Enumeration-resistant: always returns the same generic response regardless of whether the phone belongs to an account. Sends a WhatsApp OTP if it does."
+          },
+          "response": []
+        },
+        {
+          "name": "Customer Password Reset - Resend",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"countryCode\": \"{{customerCountryCode}}\",\n  \"phoneNumber\": \"{{customerPhoneNumber}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/customer/password-reset/resend",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "customer",
+                "password-reset",
+                "resend"
+              ]
+            },
+            "description": "Same enumeration-resistant, generic response as Start. Subject to the same rate limits/cooldown."
+          },
+          "response": []
+        },
+        {
+          "name": "Customer Password Reset - Verify",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"countryCode\": \"{{customerCountryCode}}\",\n  \"phoneNumber\": \"{{customerPhoneNumber}}\",\n  \"code\": \"{{customerOtp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/customer/password-reset/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "customer",
+                "password-reset",
+                "verify"
+              ]
+            },
+            "description": "Establishes a verified, not-yet-consumed recovery challenge. Does NOT itself change the password."
+          },
+          "response": []
+        },
+        {
+          "name": "Customer Password Reset - Complete",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"countryCode\": \"{{customerCountryCode}}\",\n  \"phoneNumber\": \"{{customerPhoneNumber}}\",\n  \"newPassword\": \"{{customerNewPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/customer/password-reset/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "customer",
+                "password-reset",
+                "complete"
+              ]
+            },
+            "description": "Requires a verified, unconsumed recovery challenge for this exact phone. Changes the password and revokes all existing sessions."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Platform Admin",
+      "item": [
+        {
+          "name": "Platform Admin Login",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{platformAdminEmail}}\",\n  \"password\": \"{{platformAdminPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/platform-admin/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "platform-admin",
+                "login"
+              ]
+            },
+            "description": "Authenticates a Platform Admin account (provisioned operationally, never via public API) and issues a short-lived access token signed with a dedicated issuer/audience/secret, fully isolated from the ordinary Customer/Owner/Employee JWT pipeline. Auto-captures platformAdminAccessToken."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Platform Admin login succeeded (200)', function () { pm.response.to.have.status(200); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data) {",
+                  "    pm.collectionVariables.set('platformAdminAccessToken', jsonData.data.accessToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Provision Restaurant Owner",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{platformAdminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{newOwnerEmail}}\",\n  \"password\": \"{{newOwnerPassword}}\",\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"organizationName\": \"{{newOrganizationName}}\",\n  \"consents\": {\n    \"termsOfService\": true,\n    \"privacyPolicy\": true,\n    \"marketing\": false\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/platform-admin/restaurant-owners",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "platform-admin",
+                "restaurant-owners"
+              ]
+            },
+            "description": "Creates a Restaurant Owner User and its Organization/OrganizationMember in one transaction, immediately Active with no email-verification step. Requires a Platform Admin access token (POST /platform-admin/login), never an ordinary Customer/Owner/Employee token."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Owner provisioned (201)', function () { pm.response.to.have.status(201); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data) {",
+                  "    pm.collectionVariables.set('organizationId', jsonData.data.organizationId);",
+                  "    pm.collectionVariables.set('organizationSlug', jsonData.data.organizationSlug);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "description": "Self-service profile, preferences, avatar, and favorites for the authenticated user. Base path: `/users`. Every route targets the caller from the JWT - never a client-supplied user id.",
+      "item": [
+        {
+          "name": "Get My Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "description": "Returns only the profile fields owned by the User Module (name, phone, language, preferredCurrency) - never credentials, session, or authorization internals."
+          },
+          "response": []
+        },
+        {
+          "name": "Update My Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"phone\": \"+963900000000\",\n  \"language\": \"en\",\n  \"preferredCurrency\": \"USD\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "description": "Full-replace update of name/phone/language/preferredCurrency for the caller only. Does not accept email, password, or any Authentication/Authorization field."
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Preferences",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/me/preferences",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me",
+                "preferences"
+              ]
+            },
+            "description": "Returns only notificationOptIn/marketingOptIn - language/preferredCurrency remain part of the Profile contract."
+          },
+          "response": []
+        },
+        {
+          "name": "Update My Preferences",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notificationOptIn\": true,\n  \"marketingOptIn\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/me/preferences",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me",
+                "preferences"
+              ]
+            },
+            "description": "Full-replace update of notificationOptIn/marketingOptIn for the caller only."
+          },
+          "response": []
+        },
+        {
+          "name": "Upload My Avatar",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/me/avatar",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me",
+                "avatar"
+              ]
+            },
+            "description": "Accepts a single multipart image file (JPEG/PNG/WebP, 5MB max, validated by magic-byte signature). Replaces any existing avatar. Select a file for the `file` form field before sending."
+          },
+          "response": []
+        },
+        {
+          "name": "Add Favorite Restaurant",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/me/favorites/:restaurantId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me",
+                "favorites",
+                ":restaurantId"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "Idempotent: favoriting an already-favorited restaurant succeeds and returns the existing favorite rather than erroring."
+          },
+          "response": []
+        },
+        {
+          "name": "Remove Favorite Restaurant",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/me/favorites/:restaurantId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me",
+                "favorites",
+                ":restaurantId"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "Idempotent: removing a favorite that does not exist is a silent no-op - always 204."
+          },
+          "response": []
+        },
+        {
+          "name": "List My Favorites",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/me/favorites?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me",
+                "favorites"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Paginated, ordered most-recently-favorited first."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Taxonomy",
+      "description": "Public, platform-managed reference data (cuisine/occasion categories) - no authentication required.",
+      "item": [
+        {
+          "name": "List Cuisine Categories",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/cuisine-categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "cuisine-categories"
+              ]
+            },
+            "description": "Active cuisine categories sorted by sortOrder. Auto-captures the first category id into `cuisineCategoryId`."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Cuisine categories retrieved (200)', function () { pm.response.to.have.status(200); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data && jsonData.data.items && jsonData.data.items.length) {",
+                  "    pm.collectionVariables.set('cuisineCategoryId', jsonData.data.items[0].cuisineCategoryId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Occasion Categories",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/occasion-categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "occasion-categories"
+              ]
+            },
+            "description": "Active occasion categories sorted by sortOrder. Auto-captures the first category id into `occasionCategoryId`."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Occasion categories retrieved (200)', function () { pm.response.to.have.status(200); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data && jsonData.data.items && jsonData.data.items.length) {",
+                  "    pm.collectionVariables.set('occasionCategoryId', jsonData.data.items[0].occasionCategoryId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Restaurants",
+      "description": "Organization-administrative restaurant management. Base path: `/restaurants`. Requires an OrganizationMember actor with Owner or Admin role - `organizationId` always comes from the JWT.",
+      "item": [
+        {
+          "name": "Create Restaurant",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"The Old Mill\",\n  \"description\": \"A cozy neighborhood restaurant serving modern Mediterranean cuisine.\",\n  \"cuisineType\": \"Mediterranean\",\n  \"priceLevel\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants"
+              ]
+            },
+            "description": "The slug is derived from the name when omitted. Auto-captures restaurantId/restaurantSlug."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Restaurant created (201)', function () { pm.response.to.have.status(201); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data) {",
+                  "    pm.collectionVariables.set('restaurantId', jsonData.data.restaurantId);",
+                  "    pm.collectionVariables.set('restaurantSlug', jsonData.data.slug);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Restaurant By Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "Only restaurants belonging to the caller organization are ever visible - tenant scoping is automatic."
+          },
+          "response": []
+        },
+        {
+          "name": "List Restaurants",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Paginated, ordered most-recently-created first, scoped to the caller organization."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Restaurant",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"The Old Mill\",\n  \"description\": \"A cozy neighborhood restaurant serving modern Mediterranean cuisine.\",\n  \"cuisineType\": \"Mediterranean\",\n  \"priceLevel\": 3,\n  \"status\": \"Active\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "Full-replace update of name/description/cuisineType/priceLevel/status. Never accepts organizationId, slug, or averageRating."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Restaurant",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "Soft delete - sets deletedAt, never removes the row. Not idempotent: deleting an already-deleted restaurant returns 404."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Restaurant Settings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:id/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":id",
+                "settings"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "Reservation settings, auto-created with defaults when the restaurant is created."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Restaurant Settings",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reservationIntervalMinutes\": 30,\n  \"maxGuestsPerReservation\": 20,\n  \"cancellationWindowMinutes\": 60,\n  \"pendingReservationTimeoutMinutes\": 15,\n  \"defaultReservationDurationMinutes\": 90,\n  \"autoApproval\": false,\n  \"timezone\": \"UTC\",\n  \"defaultCurrency\": \"USD\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:id/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":id",
+                "settings"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "Full-replace update of every settings field."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Restaurant Working Hours",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:id/working-hours",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":id",
+                "working-hours"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "Restaurant-level default weekly schedule. A day absent from entries is closed that day."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Restaurant Working Hours",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"entries\": [\n    { \"dayOfWeek\": 0, \"openingTime\": \"09:00\", \"closingTime\": \"22:00\", \"breakStartTime\": null, \"breakEndTime\": null },\n    { \"dayOfWeek\": 1, \"openingTime\": \"09:00\", \"closingTime\": \"22:00\", \"breakStartTime\": null, \"breakEndTime\": null },\n    { \"dayOfWeek\": 2, \"openingTime\": \"09:00\", \"closingTime\": \"22:00\", \"breakStartTime\": null, \"breakEndTime\": null },\n    { \"dayOfWeek\": 3, \"openingTime\": \"09:00\", \"closingTime\": \"22:00\", \"breakStartTime\": null, \"breakEndTime\": null },\n    { \"dayOfWeek\": 4, \"openingTime\": \"09:00\", \"closingTime\": \"23:00\", \"breakStartTime\": null, \"breakEndTime\": null },\n    { \"dayOfWeek\": 5, \"openingTime\": \"09:00\", \"closingTime\": \"23:00\", \"breakStartTime\": null, \"breakEndTime\": null },\n    { \"dayOfWeek\": 6, \"openingTime\": \"10:00\", \"closingTime\": \"22:00\", \"breakStartTime\": null, \"breakEndTime\": null }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:id/working-hours",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":id",
+                "working-hours"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "Full-replace of the entire week (0=Sunday..6=Saturday) - a day omitted from entries becomes closed that day."
+          },
+          "response": []
+        },
+        {
+          "name": "Add Gallery Image",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "caption",
+                  "value": "Our dining room",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:id/gallery",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":id",
+                "gallery"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "Accepts a single multipart image (JPEG/PNG/WebP, 5MB max), maximum 20 images per restaurant. Auto-captures galleryItemId."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Gallery image added (201)', function () { pm.response.to.have.status(201); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data) {",
+                  "    pm.collectionVariables.set('galleryItemId', jsonData.data.galleryItemId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Restaurant Gallery",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:id/gallery",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":id",
+                "gallery"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "Ordered by sortOrder."
+          },
+          "response": []
+        },
+        {
+          "name": "Remove Gallery Image",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:id/gallery/:galleryItemId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":id",
+                "gallery",
+                ":galleryItemId"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{restaurantId}}"
+                },
+                {
+                  "key": "galleryItemId",
+                  "value": "{{galleryItemId}}"
+                }
+              ]
+            },
+            "description": "Removes the gallery row, the underlying File record, and the MinIO object. Not idempotent - returns 404 if already removed."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Restaurant Cuisine Categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:id/cuisine-categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":id",
+                "cuisine-categories"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "Currently assigned cuisine categories for this restaurant."
+          },
+          "response": []
+        },
+        {
+          "name": "Set Restaurant Cuisine Categories",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cuisineCategoryIds\": [\"{{cuisineCategoryId}}\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:id/cuisine-categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":id",
+                "cuisine-categories"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "Full-replace: the submitted ids become the restaurant's complete cuisine assignment. Run Taxonomy > List Cuisine Categories first to populate `cuisineCategoryId`."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Restaurant Occasion Categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:id/occasion-categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":id",
+                "occasion-categories"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "Currently assigned occasion categories for this restaurant."
+          },
+          "response": []
+        },
+        {
+          "name": "Set Restaurant Occasion Categories",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"occasionCategoryIds\": [\"{{occasionCategoryId}}\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:id/occasion-categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":id",
+                "occasion-categories"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "Full-replace: the submitted ids become the restaurant's complete occasion assignment. Run Taxonomy > List Occasion Categories first to populate `occasionCategoryId`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Branches",
+      "description": "Branch management, nested under a Restaurant. Base path: `/restaurants/:restaurantId/branches`. Same Owner/Admin authorization as Restaurants.",
+      "item": [
+        {
+          "name": "Create Branch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"city\": \"Damascus\",\n  \"district\": \"Malki\",\n  \"address\": \"123 Main St\",\n  \"latitude\": 33.5138,\n  \"longitude\": 36.2765,\n  \"countryCode\": \"SY\",\n  \"currency\": \"SYP\",\n  \"timezone\": \"Asia/Damascus\",\n  \"phone\": \"+963900000000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:restaurantId/branches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":restaurantId",
+                "branches"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "latitude/longitude must both be set or both omitted. Auto-captures branchId."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Branch created (201)', function () { pm.response.to.have.status(201); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data) {",
+                  "    pm.collectionVariables.set('branchId', jsonData.data.branchId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Branch By Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:restaurantId/branches/:branchId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":restaurantId",
+                "branches",
+                ":branchId"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                },
+                {
+                  "key": "branchId",
+                  "value": "{{branchId}}"
+                }
+              ]
+            },
+            "description": "Only branches belonging to the caller organization are ever visible."
+          },
+          "response": []
+        },
+        {
+          "name": "List Branches",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:restaurantId/branches?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":restaurantId",
+                "branches"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "Paginated, ordered most-recently-created first."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Branch",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"city\": \"Damascus\",\n  \"district\": \"Malki\",\n  \"address\": \"456 Main St\",\n  \"latitude\": 33.5138,\n  \"longitude\": 36.2765,\n  \"countryCode\": \"SY\",\n  \"currency\": \"SYP\",\n  \"timezone\": \"Asia/Damascus\",\n  \"phone\": \"+963900000000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:restaurantId/branches/:branchId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":restaurantId",
+                "branches",
+                ":branchId"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                },
+                {
+                  "key": "branchId",
+                  "value": "{{branchId}}"
+                }
+              ]
+            },
+            "description": "Full-replace update. Never accepts restaurantId."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Branch",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:restaurantId/branches/:branchId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":restaurantId",
+                "branches",
+                ":branchId"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                },
+                {
+                  "key": "branchId",
+                  "value": "{{branchId}}"
+                }
+              ]
+            },
+            "description": "Soft delete - sets deletedAt. Not idempotent."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Branch Working Hours",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:restaurantId/branches/:branchId/working-hours",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":restaurantId",
+                "branches",
+                ":branchId",
+                "working-hours"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                },
+                {
+                  "key": "branchId",
+                  "value": "{{branchId}}"
+                }
+              ]
+            },
+            "description": "Branch-level override of the restaurant default schedule. A day absent from entries has no override configured."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Branch Working Hours",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"entries\": [\n    { \"dayOfWeek\": 0, \"openingTime\": \"10:00\", \"closingTime\": \"22:00\", \"breakStartTime\": null, \"breakEndTime\": null },\n    { \"dayOfWeek\": 5, \"openingTime\": \"09:00\", \"closingTime\": \"23:30\", \"breakStartTime\": null, \"breakEndTime\": null },\n    { \"dayOfWeek\": 6, \"openingTime\": \"09:00\", \"closingTime\": \"23:30\", \"breakStartTime\": null, \"breakEndTime\": null }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:restaurantId/branches/:branchId/working-hours",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":restaurantId",
+                "branches",
+                ":branchId",
+                "working-hours"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                },
+                {
+                  "key": "branchId",
+                  "value": "{{branchId}}"
+                }
+              ]
+            },
+            "description": "Full-replace of the branch's entire weekly override - a day omitted from entries has no override for that branch."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Floor Plans",
+      "description": "Floor plan management, nested under a Branch. Base path: `/restaurants/:restaurantId/branches/:branchId/floor-plans`. Same Owner/Admin authorization stack.",
+      "item": [
+        {
+          "name": "Create Floor Plan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Main Floor\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:restaurantId/branches/:branchId/floor-plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":restaurantId",
+                "branches",
+                ":branchId",
+                "floor-plans"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                },
+                {
+                  "key": "branchId",
+                  "value": "{{branchId}}"
+                }
+              ]
+            },
+            "description": "The first floor plan created for a branch becomes active automatically; subsequent ones start inactive. Auto-captures floorPlanId."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Floor plan created (201)', function () { pm.response.to.have.status(201); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data) {",
+                  "    pm.collectionVariables.set('floorPlanId', jsonData.data.floorPlanId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Floor Plans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:restaurantId/branches/:branchId/floor-plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":restaurantId",
+                "branches",
+                ":branchId",
+                "floor-plans"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                },
+                {
+                  "key": "branchId",
+                  "value": "{{branchId}}"
+                }
+              ]
+            },
+            "description": "Unpaginated - a branch's floor plan count is small and bounded."
+          },
+          "response": []
+        },
+        {
+          "name": "Activate Floor Plan",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:restaurantId/branches/:branchId/floor-plans/:floorPlanId/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":restaurantId",
+                "branches",
+                ":branchId",
+                "floor-plans",
+                ":floorPlanId",
+                "activate"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                },
+                {
+                  "key": "branchId",
+                  "value": "{{branchId}}"
+                },
+                {
+                  "key": "floorPlanId",
+                  "value": "{{floorPlanId}}"
+                }
+              ]
+            },
+            "description": "Atomically deactivates the branch's previously active floor plan - at most one active floor plan per branch at all times."
+          },
+          "response": []
+        },
+        {
+          "name": "List Tables By Floor Plan",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:restaurantId/branches/:branchId/floor-plans/:floorPlanId/tables?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":restaurantId",
+                "branches",
+                ":branchId",
+                "floor-plans",
+                ":floorPlanId",
+                "tables"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                },
+                {
+                  "key": "branchId",
+                  "value": "{{branchId}}"
+                },
+                {
+                  "key": "floorPlanId",
+                  "value": "{{floorPlanId}}"
+                }
+              ]
+            },
+            "description": "FloorPlan-scoped Table read capability - FloorPlan is the owner of the table layout."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Tables",
+      "description": "Table management: creation/listing nested under a Branch, individual resource operations flat under `/tables/:tableId`.",
+      "item": [
+        {
+          "name": "Create Table",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"floorPlanId\": \"{{floorPlanId}}\",\n  \"tableNumber\": \"T1\",\n  \"capacity\": 4,\n  \"floor\": 1,\n  \"positionX\": 10.5,\n  \"positionY\": 20.5,\n  \"width\": 100,\n  \"height\": 100,\n  \"rotation\": 0,\n  \"shape\": \"Rectangle\",\n  \"layer\": 0,\n  \"indoor\": true,\n  \"vip\": false,\n  \"smoking\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:restaurantId/branches/:branchId/tables",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":restaurantId",
+                "branches",
+                ":branchId",
+                "tables"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                },
+                {
+                  "key": "branchId",
+                  "value": "{{branchId}}"
+                }
+              ]
+            },
+            "description": "Always created with status Available. tableNumber must be unique within the branch; floorPlanId must belong to this branch. Auto-captures tableId."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Table created (201)', function () { pm.response.to.have.status(201); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data) {",
+                  "    pm.collectionVariables.set('tableId', jsonData.data.tableId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Tables By Branch",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:restaurantId/branches/:branchId/tables?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":restaurantId",
+                "branches",
+                ":branchId",
+                "tables"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                },
+                {
+                  "key": "branchId",
+                  "value": "{{branchId}}"
+                }
+              ]
+            },
+            "description": "Paginated, ordered most-recently-created first."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Table By Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/tables/:tableId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tables",
+                ":tableId"
+              ],
+              "variable": [
+                {
+                  "key": "tableId",
+                  "value": "{{tableId}}"
+                }
+              ]
+            },
+            "description": "Flat individual resource - tenant scoping is automatic via the Table -> Branch -> Restaurant relation chain."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Table",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tableNumber\": \"T1\",\n  \"capacity\": 6,\n  \"floor\": 1,\n  \"positionX\": 15.0,\n  \"positionY\": 25.0,\n  \"width\": 120,\n  \"height\": 120,\n  \"rotation\": 0,\n  \"shape\": \"Round\",\n  \"layer\": 0,\n  \"indoor\": true,\n  \"vip\": false,\n  \"smoking\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/tables/:tableId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tables",
+                ":tableId"
+              ],
+              "variable": [
+                {
+                  "key": "tableId",
+                  "value": "{{tableId}}"
+                }
+              ]
+            },
+            "description": "Full-replace of profile fields only. Never accepts floorPlanId (see Move Table) or status (see Change Table Status)."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Table",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/tables/:tableId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tables",
+                ":tableId"
+              ],
+              "variable": [
+                {
+                  "key": "tableId",
+                  "value": "{{tableId}}"
+                }
+              ]
+            },
+            "description": "Soft delete - sets deletedAt. Not idempotent."
+          },
+          "response": []
+        },
+        {
+          "name": "Move Table",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetFloorPlanId\": \"{{floorPlanId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/tables/:tableId/move",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tables",
+                ":tableId",
+                "move"
+              ],
+              "variable": [
+                {
+                  "key": "tableId",
+                  "value": "{{tableId}}"
+                }
+              ]
+            },
+            "description": "Domain Action: changes ONLY floorPlanId. Target floor plan must belong to this table's own branch."
+          },
+          "response": []
+        },
+        {
+          "name": "Change Table Status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Occupied\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/tables/:tableId/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tables",
+                ":tableId",
+                "status"
+              ],
+              "variable": [
+                {
+                  "key": "tableId",
+                  "value": "{{tableId}}"
+                }
+              ]
+            },
+            "description": "Domain Action: only Available<->Occupied, Available<->Cleaning, and Available<->Disabled transitions are allowed."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Employees",
+      "description": "Employee invitation and management, nested under a Restaurant. Base path: `/restaurants/:restaurantId/employees`. Requires Owner/Admin organization role (not RBAC permissions).",
+      "item": [
+        {
+          "name": "Invite Employee",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roleId\": \"{{roleId}}\",\n  \"firstName\": \"John\",\n  \"lastName\": \"Smith\",\n  \"email\": \"john.smith@example.com\",\n  \"phone\": \"+963900000001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:restaurantId/employees",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":restaurantId",
+                "employees"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "Creates an Employee with status Invited and no linked User - linking happens at first login. Set `roleId` to a Restaurant-scope Role id (see the seed data / Roles admin tooling). Auto-captures employeeId."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Employee invited (201)', function () { pm.response.to.have.status(201); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data) {",
+                  "    pm.collectionVariables.set('employeeId', jsonData.data.employeeId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assign Employee Role",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"roleId\": \"{{roleId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:restaurantId/employees/:employeeId/role",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":restaurantId",
+                "employees",
+                ":employeeId",
+                "role"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                },
+                {
+                  "key": "employeeId",
+                  "value": "{{employeeId}}"
+                }
+              ]
+            },
+            "description": "Domain Action: changes only roleId and bumps permissionsVersion."
+          },
+          "response": []
+        },
+        {
+          "name": "Assign Employee To Branch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchId\": \"{{branchId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:restaurantId/employees/:employeeId/branches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":restaurantId",
+                "employees",
+                ":employeeId",
+                "branches"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                },
+                {
+                  "key": "employeeId",
+                  "value": "{{employeeId}}"
+                }
+              ]
+            },
+            "description": "Idempotent - an already-assigned branch is a no-op. The target branch must belong to the same restaurant as the employee."
+          },
+          "response": []
+        },
+        {
+          "name": "Remove Employee From Branch",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:restaurantId/employees/:employeeId/branches/:branchId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":restaurantId",
+                "employees",
+                ":employeeId",
+                "branches",
+                ":branchId"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                },
+                {
+                  "key": "employeeId",
+                  "value": "{{employeeId}}"
+                },
+                {
+                  "key": "branchId",
+                  "value": "{{branchId}}"
+                }
+              ]
+            },
+            "description": "Idempotent - a branch not currently assigned is a no-op. Removing the last explicit assignment restores restaurant-wide scope. Returns 200 (not 204)."
+          },
+          "response": []
+        },
+        {
+          "name": "Remove Employee",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/:restaurantId/employees/:employeeId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                ":restaurantId",
+                "employees",
+                ":employeeId"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                },
+                {
+                  "key": "employeeId",
+                  "value": "{{employeeId}}"
+                }
+              ]
+            },
+            "description": "Soft delete - sets deletedAt, never flips EmployeeStatus. Rejected (409) if this employee is the restaurant's last Manager-role employee. Returns 200 (not 204)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Reservations",
+      "description": "Customer-facing reservation search and creation. Base path: `/reservations`. Guarded only by JWT (no organization/employee guard) - the actor's own userId is always used, never a client-supplied value.",
+      "item": [
+        {
+          "name": "Search Availability",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reservations/availability?branchId={{branchId}}&reservationStartTime=2026-08-01T18:00:00.000Z&reservationEndTime=2026-08-01T20:00:00.000Z&partySize=2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reservations",
+                "availability"
+              ],
+              "query": [
+                {
+                  "key": "branchId",
+                  "value": "{{branchId}}"
+                },
+                {
+                  "key": "reservationStartTime",
+                  "value": "2026-08-01T18:00:00.000Z"
+                },
+                {
+                  "key": "reservationEndTime",
+                  "value": "2026-08-01T20:00:00.000Z"
+                },
+                {
+                  "key": "partySize",
+                  "value": "2"
+                }
+              ]
+            },
+            "description": "Informational only - every table matching the search criteria is returned, never hidden; each carries an isAvailable indicator. This endpoint never reserves anything - POST /reservations is the sole authoritative conflict check (ADR-013)."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Reservation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "disabled": true
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchId\": \"{{branchId}}\",\n  \"tableId\": \"{{tableId}}\",\n  \"reservationStartTime\": \"2026-08-01T18:00:00.000Z\",\n  \"reservationEndTime\": \"2026-08-01T20:00:00.000Z\",\n  \"guests\": 2,\n  \"notes\": \"Window seat preferred\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/reservations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reservations"
+              ]
+            },
+            "description": "Always produces status Pending (Approval is a later phase). reservationEndTime is derived from the restaurant's default reservation duration when omitted. Enable the Idempotency-Key header to test safe retry semantics. Auto-captures reservationId."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Reservation created (201)', function () { pm.response.to.have.status(201); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data) {",
+                  "    pm.collectionVariables.set('reservationId', jsonData.data.reservationId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "description": "Infrastructure health checks - unauthenticated, no response envelope, no API version segment (`/api/health`, not `/api/v1/health`).",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiRoot}}/health",
+              "host": [
+                "{{apiRoot}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Verifies PostgreSQL, Redis, and MinIO connectivity via Terminus."
+          },
+          "response": []
+        },
+        {
+          "name": "Liveness",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiRoot}}/health/liveness",
+              "host": [
+                "{{apiRoot}}"
+              ],
+              "path": [
+                "health",
+                "liveness"
+              ]
+            },
+            "description": "Never checks external dependencies - only 'is the process responding'. Used by the orchestrator to decide whether to restart the container."
+          },
+          "response": []
+        },
+        {
+          "name": "Readiness",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{apiRoot}}/health/readiness",
+              "host": [
+                "{{apiRoot}}"
+              ],
+              "path": [
+                "health",
+                "readiness"
+              ]
+            },
+            "description": "Same dependency checks as /health - used to pull the instance out of the load balancer without restarting it."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

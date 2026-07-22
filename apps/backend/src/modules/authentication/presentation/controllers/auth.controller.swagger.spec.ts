@@ -5,8 +5,6 @@ import { AuthController } from './auth.controller';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { SessionVersionGuard } from '../guards/session-version.guard';
 import { RateLimitGuard } from '../guards/rate-limit.guard';
-import { RegisterOrganizationOwnerUseCase } from '../../application/use-cases/register-organization-owner.use-case';
-import { VerifyEmailUseCase } from '../../application/use-cases/verify-email.use-case';
 import { LoginUseCase } from '../../application/use-cases/login.use-case';
 import { RefreshSessionUseCase } from '../../application/use-cases/refresh-session.use-case';
 import { LogoutCurrentSessionUseCase } from '../../application/use-cases/logout-current-session.use-case';
@@ -28,8 +26,6 @@ describe('AuthController Swagger document', () => {
   let document: OpenAPIObject;
 
   const publicPaths = [
-    '/auth/register',
-    '/auth/verify-email',
     '/auth/login',
     '/auth/refresh',
     '/auth/forgot-password',
@@ -47,8 +43,6 @@ describe('AuthController Swagger document', () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
       providers: [
-        { provide: RegisterOrganizationOwnerUseCase, useValue: {} },
-        { provide: VerifyEmailUseCase, useValue: {} },
         { provide: LoginUseCase, useValue: {} },
         { provide: RefreshSessionUseCase, useValue: {} },
         { provide: LogoutCurrentSessionUseCase, useValue: {} },
@@ -92,6 +86,11 @@ describe('AuthController Swagger document', () => {
     for (const path of [...publicPaths, ...protectedPaths]) {
       expect(document.paths[path]).toBeDefined();
     }
+  });
+
+  it('does not expose the retired public Owner self-registration or email-verification routes (ADR-022)', () => {
+    expect(document.paths['/auth/register']).toBeUndefined();
+    expect(document.paths['/auth/verify-email']).toBeUndefined();
   });
 
   it('has no duplicate operationIds', () => {

@@ -5,22 +5,32 @@ import { Organization } from '@modules/organizations/domain/entities/organizatio
 import { OrganizationMember } from '@modules/organizations/domain/entities/organization-member.entity';
 import { UserConsentRepository } from '@modules/authentication/domain/repositories/user-consent.repository';
 import { EmailAlreadyExistsException } from '@modules/authentication/domain/exceptions/email-already-exists.exception';
-import { EmailVerificationTokenRecord } from '@modules/authentication/domain/repositories/authentication.repositories';
+import { PhoneAlreadyExistsException } from '@modules/authentication/domain/exceptions/phone-already-exists.exception';
+import { UsernameAlreadyExistsException } from '@modules/authentication/domain/exceptions/username-already-exists.exception';
 import {
   DeviceSessionRepository,
-  EmailVerificationRepository,
   LoginAttemptRecord,
   LoginAttemptRepository,
   PasswordHistoryRecord,
   PasswordHistoryRepository,
   PasswordResetRepository,
   PasswordResetTokenRecord,
+  PendingCustomerRegistrationRecord,
+  PendingCustomerRegistrationRepository,
+  CustomerPasswordResetTokenRecord,
+  CustomerPasswordResetRepository,
   RotateRefreshTokenOutcome,
   RevokeSessionOutcome,
   TokenFamilyRepository,
   UpdatePasswordIfCurrentHashMatchesOutcome,
   UserRepository,
 } from '@modules/authentication/domain/repositories/authentication.repositories';
+import { OtpService } from '@modules/authentication/domain/services/otp.port';
+import {
+  VerificationMessagingPort,
+  VerificationMessagingResult,
+} from '@modules/authentication/application/ports/verification-messaging.port';
+import { PhoneNumber } from '@shared/domain/value-objects/phone-number.vo';
 import { SessionRevokeReason } from '@modules/authentication/domain/enums/authentication.enums';
 import { DeviceSession } from '@modules/authentication/domain/entities/device-session.entity';
 import { TokenFamily } from '@modules/authentication/domain/entities/token-family.entity';
@@ -74,7 +84,7 @@ export class InMemoryUserRepository implements UserRepository {
 
   async findByEmail(email: Email): Promise<User | null> {
     for (const user of this.users.values()) {
-      if (user.email.value === email.value) {
+      if (user.email?.value === email.value) {
         return user;
       }
     }
@@ -85,16 +95,45 @@ export class InMemoryUserRepository implements UserRepository {
     return (await this.findByEmail(email)) !== null;
   }
 
+  /** ADR-022 (Phase 2.23): Customer login/lookup by canonical E.164 phone. */
+  async findByPhone(phone: string): Promise<User | null> {
+    for (const user of this.users.values()) {
+      if (user.phone === phone) {
+        return user;
+      }
+    }
+    return null;
+  }
+
+  async existsByPhone(phone: string): Promise<boolean> {
+    return (await this.findByPhone(phone)) !== null;
+  }
+
+  async existsByUsername(username: string): Promise<boolean> {
+    for (const user of this.users.values()) {
+      if (user.username === username) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   async save(user: User): Promise<void> {
     for (const existing of this.users.values()) {
-      if (
-        existing.email.value === user.email.value &&
-        existing.userId.value !== user.userId.value
-      ) {
-        // Mirrors the real Prisma repository's unique-constraint violation
-        // (see PrismaUserRepository.save), so unit tests exercise the same
-        // race-safety contract without a real database.
+      if (existing.userId.value === user.userId.value) {
+        continue;
+      }
+      // Mirrors the real Prisma repository's unique-constraint violations
+      // (see PrismaUserRepository.save), so unit tests exercise the same
+      // race-safety contract without a real database.
+      if (user.email !== null && existing.email?.value === user.email.value) {
         throw new EmailAlreadyExistsException(user.email.value);
+      }
+      if (user.phone !== null && existing.phone === user.phone) {
+        throw new PhoneAlreadyExistsException();
+      }
+      if (user.username !== null && existing.username === user.username) {
+        throw new UsernameAlreadyExistsException();
       }
     }
     this.users.set(user.userId.value, user);
@@ -223,53 +262,6 @@ export class InMemoryOrganizationMemberRepository implements OrganizationMemberR
     for (const member of members) {
       this.members.set(member.toProps().id, member);
     }
-  }
-}
-
-export class InMemoryEmailVerificationRepository implements EmailVerificationRepository {
-  readonly tokens: EmailVerificationTokenRecord[] = [];
-
-  async findByTokenHash(tokenHash: string): Promise<EmailVerificationTokenRecord | null> {
-    return this.tokens.find((token) => token.tokenHash === tokenHash) ?? null;
-  }
-
-  async findActiveByUserId(
-    userId: UserId,
-    now: Date,
-  ): Promise<EmailVerificationTokenRecord | null> {
-    return (
-      this.tokens.find(
-        (token) =>
-          token.userId === userId.value && token.consumedAt === null && token.expiresAt > now,
-      ) ?? null
-    );
-  }
-
-  async save(record: EmailVerificationTokenRecord): Promise<void> {
-    this.tokens.push({ ...record });
-  }
-
-  async invalidateActiveByUserId(userId: UserId): Promise<void> {
-    const now = new Date();
-    for (const token of this.tokens) {
-      if (token.userId === userId.value && token.consumedAt === null) {
-        token.consumedAt = now;
-      }
-    }
-  }
-
-  async consumeIfActive(id: string, consumedAt: Date): Promise<boolean> {
-    const token = this.tokens.find((entry) => entry.id === id);
-    if (!token || token.consumedAt !== null) {
-      return false;
-    }
-    token.consumedAt = consumedAt;
-    return true;
-  }
-
-  restore(tokens: EmailVerificationTokenRecord[]): void {
-    this.tokens.length = 0;
-    this.tokens.push(...tokens.map((token) => ({ ...token })));
   }
 }
 
@@ -742,4 +734,206 @@ export class FixedAuthTokenTtl implements AuthTokenTtlPort {
 
 export class FixedAuthRefreshPolicy implements AuthRefreshPolicyPort {
   constructor(readonly refreshConcurrentGraceMs: number) {}
+}
+
+// ---------------------------------------------------------------------------
+// ADR-022 (Phase 2.23) — Customer phone-first registration & recovery
+// ---------------------------------------------------------------------------
+
+export class InMemoryPendingCustomerRegistrationRepository implements PendingCustomerRegistrationRepository {
+  readonly rows: PendingCustomerRegistrationRecord[] = [];
+
+  async findByPhone(phone: string): Promise<PendingCustomerRegistrationRecord | null> {
+    return this.rows.find((row) => row.phone === phone) ?? null;
+  }
+
+  async findById(id: string): Promise<PendingCustomerRegistrationRecord | null> {
+    return this.rows.find((row) => row.id === id) ?? null;
+  }
+
+  async upsertActive(input: {
+    username: string;
+    phone: string;
+    codeHash: string;
+    codeExpiresAt: Date;
+    now: Date;
+  }): Promise<PendingCustomerRegistrationRecord> {
+    const usernameTaken = this.rows.some(
+      (row) => row.username === input.username && row.phone !== input.phone,
+    );
+    if (usernameTaken) {
+      throw new UsernameAlreadyExistsException();
+    }
+
+    const index = this.rows.findIndex((row) => row.phone === input.phone);
+    if (index >= 0) {
+      const updated: PendingCustomerRegistrationRecord = {
+        ...this.rows[index],
+        username: input.username,
+        codeHash: input.codeHash,
+        codeExpiresAt: input.codeExpiresAt,
+        incorrectAttemptCount: 0,
+        verifiedAt: null,
+        updatedAt: input.now,
+      };
+      this.rows[index] = updated;
+      return { ...updated };
+    }
+
+    const created: PendingCustomerRegistrationRecord = {
+      id: `pending-${this.rows.length + 1}`,
+      username: input.username,
+      phone: input.phone,
+      codeHash: input.codeHash,
+      codeExpiresAt: input.codeExpiresAt,
+      incorrectAttemptCount: 0,
+      verifiedAt: null,
+      consumedAt: null,
+      createdAt: input.now,
+      updatedAt: input.now,
+    };
+    this.rows.push(created);
+    return { ...created };
+  }
+
+  async incrementAttemptCount(id: string): Promise<void> {
+    const row = this.rows.find((entry) => entry.id === id);
+    if (row) {
+      row.incorrectAttemptCount += 1;
+    }
+  }
+
+  async markVerified(id: string, at: Date): Promise<void> {
+    const row = this.rows.find((entry) => entry.id === id);
+    if (row) {
+      row.verifiedAt = at;
+      row.updatedAt = at;
+    }
+  }
+
+  async consumeIfVerifiedAndUnconsumed(
+    id: string,
+    at: Date,
+  ): Promise<PendingCustomerRegistrationRecord | null> {
+    const row = this.rows.find((entry) => entry.id === id);
+    if (!row || row.consumedAt !== null || row.verifiedAt === null) {
+      return null;
+    }
+    row.consumedAt = at;
+    row.updatedAt = at;
+    return { ...row };
+  }
+
+  async deleteById(id: string): Promise<void> {
+    const index = this.rows.findIndex((row) => row.id === id);
+    if (index >= 0) {
+      this.rows.splice(index, 1);
+    }
+  }
+
+  async existsByUsername(username: string): Promise<boolean> {
+    return this.rows.some((row) => row.username === username);
+  }
+
+  async existsByPhone(phone: string): Promise<boolean> {
+    return this.rows.some((row) => row.phone === phone);
+  }
+}
+
+export class InMemoryCustomerPasswordResetRepository implements CustomerPasswordResetRepository {
+  readonly rows: CustomerPasswordResetTokenRecord[] = [];
+
+  async findActiveByUserId(
+    userId: UserId,
+    now: Date,
+  ): Promise<CustomerPasswordResetTokenRecord | null> {
+    return (
+      this.rows.find(
+        (row) => row.userId === userId.value && row.consumedAt === null && row.codeExpiresAt > now,
+      ) ?? null
+    );
+  }
+
+  async save(record: CustomerPasswordResetTokenRecord): Promise<void> {
+    const index = this.rows.findIndex((row) => row.id === record.id);
+    if (index >= 0) {
+      this.rows[index] = { ...record };
+      return;
+    }
+    this.rows.push({ ...record });
+  }
+
+  async invalidateActiveByUserId(userId: UserId): Promise<void> {
+    const now = new Date();
+    for (const row of this.rows) {
+      if (row.userId === userId.value && row.consumedAt === null) {
+        row.consumedAt = now;
+      }
+    }
+  }
+
+  async incrementAttemptCount(id: string): Promise<void> {
+    const row = this.rows.find((entry) => entry.id === id);
+    if (row) {
+      row.incorrectAttemptCount += 1;
+    }
+  }
+
+  async markVerified(id: string, at: Date): Promise<void> {
+    const row = this.rows.find((entry) => entry.id === id);
+    if (row) {
+      row.verifiedAt = at;
+      row.updatedAt = at;
+    }
+  }
+
+  async consumeIfVerifiedAndUnconsumed(
+    id: string,
+    at: Date,
+  ): Promise<CustomerPasswordResetTokenRecord | null> {
+    const row = this.rows.find((entry) => entry.id === id);
+    if (!row || row.consumedAt !== null || row.verifiedAt === null) {
+      return null;
+    }
+    row.consumedAt = at;
+    row.updatedAt = at;
+    return { ...row };
+  }
+}
+
+export class FakeOtpService implements OtpService {
+  private counter = 0;
+
+  generate(): string {
+    this.counter += 1;
+    return this.counter.toString().padStart(6, '0');
+  }
+
+  hash(code: string): string {
+    return `otp-hash-${code}`;
+  }
+
+  verify(code: string, storedHash: string): boolean {
+    return this.hash(code) === storedHash;
+  }
+}
+
+/**
+ * Test double for `VerificationMessagingPort` (ADR-022/TESTING_STRATEGY.md:
+ * "real third-party providers... never called from any automated test").
+ * Records every call for assertion (target/message content, call count)
+ * without any network access; `nextResult` lets a test simulate a Fonnte
+ * failure without touching the real provider.
+ */
+export class RecordingVerificationMessagingPort implements VerificationMessagingPort {
+  readonly calls: Array<{ phone: string; code: string }> = [];
+  nextResult: VerificationMessagingResult = { status: 'sent' };
+
+  async sendVerificationCode(
+    phone: PhoneNumber,
+    code: string,
+  ): Promise<VerificationMessagingResult> {
+    this.calls.push({ phone: phone.value, code });
+    return this.nextResult;
+  }
 }

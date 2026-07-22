@@ -94,9 +94,12 @@ export class JwtAuthGuard implements CanActivate {
           break;
 
         default:
-          // PlatformAdmin claims are not yet issuable by any use case; see
-          // authenticated-actor.dto.ts for why no request-actor shape exists
-          // for them yet.
+          // PlatformAdmin claims are never issued or accepted through this
+          // ordinary pipeline (ADR-022 §"Platform Admin Authentication",
+          // Phase 2.23 closure) - Platform Admin authentication uses a
+          // genuinely separate issuer/audience/secret and its own guard
+          // (see modules/platform-admin/presentation/guards/platform-admin.guard.ts),
+          // never this one.
           throw new InvalidAccessTokenException();
       }
 

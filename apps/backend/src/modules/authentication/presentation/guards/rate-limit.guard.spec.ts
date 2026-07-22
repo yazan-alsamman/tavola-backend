@@ -44,6 +44,21 @@ class TestController {
     return null;
   }
 
+  @RateLimit('customerRegisterSend')
+  customerRegisterSendHandler() {
+    return null;
+  }
+
+  @RateLimit('customerRegisterVerify')
+  customerRegisterVerifyHandler() {
+    return null;
+  }
+
+  @RateLimit('customerPasswordResetSend')
+  customerPasswordResetSendHandler() {
+    return null;
+  }
+
   unprotectedHandler() {
     return null;
   }
@@ -240,6 +255,93 @@ describe('RateLimitGuard', () => {
 
     const [key] = consume.mock.calls[0];
     expect(key).toMatch(/^auth:ratelimit:changePassword:[a-f0-9]{64}$/);
+  });
+
+  it('keys customerRegisterSend by canonical E.164 phone, not the raw pair', async () => {
+    const { guard, consume } = createGuard(allowedDecision);
+    // Same real phone, two different but equivalent raw submissions (with
+    // and without the national trunk zero) - ADR-022 Phase 2.23: this must
+    // land in the same bucket or the "5 sends/hour/phone" limit could be
+    // bypassed purely by varying formatting.
+    const contextWithTrunkZero = createContext(controller.customerRegisterSendHandler, {
+      countryCode: 'SY',
+      phoneNumber: '0912345678',
+    });
+    const contextWithoutTrunkZero = createContext(controller.customerRegisterSendHandler, {
+      countryCode: 'sy',
+      phoneNumber: '912345678',
+    });
+
+    await guard.canActivate(contextWithTrunkZero);
+    await guard.canActivate(contextWithoutTrunkZero);
+
+    const [firstKey] = consume.mock.calls[0];
+    const [secondKey] = consume.mock.calls[1];
+    expect(firstKey).toBe(secondKey);
+    expect(firstKey).toMatch(/^auth:ratelimit:customerRegisterSend:[a-f0-9]{64}$/);
+  });
+
+  it('gives customerRegisterSend distinct keys for genuinely different phones', async () => {
+    const { guard, consume } = createGuard(allowedDecision);
+    const contextA = createContext(controller.customerRegisterSendHandler, {
+      countryCode: 'SY',
+      phoneNumber: '0912345678',
+    });
+    const contextB = createContext(controller.customerRegisterSendHandler, {
+      countryCode: 'AE',
+      phoneNumber: '0501234567',
+    });
+
+    await guard.canActivate(contextA);
+    await guard.canActivate(contextB);
+
+    const [firstKey] = consume.mock.calls[0];
+    const [secondKey] = consume.mock.calls[1];
+    expect(firstKey).not.toBe(secondKey);
+  });
+
+  it('falls back to a shared "unknown"-style bucket for an unparseable phone rather than throwing', async () => {
+    const { guard, consume } = createGuard(allowedDecision);
+    const context = createContext(controller.customerRegisterSendHandler, {
+      countryCode: 'SY',
+      phoneNumber: 'not-a-number',
+    });
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+
+    const [key] = consume.mock.calls[0];
+    expect(key).toMatch(/^auth:ratelimit:customerRegisterSend:[a-f0-9]{64}$/);
+  });
+
+  it('keys customerRegisterVerify by canonical phone AND client IP together', async () => {
+    const { guard, consume } = createGuard(allowedDecision);
+    const context = createContext(controller.customerRegisterVerifyHandler, {
+      countryCode: 'SY',
+      phoneNumber: '0912345678',
+      code: '123456',
+    });
+    await guard.canActivate(context);
+
+    const [key] = consume.mock.calls[0];
+    expect(key).toMatch(/^auth:ratelimit:customerRegisterVerify:[a-f0-9]{64}$/);
+  });
+
+  it('keys customerPasswordResetSend by canonical E.164 phone, mirroring customerRegisterSend', async () => {
+    const { guard, consume } = createGuard(allowedDecision);
+    const contextWithTrunkZero = createContext(controller.customerPasswordResetSendHandler, {
+      countryCode: 'SY',
+      phoneNumber: '0912345678',
+    });
+    const contextWithoutTrunkZero = createContext(controller.customerPasswordResetSendHandler, {
+      countryCode: 'SY',
+      phoneNumber: '912345678',
+    });
+
+    await guard.canActivate(contextWithTrunkZero);
+    await guard.canActivate(contextWithoutTrunkZero);
+
+    const [firstKey] = consume.mock.calls[0];
+    const [secondKey] = consume.mock.calls[1];
+    expect(firstKey).toBe(secondKey);
   });
 
   it('passes the configured max and windowSeconds through to the limiter', async () => {

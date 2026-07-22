@@ -82,4 +82,39 @@ export const envValidationSchema = Joi.object({
   RATE_LIMIT_REGISTER_WINDOW_SECONDS: Joi.number().integer().min(1).default(3600),
   RATE_LIMIT_CHANGE_PASSWORD_MAX: Joi.number().integer().min(1).default(10),
   RATE_LIMIT_CHANGE_PASSWORD_WINDOW_SECONDS: Joi.number().integer().min(1).default(900),
+
+  // ADR-022 (Phase 2.23) — Customer phone-first registration/recovery OTP
+  // rate limits. Defaults are the frozen ADR-022 values (5/hour send,
+  // 10/15min verify) — still env-overridable per this repository's existing
+  // convention for every other named auth rate-limit policy above.
+  RATE_LIMIT_CUSTOMER_REGISTER_SEND_MAX: Joi.number().integer().min(1).default(5),
+  RATE_LIMIT_CUSTOMER_REGISTER_SEND_WINDOW_SECONDS: Joi.number().integer().min(1).default(3600),
+  RATE_LIMIT_CUSTOMER_REGISTER_VERIFY_MAX: Joi.number().integer().min(1).default(10),
+  RATE_LIMIT_CUSTOMER_REGISTER_VERIFY_WINDOW_SECONDS: Joi.number().integer().min(1).default(900),
+  RATE_LIMIT_CUSTOMER_PASSWORD_RESET_SEND_MAX: Joi.number().integer().min(1).default(5),
+  RATE_LIMIT_CUSTOMER_PASSWORD_RESET_SEND_WINDOW_SECONDS: Joi.number()
+    .integer()
+    .min(1)
+    .default(3600),
+  RATE_LIMIT_CUSTOMER_PASSWORD_RESET_VERIFY_MAX: Joi.number().integer().min(1).default(10),
+  RATE_LIMIT_CUSTOMER_PASSWORD_RESET_VERIFY_WINDOW_SECONDS: Joi.number()
+    .integer()
+    .min(1)
+    .default(900),
+  // ADR-022 §"Platform Admin Authentication" (Phase 2.23 closure): a
+  // genuinely separate signing secret/issuer/audience from JWT_ACCESS_SECRET
+  // above - required, same minimum-length convention as every other JWT
+  // secret in this file.
+  PLATFORM_ADMIN_JWT_SECRET: Joi.string().min(32).required(),
+  PLATFORM_ADMIN_JWT_ISSUER: Joi.string().default('tavla-platform-admin'),
+  PLATFORM_ADMIN_JWT_AUDIENCE: Joi.string().default('tavla-platform-admin-clients'),
+  PLATFORM_ADMIN_JWT_EXPIRY_SECONDS: Joi.number().integer().min(1).default(900),
+
+  // ADR-022 Fonnte (WhatsApp OTP delivery). Required in every environment
+  // except where NOTIFICATION-style fake providers are used in tests (see
+  // FonnteVerificationMessagingAdapter's fake counterpart, wired only in
+  // the test module, never reading this variable).
+  FONNTE_API_TOKEN: Joi.string().allow('').default(''),
+  FONNTE_API_URL: Joi.string().uri().default('https://api.fonnte.com/send'),
+  FONNTE_REQUEST_TIMEOUT_MS: Joi.number().integer().min(1).default(10000),
 });

@@ -46,7 +46,6 @@ describe('Load smoke (e2e)', () => {
     // A concurrent burst from one loopback IP must not be mistaken for abuse
     // by the very rate limiter this smoke test is also implicitly exercising.
     process.env.RATE_LIMIT_LOGIN_MAX = '1000';
-    process.env.RATE_LIMIT_REGISTER_MAX = '1000';
 
     const moduleRef = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true, load: [authConfig] })],
@@ -147,44 +146,14 @@ describe('Load smoke (e2e)', () => {
     expect(sessionCount).toBe(BURST_SIZE);
   }, 30_000);
 
-  it('handles a concurrent registration burst with unique emails and no duplicate/orphaned rows', async () => {
-    if (!dbAvailable || !app) return;
-
-    const BURST_SIZE = 15;
-    const requests = Array.from({ length: BURST_SIZE }, (_, i) => ({
-      intent: 'owner' as const,
-      email: `${TEST_PREFIX}register-${i}-${randomUUID()}@example.com`,
-      password: 'AnotherSecurePass1!',
-      firstName: 'Load',
-      lastName: 'Smoke',
-      organizationName: `${TEST_PREFIX}org-${i}-${randomUUID()}`,
-      consents: { termsOfService: true, privacyPolicy: true },
-    }));
-
-    const responses = await Promise.all(
-      requests.map((body) =>
-        request(app!.getHttpServer()).post('/api/v1/auth/register').send(body),
-      ),
-    );
-
-    expect(responses).toHaveLength(BURST_SIZE);
-    const userIds = new Set<string>();
-    for (const response of responses) {
-      expect(response.status).toBe(201);
-      expect(userIds.has(response.body.data.userId)).toBe(false);
-      userIds.add(response.body.data.userId);
-    }
-    expect(userIds.size).toBe(BURST_SIZE);
-
-    const createdUsers = await prisma.user.count({
-      where: { email: { startsWith: `${TEST_PREFIX}register-` } },
-    });
-    const createdMemberships = await prisma.organizationMember.count({
-      where: { user: { email: { startsWith: `${TEST_PREFIX}register-` } } },
-    });
-    expect(createdUsers).toBe(BURST_SIZE);
-    expect(createdMemberships).toBe(BURST_SIZE);
-  }, 30_000);
+  // ADR-022 (Phase 2.23): the former "concurrent registration burst" smoke
+  // test exercised the now-retired public `/auth/register` (Owner
+  // self-registration). Restaurant Owners are provisioned exclusively via
+  // `POST /platform-admin/restaurant-owners` now; a concurrent-burst
+  // equivalent for that route belongs in the Platform Admin E2E suite (still
+  // pending — it needs its own Fonnte-free, Platform-Admin-authenticated
+  // fixture, which this generic load-smoke file deliberately does not set
+  // up), not a mechanical substitution here.
 
   it('remains healthy and responsive immediately after the concurrent bursts above', async () => {
     if (!dbAvailable || !app) return;

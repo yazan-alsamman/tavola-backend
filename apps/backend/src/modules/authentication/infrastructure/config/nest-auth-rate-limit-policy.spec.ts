@@ -11,6 +11,10 @@ function buildConfigService(overrides?: Partial<AuthConfig['rateLimits']>): Conf
       resetPassword: { max: 10, windowSeconds: 900 },
       register: { max: 5, windowSeconds: 3600 },
       changePassword: { max: 10, windowSeconds: 900 },
+      customerRegisterSend: { max: 5, windowSeconds: 3600 },
+      customerRegisterVerify: { max: 10, windowSeconds: 900 },
+      customerPasswordResetSend: { max: 5, windowSeconds: 3600 },
+      customerPasswordResetVerify: { max: 10, windowSeconds: 900 },
       ...overrides,
     },
   };

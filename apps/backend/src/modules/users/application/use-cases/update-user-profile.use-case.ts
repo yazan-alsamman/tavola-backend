@@ -66,7 +66,7 @@ export class UpdateUserProfileUseCase {
       userId: updated.userId.value,
       firstName: updated.firstName,
       lastName: updated.lastName,
-      email: updated.email.value,
+      email: updated.email?.value ?? null,
       phone: updated.phone,
       language: updated.language,
       preferredCurrency: updated.preferredCurrency,

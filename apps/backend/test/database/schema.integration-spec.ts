@@ -133,7 +133,6 @@ describe('Phase 2.1 database foundation (integration)', () => {
       'user',
       'tokenFamily',
       'deviceSession',
-      'emailVerificationToken',
       'passwordResetToken',
       'passwordHistory',
       'loginAttempt',

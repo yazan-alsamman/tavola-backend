@@ -20,7 +20,7 @@ export class GetCurrentUserProfileUseCase {
       userId: user.userId.value,
       firstName: user.firstName,
       lastName: user.lastName,
-      email: user.email.value,
+      email: user.email?.value ?? null,
       phone: user.phone,
       language: user.language,
       preferredCurrency: user.preferredCurrency,

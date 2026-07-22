@@ -17,8 +17,6 @@ import { ResponseMessage } from '@common/decorators/response-message.decorator';
 import { SkipResponseEnvelope } from '@common/decorators/skip-response-envelope.decorator';
 import { ApiErrorResponse } from '@common/decorators/api-error-response.decorator';
 import { ErrorResponseDto } from '@common/dto/error-response.dto';
-import { RegisterOrganizationOwnerUseCase } from '../../application/use-cases/register-organization-owner.use-case';
-import { VerifyEmailUseCase } from '../../application/use-cases/verify-email.use-case';
 import { LoginUseCase } from '../../application/use-cases/login.use-case';
 import { RefreshSessionUseCase } from '../../application/use-cases/refresh-session.use-case';
 import { LogoutCurrentSessionUseCase } from '../../application/use-cases/logout-current-session.use-case';
@@ -29,10 +27,6 @@ import { ForgotPasswordUseCase } from '../../application/use-cases/forgot-passwo
 import { ResetPasswordUseCase } from '../../application/use-cases/reset-password.use-case';
 import { ChangePasswordUseCase } from '../../application/use-cases/change-password.use-case';
 import { AuthenticatedActor } from '../../application/dto/authenticated-actor.dto';
-import { RegisterRequestDto } from '../dto/register.request.dto';
-import { RegisterResponseDto } from '../dto/register.response.dto';
-import { VerifyEmailRequestDto } from '../dto/verify-email.request.dto';
-import { VerifyEmailResponseDto } from '../dto/verify-email.response.dto';
 import { LoginRequestDto } from '../dto/login.request.dto';
 import { LoginResponseDto } from '../dto/login.response.dto';
 import { RefreshSessionRequestDto } from '../dto/refresh-session.request.dto';
@@ -44,7 +38,6 @@ import { ResetPasswordRequestDto } from '../dto/reset-password.request.dto';
 import { ResetPasswordResponseDto } from '../dto/reset-password.response.dto';
 import { ChangePasswordRequestDto } from '../dto/change-password.request.dto';
 import { ChangePasswordResponseDto } from '../dto/change-password.response.dto';
-import { RegisterOrganizationOwnerResult } from '../../application/dto/register-organization-owner.result';
 import { LoginResult } from '../../application/dto/login.result';
 import { RefreshSessionResult } from '../../application/dto/refresh-session.result';
 import { ChangePasswordResult } from '../../application/dto/change-password.result';
@@ -56,13 +49,19 @@ import { SessionVersionGuard } from '../guards/session-version.guard';
 import { RateLimitGuard } from '../guards/rate-limit.guard';
 import { resolveClientIp } from '../utils/resolve-client-ip.util';
 
+/**
+ * ADR-022 (Phase 2.23 closure): public Owner self-registration
+ * (`POST /auth/register`) and email verification (`POST /auth/verify-email`)
+ * are RETIRED - no surviving actor requires them (Customers never had
+ * email; Restaurant Owners are now provisioned only by Platform Admin via
+ * `POST /platform-admin/restaurant-owners`, with no verification step).
+ * See `DECISIONS.md` ADR-022 for the full retirement rationale.
+ */
 @ApiTags('Authentication')
 @ApiExtraModels(ErrorResponseDto)
 @Controller({ path: 'auth', version: '1' })
 export class AuthController {
   constructor(
-    private readonly registerOrganizationOwnerUseCase: RegisterOrganizationOwnerUseCase,
-    private readonly verifyEmailUseCase: VerifyEmailUseCase,
     private readonly loginUseCase: LoginUseCase,
     private readonly refreshSessionUseCase: RefreshSessionUseCase,
     private readonly logoutCurrentSessionUseCase: LogoutCurrentSessionUseCase,
@@ -73,61 +72,6 @@ export class AuthController {
     private readonly resetPasswordUseCase: ResetPasswordUseCase,
     private readonly changePasswordUseCase: ChangePasswordUseCase,
   ) {}
-
-  @Post('register')
-  @UseGuards(RateLimitGuard)
-  @RateLimit('register')
-  @HttpCode(HttpStatus.CREATED)
-  @ResponseMessage('Registration successful. Please verify your email.')
-  @ApiOperation({
-    operationId: 'authRegister',
-    summary: 'Register a new restaurant owner account and its Organization',
-    description:
-      'Creates a User in Unverified status and its first Organization/OrganizationMember in a single transaction. No session is issued - the account must be email-verified via POST /auth/verify-email before it can log in. Rate limited to 5 requests/hour/IP.',
-  })
-  @ApiResponse({ status: 201, description: 'Registration successful', type: RegisterResponseDto })
-  @ApiErrorResponse(400, 'Validation failure (weak password, missing consent, invalid input)', [
-    'VALIDATION_ERROR',
-  ])
-  @ApiErrorResponse(409, 'Email or organization slug already exists', ['CONFLICT'])
-  @ApiErrorResponse(429, 'Too many registration attempts from this IP', ['RATE_LIMIT_EXCEEDED'])
-  async register(
-    @Body() body: RegisterRequestDto,
-    @Req() request: Request,
-  ): Promise<RegisterResponseDto> {
-    const result = await this.registerOrganizationOwnerUseCase.execute({
-      email: body.email,
-      password: body.password,
-      firstName: body.firstName,
-      lastName: body.lastName,
-      phone: body.phone,
-      organizationName: body.organizationName,
-      consents: body.consents,
-      ipAddress: resolveClientIp(request),
-    });
-
-    return this.toRegisterResponse(result);
-  }
-
-  @Post('verify-email')
-  @HttpCode(HttpStatus.OK)
-  @ResponseMessage('Email verified successfully.')
-  @ApiOperation({
-    operationId: 'authVerifyEmail',
-    summary: 'Verify email address using a single-use opaque token',
-    description:
-      'Consumes the single-use token emailed at registration and transitions the User to Active status. The token is single-use and short-lived.',
-  })
-  @ApiResponse({ status: 200, description: 'Email verified', type: VerifyEmailResponseDto })
-  @ApiErrorResponse(401, 'Verification token is invalid, malformed, already consumed, or expired', [
-    'AUTH_INVALID_TOKEN',
-    'AUTH_EXPIRED_TOKEN',
-  ])
-  @ApiErrorResponse(404, 'No user found for the account referenced by this token', ['NOT_FOUND'])
-  @ApiErrorResponse(409, 'Email already verified', ['CONFLICT'])
-  async verifyEmail(@Body() body: VerifyEmailRequestDto): Promise<VerifyEmailResponseDto> {
-    return this.verifyEmailUseCase.execute({ token: body.token });
-  }
 
   @Post('login')
   @UseGuards(RateLimitGuard)
@@ -403,14 +347,6 @@ export class AuthController {
       actor,
       targetSessionId: sessionId,
     });
-  }
-
-  private toRegisterResponse(result: RegisterOrganizationOwnerResult): RegisterResponseDto {
-    return {
-      userId: result.userId,
-      email: result.email,
-      status: result.status,
-    };
   }
 
   private toLoginResponse(result: LoginResult): LoginResponseDto {

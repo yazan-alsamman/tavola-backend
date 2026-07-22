@@ -49,6 +49,7 @@
     "ioredis": "^5.4.1",
     "joi": "^17.13.3",
     "jsonwebtoken": "^9.0.3",
+    "libphonenumber-js": "^1.13.9",
     "minio": "^8.0.1",
     "nestjs-pino": "^4.1.0",
     "pino": "^9.4.0",

@@ -10,14 +10,14 @@ export class UserProfileResponseDto {
   @ApiProperty({ example: '11111111-1111-4111-8111-111111111111' })
   userId!: string;
 
-  @ApiProperty({ example: 'Jane' })
-  firstName!: string;
+  @ApiPropertyOptional({ example: 'Jane', nullable: true })
+  firstName!: string | null;
 
-  @ApiProperty({ example: 'Doe' })
-  lastName!: string;
+  @ApiPropertyOptional({ example: 'Doe', nullable: true })
+  lastName!: string | null;
 
-  @ApiProperty({ example: 'jane.doe@example.com' })
-  email!: string;
+  @ApiPropertyOptional({ example: 'jane.doe@example.com', nullable: true })
+  email!: string | null;
 
   @ApiPropertyOptional({ example: '+963900000000', nullable: true })
   phone!: string | null;

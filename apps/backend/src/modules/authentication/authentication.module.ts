@@ -1,9 +1,7 @@
-﻿import { Module } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { PrismaModule } from '@infrastructure/prisma/prisma.module';
 import { AuthorizationModule } from '@modules/authorization/authorization.module';
 import { OrganizationsModule } from '@modules/organizations/organizations.module';
-import { RegisterOrganizationOwnerUseCase } from './application/use-cases/register-organization-owner.use-case';
-import { VerifyEmailUseCase } from './application/use-cases/verify-email.use-case';
 import { LoginUseCase } from './application/use-cases/login.use-case';
 import { RefreshSessionUseCase } from './application/use-cases/refresh-session.use-case';
 import { LogoutCurrentSessionUseCase } from './application/use-cases/logout-current-session.use-case';
@@ -13,17 +11,29 @@ import { RevokeSessionUseCase } from './application/use-cases/revoke-session.use
 import { ForgotPasswordUseCase } from './application/use-cases/forgot-password.use-case';
 import { ResetPasswordUseCase } from './application/use-cases/reset-password.use-case';
 import { ChangePasswordUseCase } from './application/use-cases/change-password.use-case';
+import { StartCustomerRegistrationUseCase } from './application/use-cases/start-customer-registration.use-case';
+import { ResendCustomerRegistrationUseCase } from './application/use-cases/resend-customer-registration.use-case';
+import { VerifyCustomerRegistrationUseCase } from './application/use-cases/verify-customer-registration.use-case';
+import { CompleteCustomerRegistrationUseCase } from './application/use-cases/complete-customer-registration.use-case';
+import { CustomerLoginUseCase } from './application/use-cases/customer-login.use-case';
+import { StartCustomerPasswordResetUseCase } from './application/use-cases/start-customer-password-reset.use-case';
+import { ResendCustomerPasswordResetUseCase } from './application/use-cases/resend-customer-password-reset.use-case';
+import { VerifyCustomerPasswordResetUseCase } from './application/use-cases/verify-customer-password-reset.use-case';
+import { CompleteCustomerPasswordResetUseCase } from './application/use-cases/complete-customer-password-reset.use-case';
+import { ProvisionRestaurantOwnerUseCase } from './application/use-cases/provision-restaurant-owner.use-case';
 import { AuthController } from './presentation/controllers/auth.controller';
+import { CustomerAuthController } from './presentation/controllers/customer-auth.controller';
 import { JwtAuthGuard } from './presentation/guards/jwt-auth.guard';
 import { SessionVersionGuard } from './presentation/guards/session-version.guard';
 import { RateLimitGuard } from './presentation/guards/rate-limit.guard';
 import { Argon2PasswordHasher } from './infrastructure/security/argon2-password-hasher';
 import { Sha256OpaqueTokenService } from './infrastructure/security/sha256-opaque-token.service';
 import { JwtTokenService } from './infrastructure/security/jwt-token.service';
-import {
-  PrismaEmailVerificationRepository,
-  PrismaUserRepository,
-} from './infrastructure/persistence/prisma-user.repository';
+import { PrismaUserRepository } from './infrastructure/persistence/prisma-user.repository';
+import { PrismaPendingCustomerRegistrationRepository } from './infrastructure/persistence/prisma-pending-customer-registration.repository';
+import { PrismaCustomerPasswordResetRepository } from './infrastructure/persistence/prisma-customer-password-reset.repository';
+import { CryptoOtpService } from './infrastructure/security/otp.service';
+import { FonnteVerificationMessagingAdapter } from './infrastructure/messaging/fonnte-verification-messaging.adapter';
 import { PrismaDeviceSessionRepository } from './infrastructure/persistence/prisma-device-session.repository';
 import { PrismaTokenFamilyRepository } from './infrastructure/persistence/prisma-token-family.repository';
 import { PrismaLoginAttemptRepository } from './infrastructure/persistence/prisma-login-attempt.repository';
@@ -44,18 +54,21 @@ import { RedisSlidingWindowRateLimiter } from './infrastructure/redis/redis-slid
 import { AUTH_TOKEN_TTL } from './application/ports/auth-token-ttl.port';
 import { AUTH_RATE_LIMIT_POLICY } from './application/ports/auth-rate-limit-policy.port';
 import { LOGIN_ORGANIZATION_READER } from './application/ports/login-organization-reader.port';
+import { VERIFICATION_MESSAGING } from './application/ports/verification-messaging.port';
 import {
   AUTH_REFRESH_POLICY,
   CLOCK,
   DEVICE_SESSION_REPOSITORY,
-  EMAIL_VERIFICATION_REPOSITORY,
   EVENT_PUBLISHER,
   ID_GENERATOR,
   LOGIN_ATTEMPT_REPOSITORY,
   OPAQUE_TOKEN_SERVICE,
+  OTP_SERVICE,
   PASSWORD_HASHER,
   PASSWORD_HISTORY_REPOSITORY,
   PASSWORD_RESET_REPOSITORY,
+  PENDING_CUSTOMER_REGISTRATION_REPOSITORY,
+  CUSTOMER_PASSWORD_RESET_REPOSITORY,
   RATE_LIMITER,
   SYSTEM_CONFIGURATION,
   TOKEN_FAMILY_REPOSITORY,
@@ -65,12 +78,16 @@ import {
   USER_REPOSITORY,
 } from './domain/tokens/authentication.tokens';
 
+/**
+ * ADR-022 (Phase 2.23 closure): `EmailVerificationRepository`/
+ * `PrismaEmailVerificationRepository`/`EMAIL_VERIFICATION_REPOSITORY` and
+ * `RegisterOrganizationOwnerUseCase`/`VerifyEmailUseCase` are RETIRED - no
+ * surviving actor requires them. See `DECISIONS.md` ADR-022.
+ */
 @Module({
   imports: [PrismaModule, AuthorizationModule, OrganizationsModule],
-  controllers: [AuthController],
+  controllers: [AuthController, CustomerAuthController],
   providers: [
-    RegisterOrganizationOwnerUseCase,
-    VerifyEmailUseCase,
     LoginUseCase,
     RefreshSessionUseCase,
     LogoutCurrentSessionUseCase,
@@ -80,6 +97,16 @@ import {
     ForgotPasswordUseCase,
     ResetPasswordUseCase,
     ChangePasswordUseCase,
+    StartCustomerRegistrationUseCase,
+    ResendCustomerRegistrationUseCase,
+    VerifyCustomerRegistrationUseCase,
+    CompleteCustomerRegistrationUseCase,
+    CustomerLoginUseCase,
+    StartCustomerPasswordResetUseCase,
+    ResendCustomerPasswordResetUseCase,
+    VerifyCustomerPasswordResetUseCase,
+    CompleteCustomerPasswordResetUseCase,
+    ProvisionRestaurantOwnerUseCase,
     JwtAuthGuard,
     SessionVersionGuard,
     RateLimitGuard,
@@ -91,7 +118,10 @@ import {
     NestAuthRateLimitPolicy,
     RedisSlidingWindowRateLimiter,
     PrismaUserRepository,
-    PrismaEmailVerificationRepository,
+    PrismaPendingCustomerRegistrationRepository,
+    PrismaCustomerPasswordResetRepository,
+    CryptoOtpService,
+    FonnteVerificationMessagingAdapter,
     PrismaDeviceSessionRepository,
     PrismaTokenFamilyRepository,
     PrismaLoginAttemptRepository,
@@ -110,9 +140,15 @@ import {
     { provide: TOKEN_SERVICE, useExisting: JwtTokenService },
     { provide: USER_REPOSITORY, useExisting: PrismaUserRepository },
     {
-      provide: EMAIL_VERIFICATION_REPOSITORY,
-      useExisting: PrismaEmailVerificationRepository,
+      provide: PENDING_CUSTOMER_REGISTRATION_REPOSITORY,
+      useExisting: PrismaPendingCustomerRegistrationRepository,
     },
+    {
+      provide: CUSTOMER_PASSWORD_RESET_REPOSITORY,
+      useExisting: PrismaCustomerPasswordResetRepository,
+    },
+    { provide: OTP_SERVICE, useExisting: CryptoOtpService },
+    { provide: VERIFICATION_MESSAGING, useExisting: FonnteVerificationMessagingAdapter },
     {
       provide: PASSWORD_RESET_REPOSITORY,
       useExisting: PrismaPasswordResetRepository,
@@ -150,7 +186,6 @@ import {
     OPAQUE_TOKEN_SERVICE,
     TOKEN_SERVICE,
     USER_REPOSITORY,
-    EMAIL_VERIFICATION_REPOSITORY,
     PASSWORD_RESET_REPOSITORY,
     PASSWORD_HISTORY_REPOSITORY,
     DEVICE_SESSION_REPOSITORY,
@@ -170,8 +205,6 @@ import {
     JwtAuthGuard,
     SessionVersionGuard,
     RateLimitGuard,
-    RegisterOrganizationOwnerUseCase,
-    VerifyEmailUseCase,
     LoginUseCase,
     RefreshSessionUseCase,
     LogoutCurrentSessionUseCase,
@@ -181,6 +214,7 @@ import {
     ForgotPasswordUseCase,
     ResetPasswordUseCase,
     ChangePasswordUseCase,
+    ProvisionRestaurantOwnerUseCase,
   ],
 })
 export class AuthenticationModule {}

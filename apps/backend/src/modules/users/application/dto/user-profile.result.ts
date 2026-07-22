@@ -6,9 +6,12 @@
  */
 export interface UserProfileResult {
   userId: string;
-  firstName: string;
-  lastName: string;
-  email: string;
+  // ADR-022 (Phase 2.23): nullable — a Customer (phone-first, no name/email
+  // collected at registration) can now reach this actor-agnostic endpoint
+  // too, not only Restaurant Owner/staff.
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
   phone: string | null;
   language: string;
   preferredCurrency: string | null;

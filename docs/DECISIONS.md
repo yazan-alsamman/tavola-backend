@@ -665,7 +665,7 @@ Affects: ARCHITECTURE.md (Realtime Architecture section), Infrastructure layer (
 
 ### Authentication & Session Strategy
 
-Status: Accepted (Phase 2.0 Architecture)
+Status: Accepted (Phase 2.0 Architecture). **Partially superseded by ADR-022** (2026-07-22) for two specific clauses only — item 4's email-verification gate no longer applies to (a) customer/`User` registration (replaced by phone/WhatsApp verification) or (b) administratively-provisioned Restaurant Owner accounts (no verification step at all). All other ADR-016 mechanics — dual actor model, opaque refresh rotation, short-lived access JWT, Argon2id, the two RBAC layers, tenant context binding — remain fully Accepted and unchanged. This Status line is the only part of this ADR touched by ADR-022, per this document's immutability rule (§ "Rules" below; same convention as ADR-009's `Superseded by ADR-011 and ADR-012` annotation).
 
 Date: 2026-07-07
 
@@ -884,6 +884,226 @@ Subscriptions and payments were modeled (`Payments`, `PaymentTransactions`) but 
 
 * Payment provider ADR (provider selection) remains open; invoice structure is provider-agnostic.
 * Impact: Phase 13, `DATABASE_SCHEMA.md`, `EVENTS.md`.
+
+---
+
+## ADR-022
+
+### Phone/WhatsApp-First Customer Registration (Fonnte) & Administratively-Provisioned Restaurant Owners
+
+Status: **Accepted — Architecture Frozen. Implementation COMPLETE, live-verified, production-verified (Phase 2.23, 2026-07-22 — see `TASKS.md`'s Phase 2.23 closure report).**
+
+Date: 2026-07-22 (Proposed) → 2026-07-22 (Accepted)
+
+#### Context
+
+`ADR-016` established an email-verification gate as a locked security primitive for `User` registration (`ARCHITECTURE_LOCK.md`: *"Email verification gate before login"*; `PRODUCT_REQUIREMENTS.md` FR-01.1: *"Email/password registration with email verification gate"*). Prior to this ADR, customer (`intent=customer`) registration was never implemented in code — only Organization Owner self-registration (`intent=owner`) exists (`RegisterOrganizationOwnerUseCase`, public `POST /auth/register`), which uses email/password and a (currently delivery-less) email-verification token.
+
+Approved product direction (2026-07-22) establishes **two structurally distinct identity/provisioning models that must not be merged**:
+
+* **Customers** (`User`, phone-first): `username + phone` → WhatsApp OTP via Fonnte → verify → set password → account created/active. No email is collected or required. No email verification exists for this actor.
+* **Restaurant Owners**: **not** publicly self-registered. Provisioned administratively by a Platform/System Admin, using email + password. **No email-verification step applies** — an administratively-created account is immediately eligible to authenticate under the account-status rules already governing administratively-provisioned accounts (ADR-016 §"User Lifecycle").
+
+This corrects the original ADR-022 proposal's assumption that Owner registration would continue unchanged as public self-registration with email verification — that assumption is rejected. See Decision #1 and "Owner Provisioning Model Change" below.
+
+#### Decision
+
+**1. Email verification is removed as a requirement for both affected actors, for different reasons, and is retained only where a genuine remaining consumer exists (see "Email-Verification Subsystem Impact").**
+- Customers never had it and never will (phone/WhatsApp replaces it entirely).
+- Restaurant Owners no longer need it because they are no longer publicly self-registering: an administratively-provisioned account is created directly in an authenticatable state by a trusted internal actor (the Platform Admin), the same trust boundary that already lets `$systemContext`/`PlatformAdmin` bypass tenant scoping (`AUTHORIZATION_ARCHITECTURE.md` §"Principals"). Verifying an email address the account holder didn't even submit themselves (the admin did) provides no security benefit.
+
+**2. Customer registration lifecycle (frozen):**
+```
+START (username + phone, E.164)
+  → send 6-digit OTP via WhatsApp (Fonnte)
+VERIFY (OTP)
+  → COMPLETE only unlocked for this exact pending registration
+COMPLETE (set password)
+  → real User row created, status Active, phone as login identity
+RESEND (separate Domain Action, invalidates + reissues, subject to same rate limits)
+```
+No `User` row exists in any form until `COMPLETE` succeeds (ADR Note A, unchanged from the Proposed draft).
+
+**3. Restaurant Owner provisioning lifecycle (frozen):**
+```
+Platform Admin (authenticated, PlatformAdminGuard-protected) provisions Owner
+  → User row created directly: email + password (Argon2id), status Active
+  → no verification token issued, no verification step exists
+  → Owner may authenticate (email + password) immediately
+```
+This is **not** a new registration flow to design from scratch — it reuses `RegisterOrganizationOwnerUseCase`'s existing transactional shape (User + Organization + OrganizationMember(Owner) + UserConsent in one transaction) minus the email-verification-token step, invoked by an authenticated Platform Admin action instead of an anonymous public request. See "System/Platform Admin Provisioning" below for what already exists vs. what remains an implementation dependency.
+
+**4. Phone is the canonical identity attribute for customer accounts** (canonical E.164, produced by the normalization rule in "Country Code Selection / Phone Normalization" below), used identically for uniqueness, OTP delivery, verification, promotion, and login lookup. Email remains the canonical identity attribute for Owner accounts, unchanged.
+
+**5. Fonnte isolated behind `VerificationMessagingPort`** (application port) → `FonnteVerificationMessagingAdapter` (infrastructure). `FONNTE_API_TOKEN` via validated environment configuration only. Delivery is **synchronous** (not BullMQ) — the customer is actively waiting for the code; a bounded/fast provider timeout is required, and provider failures are translated to a closed result type before reaching application code (see "Fonnte Integration Boundary").
+
+**6. OTP security/lifecycle (all frozen, all approved explicitly — none invented):**
+
+| Parameter | Value |
+|---|---|
+| Format | Exactly 6 numeric digits, zero-padding allowed (e.g. `004821`) |
+| Generation | Cryptographically secure RNG (`crypto.randomInt`), never `Sha256OpaqueTokenService`'s 256-bit generator (wrong shape/entropy profile) |
+| Storage | Hash only, never plaintext — same hash-at-rest convention as `EmailVerificationToken.tokenHash` |
+| Expiration | 5 minutes |
+| Max incorrect attempts | 5 per issued OTP; on the 5th failure the OTP becomes unusable and a new one must be requested — **no automatic silent reissue** |
+| Resend cooldown | 60 seconds; a request before cooldown expiry is rejected via the project's existing rate-limit error convention (`429`, `RATE_LIMIT_EXCEEDED`) |
+| Send/resend rate limit | Max 5 OTP sends per phone number per rolling hour (initial send + resends combined) |
+| Verification rate limit | Max 10 verification requests per 15 minutes per phone/IP scope — independent of, and in addition to, the 5-incorrect-attempts-per-code cap |
+| Resend model | Immediately invalidates the previous OTP, generates a completely new one, stores only the new hash, resets the per-code attempt counter to zero; does not bypass send/resend rate limits |
+| Success invalidation | Successful verification invalidates every other outstanding code/challenge for that phone number; verification is single-use; a consumed challenge cannot be replayed |
+
+Never logged/audited/returned by any API response/Swagger example in either plaintext or the codebase's existing OTP-redaction convention (`NON_FUNCTIONAL_REQUIREMENTS.md` already lists "OTP codes" in its never-log list, pre-existing this ADR).
+
+**7. Pending-registration model (frozen shape, per-field minimalism required):** a dedicated entity separate from `User` — following the project's own precedent that `Employee.userId` is nullable specifically so an Employee can be invited/persisted before any `User` identity exists, later linked via `activateAndLink()`. Required fields, and only these: `username`, canonical E.164 `phone`, OTP `codeHash`, `codeExpiresAt`, `incorrectAttemptCount`, verification state + `verifiedAt`, consumed/completed state, `createdAt`/`updatedAt`. Cleanup of abandoned (expired, never-completed) rows is required, but no authoritative retention duration exists anywhere in this repository (`EmailVerificationToken`/`PasswordResetToken` rows are never purged today — confirmed, no cleanup job exists in the codebase) — this single duration is the one item in this ADR left as a narrow open decision (see "Remaining Open Items").
+
+**8. API lifecycle — four Domain Actions, frozen in shape and count:** Start, Resend, Verify, Complete. `COMPLETE` is only reachable after `VERIFY` succeeded for the *same* pending-registration record (never a different phone/session); a pending registration cannot be promoted twice; verifying phone A never authorizes completing phone B. ~~Concrete route names, derived (not invented) from this repository's existing flat, kebab-case, verb-object `/auth/*` convention... `POST /auth/register-customer`, `POST /auth/resend-phone-verification`, `POST /auth/verify-phone`, `POST /auth/complete-customer-registration`... a costless, non-architectural rename~~ — **superseded by Decision #17 below (2026-07-22): the exact route names are now explicitly frozen by product decision under a nested `/auth/customer/...` namespace, not the flat derivation originally proposed here.** The four-operation shape and per-operation invariants stated above remain authoritative and unchanged; only the literal route strings changed.
+
+**9. Phone-uniqueness enforcement mechanism (resolved — no actor discriminator introduced):** `User.phone` changes from a non-unique index to a **nullable unique constraint** (`UNIQUE` allows multiple `NULL`s in PostgreSQL). This is the smallest safe mechanism: it makes "no two customers share a phone" absolute while leaving Owner rows (`phone = NULL`) completely unconstrained — exactly the same shape of solution as `EmailVerificationToken`/`PasswordResetToken` already use nullable-optional relationships without a discriminator column. `User.username` follows the identical pattern (nullable, unique, absent for Owner rows). No actor-type/discriminator column is introduced on `User` — the existing model, extended with two nullable-unique columns, is sufficient. Case-insensitive comparison for `username` (citext column type vs. a normalized shadow column) is a schema-design detail deferred to the implementation phase, not a product/architecture decision blocking this ADR.
+
+**10. Customer login: phone + password. Owner login: email + password. No single ambiguous client-controlled "identifier" field** — two actor-appropriate authentication paths (either two endpoints, or one endpoint with two mutually-exclusive, explicitly-typed request shapes — an implementation detail, not decided here), consistent with the instruction to prefer explicit semantics over an ambiguous identifier. All ADR-016 mechanics unrelated to the identifier itself are **fully preserved, unchanged, for both paths**: Argon2id hashing, access JWT, opaque refresh tokens + rotation, `DeviceSession`, `TokenFamily`, `sessionVersion`, `permissionsVersion` (where applicable), reuse detection, logout/revocation behavior. `UserRepository` gains a `findByPhone` method alongside its existing `findByEmail` — an additive port change, not a redesign.
+
+**11. Employee invite-linking is NOT converted to phone.** It remains email-keyed exactly as implemented today (`LoginUseCase`'s `findUnlinkedInvitedByEmail`), because Restaurant Owners and staff are administratively/email-based identities, not customer-phone identities, and no approved requirement says otherwise. A phone-only customer `User` who is later invited as staff cannot be matched by this mechanism today — this is a real, acknowledged gap, but per explicit instruction it is **not resolved inside this ADR**. Any future cross-identity linking rule (e.g., matching by a staff-supplied phone number, or requiring the customer to add an email at invite time) is deferred to a separate, future architecture decision, not invented here.
+
+**12. No customer email-registration fallback exists or is planned.** Customer registration is phone-first only, permanently, per this ADR — there was never a prior email-based customer flow to fall back to (it was never implemented), so this is a clarification, not a removal.
+
+**13. Country Code Selection / Phone Normalization (approved, 2026-07-22 — supersedes both the original Proposed-draft wording and a later, incorrect interpretation of it):**
+
+This decision replaces two prior formulations, neither of which is authoritative any longer: (a) the original ADR-022 text *"the client must provide an explicit international phone number including country code; do not infer a default country"*, and (b) a subsequent, incorrect reading of that text as meaning the backend should assume `+963` whenever a country code is absent. **The authoritative rule is:**
+
+> The TAVLA mobile application's Country Code Picker defaults to **Syria (+963)**, while allowing the customer to select any other supported country. The backend validates and normalizes the *selected country calling code* plus the *entered national/local number* into canonical E.164 before the value is used for persistence, uniqueness checks, OTP delivery, verification, or authentication.
+
+Precise distinction (must not be conflated):
+- **Default country** (`+963`, Syria) is a **mobile UX default** — the picker's preselected value, changeable by the customer. It is not a backend assumption, a registration restriction, or a fallback applied when a country code is "missing."
+- **Supported country** is any country the app's phone-validation and Fonnte/WhatsApp delivery capabilities cover — not limited to Syria. A customer who selects `+971` (UAE) or any other supported country must have that selection respected exactly; the backend must never substitute `+963` for an explicitly selected non-Syrian code.
+
+Worked examples (illustrative, not exhaustive): selecting Syria (+963) and entering local number `0912345678` normalizes to `+963912345678` (leading trunk `0` dropped, `963` prepended); selecting UAE (+971) and entering a local number normalizes to `+971`+the national significant number, never `+963...`.
+
+Responsibility split (frozen):
+- **Mobile**: renders the Country Code Picker, preselects Syria (+963), lets the customer pick another supported country, collects the national/local number separately from the country selection, and sends the backend enough information to reconstruct the selection (i.e., the app must not silently collapse the picker's selection and the national number into an ambiguous single string the backend has to guess apart).
+- **Backend**: is the **authoritative normalization boundary** — never trusts client-side formatting alone, independently validates the selected calling code against the entered national number, produces canonical E.164, and rejects invalid combinations. The backend never stores only the local/national number as the identity — only canonical E.164 is ever persisted, checked for uniqueness, or handed to the Fonnte adapter (§"Fonnte Integration Boundary" still strips the leading `+` only at that adapter boundary, unchanged).
+- Equivalent representations of the same number (e.g., with/without leading trunk zero, differing separators) must resolve to one canonical identity; uniqueness checks are always performed against the canonical form, never raw input.
+
+This item was previously implicitly covered by Decision #4's shorthand ("explicit country code, no default-country inference") and by `DOMAIN_MODEL.md`'s `PhoneNumber` VO note — both are now superseded by this fuller, unambiguous statement and have been updated to reference it rather than repeat the old shorthand.
+
+**14. Phone parsing/normalization library — `libphonenumber-js` (approved, 2026-07-22, not yet installed).** Resolves the Phase 2.23 Implementation Planning Report's open item: this repository has no phone-parsing dependency today (confirmed by reading `apps/backend/package.json` directly). Hand-rolled international phone parsing is explicitly rejected. `libphonenumber-js` is the approved library for validating the selected calling-code/national-number combination (Decision #13) and producing canonical E.164. Adding the dependency (package.json + lockfile) is implementation work, out of scope for this documentation-only decision.
+
+**15. Restaurant Owner provisioning — password delivery is out of backend scope (approved, 2026-07-22).** The Platform Admin sets the Owner's password directly at creation time; the backend's only responsibility is to hash (Argon2id) and persist it, exactly as every other password-setting path already does. **There is no password-delivery mechanism in Phase 2.23** — no email, no WhatsApp/Fonnte message, no temporary-password service, no automatic reset-link generation as part of provisioning, and no new email provider. Credential communication from Platform Admin to Owner is an out-of-band operational responsibility, not a backend concern. Mandatory first-login password change is **not** introduced by this decision — it applies only if some other already-frozen architecture independently requires it (none does today). Lifecycle: `Platform Admin creates Owner → Owner account is immediately usable → Owner logs in with email + password` (§15.2 unchanged otherwise).
+
+**16. Customer password recovery — phone/WhatsApp OTP, frozen (approved, 2026-07-22).** Resolves the Planning Report's flagged architectural gap. Customers have no email, so recovery cannot reuse the Owner's email-based `forgot-password`/`reset-password` flow (Decision: **do not reuse it for Customers**). Frozen Customer recovery lifecycle:
+```
+START (canonical E.164 phone)
+  → send 6-digit OTP via WhatsApp (Fonnte)
+VERIFY (OTP)
+  → establishes a verified, not-yet-consumed recovery state; does NOT itself change the password
+COMPLETE (new password)
+  → password changes only here, after successful OTP verification; consumes the recovery state atomically
+RESEND (separate Domain Action, same cooldown/rate-limit rules as registration)
+```
+Reuses, unmodified, every OTP security rule already frozen for registration (Decision #6): 6 numeric digits, crypto-secure generation, hash-only storage, 5-minute expiry, max 5 incorrect attempts, 60s resend cooldown, 5 sends/phone/hour, 10 verify requests/15min, resend invalidates+reissues, single-use/replay-safe. The recovery challenge is a **separate persisted concept from the registration pending-record** (an existing Customer's phone is being re-verified, not a new username/phone pair being claimed) — see "Database Impact" note below. Enumeration resistance applies identically to this flow: whether an arbitrary phone belongs to an account must not be distinguishable via response behavior. **Restaurant Owner and Employee/staff password recovery are unchanged** — Owner keeps the existing email-based `forgot-password`/`reset-password` flow exactly as implemented today; no cross-identity recovery is introduced.
+
+**17. Final frozen API surface (approved, 2026-07-22 — supersedes Decision #8's provisional route names, which were explicitly non-final).** Verified against the real repository: no existing controller anywhere uses a `platform-admin`-prefixed or `/auth/customer/...`-nested route today (the `platform-admin` module is an empty scaffold with no controller at all), so freezing these exact names introduces no conflict with an established convention.
+
+*Customer registration:*
+- `POST /auth/customer/register/start` — body conceptually `{ username, countryCode, phoneNumber }`; normalizes to canonical E.164; validates username/phone availability; applies Decision #18's concurrency rule; generates and sends OTP.
+- `POST /auth/customer/register/resend`
+- `POST /auth/customer/register/verify`
+- `POST /auth/customer/register/complete` — requires a verified, unconsumed pending registration; input includes the chosen password; creates the real Customer `User` and consumes the pending registration atomically.
+
+*Customer login:*
+- `POST /auth/customer/login` — body `{ countryCode, phoneNumber, password }`; backend normalizes to canonical E.164 before lookup. A separate contract from Owner/staff login — **not** a discriminated union on the existing DTO.
+
+*Owner/staff login (unchanged):*
+- `POST /auth/login` — email + password, as today.
+
+*Owner provisioning:*
+- `POST /platform-admin/restaurant-owners` — authenticated, Platform-Admin-only; creates the Owner using email + password + existing required organization-owner data; no verification step follows.
+- The existing public `POST /auth/register` **must not remain** a public Owner self-registration endpoint (unchanged conclusion from "Owner Provisioning Model Change" below, now with a concrete replacement route named).
+
+*Customer password recovery:*
+- `POST /auth/customer/password-reset/start`
+- `POST /auth/customer/password-reset/resend`
+- `POST /auth/customer/password-reset/verify`
+- `POST /auth/customer/password-reset/complete`
+
+*Unchanged, identifier-agnostic (no route or contract change):* `POST /auth/refresh`, `POST /auth/logout`, `POST /auth/logout-all`, `GET/DELETE /auth/sessions[...]`, `POST /auth/change-password`.
+
+**18. Repeated START / one-active-pending-registration-per-phone (approved, 2026-07-22).** At most one active pending Customer registration may exist per canonical phone at any time. A second valid `START` for the same phone is a **restart/reissue** of the existing pending registration, not a second parallel one: the previous active OTP is invalidated, a new OTP is generated, the incorrect-attempt counter resets, the same resend/send rate limits apply (this does not bypass them), no `User` is created, and username/phone uniqueness checks are not bypassed. Concurrency (two simultaneous `START`s for the same phone) must be protected at the database/application transaction boundary so exactly one active registration identity can ever exist per phone — never two. This is the same one-active-record-per-key shape already proven by `EmailVerificationRepository.invalidateActiveByUserId` + `save`, applied to phone instead of `userId`.
+
+#### Owner Provisioning Model Change (supersedes the original ADR-022 Proposed-draft assumption)
+
+The Proposed draft of this ADR assumed Organization Owner registration would continue unchanged (public self-registration, email + password, email-verification token retained). **That assumption is rejected by this Accepted decision.** The authoritative Owner model is: administratively provisioned only, by a Platform/System Admin, email + password, no verification step, immediately authenticatable. See "System/Platform Admin Provisioning" for what currently exists in code vs. what remains to be built — the absence of a working admin-provisioning endpoint today is an **implementation dependency**, not a reopening of this product decision.
+
+One direct consequence, recorded here rather than silently left implicit: the **currently implemented** `RegisterOrganizationOwnerUseCase` / public `POST /auth/register` endpoint is public self-registration for Owners — which the newly-frozen model says must not exist going forward. This is not touched in this documentation-only task (no code changes were made), but it is now a **redesign/deprecation candidate** for the same future implementation phase that builds admin-provisioning, and must not be mistaken for already-compliant just because it currently exists and passes tests.
+
+#### ADR Note A — Account-Creation Semantics (unchanged from Proposed draft)
+
+No `User` row (and therefore no login capability, session, or JWT) may exist for a customer until both phone verification and password-setting are complete. The pending-registration entity's existence as a separate concept from `User` is decided; its exact field list is frozen in Decision #7.
+
+#### Alternatives Considered
+
+* **Generalizing `EmailVerificationToken` into a channel-agnostic verification-token table** — rejected (unchanged reasoning from the Proposed draft): conflates two materially different security profiles.
+* **Creating an `Active`/`Pending` `User` row immediately at Start** — rejected (unchanged reasoning): contradicts the explicit account-creation-order requirement and would force a nullable `passwordHash`.
+* **Keeping Owner self-registration as-is, only removing its email-verification step** — rejected: the approved product decision is explicit that Owners are administratively provisioned, not self-registered at all; removing only the verification step while keeping public self-registration would not match the approved model.
+* **A single polymorphic login "identifier" field accepting either email or phone** — rejected per explicit instruction: prefer actor-appropriate explicit semantics over a client-controlled ambiguous field.
+* **Converting Employee invite-linking to phone-keyed matching** — rejected per explicit instruction: staff/Owner identity is not a customer-phone identity; no approved requirement justifies this change, and doing so would conflate two distinct identity models this ADR is expressly designed to keep separate.
+
+#### Consequences
+
+* Positive: Customer registration no longer depends on email deliverability; Owner provisioning gets a proper administrative trust boundary instead of open self-registration.
+* Positive: Reuses established Clean Architecture conventions throughout (ports/adapters, `UnitOfWorkPort`, `SystemConfigurationPort`, hash-at-rest tokens, existing rate-limit infrastructure) — no new architectural pattern introduced.
+* Negative: Introduces Fonnte as a new external SaaS dependency and a new failure domain that must not leak into the public API.
+* Negative: `PlatformAdminGuard` and an Owner-provisioning use case do not yet exist in code (see "System/Platform Admin Provisioning") — a real implementation dependency for the eventual implementation phase, not a blocker to freezing this architecture.
+* Negative: The existing public Owner self-registration endpoint is now a deprecation/redesign candidate, meaning Phase 2.23's implementation scope is larger than "add customer registration" — it also includes retiring/replacing the existing Owner self-registration path to match the frozen model.
+* Neutral/Deferred: Employee invite-linking's email-only matching leaves a known, accepted gap for phone-only customers who later become staff — explicitly deferred to a future ADR, not resolved here.
+
+#### Fonnte Integration Boundary
+
+`Application → VerificationMessagingPort (interface) → FonnteVerificationMessagingAdapter (infrastructure) → Fonnte HTTP API`. Domain/application code never depends on Fonnte HTTP payloads, response objects, status codes, error strings, or SDK-specific types.
+
+**Verified Fonnte HTTP Contract** (fetched from Fonnte's official documentation at `docs.fonnte.com` during this architecture-finalization task — not called, no message sent, informational only):
+
+| Aspect | Verified value |
+|---|---|
+| Endpoint | `POST https://api.fonnte.com/send` |
+| Auth header | `Authorization: <token>` — plain token value, **no** `Bearer` prefix |
+| Required body fields | `target` (string; phone number(s), comma-separated for multiple), `message` (string, ≤60,000 chars) |
+| Target format | Fonnte expects the number **without** a leading `+` (E.164's `+` must be stripped by the adapter before sending — a boundary-only conversion, never a change to the canonical stored E.164 value); Fonnte auto-prepends country code `62` only to numbers with a leading `0`, which correctly-formed E.164 numbers never have |
+| Success response | `{"status": true, "detail": "...", "id": [...], "process": "pending", "requestid": ..., "target": [...]}` |
+| Failure response | `{"status": false, "reason": "...", "requestid": ...}` — documented reasons include invalid token, mismatched device, invalid target format, insufficient quota |
+| Timeout | Not mandated by Fonnte's documentation — the adapter must set its own explicit bounded timeout (a synchronous-call implementation detail, not a value this ADR fixes) |
+
+This satisfies the requirement to verify the contract before implementation begins; the adapter itself is not implemented in this task.
+
+#### System/Platform Admin Provisioning — Findings
+
+`PlatformAdmin` already exists as a real, persisted concept: `schema.prisma`'s `PlatformAdmin` model (`id`, `userId` unique, `createdAt`, `revokedAt`) and a `PlatformAdmin` `actorType` already recognized in JWT claims (`access-token-claims.ts`, `authenticated-actor.dto.ts`) and documented in `AUTHORIZATION_ARCHITECTURE.md` (*"Platform | `PlatformAdmin` | Above all tenants"*, `$systemContext` escape hatch). **This is the correct, existing actor for Owner provisioning — no new administrator type is introduced.**
+
+However, **`PlatformAdminGuard` is explicitly documented as unbuilt** (`TASKS.md` Phase 2.15: *"`PlatformAdminGuard`... remain explicitly out of scope and unbuilt"*), and no Owner-provisioning use case/endpoint exists in code today. This is a genuine implementation dependency for the phase that builds this feature — it does **not** reopen or block this product decision, per explicit instruction; it is recorded here so the future implementation phase knows `PlatformAdminGuard` must be built (or confirmed already built by then) before an Owner-provisioning endpoint can be safely exposed.
+
+#### Email-Verification Subsystem Impact (deprecation analysis)
+
+Under the now-fully-approved model, the email-verification subsystem (`EmailVerificationToken`, `EmailVerificationRepository`, `EmailVerificationPolicy`, `VerifyEmailUseCase`, `POST /auth/verify-email`, the `emailVerified` column) **has no remaining legitimate consumer**:
+- Customers: phone-first, never used it, never will.
+- Restaurant Owners: per this ADR, administratively-provisioned accounts require no verification step at all.
+- `Employee`/`OrganizationMember`: never used this mechanism for their own linking (invite-linking is a separate, unrelated code path; `OrganizationMember.status = Invited` has nothing to do with `EmailVerificationToken`).
+
+**Recorded as a deprecation/removal candidate for the future implementation phase.** Per explicit instruction, **nothing is deleted in this task** — `EmailVerificationToken`, `VerifyEmailUseCase`, `EmailVerificationRepository`, the `email`/`emailVerified` columns, and `POST /auth/verify-email` all remain exactly as they are in code today.
+
+#### Remaining Open Items (narrow, does not block Acceptance)
+
+The four items the Phase 2.23 Implementation Planning Report flagged as requiring explicit approval (phone-parsing library, Owner password-delivery, Customer password recovery, final API route names) plus the repeated-`START` concurrency question are **now resolved** by Decisions #14–18 above. The three items below are unrelated, pre-existing narrow items, unaffected by this update:
+
+1. **Pending-registration retention/cleanup duration** — no authoritative value or existing cleanup mechanism exists anywhere in this repository (confirmed: neither `EmailVerificationToken` nor `PasswordResetToken` rows are ever purged today). This single duration must be set by product/ops before the cleanup job is implemented; not invented here.
+2. **`username` case-insensitive-uniqueness enforcement mechanism** (citext column vs. a normalized lowercase shadow column) — a schema-design implementation detail for the future migration-planning step, not a product decision.
+3. **Cross-identity linking rule for a customer who later becomes staff** — explicitly deferred to a separate future ADR per Decision #11; not part of this ADR's scope.
+
+None of these block implementation readiness in the way the original 15-item Proposed-draft list did — all three are either non-architectural implementation details or explicitly out-of-scope future work.
+
+#### Impact
+
+Affects (synchronized as part of this Acceptance — see each document's own change): `ARCHITECTURE_LOCK.md` (ADR-016 annotation + ADR-022 added to the locked table), `AUTHENTICATION_ARCHITECTURE.md`, `PRODUCT_REQUIREMENTS.md` (FR-01.1), `DATABASE_SCHEMA.md`, `DOMAIN_MODEL.md`, `EVENTS.md`, `ENVIRONMENT_SETUP.md`, `TESTING_STRATEGY.md`, `TASKS.md` (Phase 2.23 entry under "Phase 2 — Authentication & Authorization", now closed), `PROJECT_ROADMAP.md`, `README.md`. Does not affect Phase 7.2 (Approval Workflow) or any Reservation-domain architecture. `modules/authentication/` and the new `modules/platform-admin/` code are both implemented, tested, and live-verified as of Phase 2.23's closure (2026-07-22) — see `TASKS.md`'s closure report for full evidence.
+
+**Platform Admin Authentication addendum (Phase 2.23 closure, 2026-07-22):** confirms and implements §5.2's pre-existing "separate issuer/audience" decision for `actorType: PlatformAdmin` — own signing secret (`PLATFORM_ADMIN_JWT_SECRET`), own issuer (`tavla-platform-admin`), own audience (`tavla-platform-admin-clients`), verified by a self-contained `PlatformAdminGuard` that never delegates to the ordinary `JwtAuthGuard`/`AuthenticatedActor` pipeline. This is a mechanical implementation of an already-frozen decision, not a new architectural decision, so it is recorded here as an addendum rather than a new ADR, per `CHANGE_POLICY.md`'s convention for implementing (not changing) a previously-approved decision. Full verification: `AUTHENTICATION_ARCHITECTURE.md` §15.2's addendum and `test/authentication/platform-admin.e2e-spec.ts`'s 11-scenario security-isolation matrix.
 
 ---
 

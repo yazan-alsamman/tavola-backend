@@ -33,6 +33,7 @@ describe('User entity', () => {
     lastName: 'Doe',
     email: 'jane@example.com',
     phone: null,
+    username: null,
     passwordHash: 'argon2id$hash',
     language: 'en',
     preferredCurrency: null,
@@ -57,8 +58,13 @@ describe('User entity', () => {
     expect(() => user.canLogin()).not.toThrow();
   });
 
-  it('rejects unverified users', () => {
+  it('allows login for Active users regardless of emailVerified (ADR-022: retired login gate)', () => {
     const user = User.create({ ...baseProps, emailVerified: false });
+    expect(() => user.canLogin()).not.toThrow();
+  });
+
+  it('rejects non-Active, non-Locked, non-Suspended users', () => {
+    const user = User.create({ ...baseProps, status: UserStatus.Pending });
     expect(() => user.canLogin()).toThrow(EmailNotVerifiedException);
   });
 

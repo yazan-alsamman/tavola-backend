@@ -82,9 +82,6 @@ describe('Authentication audit log writes (e2e)', () => {
       await prisma.passwordHistory.deleteMany({
         where: { user: { email: { startsWith: TEST_PREFIX } } },
       });
-      await prisma.emailVerificationToken.deleteMany({
-        where: { user: { email: { startsWith: TEST_PREFIX } } },
-      });
       await prisma.deviceSession.deleteMany({
         where: { user: { email: { startsWith: TEST_PREFIX } } },
       });
@@ -207,42 +204,6 @@ describe('Authentication audit log writes (e2e)', () => {
 
     const actions = await findActionsFor(userId);
     expect(actions).toContain('auth.login.blocked_locked');
-  });
-
-  it('records auth.verify_email.success', async () => {
-    if (!dbAvailable || !app) return;
-
-    const email = `${TEST_PREFIX}verify@example.com`;
-    const userId = randomUUID();
-    await prisma.user.create({
-      data: {
-        id: userId,
-        firstName: 'Audit',
-        lastName: 'Verify',
-        email,
-        passwordHash,
-        language: 'en',
-        status: UserStatus.Pending,
-        emailVerified: false,
-      },
-    });
-    const token = `verify-${randomUUID()}`;
-    await prisma.emailVerificationToken.create({
-      data: {
-        id: randomUUID(),
-        userId,
-        tokenHash: opaqueTokenService.hash(token),
-        expiresAt: new Date(Date.now() + 3_600_000),
-      },
-    });
-
-    await request(app.getHttpServer())
-      .post('/api/v1/auth/verify-email')
-      .send({ token })
-      .expect(200);
-
-    const actions = await findActionsFor(userId);
-    expect(actions).toContain('auth.verify_email.success');
   });
 
   it('records auth.logout.success and auth.session.revoked on logout', async () => {

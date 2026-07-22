@@ -121,6 +121,8 @@ Status: Sub-phase 1.1 (Foundation) and Sub-phase 1.2 (Runtime Infrastructure) ar
 
 # Phase 2 — Authentication & Authorization
 
+**Update (2026-07-22, ADR-022, Phase 2.23 — COMPLETE, LIVE VERIFIED, PRODUCTION VERIFIED, see `TASKS.md`):** the "email verification" goal below reflects Phase 2.0's original scope, historically accurate for what was built. It has been superseded: customer registration is now phone-first (mobile Country Code Picker defaults to Syria +963, customer may select any other supported country, backend normalizes to canonical E.164 per ADR-022 Decision #13; WhatsApp OTP via Fonnte, no email), and Restaurant Owner accounts are provisioned administratively by an isolated-JWT-pipeline Platform Admin actor (no verification step for either). Public Owner self-registration and email verification are retired. See `AUTHENTICATION_ARCHITECTURE.md` §15 and `DECISIONS.md` ADR-022 for the authoritative current model.
+
 ## Goals
 
 * Registration, login, logout, refresh tokens, email verification, password reset

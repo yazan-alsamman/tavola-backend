@@ -231,7 +231,6 @@ async function main() {
   await prisma.tokenFamily.deleteMany({ where: { user: { email: { startsWith: 'perf-' } } } });
   await prisma.passwordHistory.deleteMany({ where: { user: { email: { startsWith: 'perf-' } } } });
   await prisma.passwordResetToken.deleteMany({ where: { user: { email: { startsWith: 'perf-' } } } });
-  await prisma.emailVerificationToken.deleteMany({ where: { user: { email: { startsWith: 'perf-' } } } });
   await prisma.user.deleteMany({ where: { email: { startsWith: 'perf-' } } });
   await prisma.$disconnect();
 }

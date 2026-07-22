@@ -29,11 +29,14 @@ export interface AuthenticatedOrganizationMemberActor extends AuthenticatedActor
 }
 
 /**
- * `PlatformAdmin` is intentionally not modeled here yet: nothing in the
- * codebase can authenticate as one (AUTHENTICATION_ARCHITECTURE.md §5.2 notes
- * it uses a separate issuer/audience entirely), so a request actor shape for
- * it would be untestable speculation. Add it when platform-admin
- * authentication is actually built.
+ * `PlatformAdmin` is deliberately not modeled here (ADR-022 §"Platform
+ * Admin Authentication", Phase 2.23 closure, approved decision): Platform
+ * Admin authentication uses a genuinely separate JWT issuer/audience/
+ * secret and its own guard (`PlatformAdminGuard`) that never runs after
+ * `JwtAuthGuard` and never reads `AuthenticatedActor` - see
+ * `modules/platform-admin`. Modeling `PlatformAdmin` in this shared,
+ * ordinary-pipeline type would blur exactly the isolation boundary this
+ * ADR requires.
  */
 export type AuthenticatedActor =
   AuthenticatedUserActor | AuthenticatedEmployeeActor | AuthenticatedOrganizationMemberActor;

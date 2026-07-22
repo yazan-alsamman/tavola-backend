@@ -74,6 +74,23 @@ Full authentication design: **AUTHENTICATION_ARCHITECTURE.md**. Tunable policy v
 * `ONESIGNAL_API_KEY`
 * `NOTIFICATION_PROVIDER` (`onesignal` | `fake` — `fake` is required for Test environments, see TESTING_STRATEGY.md)
 
+## WhatsApp Verification (ADR-022 — Phase 2.23, implemented and live-verified)
+
+* `FONNTE_API_TOKEN` — server-side secret only; supplied exclusively via validated environment configuration. **Never hardcode, log, commit, or document its actual value** (this document names the variable only, per ADR-022's explicit instruction). Automated tests never call the real Fonnte adapter — every Customer registration/password-reset test suite overrides `VerificationMessagingPort` with an in-memory fake instead (see `TESTING_STRATEGY.md`).
+* `FONNTE_API_URL` (default `https://api.fonnte.com/send`)
+* `FONNTE_REQUEST_TIMEOUT_MS` (default `10000`)
+
+## Platform Admin Authentication (ADR-022 — Phase 2.23, implemented and live-verified)
+
+A genuinely separate JWT pipeline from the ordinary Customer/Owner/Employee tokens (`AUTHENTICATION_ARCHITECTURE.md` §15.2 addendum) — its own secret, issuer, and audience, never shared with `JWT_ACCESS_SECRET`/`JWT_ISSUER`/`JWT_AUDIENCE`.
+
+* `PLATFORM_ADMIN_JWT_SECRET` — required, minimum 32 characters. **Never hardcode, log, or commit its actual value.**
+* `PLATFORM_ADMIN_JWT_ISSUER` (default `tavla-platform-admin`)
+* `PLATFORM_ADMIN_JWT_AUDIENCE` (default `tavla-platform-admin-clients`)
+* `PLATFORM_ADMIN_JWT_EXPIRY_SECONDS` (default `900`)
+
+There is no public Platform Admin self-registration endpoint — `PlatformAdmin` accounts are provisioned operationally (seeded directly), never via any API.
+
 ## Observability
 
 * `LOG_LEVEL`

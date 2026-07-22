@@ -77,15 +77,16 @@ Indexes
 
 Purpose
 
-Stores customer accounts.
+Stores both Restaurant Owner/staff (email-identity) and customer (phone-identity) accounts on one shared table — see ADR-022 (2026-07-22) for why no actor-discriminator column is introduced.
 
 Fields
 
 * id (UUID)
 * firstName
 * lastName
-* email
-* phone
+* email (nullable as of ADR-022 — required in practice only for administratively-provisioned Restaurant Owner accounts; never collected for customer registration)
+* phone (nullable — required in practice only for customer accounts; canonical E.164; see ADR-022 §"Phone-uniqueness enforcement mechanism")
+* username (**new, ADR-022** — nullable; required in practice only for customer accounts; 3–30 chars, letters/numbers/underscore, globally unique case-insensitively; absent for Owner rows; mutability of this field beyond initial registration is out of this phase's scope)
 * passwordHash
 * avatarId
 * language
@@ -93,7 +94,7 @@ Fields
 * notificationOptIn (default `true`) — opt in to transactional/functional notifications
 * marketingOptIn (default `false`) — opt in to marketing communications; defaults to opted-out per GDPR
 * status (`Pending`, `Active`, `Suspended`, `Locked`, `Deleted`, `Anonymized`) — see AUTHENTICATION_ARCHITECTURE.md §3
-* emailVerified
+* emailVerified (**deprecation candidate, ADR-022** — no remaining consumer: Owner accounts are administratively provisioned with no verification step; customers never had email. Not removed in this documentation-only change; flagged for the future implementation phase.)
 * failedLoginCount
 * lockedUntil (nullable)
 * permissionsVersion
@@ -107,8 +108,67 @@ Fields
 
 Indexes
 
-* email (unique — enforced at the database level; see AUTHENTICATION_ARCHITECTURE.md §1.2 and ADR-014's anonymization placeholder mechanism, which is what keeps a global unique constraint compatible with "unique among non-anonymized users")
-* phone
+* email (unique **where not null**, as of ADR-022 — was previously a blanket unique constraint under the assumption every `User` has one; enforcement mechanism unchanged otherwise, see AUTHENTICATION_ARCHITECTURE.md §1.2 and ADR-014's anonymization placeholder mechanism)
+* phone (**changed by ADR-022** from a plain non-unique index to a unique-where-not-null constraint — PostgreSQL permits multiple `NULL`s under a unique constraint, so Owner rows with no phone remain unconstrained while customer phones become globally unique)
+* username (**new, ADR-022** — unique where not null; case-insensitive enforcement mechanism, e.g. `citext` vs. a normalized shadow column, deferred to implementation-phase schema design, not a product decision)
+
+---
+
+## Pending Customer Registrations (new, ADR-022 — migrated and live-verified, Phase 2.23)
+
+Purpose
+
+Stages an incomplete customer registration (`username` + `phone` submitted, OTP issued) before any `User` row exists. Promoted into a real `User` row only on successful completion (password set after phone verification); never itself becomes or is mistaken for a `User`. Mirrors the existing `EmailVerificationToken`/`PasswordResetToken` hash-at-rest shape, but is a distinct table (not a generalization of either) because a 6-digit OTP has an materially different entropy/attempt-limiting profile than a 256-bit opaque token — see ADR-022.
+
+Fields (minimal, frozen by ADR-022 — no additional fields without a new decision)
+
+* id (UUID)
+* username
+* phone (canonical E.164)
+* codeHash (OTP hash — plaintext never persisted)
+* codeExpiresAt
+* incorrectAttemptCount
+* verifiedAt (nullable)
+* consumedAt (nullable — set when promoted into a `User`)
+* createdAt
+* updatedAt
+
+Indexes
+
+* phone, username (both looked up during Start/Resend/Verify; exact index shape deferred to migration design)
+* **Unique on phone (frozen, ADR-022 Decision #18):** at most one active pending registration per canonical phone — a repeated `START` for the same phone restarts/reissues this same row (new `codeHash`/`codeExpiresAt`, `incorrectAttemptCount` reset) rather than inserting a second row; concurrency protected at the transaction boundary so two simultaneous `START`s cannot create two active rows for the same phone.
+
+Retention / cleanup
+
+Abandoned (expired, never-completed) rows must be cleanable. **No authoritative retention duration exists anywhere in this repository** — neither `EmailVerificationToken` nor `PasswordResetToken` rows are ever purged today, so there is no existing pattern to reuse. This duration is the one open item ADR-022 leaves for product/ops to set before a cleanup job is implemented.
+
+---
+
+## Customer Password Reset Tokens (new, ADR-022 Decision #16 — migrated and live-verified, Phase 2.23)
+
+Purpose
+
+Stages a Customer's phone-based password-recovery challenge (`START → VERIFY → COMPLETE`, `AUTHENTICATION_ARCHITECTURE.md` §15.11). Unlike `PendingCustomerRegistrations`, this always references an **existing** `User` (a Customer recovering access to an account that already exists), so it is shaped like the existing `PasswordResetToken` table (`userId` FK) rather than like a new-registration record — mirroring this repository's own existing precedent of keeping `EmailVerificationToken` and `PasswordResetToken` as separate, purpose-specific tables rather than one generalized table, applied here to a phone/OTP-shaped challenge instead of an opaque 256-bit token.
+
+Fields (minimal, mirrors `PasswordResetToken`'s shape plus the OTP-specific fields already frozen for registration — no additional fields without a new decision)
+
+* id (UUID)
+* userId (FK → Users — resolved from the canonical phone at Start time)
+* codeHash (OTP hash — plaintext never persisted)
+* codeExpiresAt
+* incorrectAttemptCount
+* verifiedAt (nullable — set on successful `VERIFY`; does not itself change the password)
+* consumedAt (nullable — set when `COMPLETE` changes the password)
+* createdAt
+* updatedAt
+
+Indexes
+
+* userId (one active challenge per user, same one-active-per-key shape as `PendingCustomerRegistrations`)
+
+Retention / cleanup
+
+Same open item as `PendingCustomerRegistrations` above — no authoritative retention duration exists; not invented here.
 
 ---
 

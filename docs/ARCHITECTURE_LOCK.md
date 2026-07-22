@@ -54,7 +54,7 @@ All ADRs with status **Accepted** in `DECISIONS.md` are locked:
 | ADR-013 | Reservation Concurrency Control | Advisory lock + exclusion constraint |
 | ADR-014 | GDPR Anonymization Strategy | Anonymize-in-place; no hard delete of User row |
 | ADR-015 | Socket.IO Redis Adapter | Horizontal WebSocket fan-out via Redis |
-| ADR-016 | Authentication & Session Strategy | Identity, JWT, opaque refresh rotation, email verification gate |
+| ADR-016 | Authentication & Session Strategy | Identity, JWT, opaque refresh rotation, email verification gate. **Partially superseded by ADR-022** (2026-07-22): email verification no longer applies to customer registration or administratively-provisioned Restaurant Owner accounts. All other mechanics remain locked and unchanged. |
 | ADR-017 | Authorization Strategy | Auth/authz separation; Policy Engine; PermissionResolver |
 
 **Post-lock extensions (Architecture Compliance Audit 2026-07-07):**
@@ -65,8 +65,9 @@ All ADRs with status **Accepted** in `DECISIONS.md` are locked:
 | ADR-019 | Waitlist & Operational Signals | Waitlist aggregate; reminders; late arrival; table ready |
 | ADR-020 | Customer–Restaurant Messaging | Conversation/Message schema; WebSocket delivery |
 | ADR-021 | Billing Invoices | Invoice documents linked to payments |
+| ADR-022 | Phone/WhatsApp-First Customer Registration (Fonnte) & Administratively-Provisioned Restaurant Owners | Customer registration is phone-first (username + E.164 phone, WhatsApp OTP via Fonnte, password set only after verification); Restaurant Owners are administratively provisioned by Platform Admin (email + password, no verification step); partially supersedes ADR-016 (see that row) |
 
-These ADRs extend `DATABASE_SCHEMA.md` and `DOMAIN_MODEL.md` without breaking locked ADR-001–017 decisions.
+These ADRs extend `DATABASE_SCHEMA.md` and `DOMAIN_MODEL.md` without breaking locked ADR-001–017 decisions. ADR-022 is the first post-lock extension to partially supersede an original locked ADR rather than only adding new scope — see its own entry above and ADR-016's annotated row.
 
 ---
 
@@ -128,7 +129,7 @@ Business logic must not embed permission checks; use cases invoke domain policie
 * **`permissionsVersion`** on User/Employee for permission staleness detection.
 * **No `UserPermission` table** — employee overrides via `RolePermissions.employeeId`.
 * **Argon2** password hashing; passwords never logged.
-* **Email verification gate** before login.
+* **Email verification gate** before login — **scope narrowed by ADR-022** (2026-07-22): applies only where a genuine email-based, self-service actor exists. Customer (`User`) registration is phone/WhatsApp-verified instead (ADR-022); Restaurant Owner accounts are administratively provisioned by Platform Admin and require no verification step at all. No email/password actor in the current model retains a mandatory pre-login verification gate.
 
 ## Data & concurrency
 

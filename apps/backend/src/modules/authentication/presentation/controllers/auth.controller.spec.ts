@@ -5,8 +5,6 @@ import { AuthController } from './auth.controller';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { SessionVersionGuard } from '../guards/session-version.guard';
 import { RateLimitGuard } from '../guards/rate-limit.guard';
-import { RegisterOrganizationOwnerUseCase } from '../../application/use-cases/register-organization-owner.use-case';
-import { VerifyEmailUseCase } from '../../application/use-cases/verify-email.use-case';
 import { LoginUseCase } from '../../application/use-cases/login.use-case';
 import { RefreshSessionUseCase } from '../../application/use-cases/refresh-session.use-case';
 import { LogoutCurrentSessionUseCase } from '../../application/use-cases/logout-current-session.use-case';
@@ -16,8 +14,6 @@ import { RevokeSessionUseCase } from '../../application/use-cases/revoke-session
 import { ForgotPasswordUseCase } from '../../application/use-cases/forgot-password.use-case';
 import { ResetPasswordUseCase } from '../../application/use-cases/reset-password.use-case';
 import { ChangePasswordUseCase } from '../../application/use-cases/change-password.use-case';
-import { InvalidVerificationTokenException } from '../../application/exceptions/invalid-verification-token.exception';
-import { RegistrationConsentRequiredException } from '../../application/exceptions/registration-consent-required.exception';
 import { InvalidCredentialsException } from '../../application/exceptions/login.exceptions';
 import { InvalidRefreshTokenException } from '../../application/exceptions/invalid-refresh-token.exception';
 import { SessionAccessDeniedException } from '../../application/exceptions/session-access-denied.exception';
@@ -27,8 +23,6 @@ import { AuthenticatedUserActor } from '../../application/dto/authenticated-acto
 
 describe('AuthController', () => {
   let controller: AuthController;
-  const registerExecute = jest.fn();
-  const verifyEmailExecute = jest.fn();
   const loginExecute = jest.fn();
   const refreshExecute = jest.fn();
   const logoutCurrentExecute = jest.fn();
@@ -48,8 +42,6 @@ describe('AuthController', () => {
   };
 
   beforeEach(async () => {
-    registerExecute.mockReset();
-    verifyEmailExecute.mockReset();
     loginExecute.mockReset();
     refreshExecute.mockReset();
     logoutCurrentExecute.mockReset();
@@ -63,14 +55,6 @@ describe('AuthController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
       providers: [
-        {
-          provide: RegisterOrganizationOwnerUseCase,
-          useValue: { execute: registerExecute },
-        },
-        {
-          provide: VerifyEmailUseCase,
-          useValue: { execute: verifyEmailExecute },
-        },
         {
           provide: LoginUseCase,
           useValue: { execute: loginExecute },
@@ -118,99 +102,6 @@ describe('AuthController', () => {
       .compile();
 
     controller = module.get(AuthController);
-  });
-
-  it('delegates register to the use case, mapping only the documented response fields', async () => {
-    registerExecute.mockResolvedValue({
-      userId: '11111111-1111-4111-8111-111111111111',
-      email: 'owner@example.com',
-      status: UserStatus.Pending,
-      organizationId: '55555555-5555-4555-8555-555555555555',
-      organizationSlug: 'acme-restaurant-group',
-      organizationName: 'Acme Restaurant Group',
-    });
-
-    const request = {
-      ip: '203.0.113.44',
-      socket: { remoteAddress: '127.0.0.1' },
-      headers: {},
-    } as unknown as Request;
-
-    const response = await controller.register(
-      {
-        intent: 'owner',
-        email: 'owner@example.com',
-        password: 'SecurePass123!',
-        firstName: 'Jane',
-        lastName: 'Doe',
-        organizationName: 'Acme Restaurant Group',
-        consents: { termsOfService: true, privacyPolicy: true },
-      },
-      request,
-    );
-
-    expect(registerExecute).toHaveBeenCalledWith({
-      email: 'owner@example.com',
-      password: 'SecurePass123!',
-      firstName: 'Jane',
-      lastName: 'Doe',
-      phone: undefined,
-      organizationName: 'Acme Restaurant Group',
-      consents: { termsOfService: true, privacyPolicy: true },
-      ipAddress: '203.0.113.44',
-    });
-    // Only userId/email/status are part of the documented contract -
-    // organizationId/organizationSlug/organizationName must not leak through.
-    expect(response).toEqual({
-      userId: '11111111-1111-4111-8111-111111111111',
-      email: 'owner@example.com',
-      status: UserStatus.Pending,
-    });
-  });
-
-  it('propagates register application exceptions', async () => {
-    registerExecute.mockRejectedValue(new RegistrationConsentRequiredException());
-
-    const request = {
-      ip: '127.0.0.1',
-      socket: { remoteAddress: '127.0.0.1' },
-      headers: {},
-    } as unknown as Request;
-
-    await expect(
-      controller.register(
-        {
-          intent: 'owner',
-          email: 'owner@example.com',
-          password: 'SecurePass123!',
-          firstName: 'Jane',
-          lastName: 'Doe',
-          organizationName: 'Acme Restaurant Group',
-          consents: { termsOfService: false, privacyPolicy: false },
-        },
-        request,
-      ),
-    ).rejects.toBeInstanceOf(RegistrationConsentRequiredException);
-  });
-
-  it('delegates verify-email to the use case and returns the result', async () => {
-    const result = {
-      userId: '11111111-1111-4111-8111-111111111111',
-      email: 'owner@example.com',
-      status: UserStatus.Active,
-    };
-    verifyEmailExecute.mockResolvedValue(result);
-
-    await expect(controller.verifyEmail({ token: 'opaque-token' })).resolves.toEqual(result);
-    expect(verifyEmailExecute).toHaveBeenCalledWith({ token: 'opaque-token' });
-  });
-
-  it('propagates application exceptions from verify-email', async () => {
-    verifyEmailExecute.mockRejectedValue(new InvalidVerificationTokenException());
-
-    await expect(controller.verifyEmail({ token: 'bad-token' })).rejects.toBeInstanceOf(
-      InvalidVerificationTokenException,
-    );
   });
 
   it('delegates login to the use case and maps response timestamps', async () => {
@@ -275,11 +166,17 @@ describe('AuthController', () => {
   });
 
   it('does not catch framework HTTP exceptions', async () => {
-    verifyEmailExecute.mockRejectedValue(new UnauthorizedException());
+    loginExecute.mockRejectedValue(new UnauthorizedException());
 
-    await expect(controller.verifyEmail({ token: 'bad-token' })).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    const request = {
+      ip: '127.0.0.1',
+      socket: { remoteAddress: '127.0.0.1' },
+      headers: {},
+    } as unknown as Request;
+
+    await expect(
+      controller.login({ email: 'owner@example.com', password: 'SecurePass123!' }, request),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('delegates refresh to the use case and maps response timestamps', async () => {
