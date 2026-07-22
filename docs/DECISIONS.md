@@ -1066,13 +1066,15 @@ No `User` row (and therefore no login capability, session, or JWT) may exist for
 |---|---|
 | Endpoint | `POST https://api.fonnte.com/send` |
 | Auth header | `Authorization: <token>` — plain token value, **no** `Bearer` prefix |
-| Required body fields | `target` (string; phone number(s), comma-separated for multiple), `message` (string, ≤60,000 chars) |
-| Target format | Fonnte expects the number **without** a leading `+` (E.164's `+` must be stripped by the adapter before sending — a boundary-only conversion, never a change to the canonical stored E.164 value); Fonnte auto-prepends country code `62` only to numbers with a leading `0`, which correctly-formed E.164 numbers never have |
+| Required body fields | `target` (string; phone number(s), comma-separated for multiple), ~~`message`~~ **and `countryCode`** (string, ≤60,000 chars) — see live-verification correction below |
+| Target format | Fonnte expects the number **without** a leading `+` (E.164's `+` must be stripped by the adapter before sending — a boundary-only conversion, never a change to the canonical stored E.164 value); ~~Fonnte auto-prepends country code `62` only to numbers with a leading `0`, which correctly-formed E.164 numbers never have~~ **incorrect, see live-verification correction below** |
 | Success response | `{"status": true, "detail": "...", "id": [...], "process": "pending", "requestid": ..., "target": [...]}` |
 | Failure response | `{"status": false, "reason": "...", "requestid": ...}` — documented reasons include invalid token, mismatched device, invalid target format, insufficient quota |
 | Timeout | Not mandated by Fonnte's documentation — the adapter must set its own explicit bounded timeout (a synchronous-call implementation detail, not a value this ADR fixes) |
 
 This satisfies the requirement to verify the contract before implementation begins; the adapter itself is not implemented in this task.
+
+**Live-verification correction (Phase 2.23 closure follow-up):** the documentation-only table above, based solely on Fonnte's published docs, turned out to be wrong on one material point once actually exercised against the live API. Fonnte does **not** limit its Indonesia (`+62`) auto-prepend behavior to numbers with a leading `0` — it applies to any `target` it cannot otherwise disambiguate, including an already-correct, `+`-stripped E.164 number with no leading `0` at all (a real Syrian number `963936862035` was silently turned into `62963936862035` by Fonnte, with the API still reporting `status: true`/"queued" — the request "succeeds" but no message is ever delivered). The fix is to always send an explicit `countryCode` field alongside `target` (derived from the same canonical `PhoneNumber`, via a new `PhoneNumber.callingCode()` method — never hardcoded or independently re-parsed), which resolved the mangling in direct live testing. `FonnteVerificationMessagingAdapter` and `AUTHENTICATION_ARCHITECTURE.md` §15.8 are both updated accordingly. This is a mechanical bug fix to an already-frozen integration boundary, not a new architectural decision.
 
 #### System/Platform Admin Provisioning — Findings
 

@@ -1330,7 +1330,11 @@ Remains email-keyed (`LoginUseCase`'s `findUnlinkedInvitedByEmail`) — not conv
 
 ## 15.8 Fonnte Integration
 
-`Application → VerificationMessagingPort → FonnteVerificationMessagingAdapter → Fonnte HTTP API`, synchronous delivery (not BullMQ — the customer is actively waiting). Verified contract (docs.fonnte.com, not called): `POST https://api.fonnte.com/send`, `Authorization: <token>` header (no `Bearer` prefix), body `{target, message}`, target sent without a leading `+` (adapter-boundary conversion only, canonical stored value keeps E.164's `+`), success `{status: true, ...}` / failure `{status: false, reason: ...}`. `FONNTE_API_TOKEN` via validated environment configuration only (`ENVIRONMENT_SETUP.md`).
+`Application → VerificationMessagingPort → FonnteVerificationMessagingAdapter → Fonnte HTTP API`, synchronous delivery (not BullMQ — the customer is actively waiting). Contract **live-verified against the real Fonnte API** (Phase 2.23 closure follow-up, superseding the earlier docs-only, not-yet-called version of this section): `POST https://api.fonnte.com/send`, `Authorization: <token>` header (no `Bearer` prefix), body `{target, countryCode, message}`, target sent without a leading `+` (adapter-boundary conversion only, canonical stored value keeps E.164's `+`), success `{status: true, ...}` / failure `{status: false, reason: ...}`.
+
+**`countryCode` is a required field, not optional** — a real defect found via live testing: Fonnte silently assumes Indonesia (`+62`) for any `target` it cannot otherwise disambiguate, prepending `62` to an already-correctly-formatted international number (e.g. a Syrian `963...` number silently became `62963...`) while still reporting `status: true` ("queued") — the call "succeeds" but the message is never delivered, for every non-Indonesian number. `PhoneNumber.callingCode()` derives the correct value from the same canonical phone the adapter already has, so `target`/`countryCode` can never disagree.
+
+`FONNTE_API_TOKEN` via validated environment configuration only (`ENVIRONMENT_SETUP.md`).
 
 ## 15.9 Phone/Username Uniqueness Mechanism
 

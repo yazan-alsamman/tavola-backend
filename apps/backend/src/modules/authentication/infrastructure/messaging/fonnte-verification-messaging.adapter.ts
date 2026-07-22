@@ -9,11 +9,21 @@ import {
 
 /**
  * ADR-022 §"Fonnte Integration Boundary" / AUTHENTICATION_ARCHITECTURE.md
- * §15.8. Verified contract (docs.fonnte.com, architecture-finalization
- * task, not re-verified by this implementation pass): `POST
- * https://api.fonnte.com/send`, header `Authorization: <token>` (no
- * `Bearer` prefix), body `{target, message}`, target without a leading
- * "+", success `{status:true,...}` / failure `{status:false,reason:...}`.
+ * §15.8. Contract re-verified live against the real Fonnte API (Phase 2.23
+ * closure follow-up): `POST https://api.fonnte.com/send`, header
+ * `Authorization: <token>` (no `Bearer` prefix), body `{target, countryCode,
+ * message}`, target without a leading "+", success `{status:true,...}` /
+ * failure `{status:false,reason:...}`.
+ *
+ * `countryCode` is REQUIRED, not optional - live testing found that Fonnte
+ * silently assumes Indonesia (+62) for any `target` it cannot otherwise
+ * disambiguate, prepending "62" to an already-correct international number
+ * (e.g. Syria's `963936862035` became `62963936862035`) while still
+ * reporting `status: true` ("queued") - the request "succeeds" but the
+ * message is never delivered, for every non-Indonesian number. Omitting
+ * `countryCode` was the original defect; it must always be sent alongside
+ * `target`, derived from the same canonical `PhoneNumber` via
+ * `callingCode()`, never hardcoded or independently re-parsed.
  *
  * The frozen message text (AUTHENTICATION_ARCHITECTURE.md, ADR-022
  * "WhatsApp Message") is built here, the one place allowed to see a
@@ -57,6 +67,7 @@ export class FonnteVerificationMessagingAdapter implements VerificationMessaging
         },
         body: new URLSearchParams({
           target: phone.toFonnteTarget(),
+          countryCode: phone.callingCode(),
           message,
         }),
         signal: controller.signal,

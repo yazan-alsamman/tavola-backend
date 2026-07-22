@@ -72,6 +72,24 @@ export class PhoneNumber extends ValueObject<{ value: string }> {
     return this.props.value.replace(/^\+/, '');
   }
 
+  /**
+   * The E.164 country calling code (e.g. "963" for Syria, "971" for UAE),
+   * re-derived from the canonical value - never stored separately, so it
+   * can never drift from `value`. Required by Fonnte's `/send` API: passing
+   * `target` alone without an accompanying `countryCode` field makes Fonnte
+   * assume Indonesia (+62) for any number it cannot otherwise disambiguate,
+   * silently mangling every non-Indonesian target while still reporting
+   * `status: true` (queued) - a real production incident this method exists
+   * to prevent (see `FonnteVerificationMessagingAdapter`).
+   */
+  callingCode(): string {
+    const parsed = parsePhoneNumberFromString(this.props.value);
+    if (!parsed) {
+      throw new InvalidPhoneNumberException('', this.props.value);
+    }
+    return parsed.countryCallingCode;
+  }
+
   toString(): string {
     return this.props.value;
   }

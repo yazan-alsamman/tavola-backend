@@ -51,4 +51,19 @@ describe('PhoneNumber value object (ADR-022)', () => {
   it('fromCanonical rejects a value that is not already E.164', () => {
     expect(() => PhoneNumber.fromCanonical('0912345678')).toThrow(InvalidPhoneNumberException);
   });
+
+  it('derives the correct calling code for Syria (+963)', () => {
+    const phone = PhoneNumber.create('SY', '0912345678');
+    expect(phone.callingCode()).toBe('963');
+  });
+
+  it('derives the correct calling code for UAE (+971), never defaulting to Syria', () => {
+    const phone = PhoneNumber.create('AE', '0501234567');
+    expect(phone.callingCode()).toBe('971');
+  });
+
+  it('derives the calling code from a value reconstructed via fromCanonical too', () => {
+    const phone = PhoneNumber.fromCanonical('+971501234567');
+    expect(phone.callingCode()).toBe('971');
+  });
 });
