@@ -151,7 +151,7 @@ describe('Load smoke (e2e)', () => {
   // self-registration). Restaurant Owners are provisioned exclusively via
   // `POST /platform-admin/restaurant-owners` now; a concurrent-burst
   // equivalent for that route belongs in the Platform Admin E2E suite (still
-  // pending — it needs its own Fonnte-free, Platform-Admin-authenticated
+  // pending — it needs its own OTP-provider-free, Platform-Admin-authenticated
   // fixture, which this generic load-smoke file deliberately does not set
   // up), not a mechanical substitution here.
 

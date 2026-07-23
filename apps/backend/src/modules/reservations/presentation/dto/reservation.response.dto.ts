@@ -34,7 +34,8 @@ export class ReservationResponseDto {
 
   @ApiProperty({
     enum: ReservationStatus,
-    description: 'Phase 7.1 only ever produces Pending - Approval is a later sub-phase.',
+    description:
+      'Pending (manual-approval path) or Approved directly (RestaurantSettings.autoApproval = true, Phase 7.2) at creation time; Approved/Rejected via POST /reservations/:id/approve|reject; Cancelled/Completed/NoShow/Expired via the Phase 7.3 lifecycle actions.',
   })
   status!: ReservationStatus;
 
@@ -43,6 +44,26 @@ export class ReservationResponseDto {
 
   @ApiPropertyOptional({ example: null, nullable: true })
   notes!: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The approving Employee id (manual Approve), null for auto-approval (system/settings-driven) or while still Pending/Rejected.',
+  })
+  approvedBy!: string | null;
+
+  @ApiPropertyOptional({ format: 'date-time', nullable: true })
+  approvedAt!: string | null;
+
+  @ApiPropertyOptional({ format: 'date-time', nullable: true })
+  cancelledAt!: string | null;
+
+  @ApiPropertyOptional({ format: 'date-time', nullable: true })
+  completedAt!: string | null;
+
+  @ApiPropertyOptional({ format: 'date-time', nullable: true })
+  noShowAt!: string | null;
 
   @ApiProperty({ format: 'date-time' })
   createdAt!: string;

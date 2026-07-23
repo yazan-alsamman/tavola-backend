@@ -23,6 +23,10 @@ import {
   RestaurantSuspendedEvent,
   RestaurantUpdatedEvent,
 } from '@modules/restaurants/domain/events/restaurant.events';
+import {
+  ReservationApprovedEvent,
+  ReservationRejectedEvent,
+} from '@modules/reservations/domain/events/reservation.events';
 import { AuditingEventPublisher } from './auditing-event-publisher';
 import { LoggingEventPublisher } from './logging-event-publisher';
 
@@ -398,6 +402,106 @@ describe('AuditingEventPublisher', () => {
         actorId: userId,
         targetType: 'Restaurant',
         targetId: restaurantId,
+      });
+    });
+  });
+
+  describe('Reservation events (Phase 7.2)', () => {
+    const reservationId = '66666666-6666-4666-8666-666666666666';
+    const restaurantId = '77777777-7777-4777-8777-777777777777';
+    const branchId = '88888888-8888-4888-8888-888888888888';
+    const tableId = '99999999-9999-4999-8999-999999999999';
+    const employeeId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+    it('maps ReservationApprovedEvent (manual) to reservation.approved with actorType Employee', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      await publisher.publish(
+        new ReservationApprovedEvent(
+          'event-1',
+          {
+            reservationId,
+            restaurantId,
+            branchId,
+            tableId,
+            approvedBy: employeeId,
+            automatic: false,
+          },
+          now,
+          'corr-1',
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'reservation.approved',
+        actorId: employeeId,
+        actorType: 'Employee',
+        targetType: 'Reservation',
+        targetId: reservationId,
+        correlationId: 'corr-1',
+      });
+    });
+
+    it('maps ReservationApprovedEvent (auto-approval) to reservation.approved with actorType System', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      await publisher.publish(
+        new ReservationApprovedEvent(
+          'event-1',
+          { reservationId, restaurantId, branchId, tableId, approvedBy: null, automatic: true },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'reservation.approved',
+        actorId: null,
+        actorType: 'System',
+        targetType: 'Reservation',
+        targetId: reservationId,
+      });
+    });
+
+    it('maps ReservationRejectedEvent (manual) to reservation.rejected with actorType Employee', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      await publisher.publish(
+        new ReservationRejectedEvent(
+          'event-1',
+          {
+            reservationId,
+            restaurantId,
+            branchId,
+            tableId,
+            rejectedBy: employeeId,
+            automatic: false,
+          },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'reservation.rejected',
+        actorId: employeeId,
+        actorType: 'Employee',
+        targetType: 'Reservation',
+        targetId: reservationId,
+      });
+    });
+
+    it('maps ReservationRejectedEvent (automatic) to reservation.rejected with actorType System', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      await publisher.publish(
+        new ReservationRejectedEvent(
+          'event-1',
+          { reservationId, restaurantId, branchId, tableId, rejectedBy: null, automatic: true },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'reservation.rejected',
+        actorId: null,
+        actorType: 'System',
+        targetType: 'Reservation',
+        targetId: reservationId,
       });
     });
   });

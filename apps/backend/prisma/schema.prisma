@@ -45,22 +45,23 @@ enum UserStatus {
 
 /**
  * Status Management architecture decision (TASKS.md "Phase 6 — Status
- * Management" note): four values only. `Create Table` always produces
- * `Available`. Transitions happen exclusively through the single dedicated
- * Domain Action `POST /tables/{tableId}/status`, restricted to
- * `Available <-> Occupied`/`Available <-> Cleaning`/`Available <-> Disabled`
- * only - every other combination is rejected. `Update Table` never
- * transitions status. `Reserved` is deliberately excluded - it is
- * exclusively a Reservation Engine concept, to be introduced only after the
- * Reservation Engine architecture has been approved and frozen, through its
- * own explicit architectural decision, not by silent migration. `Merged` is
- * deliberately excluded - it belongs to the deferred Merge/Split feature.
+ * Management" note): `Create Table` always produces `Available`. Manual
+ * transitions happen exclusively through the single dedicated Domain Action
+ * `POST /tables/{tableId}/status`, restricted to `Available <-> Occupied`/
+ * `Available <-> Cleaning`/`Available <-> Disabled` only - every other
+ * combination is rejected. `Update Table` never transitions status. `Merged`
+ * is deliberately excluded - it belongs to the deferred Merge/Split feature.
+ * `Reserved` (Phase 7.2 — Approval Workflow, architecture frozen 2026-07-20)
+ * is exclusively a Reservation Engine concept - only `Table.reserve()`/
+ * `Table.release()` may set or clear it; `Table.transitionStatus`/
+ * `POST /tables/{tableId}/status` continue to reject it entirely.
  */
 enum TableStatus {
   Available
   Occupied
   Cleaning
   Disabled
+  Reserved
 }
 
 /**
@@ -831,10 +832,11 @@ model Reservation {
   createdAt                    DateTime          @default(now()) @map("created_at")
   updatedAt                    DateTime          @updatedAt @map("updated_at")
 
-  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
-  branch     Branch     @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  table      Table      @relation(fields: [tableId], references: [id], onDelete: Restrict)
-  user       User?      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  restaurant Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  branch     Branch               @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  table      Table                @relation(fields: [tableId], references: [id], onDelete: Restrict)
+  user       User?                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  history    ReservationHistory[]
 
   @@index([reservationDate])
   @@index([tableId])
@@ -843,6 +845,38 @@ model Reservation {
   @@index([branchId, reservationDate, status])
   @@index([tableId, reservationDate, reservationStartTime])
   @@map("reservations")
+}
+
+// ---------------------------------------------------------------------------
+// Reservation History (Phase 7.3 — Reservation Lifecycle, DATABASE_SCHEMA.md
+// "Reservation History"). Introduced by Phase 7.3 - not created by Phase
+// 7.1/7.2, which retain their existing AuditingEventPublisher-only auditing
+// unchanged. Rows are created by Cancel, Reschedule, Complete, NoShow, and
+// Expire only. `oldTableId`/`newTableId` are populated exclusively on a
+// table-changing Reschedule (ADR-023) - null for every other action and for
+// a same-table reschedule.
+// ---------------------------------------------------------------------------
+
+model ReservationHistory {
+  id                       String            @id @default(uuid()) @db.Uuid
+  reservationId            String            @map("reservation_id") @db.Uuid
+  oldStatus                ReservationStatus @map("old_status")
+  newStatus                ReservationStatus @map("new_status")
+  oldReservationDate       DateTime?         @map("old_reservation_date") @db.Date
+  oldReservationStartTime  DateTime?         @map("old_reservation_start_time") @db.Timestamptz
+  newReservationDate       DateTime?         @map("new_reservation_date") @db.Date
+  newReservationStartTime  DateTime?         @map("new_reservation_start_time") @db.Timestamptz
+  oldTableId               String?           @map("old_table_id") @db.Uuid
+  newTableId               String?           @map("new_table_id") @db.Uuid
+  withinCancellationWindow Boolean?          @map("within_cancellation_window")
+  changedBy                String?           @map("changed_by") @db.Uuid
+  changedAt                DateTime          @map("changed_at")
+  reason                   String?
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+
+  @@index([reservationId])
+  @@map("reservation_history")
 }
 
 // ---------------------------------------------------------------------------

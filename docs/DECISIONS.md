@@ -537,6 +537,10 @@ Affects: Reservation Aggregate, `ReservationAvailabilityService` domain service,
 
 **Phase 7 pre-implementation decision note (2026-07-19) amendment:** the exclusion constraint's `WHERE` clause is corrected to `status NOT IN ('Cancelled', 'Expired', 'Rejected', 'Pending')` - `Pending` was missing from the original exclusion list, which would have made DOMAIN_MODEL.md's "two overlapping Pending reservations may coexist, resolved at approval time" rule unreachable at the database level (documentation-bug fix, not a new mechanism). New `Table.reserve(reservationId, at)` / `Table.release(at)` domain methods (Phase 7 decision note item 6) call inside the same advisory-locked transaction as the reservation write - `Table.transitionStatus` (Phase 6.3) is unmodified; only these two new methods may set/clear `TableStatus.Reserved`.
 
+**Phase 7.2 implementation note (2026-07-23):** this ADR's own Decision text already required the advisory lock to apply "before inserting a new Reservation **or approving a Pending one**" - `ApproveReservationUseCase` (TASKS.md's "Phase 7.2 — Approval Workflow" report) implements exactly that, plus the "Alternatives Considered" section's recommended secondary optimistic-locking technique (a conditional `WHERE status = 'Pending'` update) for the Approve/Reject/auto-reject write paths. No amendment to this ADR was required - only a correction to an interim readiness report that had mistakenly summarized this ADR as scoped to Create only.
+
+**Phase 7.3 pointer (2026-07-23):** table-changing Reservation Reschedule (Phase 7.3 — Reservation Lifecycle, architecture frozen) introduces a genuinely new concurrency scenario this ADR's single-table lock model does not cover - two physical Tables must be coordinated atomically within one transaction. See **ADR-023** (new, does not alter this ADR's own text) for the deterministic two-key locking protocol that extends this ADR's mechanism for that one operation. Same-table Reschedule and Reschedule-of-`Pending` continue to use this ADR's existing single-key mechanism unchanged.
+
 ---
 
 ## ADR-014
@@ -1058,6 +1062,8 @@ No `User` row (and therefore no login capability, session, or JWT) may exist for
 
 #### Fonnte Integration Boundary
 
+**SUPERSEDED by ADR-024 (2026-07-23) — retained below for historical record only, not authoritative.** Fonnte is no longer the active Customer OTP delivery provider; LightOTP is. See **ADR-024** for the current, live-verified integration boundary and contract. Per `CHANGE_POLICY.md`'s "supersede, do not edit accepted ADRs in place" rule, the historical text below is preserved unmodified rather than rewritten.
+
 `Application → VerificationMessagingPort (interface) → FonnteVerificationMessagingAdapter (infrastructure) → Fonnte HTTP API`. Domain/application code never depends on Fonnte HTTP payloads, response objects, status codes, error strings, or SDK-specific types.
 
 **Verified Fonnte HTTP Contract** (fetched from Fonnte's official documentation at `docs.fonnte.com` during this architecture-finalization task — not called, no message sent, informational only):
@@ -1106,6 +1112,127 @@ None of these block implementation readiness in the way the original 15-item Pro
 Affects (synchronized as part of this Acceptance — see each document's own change): `ARCHITECTURE_LOCK.md` (ADR-016 annotation + ADR-022 added to the locked table), `AUTHENTICATION_ARCHITECTURE.md`, `PRODUCT_REQUIREMENTS.md` (FR-01.1), `DATABASE_SCHEMA.md`, `DOMAIN_MODEL.md`, `EVENTS.md`, `ENVIRONMENT_SETUP.md`, `TESTING_STRATEGY.md`, `TASKS.md` (Phase 2.23 entry under "Phase 2 — Authentication & Authorization", now closed), `PROJECT_ROADMAP.md`, `README.md`. Does not affect Phase 7.2 (Approval Workflow) or any Reservation-domain architecture. `modules/authentication/` and the new `modules/platform-admin/` code are both implemented, tested, and live-verified as of Phase 2.23's closure (2026-07-22) — see `TASKS.md`'s closure report for full evidence.
 
 **Platform Admin Authentication addendum (Phase 2.23 closure, 2026-07-22):** confirms and implements §5.2's pre-existing "separate issuer/audience" decision for `actorType: PlatformAdmin` — own signing secret (`PLATFORM_ADMIN_JWT_SECRET`), own issuer (`tavla-platform-admin`), own audience (`tavla-platform-admin-clients`), verified by a self-contained `PlatformAdminGuard` that never delegates to the ordinary `JwtAuthGuard`/`AuthenticatedActor` pipeline. This is a mechanical implementation of an already-frozen decision, not a new architectural decision, so it is recorded here as an addendum rather than a new ADR, per `CHANGE_POLICY.md`'s convention for implementing (not changing) a previously-approved decision. Full verification: `AUTHENTICATION_ARCHITECTURE.md` §15.2's addendum and `test/authentication/platform-admin.e2e-spec.ts`'s 11-scenario security-isolation matrix.
+
+---
+
+## ADR-023
+
+### Title
+
+Multi-Table Reservation Reschedule Concurrency (extends ADR-013)
+
+### Status
+
+Accepted
+
+### Date
+
+2026-07-23
+
+### Context
+
+Phase 7.3 (Reservation Lifecycle) approved that Rescheduling a Reservation may change its assigned Table (in addition to date, time, and party size), restricted to another Table within the same Branch. ADR-013 (Reservation Concurrency Strategy) defines a single-table advisory-lock + exclusion-constraint mechanism, scoped to exactly one `(branchId, tableId, reservationDate, timeSlotBucket)` key per protected operation (Create, and per Phase 7.2, Approve). A table-changing Reschedule of an `Approved` reservation is the first operation that must coordinate two physical Tables' occupancy atomically within one transaction — releasing the old Table's `Reserved` status, reserving the new Table's, and validating the new window is conflict-free — a scenario ADR-013 does not define a locking protocol for. Per `CHANGE_POLICY.md` criterion #7 ("changes concurrency or consistency guarantees for reservations"), this requires a new ADR; per `ARCHITECTURE_LOCK.md`'s own Unlock Procedure ("propose a new ADR... do not edit accepted ADRs in place — supersede with a new ADR"), ADR-013's own historical text is not modified by this decision.
+
+### Decision
+
+Extend ADR-013's advisory-lock mechanism, without altering its existing single-table behavior for Create/Approve/same-table Reschedule, to a deterministic two-key acquisition protocol for table-changing Reschedule only:
+
+1. **Derive both lock keys using the existing, unmodified `ReservationAvailabilityService.deriveLockKey`/`deriveTimeSlotBucket` mechanism** — one for the reservation's current `(branchId, oldTableId, reservationDate, oldTimeSlotBucket)`, one for the target `(branchId, newTableId, newReservationDate, newTimeSlotBucket)`. No new key-derivation mechanism is introduced.
+2. **Acquire both locks inside the same database transaction, in deterministic sorted order** (lexicographic comparison of the two derived lock-key strings — the lexicographically smaller string's lock is acquired first) — never in caller-/request-dependent order — so that two concurrent reschedules moving reservations in opposite directions between the same two tables cannot deadlock.
+3. **Re-check for a confirmed overlap at the new table/window** (identical to the existing Approve/Create pre-check, excluding the reservation's own row by id), then release the old Table, reserve the new Table, and update the Reservation row's `tableId`/`reservationStartTime`/`reservationEndTime`/`guests` — all inside the one transaction. If any step fails, the entire transaction rolls back: the Reservation, old Table, and new Table all remain exactly as they were before the attempt (no partial movement).
+4. **The existing database exclusion constraint (`reservations_no_overlapping_confirmed_excl`) remains the authoritative safety net** for the target row's new window, exactly as it already is for Create/Approve — an in-place `UPDATE` of the Reservation's own `tableId`/`reservationStartTime`/`reservationEndTime` is evaluated by the same constraint as any other write to that row; the constraint does not distinguish an `UPDATE` from an `INSERT`, so no special-casing is required.
+5. **A same-table Reschedule (no table change) requires only the single existing lock key** for the new time window, matching Create/Approve exactly — no second key, no new protocol. **A Reschedule of a `Pending` reservation** (regardless of whether the table changes) **never calls `Table.reserve()`/`Table.release()` at all**, matching Phase 7.2's established "a `Pending` reservation never reserves a table" principle — only the advisory lock(s) and the conflict pre-check apply, since there is no Table state to move; `Reservation.tableId` is simply updated in place.
+6. **Approved-reschedule auto-rejection:** per the same-slot-wins principle already frozen for Approval (Phase 7.2), when an `Approved` reservation is successfully rescheduled into a new window/table, any other `Pending` reservation now overlapping that target Table is automatically rejected inside the same transaction, using the identical mechanism (and identical "no Table operation" rule) Phase 7.2 already established for Approval — not a new mechanism. This does **not** apply when the reservation being rescheduled is itself still `Pending` — a `Pending` reservation does not "win" a slot merely by being rescheduled into it.
+
+### Alternatives Considered
+
+* **A merge-group-style "reservable unit" lock spanning both tables as one lock namespace.** Rejected: over-engineered for exactly two known, individually-identified tables, and risks conflating this with the still-unresolved Merge/Split architecture (dependency unlocked, architecture review pending as its own separate track) — this ADR must not, and does not, touch that.
+* **Locking only the new table, treating the old table's release as lock-free.** Rejected: leaves a narrow window where a concurrent operation could race the old table's release against another reservation being created/approved for that same freed slot; the two-key protocol closes this at negligible cost, since reschedules are comparatively rare relative to Create/Approve traffic.
+* **A single global reservation-write lock.** Rejected for the same throughput reasons ADR-013 itself already rejected full `SERIALIZABLE` isolation.
+
+### Consequences
+
+#### Positive
+
+* Table-changing Reschedule is now provably deadlock-safe and atomic, closing the one concurrency gap Phase 7.3 introduces.
+* Reuses 100% of ADR-013's existing lock-key derivation, advisory-lock primitive, and exclusion-constraint safety net — no new infrastructure, no new concurrency subsystem.
+* Same-table Reschedule and Reschedule-of-Pending remain exactly as simple as Create/Approve's own existing single-key mechanism — this ADR only adds complexity for the one genuinely new scenario.
+
+#### Negative
+
+* A table-changing Reschedule now acquires two advisory locks instead of one, marginally increasing lock contention for that specific operation only; Create, Approve, and same-table Reschedule are entirely unaffected.
+
+### Impact
+
+Affects: `ReservationAvailabilityService` (reused unmodified — no change), the Reschedule use case and repository method (Phase 7.3, implemented and live-verified 2026-07-23), `DECISIONS.md` (this ADR), `ARCHITECTURE_LOCK.md` (added to the locked ADR table), `TASKS.md` (Phase 7.3 — Reservation Lifecycle pre-implementation decision note and implementation report). Does not alter ADR-013's own historical Decision/Context/Alternatives/Consequences text — extends it for exactly one new operation (table-changing Reschedule) via this superseding ADR, per `CHANGE_POLICY.md`. Does not affect Merge/Split Tables (still a separate, unlocked-but-architecturally-unreviewed track) or any Phase 7.2 (Approval Workflow) semantics.
+
+---
+
+## ADR-024
+
+### Title
+
+OTP Delivery Provider Migration: Fonnte → LightOTP
+
+### Status
+
+Accepted
+
+### Date
+
+2026-07-23
+
+### Context
+
+ADR-022 (§"Fonnte Integration Boundary") introduced Fonnte as the Customer phone/WhatsApp OTP delivery provider, isolated behind `VerificationMessagingPort`. The business rule ADR-022 froze — "Customer verification occurs through phone/WhatsApp OTP" — is unaffected by this decision; only the **infrastructure choice of which provider delivers that OTP** changes. The Owner explicitly approved a provider change to LightOTP (`https://lightotp.com`) and supplied a live API key for local configuration/testing via environment variables only, never committed. Per `CHANGE_POLICY.md` criterion (a provider swap behind an already-frozen port is an infrastructure-adapter change, not a redesign of the Customer authentication architecture), and following the same "supersede, do not edit accepted ADRs in place" convention ADR-023 already established for ADR-013, this ADR supersedes only ADR-022's "Fonnte Integration Boundary" subsection — nothing else in ADR-022 (Customer registration/login/recovery state machines, phone normalization architecture, Owner provisioning, OTP security rules) is reopened, redesigned, or affected.
+
+**Verified LightOTP Contract** (fetched from LightOTP's official documentation at `lightotp.com/docs` prior to implementation — not called, no message sent, informational only):
+
+| Aspect | Verified value |
+|---|---|
+| Base URL / Endpoint | `POST https://api.lightotp.com/SendMessage` |
+| Auth header | `X-Api-Key: <key>` |
+| Required body fields | `otpCode` (string, 1–8 chars, letters/digits only), `toPhoneE164` (string, full E.164 **with** leading `+`) |
+| Optional body fields | `languageCode` (BCP-47, selects the WhatsApp message language — falls back to the account's default language if omitted/unmatched), `idempotencyKey` (UUID, safe-retry semantics) |
+| Target format | **Full E.164 with leading `+`** — the opposite of Fonnte's stripped-`+` `target` field; no adapter-side stripping is performed |
+| Message/template | **No free-text message field exists at all.** The WhatsApp message content is entirely provider/account-managed, selectable only by `languageCode`. There is no `template_id` or equivalent field to configure — see "Message/Template Contract" below |
+| Success response | `{"id": "<uuid>", "messageStatus": "Pending\|Sent\|Delivered\|Read\|Failed\|Deleted"}` |
+| Failure response | `{"errorMessage": "<code>"}`, e.g. `InvalidphoneNumber`, `InsufficientBalance`, `ApiKeyNotFound`, `TemplateNotFound` |
+| HTTP status codes | `200` success; `400` validation/cooldown/insufficient-balance; `404` unknown API key; `429` rate limit; `5xx` provider error |
+| Rate limit / cooldown | Per-IP request rate limiting (`429`, no specific published number); per-phone duplicate-send cooldown starting at 30s and doubling per additional send within a rolling 6-hour window, capped at 6 hours |
+| Timeout | Not documented by LightOTP — the adapter sets its own explicit bounded timeout (`LIGHTOTP_REQUEST_TIMEOUT_MS`), identical in principle to the retired Fonnte adapter's own timeout handling |
+
+### Decision
+
+1. **`FonnteVerificationMessagingAdapter` is replaced by `LightOtpVerificationMessagingAdapter`**, implementing the same, unmodified `VerificationMessagingPort` interface (`sendVerificationCode(phone: PhoneNumber, code: string): Promise<VerificationMessagingResult>`) — no application/domain-layer code changes, per ADR-022's own port/adapter boundary design working exactly as intended for a provider swap.
+2. **Canonical E.164 (`PhoneNumber.value`, with its leading `+`) is sent directly as `toPhoneE164`** — no boundary conversion is needed, unlike Fonnte's stripped-`+` requirement. `PhoneNumber.toFonnteTarget()` and `PhoneNumber.callingCode()` (both Fonnte-specific formatting/disambiguation helpers, never a canonical-identity concern) are removed from the shared `PhoneNumber` value object as dead code — LightOTP's `toPhoneE164` field requires neither.
+3. **Message/Template Contract (mechanical consequence, not a product decision):** the previously approved message text ("your verification code to tavola is: {CODE}\npowered by vegacore") **can no longer be sent as application-controlled copy** — LightOTP's `/SendMessage` endpoint accepts no message/template field at all; the WhatsApp message body is entirely provider/account-managed, varied only by the optional `languageCode`. Per this task's own explicit instruction ("DO NOT silently invent a template... report the requirement"), no template is invented or guessed at here — this is disclosed as a real, provider-driven limitation. `languageCode` itself is omitted by the adapter (no per-call customer-language input exists on the current `VerificationMessagingPort` signature; extending the port to carry one is out of scope for a provider migration and is not done here).
+4. **Configuration:** `LIGHTOTP_API_KEY` (secret, environment-only, allow-empty-fails-closed-at-send-time convention identical to `FONNTE_API_TOKEN`'s), `LIGHTOTP_API_URL` (default `https://api.lightotp.com/SendMessage`), `LIGHTOTP_REQUEST_TIMEOUT_MS` (default `10000`). `FONNTE_API_TOKEN`/`FONNTE_API_URL`/`FONNTE_REQUEST_TIMEOUT_MS` are removed from `env.validation.ts`, `docker-compose.yml`, and every other active runtime path — no Fonnte-shaped environment variable remains read by any code path.
+5. **OTP business/security rules (generation, hashing, expiry, attempt limits, resend cooldown, per-phone/IP rate limits, single-use, replay prevention) are entirely unchanged** — these are application-layer rules (`CryptoOtpService`, the rate-limit guards, the pending-registration/recovery-challenge state machines) that never delegated to Fonnte and do not delegate to LightOTP either; the provider is a pure delivery mechanism, never a security boundary.
+
+### Alternatives Considered
+
+* **Keep sending a `+`-stripped target "just in case," mirroring Fonnte's format defensively.** Rejected: LightOTP's documented `toPhoneE164` field explicitly requires the leading `+`; sending a stripped value would fail `InvalidphoneNumber` validation. Provider formatting must be derived from that provider's own real contract, never carried forward from a different provider's convention (this task's own explicit instruction).
+* **Invent a template/message field to try to preserve the exact prior message text.** Rejected outright per explicit instruction — no such field exists in LightOTP's documented API; guessing one risks a silently-broken integration disguised as a working one.
+* **Extend `VerificationMessagingPort.sendVerificationCode` with a new `languageCode`/customer-language parameter to at least control the WhatsApp message's language.** Rejected for this task: no existing caller threads a customer's language preference to this call site today; adding one is a genuine feature addition beyond a mechanical provider swap, out of this migration's scope.
+* **Introduce a second `VerificationMessagingPort`-like abstraction specifically for LightOTP.** Rejected: the existing port is already provider-agnostic and sufficient; creating a second abstraction would violate this task's own "do not create a second abstraction unnecessarily" instruction.
+
+### Consequences
+
+#### Positive
+
+* Zero application/domain-layer changes — the existing `VerificationMessagingPort` boundary (ADR-022) absorbed the provider swap exactly as a ports-and-adapters design is meant to.
+* `PhoneNumber` sheds two Fonnte-specific formatting methods, leaving the shared domain value object provider-agnostic again (canonical E.164 in, canonical E.164 out).
+* LightOTP's documented `idempotencyKey` support gives the adapter a free safety net against duplicate sends that Fonnte's contract never offered.
+
+#### Negative
+
+* **The application no longer controls the exact WhatsApp message text.** This is a real, disclosed product-visible change (the copy "your verification code to tavola is: ... powered by vegacore" cannot be reproduced through LightOTP's API), not a silently-accepted regression. Restoring custom message copy would require a different LightOTP plan/feature (if one exists) or a different provider entirely — a future product decision, not resolved here.
+* A second real external SaaS dependency and failure domain, structurally identical in shape to the one Fonnte already was (ADR-022's own "Negative" consequence carries forward unchanged, just against a different vendor).
+
+### Impact
+
+Affects: `src/config/lightotp.config.ts` (new, replaces `fonnte.config.ts`), `LightOtpVerificationMessagingAdapter` (new, replaces `FonnteVerificationMessagingAdapter`), `PhoneNumber` value object (two Fonnte-specific methods removed), `env.validation.ts`, `configuration.module.ts`, `authentication.module.ts`, `docker-compose.yml`, `ENVIRONMENT_SETUP.md`, `AUTHENTICATION_ARCHITECTURE.md` §15.8 (rewritten in place to describe the current LightOTP contract, per that document's own "authoritative current specification" convention), `ARCHITECTURE_LOCK.md` (this ADR added to the locked table; ADR-022's row annotated), `PRODUCT_REQUIREMENTS.md` FR-01.1a, `DOMAIN_MODEL.md`, `EVENTS.md`, `TESTING_STRATEGY.md`, `README.md`, `PROJECT_ROADMAP.md`, `TASKS.md` (new migration report). Does not affect Customer identity rules, Owner email/password authentication, Owner provisioning, Employee authentication, phone-number normalization/canonical-E.164 architecture, or any Reservation-domain architecture (Phase 7.x).
 
 ---
 

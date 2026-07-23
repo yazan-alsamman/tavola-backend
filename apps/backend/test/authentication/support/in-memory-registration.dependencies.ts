@@ -922,8 +922,8 @@ export class FakeOtpService implements OtpService {
  * Test double for `VerificationMessagingPort` (ADR-022/TESTING_STRATEGY.md:
  * "real third-party providers... never called from any automated test").
  * Records every call for assertion (target/message content, call count)
- * without any network access; `nextResult` lets a test simulate a Fonnte
- * failure without touching the real provider.
+ * without any network access; `nextResult` lets a test simulate a delivery
+ * failure without touching the real provider (LightOTP, ADR-024).
  */
 export class RecordingVerificationMessagingPort implements VerificationMessagingPort {
   readonly calls: Array<{ phone: string; code: string }> = [];

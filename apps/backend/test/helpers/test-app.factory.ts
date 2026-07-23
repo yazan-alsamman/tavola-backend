@@ -17,7 +17,7 @@ export interface ProviderOverride {
  *
  * `overrides` lets a test replace a real provider (e.g. `VERIFICATION_MESSAGING`,
  * so Customer registration/password-reset e2e specs never call the real
- * Fonnte adapter) with an in-memory fake, while every other provider in the
+ * LightOTP adapter) with an in-memory fake, while every other provider in the
  * real `AppModule` graph stays wired exactly as production - not a parallel
  * test-only module tree.
  */

@@ -32,7 +32,7 @@ function uniqueUsername(suffix: string): string {
 /**
  * ADR-022 Decision #16 (Phase 2.23 closure): real-HTTP E2E coverage of the
  * Customer phone/WhatsApp password-recovery flow
- * (START/RESEND/VERIFY/COMPLETE). Same Fonnte-fake override strategy as
+ * (START/RESEND/VERIFY/COMPLETE). Same verification-messaging-fake override strategy as
  * `customer-registration.e2e-spec.ts` - no real WhatsApp message is ever
  * sent.
  */

@@ -15,6 +15,11 @@ export function toReservationResult(reservation: Reservation): ReservationResult
     status: reservation.status,
     source: reservation.source,
     notes: reservation.notes,
+    approvedBy: reservation.approvedBy,
+    approvedAt: reservation.approvedAt,
+    cancelledAt: reservation.cancelledAt,
+    completedAt: reservation.completedAt,
+    noShowAt: reservation.noShowAt,
     createdAt: reservation.createdAt,
     updatedAt: reservation.updatedAt,
   };

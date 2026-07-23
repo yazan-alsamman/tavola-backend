@@ -110,11 +110,12 @@ export const envValidationSchema = Joi.object({
   PLATFORM_ADMIN_JWT_AUDIENCE: Joi.string().default('tavla-platform-admin-clients'),
   PLATFORM_ADMIN_JWT_EXPIRY_SECONDS: Joi.number().integer().min(1).default(900),
 
-  // ADR-022 Fonnte (WhatsApp OTP delivery). Required in every environment
-  // except where NOTIFICATION-style fake providers are used in tests (see
-  // FonnteVerificationMessagingAdapter's fake counterpart, wired only in
-  // the test module, never reading this variable).
-  FONNTE_API_TOKEN: Joi.string().allow('').default(''),
-  FONNTE_API_URL: Joi.string().uri().default('https://api.fonnte.com/send'),
-  FONNTE_REQUEST_TIMEOUT_MS: Joi.number().integer().min(1).default(10000),
+  // ADR-024 LightOTP (WhatsApp OTP delivery, supersedes ADR-022's Fonnte
+  // integration). Required in every environment except where
+  // RecordingVerificationMessagingPort-style fake providers are used in
+  // tests (see LightOtpVerificationMessagingAdapter's fake counterpart,
+  // wired only in the test module, never reading this variable).
+  LIGHTOTP_API_KEY: Joi.string().allow('').default(''),
+  LIGHTOTP_API_URL: Joi.string().uri().default('https://api.lightotp.com/SendMessage'),
+  LIGHTOTP_REQUEST_TIMEOUT_MS: Joi.number().integer().min(1).default(10000),
 });

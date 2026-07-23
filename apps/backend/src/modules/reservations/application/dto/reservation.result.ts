@@ -13,6 +13,11 @@ export interface ReservationResult {
   status: ReservationStatus;
   source: ReservationSource;
   notes: string | null;
+  approvedBy: string | null;
+  approvedAt: Date | null;
+  cancelledAt: Date | null;
+  completedAt: Date | null;
+  noShowAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

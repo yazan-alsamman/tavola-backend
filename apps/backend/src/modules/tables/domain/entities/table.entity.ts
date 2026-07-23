@@ -232,6 +232,52 @@ export class Table extends Entity<TableProps> {
     });
   }
 
+  /**
+   * Phase 7.2 (Approval Workflow, architecture frozen 2026-07-20) - a narrow
+   * domain operation, separate from `transitionStatus`. Called only by the
+   * Reservation write path: at manual Approval, or at creation time for
+   * auto-approval (TASKS.md Phase 7 decision note item 6). Requires the
+   * table to currently be `Available` - a table already `Occupied`/
+   * `Cleaning`/`Disabled` cannot be reserved (DOMAIN_MODEL.md's existing
+   * "Disabled tables cannot receive reservations"/"Tables under cleaning
+   * cannot be reserved" rules). `reservationId` is accepted for signature
+   * parity with the frozen `Table.reserve(reservationId, at)` decision text;
+   * no `Table` column persists it (DATABASE_SCHEMA.md documents no such
+   * column).
+   */
+  reserve(reservationId: string, at: Date): Table {
+    if (this.props.status !== TableStatus.Available) {
+      throw new InvalidTableStatusTransitionException(
+        `Cannot reserve table from status "${this.props.status}" - only an Available table may be reserved (reservationId: ${reservationId}).`,
+      );
+    }
+    return Table.reconstitute({
+      ...this.props,
+      status: TableStatus.Reserved,
+      updatedAt: at,
+    });
+  }
+
+  /**
+   * Phase 7.2 (Approval Workflow) - the narrow counterpart to `reserve()`.
+   * Requires the table to currently be `Reserved`. Not called by Reject or
+   * automatic rejection of overlapping Pending reservations (TASKS.md's
+   * "Phase 7.2 — Approval Workflow: Architecture Correction" - a `Pending`
+   * reservation never reserved the table, so there is nothing to release).
+   */
+  release(at: Date): Table {
+    if (this.props.status !== TableStatus.Reserved) {
+      throw new InvalidTableStatusTransitionException(
+        `Cannot release table from status "${this.props.status}" - only a Reserved table may be released.`,
+      );
+    }
+    return Table.reconstitute({
+      ...this.props,
+      status: TableStatus.Available,
+      updatedAt: at,
+    });
+  }
+
   toProps(): Readonly<TableProps> {
     return { ...this.props };
   }
@@ -246,9 +292,19 @@ function validate(props: TableProps): void {
   }
 }
 
+/**
+ * `Reserved` is deliberately excluded from this state machine in both
+ * directions (Phase 7.2 architecture freeze) - `Table.transitionStatus`/
+ * `POST /tables/{tableId}/status` must never be able to set or clear it,
+ * even though `current === Available` would otherwise satisfy the general
+ * rule below. Only `Table.reserve()`/`Table.release()` may touch `Reserved`.
+ */
 function validateTransition(current: TableStatus, target: TableStatus): void {
+  const touchesReserved = current === TableStatus.Reserved || target === TableStatus.Reserved;
   const isValid =
-    current !== target && (current === TableStatus.Available || target === TableStatus.Available);
+    !touchesReserved &&
+    current !== target &&
+    (current === TableStatus.Available || target === TableStatus.Available);
   if (!isValid) {
     throw new InvalidTableStatusTransitionException(
       `Cannot transition table status from "${current}" to "${target}" - only Available <-> Occupied, Available <-> Cleaning, and Available <-> Disabled are allowed.`,

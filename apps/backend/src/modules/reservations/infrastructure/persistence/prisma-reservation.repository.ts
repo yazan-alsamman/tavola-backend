@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaContext } from '@infrastructure/prisma/prisma-context.service';
-import { TableId } from '@shared/domain/value-objects/identifiers.vo';
+import { ReservationId, TableId } from '@shared/domain/value-objects/identifiers.vo';
 import { Reservation } from '../../domain/entities/reservation.entity';
 import { ReservationStatus } from '../../domain/enums/reservation.enums';
 import { ReservationConflictException } from '../../domain/exceptions/reservation-conflict.exception';
@@ -27,6 +27,12 @@ function isReservationExclusionViolation(error: unknown): boolean {
     error.message.includes(EXCLUSION_CONSTRAINT_NAME)
   );
 }
+
+const CONFIRMED_STATUSES = [
+  ReservationStatus.Approved,
+  ReservationStatus.Completed,
+  ReservationStatus.NoShow,
+];
 
 /**
  * `Reservation` is not in `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS`
@@ -64,36 +70,129 @@ export class PrismaReservationRepository implements ReservationRepository {
    * transaction commits or rolls back.
    */
   async createWithLock(reservation: Reservation, lockKey: string): Promise<void> {
-    await this.prismaContext.runInTransaction(async () => {
-      // `$executeRaw`, not `$queryRaw`: `pg_advisory_xact_lock` returns `void`,
-      // which Prisma cannot deserialize as a `$queryRaw` result column.
-      await this.prismaContext.client
-        .$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+    await this.prismaContext.runInTransaction(() =>
+      this.createWithLockInTransaction(reservation, lockKey),
+    );
+  }
 
-      const conflicting = await this.prismaContext.client.reservation.findFirst({
-        where: {
-          tableId: reservation.tableId.value,
-          status: {
-            in: [ReservationStatus.Approved, ReservationStatus.Completed, ReservationStatus.NoShow],
-          },
-          reservationStartTime: { lt: reservation.reservationEndTime },
-          reservationEndTime: { gt: reservation.reservationStartTime },
-        },
-      });
+  /**
+   * Phase 7.2: the extracted core of `createWithLock`, reusable by the
+   * auto-approval branch of `CreateReservationUseCase`, which wraps this in
+   * its own outer `UnitOfWorkPort.execute` block alongside `Table.reserve()`
+   * and auto-rejection - see this method's own interface doc comment.
+   */
+  async createWithLockInTransaction(reservation: Reservation, lockKey: string): Promise<void> {
+    // `$executeRaw`, not `$queryRaw`: `pg_advisory_xact_lock` returns `void`,
+    // which Prisma cannot deserialize as a `$queryRaw` result column.
+    await this.prismaContext.client
+      .$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
 
-      if (conflicting !== null) {
+    const conflicting = await this.prismaContext.client.reservation.findFirst({
+      where: {
+        tableId: reservation.tableId.value,
+        status: { in: CONFIRMED_STATUSES },
+        reservationStartTime: { lt: reservation.reservationEndTime },
+        reservationEndTime: { gt: reservation.reservationStartTime },
+      },
+    });
+
+    if (conflicting !== null) {
+      throw new ReservationConflictException();
+    }
+
+    const data = ReservationPrismaMapper.toPersistence(reservation);
+    try {
+      await this.prismaContext.client.reservation.create({ data });
+    } catch (error) {
+      if (isReservationExclusionViolation(error)) {
         throw new ReservationConflictException();
       }
+      throw error;
+    }
+  }
 
-      const data = ReservationPrismaMapper.toPersistence(reservation);
-      try {
-        await this.prismaContext.client.reservation.create({ data });
-      } catch (error) {
-        if (isReservationExclusionViolation(error)) {
-          throw new ReservationConflictException();
-        }
-        throw error;
-      }
+  async findById(id: ReservationId): Promise<Reservation | null> {
+    const row = await this.prismaContext.client.reservation.findUnique({
+      where: { id: id.value },
     });
+    return row ? ReservationPrismaMapper.toDomain(row) : null;
+  }
+
+  async acquireAdvisoryLock(lockKey: string): Promise<void> {
+    await this.prismaContext.client
+      .$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+  }
+
+  async findConfirmedOverlapExcluding(
+    tableId: TableId,
+    startTime: Date,
+    endTime: Date,
+    excludeReservationId: ReservationId,
+  ): Promise<Reservation | null> {
+    const row = await this.prismaContext.client.reservation.findFirst({
+      where: {
+        tableId: tableId.value,
+        id: { not: excludeReservationId.value },
+        status: { in: CONFIRMED_STATUSES },
+        reservationStartTime: { lt: endTime },
+        reservationEndTime: { gt: startTime },
+      },
+    });
+    return row ? ReservationPrismaMapper.toDomain(row) : null;
+  }
+
+  async findOtherOverlappingPending(
+    tableId: TableId,
+    startTime: Date,
+    endTime: Date,
+    excludeReservationId: ReservationId,
+  ): Promise<Reservation[]> {
+    const rows = await this.prismaContext.client.reservation.findMany({
+      where: {
+        tableId: tableId.value,
+        id: { not: excludeReservationId.value },
+        status: ReservationStatus.Pending,
+        reservationStartTime: { lt: endTime },
+        reservationEndTime: { gt: startTime },
+      },
+    });
+    return rows.map((row) => ReservationPrismaMapper.toDomain(row));
+  }
+
+  async updateTransitioningFromPending(reservation: Reservation): Promise<boolean> {
+    return this.updateTransitioningFrom(reservation, ReservationStatus.Pending);
+  }
+
+  async updateTransitioningFrom(
+    reservation: Reservation,
+    expectedCurrentStatus: ReservationStatus,
+  ): Promise<boolean> {
+    const data = ReservationPrismaMapper.toPersistence(reservation);
+    try {
+      const result = await this.prismaContext.client.reservation.updateMany({
+        where: { id: data.id, status: expectedCurrentStatus },
+        data: {
+          status: data.status,
+          tableId: data.tableId,
+          reservationDate: data.reservationDate,
+          reservationStartTime: data.reservationStartTime,
+          reservationEndTime: data.reservationEndTime,
+          guests: data.guests,
+          notes: data.notes,
+          approvedBy: data.approvedBy,
+          approvedAt: data.approvedAt,
+          cancelledAt: data.cancelledAt,
+          completedAt: data.completedAt,
+          noShowAt: data.noShowAt,
+          updatedAt: data.updatedAt,
+        },
+      });
+      return result.count > 0;
+    } catch (error) {
+      if (isReservationExclusionViolation(error)) {
+        throw new ReservationConflictException();
+      }
+      throw error;
+    }
   }
 }

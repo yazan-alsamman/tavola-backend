@@ -106,7 +106,7 @@ Logout (revoke current session)  OR  Session Revocation (admin/user/device)
 
 | Registration type | Creates | Notes |
 |---|---|---|
-| ~~Customer (`intent=customer`)~~ | ~~`User` (status `Pending`), `UserConsent` rows, verification token~~ | **Superseded by ADR-022** — customer registration is phone-first (username + E.164 phone, WhatsApp OTP via Fonnte); no email is collected; no `User` row exists until phone verification and password-setting both complete. See §15.1. |
+| ~~Customer (`intent=customer`)~~ | ~~`User` (status `Pending`), `UserConsent` rows, verification token~~ | **Superseded by ADR-022** — customer registration is phone-first (username + E.164 phone, WhatsApp OTP via LightOTP per ADR-024); no email is collected; no `User` row exists until phone verification and password-setting both complete. See §15.1. |
 | ~~Restaurant owner (`intent=owner`)~~ | ~~`User` (`Pending`), `Organization`, `OrganizationMember` (`Owner`), `UserConsent`, verification token~~ | **Superseded by ADR-022** — Restaurant Owners are no longer publicly self-registered. Accounts are provisioned administratively by a Platform Admin (email + password, no verification token, immediately `Active`). See §15.2. |
 | Employee invite (Phase 6+) | Pre-created `Employee` linked on first login | Unchanged by ADR-022 — remains email-keyed (§15.5). Out of Phase 2 scope except schema readiness |
 
@@ -1283,7 +1283,7 @@ This section is the authoritative current specification for registration/verific
 START (username + selected country calling code + national/local number — see §15.10)
   → backend validates the calling-code/number combination and normalizes to canonical E.164;
     generate 6-digit crypto-random OTP
-  → send via WhatsApp (Fonnte), synchronously
+  → send via WhatsApp (LightOTP, ADR-024), synchronously
 VERIFY (OTP)
   → attempt-limited, expiring, single-use; success unlocks COMPLETE for this pending
     registration only
@@ -1328,13 +1328,13 @@ Remains email-keyed (`LoginUseCase`'s `findUnlinkedInvitedByEmail`) — not conv
 
 `POST /auth/customer/register/start` (body: `username`, `countryCode`, `phoneNumber`), `POST /auth/customer/register/resend`, `POST /auth/customer/register/verify`, `POST /auth/customer/register/complete` (body includes chosen password). Customer login: `POST /auth/customer/login` (§15.4). These are explicit product-frozen route names under a nested `/auth/customer/...` namespace — no longer the flat `verify-email`-style derivation this section originally proposed; that derivation is retained struck through in `DECISIONS.md` ADR-022 Decision #8 for historical record only.
 
-## 15.8 Fonnte Integration
+## 15.8 LightOTP Integration (ADR-024, supersedes Fonnte/ADR-022 §"Fonnte Integration Boundary")
 
-`Application → VerificationMessagingPort → FonnteVerificationMessagingAdapter → Fonnte HTTP API`, synchronous delivery (not BullMQ — the customer is actively waiting). Contract **live-verified against the real Fonnte API** (Phase 2.23 closure follow-up, superseding the earlier docs-only, not-yet-called version of this section): `POST https://api.fonnte.com/send`, `Authorization: <token>` header (no `Bearer` prefix), body `{target, countryCode, message}`, target sent without a leading `+` (adapter-boundary conversion only, canonical stored value keeps E.164's `+`), success `{status: true, ...}` / failure `{status: false, reason: ...}`.
+`Application → VerificationMessagingPort → LightOtpVerificationMessagingAdapter → LightOTP HTTP API`, synchronous delivery (not BullMQ — the customer is actively waiting). Contract verified against LightOTP's official documentation (`lightotp.com/docs`) and live-verified for connectivity/authentication (2026-07-23, no real WhatsApp send performed — see `TASKS.md`'s migration report): `POST https://api.lightotp.com/SendMessage`, `X-Api-Key: <key>` header, body `{otpCode, toPhoneE164, idempotencyKey}`, `toPhoneE164` sent as **full canonical E.164 with its leading `+`** (the opposite of the retired Fonnte adapter's stripped-`+` `target` field — no boundary conversion is needed, `PhoneNumber.value` is used directly), success `{id, messageStatus}` (`Pending`/`Sent`/`Delivered`/`Read` treated as accepted; `Failed`/`Deleted` treated as failed) / failure `{errorMessage: "<code>"}`.
 
-**`countryCode` is a required field, not optional** — a real defect found via live testing: Fonnte silently assumes Indonesia (`+62`) for any `target` it cannot otherwise disambiguate, prepending `62` to an already-correctly-formatted international number (e.g. a Syrian `963...` number silently became `62963...`) while still reporting `status: true` ("queued") — the call "succeeds" but the message is never delivered, for every non-Indonesian number. `PhoneNumber.callingCode()` derives the correct value from the same canonical phone the adapter already has, so `target`/`countryCode` can never disagree.
+**No custom/free-text message field exists in LightOTP's API.** The WhatsApp message content is entirely provider/account-managed, varied only by an optional `languageCode` (omitted by the adapter - no per-call customer-language input exists on `VerificationMessagingPort` today). The previously approved message text ("your verification code to tavola is: {CODE}, powered by vegacore") can no longer be sent as application-controlled copy - a disclosed, mechanical consequence of LightOTP's real API shape (ADR-024), not a silently-dropped requirement.
 
-`FONNTE_API_TOKEN` via validated environment configuration only (`ENVIRONMENT_SETUP.md`).
+`LIGHTOTP_API_KEY` via validated environment configuration only (`ENVIRONMENT_SETUP.md`).
 
 ## 15.9 Phone/Username Uniqueness Mechanism
 
@@ -1346,7 +1346,7 @@ The mobile app's Country Code Picker **defaults to Syria (+963)** but the custom
 
 Responsibility split:
 - **Mobile**: renders the picker (defaulted to +963), lets the customer change it, collects the national/local number as a value distinct from the picker selection, and sends the backend enough information to reconstruct both parts (never collapses them into an ambiguous single string the backend must guess apart).
-- **Backend (authoritative normalization boundary)**: never trusts client-side formatting alone; independently validates the selected calling code against the entered national number; produces canonical E.164; rejects invalid combinations. Only the canonical E.164 value is ever persisted, used for uniqueness, handed to the Fonnte adapter (§15.8 — the leading `+` is stripped only at that adapter boundary, unchanged), or used for login/resend/rate-limit identity. Equivalent representations of the same number (e.g. with/without a leading trunk zero) must resolve to one canonical identity.
+- **Backend (authoritative normalization boundary)**: never trusts client-side formatting alone; independently validates the selected calling code against the entered national number; produces canonical E.164; rejects invalid combinations. Only the canonical E.164 value is ever persisted, used for uniqueness, handed to the LightOTP adapter (§15.8 — sent as full E.164 with its leading `+`, no stripping, per ADR-024), or used for login/resend/rate-limit identity. Equivalent representations of the same number (e.g. with/without a leading trunk zero) must resolve to one canonical identity.
 
 Full statement and worked examples: `DECISIONS.md` ADR-022, Decision #13.
 
@@ -1356,7 +1356,7 @@ Full statement and worked examples: `DECISIONS.md` ADR-022, Decision #13.
 
 ```
 START (canonical E.164 phone)
-  → send 6-digit OTP via WhatsApp (Fonnte)
+  → send 6-digit OTP via WhatsApp (LightOTP, ADR-024)
 VERIFY (OTP)
   → establishes verified, not-yet-consumed recovery state; does NOT itself change the password
 COMPLETE (new password)

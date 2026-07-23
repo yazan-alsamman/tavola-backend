@@ -33,7 +33,7 @@ import { PrismaUserRepository } from './infrastructure/persistence/prisma-user.r
 import { PrismaPendingCustomerRegistrationRepository } from './infrastructure/persistence/prisma-pending-customer-registration.repository';
 import { PrismaCustomerPasswordResetRepository } from './infrastructure/persistence/prisma-customer-password-reset.repository';
 import { CryptoOtpService } from './infrastructure/security/otp.service';
-import { FonnteVerificationMessagingAdapter } from './infrastructure/messaging/fonnte-verification-messaging.adapter';
+import { LightOtpVerificationMessagingAdapter } from './infrastructure/messaging/lightotp-verification-messaging.adapter';
 import { PrismaDeviceSessionRepository } from './infrastructure/persistence/prisma-device-session.repository';
 import { PrismaTokenFamilyRepository } from './infrastructure/persistence/prisma-token-family.repository';
 import { PrismaLoginAttemptRepository } from './infrastructure/persistence/prisma-login-attempt.repository';
@@ -121,7 +121,7 @@ import {
     PrismaPendingCustomerRegistrationRepository,
     PrismaCustomerPasswordResetRepository,
     CryptoOtpService,
-    FonnteVerificationMessagingAdapter,
+    LightOtpVerificationMessagingAdapter,
     PrismaDeviceSessionRepository,
     PrismaTokenFamilyRepository,
     PrismaLoginAttemptRepository,
@@ -148,7 +148,7 @@ import {
       useExisting: PrismaCustomerPasswordResetRepository,
     },
     { provide: OTP_SERVICE, useExisting: CryptoOtpService },
-    { provide: VERIFICATION_MESSAGING, useExisting: FonnteVerificationMessagingAdapter },
+    { provide: VERIFICATION_MESSAGING, useExisting: LightOtpVerificationMessagingAdapter },
     {
       provide: PASSWORD_RESET_REPOSITORY,
       useExisting: PrismaPasswordResetRepository,

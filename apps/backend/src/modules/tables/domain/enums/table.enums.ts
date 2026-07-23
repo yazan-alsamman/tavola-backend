@@ -1,22 +1,26 @@
 /**
  * Status Management architecture decision (TASKS.md "Phase 6 — Status
- * Management" note): four values only. `Create Table` always produces
- * `Available`. Transitions happen exclusively through the single dedicated
- * Domain Action `POST /tables/{tableId}/status` (`ChangeTableStatusUseCase`),
- * restricted to `Available <-> Occupied`/`Available <-> Cleaning`/
- * `Available <-> Disabled` only - every other combination, including a
- * same-status "transition", is rejected by `Table.transitionStatus`. `Update
- * Table` never transitions status. `Reserved` is deliberately excluded - it
- * is exclusively a Reservation Engine concept, to be introduced only after
- * the Reservation Engine architecture has been approved and frozen, through
- * its own explicit architectural decision. `Merged` is deliberately excluded
- * - it belongs to the deferred Merge/Split feature.
+ * Management" note): `Create Table` always produces `Available`. Manual
+ * transitions happen exclusively through the single dedicated Domain Action
+ * `POST /tables/{tableId}/status` (`ChangeTableStatusUseCase`), restricted to
+ * `Available <-> Occupied`/`Available <-> Cleaning`/`Available <-> Disabled`
+ * only - every other combination, including a same-status "transition", is
+ * rejected by `Table.transitionStatus`. `Update Table` never transitions
+ * status. `Merged` is deliberately excluded - it belongs to the deferred
+ * Merge/Split feature.
+ *
+ * `Reserved` (Phase 7.2 — Approval Workflow, architecture frozen 2026-07-20)
+ * is exclusively a Reservation Engine concept: only `Table.reserve()`/
+ * `Table.release()` may set or clear it. `Table.transitionStatus` continues
+ * to reject `Reserved` as either the current or target status - it is never
+ * reachable through `POST /tables/{tableId}/status`.
  */
 export enum TableStatus {
   Available = 'Available',
   Occupied = 'Occupied',
   Cleaning = 'Cleaning',
   Disabled = 'Disabled',
+  Reserved = 'Reserved',
 }
 
 /**

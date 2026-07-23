@@ -687,7 +687,7 @@ Fields
 * indoor
 * vip
 * smoking
-* status (`Available`, `Occupied`, `Cleaning`, `Disabled` — Status Management architecture decision; `Reserved` excluded, see Notes)
+* status (`Available`, `Occupied`, `Cleaning`, `Disabled`, `Reserved` — Status Management architecture decision + Phase 7.2 Approval Workflow; see Notes)
 * mergeGroupId (nullable)
 * createdAt
 * updatedAt
@@ -705,7 +705,7 @@ Notes
 
 * **Cascade:** soft-deleting a Branch cascades to soft-deleting its Tables (and its FloorPlans - see "Floor Plans" above), but never its historical Reservations, which are immutable per the Soft Delete Policy above (DOMAIN_MODEL.md's Branch Aggregate Notes, "Branch deletion"). **Executes inside one database transaction; partial completion is forbidden** - the system must never reach a state where the Branch is soft-deleted but its Tables and/or FloorPlans are not.
 * **Deletion guard:** a FloorPlan cannot be deleted while any (non-soft-deleted) Table still references it via `floorPlanId`; the operation must be rejected, not silently reassigned or orphaned (Aggregate Invariant, see "Floor Plans" above and DOMAIN_MODEL.md).
-* **`status` (Phase 6.1 decision, superseded by the Status Management architecture decision):** `Create Table` still always produces `Available`. The `TableStatus` enum now also defines `Occupied`, `Cleaning`, and `Disabled` (Status Management architecture decision) - transitioned exclusively through the single dedicated Domain Action `POST /tables/{tableId}/status` (see API_GUIDELINES.md); `Update Table` (`PATCH /tables/:tableId`) never modifies `status`. Allowed transitions are restricted to `Available ↔ Occupied`, `Available ↔ Cleaning`, and `Available ↔ Disabled` only - every other combination (e.g. `Cleaning → Occupied`, `Disabled → Cleaning`) is rejected as an invalid transition. `Reserved` is approved for introduction as part of **Phase 7.2 — Approval Workflow** (Reservation Engine architecture frozen, see TASKS.md's Phase 7 pre-implementation decision note item 6 and the "Phase 7.2 — Approval Workflow: Architecture Freeze" note) - not yet added to this enum, since Phase 7.2 implementation has not started. Once implemented, only the new `Table.reserve(reservationId, at)` / `Table.release(at)` domain methods may set or clear it; `Table.transitionStatus`'s validator (frozen Phase 6.3) continues to reject it, exactly as it does today. Status transitions produce an audit-log entry only (`table.status_changed`) - no domain event class exists for this action.
+* **`status` (Phase 6.1 decision, superseded by the Status Management architecture decision):** `Create Table` still always produces `Available`. The `TableStatus` enum also defines `Occupied`, `Cleaning`, and `Disabled` (Status Management architecture decision) - transitioned exclusively through the single dedicated Domain Action `POST /tables/{tableId}/status` (see API_GUIDELINES.md); `Update Table` (`PATCH /tables/:tableId`) never modifies `status`. Allowed transitions are restricted to `Available ↔ Occupied`, `Available ↔ Cleaning`, and `Available ↔ Disabled` only - every other combination (e.g. `Cleaning → Occupied`, `Disabled → Cleaning`) is rejected as an invalid transition. `Reserved` (**Phase 7.2 — Approval Workflow, complete and live-verified, 2026-07-23** - additive migration `20260723140000_phase_7_2_add_table_status_reserved`) is set/cleared exclusively by the new `Table.reserve(reservationId, at)` / `Table.release(at)` domain methods; `Table.transitionStatus`'s validator (frozen Phase 6.3) continues to reject `Reserved` as either the current or target status - `POST /tables/{tableId}/status` can never set or clear it. Status transitions produce an audit-log entry only (`table.status_changed`) - no domain event class exists for this action.
 * **`shape` (Phase 6.1 architecture decision):** `TableShape` is presentation metadata only - it describes how a table renders on the floor plan and does not participate in reservation rules, capacity, or merge/split behavior. Its initial value set is intentionally minimal: `Rectangle` and `Round` only. A square table is represented as `Rectangle` with `width == height`; there is no separate `Square` value. `Oval`/`Triangle`/`Hexagon`/`Custom`/any other value are not defined and must not be inferred - a future product requirement may extend the enum, but only through an explicit architectural decision.
 
 ---
@@ -782,7 +782,7 @@ Indexes
 
 ## Reservation History
 
-Stores every reservation state transition and modification.
+Stores every reservation state transition and modification. Introduced by **Phase 7.3 — Reservation Lifecycle** (architecture frozen 2026-07-23, implemented and live-verified 2026-07-23; not created by Phase 7.1/7.2, which retain their existing `AuditingEventPublisher`-only auditing unchanged). Rows are created by Cancel, Reschedule, Complete, NoShow, and Expire — the five transitions Phase 7.3 introduces; Approve/Reject are not retroactively extended to write here. Migration: `20260723143714_phase_7_3_reservation_lifecycle`.
 
 Fields
 
@@ -794,10 +794,12 @@ Fields
 * oldReservationStartTime (nullable — populated on reschedule)
 * newReservationDate (nullable — populated on reschedule)
 * newReservationStartTime (nullable — populated on reschedule)
+* oldTableId (nullable UUID — populated only on a table-changing reschedule; Phase 7.3 architecture decision, 2026-07-23, since Reschedule may change the assigned Table within the same Branch — see DOMAIN_MODEL.md's Reservation business rules and ADR-023)
+* newTableId (nullable UUID — populated only on a table-changing reschedule, same decision)
 * withinCancellationWindow (boolean, nullable — populated on cancel/reschedule)
-* changedBy
+* changedBy (nullable — the acting `User`/`Employee` id; `null` for the System-driven Expire)
 * changedAt
-* reason
+* reason (nullable — customer/staff-supplied context, e.g. a Cancel reason; never required by any product requirement)
 
 Indexes
 

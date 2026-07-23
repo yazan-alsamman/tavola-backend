@@ -74,11 +74,11 @@ Full authentication design: **AUTHENTICATION_ARCHITECTURE.md**. Tunable policy v
 * `ONESIGNAL_API_KEY`
 * `NOTIFICATION_PROVIDER` (`onesignal` | `fake` — `fake` is required for Test environments, see TESTING_STRATEGY.md)
 
-## WhatsApp Verification (ADR-022 — Phase 2.23, implemented and live-verified)
+## WhatsApp Verification (ADR-022 — Phase 2.23; provider updated to LightOTP by ADR-024, 2026-07-23, implemented and live-verified)
 
-* `FONNTE_API_TOKEN` — server-side secret only; supplied exclusively via validated environment configuration. **Never hardcode, log, commit, or document its actual value** (this document names the variable only, per ADR-022's explicit instruction). Automated tests never call the real Fonnte adapter — every Customer registration/password-reset test suite overrides `VerificationMessagingPort` with an in-memory fake instead (see `TESTING_STRATEGY.md`).
-* `FONNTE_API_URL` (default `https://api.fonnte.com/send`)
-* `FONNTE_REQUEST_TIMEOUT_MS` (default `10000`)
+* `LIGHTOTP_API_KEY` — server-side secret only; supplied exclusively via validated environment configuration. **Never hardcode, log, commit, or document its actual value** (this document names the variable only, per ADR-022/ADR-024's explicit instruction). Automated tests never call the real LightOTP adapter — every Customer registration/password-reset test suite overrides `VerificationMessagingPort` with an in-memory fake instead (see `TESTING_STRATEGY.md`).
+* `LIGHTOTP_API_URL` (default `https://api.lightotp.com/SendMessage`)
+* `LIGHTOTP_REQUEST_TIMEOUT_MS` (default `10000`)
 
 ## Platform Admin Authentication (ADR-022 — Phase 2.23, implemented and live-verified)
 

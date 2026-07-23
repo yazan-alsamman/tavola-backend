@@ -4,24 +4,46 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Param,
+  ParseUUIDPipe,
   Post,
   Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiExtraModels,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { Request } from 'express';
 import { ResponseMessage } from '@common/decorators/response-message.decorator';
 import { ApiErrorResponse } from '@common/decorators/api-error-response.decorator';
 import { ErrorResponseDto } from '@common/dto/error-response.dto';
-import { AuthenticatedActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
+import {
+  AuthenticatedActor,
+  AuthenticatedEmployeeActor,
+} from '@modules/authentication/application/dto/authenticated-actor.dto';
 import { CurrentActor } from '@modules/authentication/presentation/decorators/current-actor.decorator';
 import { JwtAuthGuard } from '@modules/authentication/presentation/guards/jwt-auth.guard';
 import { SessionVersionGuard } from '@modules/authentication/presentation/guards/session-version.guard';
+import { PermissionsGuard } from '@modules/authorization/presentation/guards/permissions.guard';
+import { RequirePermission } from '@modules/authorization/presentation/decorators/require-permission.decorator';
 import { SearchAvailabilityUseCase } from '../../application/use-cases/search-availability.use-case';
 import { CreateReservationUseCase } from '../../application/use-cases/create-reservation.use-case';
+import { ApproveReservationUseCase } from '../../application/use-cases/approve-reservation.use-case';
+import { RejectReservationUseCase } from '../../application/use-cases/reject-reservation.use-case';
+import { CancelReservationUseCase } from '../../application/use-cases/cancel-reservation.use-case';
+import { RescheduleReservationUseCase } from '../../application/use-cases/reschedule-reservation.use-case';
+import { CompleteReservationUseCase } from '../../application/use-cases/complete-reservation.use-case';
+import { MarkNoShowReservationUseCase } from '../../application/use-cases/mark-no-show-reservation.use-case';
 import { SearchAvailabilityQueryDto } from '../dto/search-availability.query.dto';
 import { CreateReservationRequestDto } from '../dto/create-reservation.request.dto';
+import { CancelReservationRequestDto } from '../dto/cancel-reservation.request.dto';
+import { RescheduleReservationRequestDto } from '../dto/reschedule-reservation.request.dto';
 import { ReservationResponseDto } from '../dto/reservation.response.dto';
 import { TableAvailabilityResponseDto } from '../dto/table-availability.response.dto';
 import { toReservationResponse, toTableAvailabilityResponse } from './reservation-response.mapper';
@@ -44,6 +66,12 @@ export class ReservationsController {
   constructor(
     private readonly searchAvailabilityUseCase: SearchAvailabilityUseCase,
     private readonly createReservationUseCase: CreateReservationUseCase,
+    private readonly approveReservationUseCase: ApproveReservationUseCase,
+    private readonly rejectReservationUseCase: RejectReservationUseCase,
+    private readonly cancelReservationUseCase: CancelReservationUseCase,
+    private readonly rescheduleReservationUseCase: RescheduleReservationUseCase,
+    private readonly completeReservationUseCase: CompleteReservationUseCase,
+    private readonly markNoShowReservationUseCase: MarkNoShowReservationUseCase,
   ) {}
 
   @Get('availability')
@@ -122,6 +150,264 @@ export class ReservationsController {
       reservationEndTime: body.reservationEndTime,
       guests: body.guests,
       notes: body.notes ?? null,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return toReservationResponse(result);
+  }
+
+  @Post(':id/approve')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, PermissionsGuard)
+  @RequirePermission('reservations:approve')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Reservation approved successfully.')
+  @ApiOperation({
+    operationId: 'reservationsApprove',
+    summary: 'Approve a Pending reservation (Domain Action, Phase 7.2)',
+    description:
+      'Only a Pending reservation may be approved. Calls Table.reserve() atomically with the status transition (ADR-013 advisory lock + re-check, same mechanism as Create). Automatically rejects any other overlapping Pending reservation for the same table (no Table operation for those) - Reject and automatic rejection never call Table.release(), since a Pending reservation never reserved the table in the first place. Requires the reservations:approve permission and Employee branch scope.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Reservation approved', type: ReservationResponseDto })
+  @ApiErrorResponse(400, 'Reservation is not currently Pending', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller lacks reservations:approve or is outside branch scope', [
+    'FORBIDDEN',
+    'EMPLOYEE_BRANCH_NOT_ASSIGNED',
+  ])
+  @ApiErrorResponse(404, 'Reservation not found', ['NOT_FOUND'])
+  @ApiErrorResponse(409, 'A confirmed reservation now conflicts for this table/window', [
+    'CONFLICT',
+  ])
+  async approve(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentActor() actor: AuthenticatedEmployeeActor,
+    @Req() request: Request,
+  ): Promise<ReservationResponseDto> {
+    const result = await this.approveReservationUseCase.execute({
+      actor,
+      reservationId: id,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return toReservationResponse(result);
+  }
+
+  @Post(':id/reject')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, PermissionsGuard)
+  @RequirePermission('reservations:approve')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Reservation rejected successfully.')
+  @ApiOperation({
+    operationId: 'reservationsReject',
+    summary: 'Reject a Pending reservation (Domain Action, Phase 7.2)',
+    description:
+      'Only a Pending reservation may be rejected. Performs NO Table operation (Phase 7.2 Architecture Correction: a Pending reservation never reserved the table, so there is nothing to release). Requires the reservations:approve permission and Employee branch scope.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Reservation rejected', type: ReservationResponseDto })
+  @ApiErrorResponse(400, 'Reservation is not currently Pending', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller lacks reservations:approve or is outside branch scope', [
+    'FORBIDDEN',
+    'EMPLOYEE_BRANCH_NOT_ASSIGNED',
+  ])
+  @ApiErrorResponse(404, 'Reservation not found', ['NOT_FOUND'])
+  async reject(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentActor() actor: AuthenticatedEmployeeActor,
+    @Req() request: Request,
+  ): Promise<ReservationResponseDto> {
+    const result = await this.rejectReservationUseCase.execute({
+      actor,
+      reservationId: id,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return toReservationResponse(result);
+  }
+
+  @Post(':id/cancel')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Reservation cancelled successfully.')
+  @ApiOperation({
+    operationId: 'reservationsCancel',
+    summary: 'Cancel a Pending or Approved reservation (Domain Action, Phase 7.3)',
+    description:
+      "Reachable from Pending or Approved, by either the reservation's own Customer (ownership-enforced) or a branch-scoped Employee holding reservations:cancel - one route, no PermissionsGuard (which would otherwise deny every Customer actor); actor branching happens inside the use case. Never blocked by the cancellation window - only flagged (withinCancellationWindow) on the resulting ReservationHistory row. Pending -> Cancelled performs no Table operation; Approved -> Cancelled calls Table.release() atomically, returning the table to Available.",
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Reservation cancelled', type: ReservationResponseDto })
+  @ApiErrorResponse(400, 'Reservation is not currently Pending or Approved', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Employee lacks reservations:cancel or is outside branch scope', [
+    'FORBIDDEN',
+    'EMPLOYEE_BRANCH_NOT_ASSIGNED',
+  ])
+  @ApiErrorResponse(404, 'Reservation not found, or does not belong to the caller', ['NOT_FOUND'])
+  async cancel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: CancelReservationRequestDto,
+    @CurrentActor() actor: AuthenticatedActor,
+    @Req() request: Request,
+  ): Promise<ReservationResponseDto> {
+    const result = await this.cancelReservationUseCase.execute({
+      actor,
+      reservationId: id,
+      reason: body.reason ?? null,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return toReservationResponse(result);
+  }
+
+  @Post(':id/reschedule')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Reservation rescheduled successfully.')
+  @ApiOperation({
+    operationId: 'reservationsReschedule',
+    summary: 'Reschedule a Pending or Approved reservation (Domain Action, Phase 7.3)',
+    description:
+      "An in-place modification, never a status transition - reachable from Pending or Approved, by either the reservation's own Customer or a branch-scoped Employee holding reservations:reschedule (same dual-actor pattern as Cancel). May change reservationStartTime/reservationEndTime/guests/tableId together; a new tableId must belong to the same Branch (cross-Branch targets 404). Blocked once the cancellation window before the CURRENT scheduled time has closed (ReservationRescheduleWindowExpiredException) - unlike Cancel, which is never blocked. An Approved reschedule to a different Table is atomic (ADR-023: two advisory locks acquired in deterministic sorted order, release old Table, reserve new Table) and auto-rejects any other overlapping Pending reservation for the target Table, exactly like Approval (Phase 7.2). A same-table Approved reschedule never releases/re-reserves the table. A Pending reschedule performs no Table operation at all.",
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({
+    status: 200,
+    description: 'Reservation rescheduled',
+    type: ReservationResponseDto,
+  })
+  @ApiErrorResponse(
+    400,
+    'Reservation is not currently Pending or Approved, invalid time, or no fields supplied',
+    ['VALIDATION_ERROR'],
+  )
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Employee lacks reservations:reschedule or is outside branch scope', [
+    'FORBIDDEN',
+    'EMPLOYEE_BRANCH_NOT_ASSIGNED',
+  ])
+  @ApiErrorResponse(
+    404,
+    'Reservation or target Table not found (or belongs to a different Branch)',
+    ['NOT_FOUND'],
+  )
+  @ApiErrorResponse(409, 'Reschedule window has closed, or a confirmed reservation now conflicts', [
+    'RESERVATION_RESCHEDULE_WINDOW_EXPIRED',
+    'CONFLICT',
+  ])
+  async reschedule(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: RescheduleReservationRequestDto,
+    @CurrentActor() actor: AuthenticatedActor,
+    @Req() request: Request,
+  ): Promise<ReservationResponseDto> {
+    const result = await this.rescheduleReservationUseCase.execute({
+      actor,
+      reservationId: id,
+      tableId: body.tableId,
+      reservationStartTime: body.reservationStartTime,
+      reservationEndTime: body.reservationEndTime,
+      guests: body.guests,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return toReservationResponse(result);
+  }
+
+  @Post(':id/complete')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, PermissionsGuard)
+  @RequirePermission('reservations:complete')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Reservation completed successfully.')
+  @ApiOperation({
+    operationId: 'reservationsComplete',
+    summary: 'Mark an Approved reservation Completed (Domain Action, Phase 7.3)',
+    description:
+      'Staff-only (reservations:complete, branch-scoped) - a Customer cannot complete their own reservation. Only reachable once the scheduled service window has begun. Calls Table.release() atomically, returning the table directly to Available - never through TableStatus.Cleaning.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Reservation completed', type: ReservationResponseDto })
+  @ApiErrorResponse(
+    400,
+    'Reservation is not currently Approved, or its scheduled service window has not begun',
+    ['VALIDATION_ERROR'],
+  )
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller lacks reservations:complete or is outside branch scope', [
+    'FORBIDDEN',
+    'EMPLOYEE_BRANCH_NOT_ASSIGNED',
+  ])
+  @ApiErrorResponse(404, 'Reservation not found', ['NOT_FOUND'])
+  async complete(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentActor() actor: AuthenticatedEmployeeActor,
+    @Req() request: Request,
+  ): Promise<ReservationResponseDto> {
+    const result = await this.completeReservationUseCase.execute({
+      actor,
+      reservationId: id,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return toReservationResponse(result);
+  }
+
+  @Post(':id/no-show')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, PermissionsGuard)
+  @RequirePermission('reservations:noshow')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Reservation marked as No-Show successfully.')
+  @ApiOperation({
+    operationId: 'reservationsNoShow',
+    summary: 'Mark an Approved reservation NoShow (Domain Action, Phase 7.3)',
+    description:
+      'Staff-only (reservations:noshow - a dedicated permission slug, never a reuse of reservations:approve; hyphen-free because PermissionSlug rejects hyphenated segments). Only reachable after the scheduled time has passed. Calls Table.release() atomically, identically to Complete. No-show customer restriction/counting policy remains a deferred future product decision, out of scope here.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({
+    status: 200,
+    description: 'Reservation marked NoShow',
+    type: ReservationResponseDto,
+  })
+  @ApiErrorResponse(
+    400,
+    'Reservation is not currently Approved, or its scheduled time has not passed',
+    ['VALIDATION_ERROR'],
+  )
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller lacks reservations:noshow or is outside branch scope', [
+    'FORBIDDEN',
+    'EMPLOYEE_BRANCH_NOT_ASSIGNED',
+  ])
+  @ApiErrorResponse(404, 'Reservation not found', ['NOT_FOUND'])
+  async markNoShow(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentActor() actor: AuthenticatedEmployeeActor,
+    @Req() request: Request,
+  ): Promise<ReservationResponseDto> {
+    const result = await this.markNoShowReservationUseCase.execute({
+      actor,
+      reservationId: id,
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
     return toReservationResponse(result);

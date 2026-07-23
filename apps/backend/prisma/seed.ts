@@ -87,6 +87,22 @@ const PERMISSIONS: Array<{ slug: string; description: string }> = [
     description: 'Approve or reject pending reservations',
   },
   {
+    slug: 'reservations:cancel',
+    description: 'Cancel reservations on behalf of guests',
+  },
+  {
+    slug: 'reservations:reschedule',
+    description: 'Reschedule reservations on behalf of guests',
+  },
+  {
+    slug: 'reservations:complete',
+    description: 'Mark approved reservations as completed',
+  },
+  {
+    slug: 'reservations:noshow',
+    description: 'Mark approved reservations as a no-show',
+  },
+  {
     slug: 'tables:manage',
     description: 'Manage tables, merge, and split operations',
   },
@@ -121,6 +137,10 @@ const ROLES: Array<{
       'branches:manage',
       'reservations:create',
       'reservations:approve',
+      'reservations:cancel',
+      'reservations:reschedule',
+      'reservations:complete',
+      'reservations:noshow',
       'tables:manage',
       'employees:manage',
       'reports:view',
@@ -132,7 +152,14 @@ const ROLES: Array<{
     slug: 'receptionist',
     description: 'Front-of-house reservation and guest management',
     scope: RoleScope.Restaurant,
-    permissionSlugs: ['reservations:create', 'reservations:approve'],
+    permissionSlugs: [
+      'reservations:create',
+      'reservations:approve',
+      'reservations:cancel',
+      'reservations:reschedule',
+      'reservations:complete',
+      'reservations:noshow',
+    ],
   },
   {
     name: 'Cashier',

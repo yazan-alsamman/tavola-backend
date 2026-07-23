@@ -145,9 +145,9 @@ services:
       PLATFORM_ADMIN_JWT_ISSUER: ${PLATFORM_ADMIN_JWT_ISSUER:-tavla-platform-admin}
       PLATFORM_ADMIN_JWT_AUDIENCE: ${PLATFORM_ADMIN_JWT_AUDIENCE:-tavla-platform-admin-clients}
       PLATFORM_ADMIN_JWT_EXPIRY_SECONDS: ${PLATFORM_ADMIN_JWT_EXPIRY_SECONDS:-900}
-      FONNTE_API_TOKEN: ${FONNTE_API_TOKEN:-}
-      FONNTE_API_URL: ${FONNTE_API_URL:-https://api.fonnte.com/send}
-      FONNTE_REQUEST_TIMEOUT_MS: ${FONNTE_REQUEST_TIMEOUT_MS:-10000}
+      LIGHTOTP_API_KEY: ${LIGHTOTP_API_KEY:-}
+      LIGHTOTP_API_URL: ${LIGHTOTP_API_URL:-https://api.lightotp.com/SendMessage}
+      LIGHTOTP_REQUEST_TIMEOUT_MS: ${LIGHTOTP_REQUEST_TIMEOUT_MS:-10000}
     networks: [tavla-network]
     restart: unless-stopped
 

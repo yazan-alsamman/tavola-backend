@@ -62,7 +62,7 @@ export class CustomerAuthController {
     operationId: 'customerRegisterStart',
     summary: 'Start Customer registration (username + phone)',
     description:
-      'Validates username/phone availability, normalizes the selected country code + national number to canonical E.164, and sends a 6-digit WhatsApp OTP via Fonnte. Does not create a User. At most one active pending registration per phone (a repeated call restarts it). Rate limited to 5 sends/hour/phone.',
+      'Validates username/phone availability, normalizes the selected country code + national number to canonical E.164, and sends a 6-digit WhatsApp OTP via LightOTP. Does not create a User. At most one active pending registration per phone (a repeated call restarts it). Rate limited to 5 sends/hour/phone.',
   })
   @ApiResponse({ status: 200, description: 'OTP sent', type: CustomerOtpResponseDto })
   @ApiErrorResponse(400, 'Invalid username or phone/country combination', ['VALIDATION_ERROR'])

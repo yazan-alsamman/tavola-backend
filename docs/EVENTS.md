@@ -57,10 +57,10 @@ Every event should include:
 * SessionCreated
 * SessionRefreshed
 * SessionRevoked
-* CustomerPhoneVerificationRequested (new, ADR-022) — OTP sent via Fonnte; producer: the Start/Resend Domain Actions.
+* CustomerPhoneVerificationRequested (new, ADR-022) — OTP sent via LightOTP (ADR-024); producer: the Start/Resend Domain Actions.
 * CustomerPhoneVerified (new, ADR-022) — OTP verified successfully for a pending registration.
 * CustomerRegistrationCompleted (new, ADR-022) — real customer `User` row created after password-setting; the customer-flow analogue of `UserRegistered`.
-* CustomerPasswordResetRequested (new, ADR-022 Decision #16) — phone-based recovery OTP sent via Fonnte; the customer-flow analogue of `PasswordResetRequested`, never fired for Owner/staff (who keep the existing email event).
+* CustomerPasswordResetRequested (new, ADR-022 Decision #16) — phone-based recovery OTP sent via LightOTP (ADR-024); the customer-flow analogue of `PasswordResetRequested`, never fired for Owner/staff (who keep the existing email event).
 * CustomerPasswordResetCompleted (new, ADR-022 Decision #16) — password changed after successful OTP verification; the customer-flow analogue of `PasswordResetCompleted`.
 
 Restaurant Owner provisioning (ADR-022 Decision #15) reuses the existing `UserRegistered` event unchanged — no new event is introduced for it.
@@ -188,6 +188,10 @@ Security events span Authentication and Authorization. Each includes: **producer
 * ReservationUpdated
 
 **Phase 7 pre-implementation decision note (2026-07-19):** unlike `TableMoved`/`TableDisabled`/`TableEnabled`/`TableStatusChanged` above, every event in this list becomes a real domain event class, not an audit-only direct write. That audit-only precedent applied specifically because Move Table and Status Management had no consumers yet - Reservation events already have named consumers documented in this file and `DOMAIN_MODEL.md` (Analytics, Notifications, WebSocket fan-out per Phase 8/9/14), so publishing them as proper domain events (via `AuditingEventPublisher`, the same mechanism every other consumed event already uses) is required from the first implementation, not deferred.
+
+`ReservationCreated` (Phase 7.1) and `ReservationApproved`/`ReservationRejected` (Phase 7.2, complete and live-verified 2026-07-23) are implemented as real domain event classes exactly per this note - `ReservationApprovedEvent`/`ReservationRejectedEvent` carry `automatic: boolean` (`false` for a manual Approve/Reject by an Employee, `true` for the auto-approval branch of Create Reservation / automatic rejection of an overlapping Pending reservation) and `approvedBy`/`rejectedBy: string | null` (the Employee id, or `null` for the automatic case) - audited with `actorType: 'Employee'` or `'System'` accordingly.
+
+`ReservationCancelled`/`ReservationRescheduled`/`ReservationCompleted`/`ReservationExpired`/`ReservationNoShow` (Phase 7.3 — Reservation Lifecycle, architecture frozen 2026-07-23, **implemented and live-verified 2026-07-23**) are real domain event classes per this note, published via the same `AuditingEventPublisher` mechanism. Actor attribution: `ReservationCancelledEvent`/`ReservationRescheduledEvent` carry the acting id (`cancelledBy`/`rescheduledBy: string`, the Customer's `userId` or the Employee's `employeeId` - Cancel/Reschedule are reachable by both); `ReservationCompletedEvent`/`ReservationNoShowEvent` carry `completedBy`/`markedBy: string` (always the acting Employee's id, staff-only actions); `ReservationExpiredEvent` carries no actor field at all (always `System`-attributed - the BullMQ-driven job has no authenticated HTTP actor). `ReservationCancelledEvent`'s payload additionally carries `withinCancellationWindow: boolean` (mirroring `ReservationHistory`'s own field). `ReservationRescheduledEvent`'s payload always carries `oldTableId`/`newTableId` (equal to each other when the table did not change, distinct when it did, mirroring `ReservationHistory`'s own new fields - see DATABASE_SCHEMA.md). `ReservationPending`/`ReservationUpdated` remain unimplemented and are not part of any currently-frozen scope.
 
 ---
 

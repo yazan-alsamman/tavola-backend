@@ -49,7 +49,7 @@ function uniqueUsername(suffix: string): string {
 /**
  * ADR-022 (Phase 2.23 closure): comprehensive real-HTTP E2E coverage of the
  * Customer registration lifecycle (START/RESEND/VERIFY/COMPLETE). The real
- * `VerificationMessagingPort` (Fonnte) is overridden with
+ * `VerificationMessagingPort` (LightOTP, ADR-024) is overridden with
  * `RecordingVerificationMessagingPort` for the whole app instance - no real
  * WhatsApp message is ever sent by this suite; the plaintext OTP is read
  * back from the fake's in-memory `calls` array, exactly as a real WhatsApp

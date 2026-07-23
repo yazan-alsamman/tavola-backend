@@ -174,13 +174,15 @@ Permissions are **flat slugs**, grouped logically for documentation and UI:
 | `organization:*` | `organization:members:manage` | Owner, Admin |
 | `restaurants:*` | `restaurants:manage` | Owner, Admin, Manager |
 | `branches:*` | `branches:manage` | Manager |
-| `reservations:*` | `reservations:create`, `reservations:approve` | Receptionist, Manager |
+| `reservations:*` | `reservations:create`, `reservations:approve`, `reservations:cancel`, `reservations:reschedule`, `reservations:complete`, `reservations:noshow` | Receptionist, Manager |
 | `tables:*` | `tables:manage` | Manager |
 | `employees:*` | `employees:manage` | Manager |
 | `reports:*` | `reports:view` | Manager, Owner |
 | `offers:*` | `offers:manage` | Manager |
 
 Namespace depth is conventional (colon-separated); authorization checks a single slug unless a policy aggregates multiple.
+
+**Phase 7.3 — Reservation Lifecycle (architecture frozen 2026-07-23; complete, live-verified, and production-verified 2026-07-23):** `reservations:cancel`, `reservations:reschedule`, `reservations:complete`, and `reservations:noshow` are four new, dedicated slugs - none reuse `reservations:approve`, which remains scoped exactly to Approve/Reject (Phase 7.2). Default role assignment (least-privilege, derived from each seeded role's own documented responsibility): **Manager** ("full restaurant operational access") and **Receptionist** ("front-of-house reservation and guest management") each receive all four; **Cashier** ("payment and checkout operations") receives none, matching its existing narrow `reservations:create`-only scope. Cancel and Reschedule are unusual in this catalog: they are also reachable by a **Customer** actor for their own reservation, via ownership-based authorization (no permission slug involved for that path at all) rather than RBAC - see §19's policy note and API_GUIDELINES.md's Domain Action section for how one route resolves both actor types without new guard composition.
 
 ---
 
@@ -444,6 +446,8 @@ ReservationPolicy.canApprove(actor, reservation):
   require restaurant not suspended
   require subscription allows reservations
 ```
+
+**Phase 7.3 dual-actor note (architecture frozen 2026-07-23):** Cancel and Reschedule are authorized by *either* of two independent checks, not a composed guard - `actor.actorType === 'User' && reservation.userId === actor.userId` (ownership, no permission slug), *or* `actor.actorType === 'Employee' && actor.permissions.includes('reservations:cancel'|'reservations:reschedule') && branch scope reservation.branchId`. This is evaluated inside the use case itself (the same shape `assertEmployeeCanActOnReservation` already established for Approve/Reject, plus a new ownership branch mirroring `CreateReservationUseCase`'s own precedent), not by composing two NestJS Guards with OR semantics - it is therefore distinct from the still-unbuilt "multi-actor-type OR guard composition" TASKS.md's Phase 7.0 decision note flagged as requiring a new mandatory ADR under `CHANGE_POLICY.md` criterion #4 (that concern was specifically about two *permission-style* checks, e.g. OrgRole OR RBAC permission, needing to short-circuit at the guard layer - ownership-vs-permission is a different shape and needs no such mechanism). Complete/No-Show remain single-actor (Employee-only), authorized exactly like Approve/Reject.
 
 ---
 

@@ -39,7 +39,11 @@ import {
   TableDeletedEvent,
   TableUpdatedEvent,
 } from '@modules/tables/domain/events/table.events';
-import { ReservationCreatedEvent } from '@modules/reservations/domain/events/reservation.events';
+import {
+  ReservationApprovedEvent,
+  ReservationCreatedEvent,
+  ReservationRejectedEvent,
+} from '@modules/reservations/domain/events/reservation.events';
 import { LoggingEventPublisher } from './logging-event-publisher';
 
 /**
@@ -384,6 +388,30 @@ export class AuditingEventPublisher implements EventPublisherPort {
         actorId: event.payload.userId,
         actorType: 'User',
         action: 'reservation.created',
+        targetType: 'Reservation',
+        targetId: event.payload.reservationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof ReservationApprovedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.approvedBy,
+        actorType: event.payload.approvedBy ? 'Employee' : 'System',
+        action: 'reservation.approved',
+        targetType: 'Reservation',
+        targetId: event.payload.reservationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof ReservationRejectedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.rejectedBy,
+        actorType: event.payload.rejectedBy ? 'Employee' : 'System',
+        action: 'reservation.rejected',
         targetType: 'Reservation',
         targetId: event.payload.reservationId,
         ipAddress: null,

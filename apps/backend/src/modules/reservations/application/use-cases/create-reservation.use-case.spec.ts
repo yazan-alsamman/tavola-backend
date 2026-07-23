@@ -3,21 +3,27 @@ import { BranchNotFoundException } from '@modules/branches/domain/exceptions/bra
 import { TableNotFoundException } from '@modules/tables/domain/exceptions/table-not-found.exception';
 import { TableUnavailableException } from '@modules/reservations/domain/exceptions/table-unavailable.exception';
 import { PartySizeExceedsCapacityException } from '@modules/reservations/domain/exceptions/party-size-exceeds-capacity.exception';
-import { ReservationCreatedEvent } from '@modules/reservations/domain/events/reservation.events';
+import {
+  ReservationApprovedEvent,
+  ReservationCreatedEvent,
+} from '@modules/reservations/domain/events/reservation.events';
 import { Branch } from '@modules/branches/domain/entities/branch.entity';
 import { Table } from '@modules/tables/domain/entities/table.entity';
 import { TableShape, TableStatus } from '@modules/tables/domain/enums/table.enums';
 import { RestaurantSettings } from '@modules/restaurants/domain/entities/restaurant-settings.entity';
 import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
+import { BranchId, TableId } from '@shared/domain/value-objects/identifiers.vo';
 import {
   CollectingEventPublisher,
   FixedClock,
+  ImmediateUnitOfWork,
   SequentialIdGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
 import { InMemoryTableRepository } from '../../../../../test/tables/support/in-memory-table.repository';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
 import { InMemoryReservationRepository } from '../../../../../test/reservations/support/in-memory-reservation.repository';
+import { InMemoryReservationExpirationScheduler } from '../../../../../test/reservations/support/in-memory-reservation-expiration-scheduler';
 
 describe('CreateReservationUseCase', () => {
   const fixedNow = new Date('2026-08-01T10:00:00.000Z');
@@ -36,11 +42,16 @@ describe('CreateReservationUseCase', () => {
     };
   }
 
-  async function build(overrides?: { tableStatus?: TableStatus; tableCapacity?: number }) {
+  async function build(overrides?: {
+    tableStatus?: TableStatus;
+    tableCapacity?: number;
+    autoApproval?: boolean;
+  }) {
     const branchRepository = new InMemoryBranchRepository();
     const tableRepository = new InMemoryTableRepository();
     const reservationRepository = new InMemoryReservationRepository();
     const restaurantSettingsRepository = new InMemoryRestaurantSettingsRepository();
+    const expirationScheduler = new InMemoryReservationExpirationScheduler();
 
     await branchRepository.save(
       Branch.create({
@@ -61,12 +72,18 @@ describe('CreateReservationUseCase', () => {
       }),
     );
 
+    const defaultSettings = RestaurantSettings.createDefault(
+      '77777777-7777-4777-8777-777777777777',
+      restaurantId,
+      fixedNow,
+    );
     await restaurantSettingsRepository.save(
-      RestaurantSettings.createDefault(
-        '77777777-7777-4777-8777-777777777777',
-        restaurantId,
-        fixedNow,
-      ),
+      overrides?.autoApproval
+        ? defaultSettings.updateSettings(
+            { ...defaultSettings.toProps(), autoApproval: true },
+            fixedNow,
+          )
+        : defaultSettings,
     );
 
     await tableRepository.save(
@@ -109,9 +126,11 @@ describe('CreateReservationUseCase', () => {
         'ffffffff-ffff-4fff-8fff-ffffffffffff',
       ]),
       eventPublisher,
+      new ImmediateUnitOfWork(),
+      expirationScheduler,
     );
 
-    return { useCase, reservationRepository, eventPublisher };
+    return { useCase, reservationRepository, tableRepository, eventPublisher, expirationScheduler };
   }
 
   it('creates a Pending reservation with a client-supplied reservationEndTime', async () => {
@@ -250,5 +269,73 @@ describe('CreateReservationUseCase', () => {
         guests: 2,
       }),
     ).resolves.toBeDefined();
+  });
+
+  describe('auto-approval (Phase 7.2, RestaurantSettings.autoApproval = true)', () => {
+    it('creates the reservation directly as Approved, never Pending', async () => {
+      const { useCase } = await build({ autoApproval: true });
+
+      const result = await useCase.execute({
+        actor: baseActor(),
+        branchId,
+        tableId,
+        reservationStartTime: '2026-08-01T18:00:00.000Z',
+        guests: 4,
+      });
+
+      expect(result.status).toBe('Approved');
+    });
+
+    it('reserves the table atomically with the reservation insert', async () => {
+      const { useCase, tableRepository } = await build({ autoApproval: true });
+
+      await useCase.execute({
+        actor: baseActor(),
+        branchId,
+        tableId,
+        reservationStartTime: '2026-08-01T18:00:00.000Z',
+        guests: 4,
+      });
+
+      const table = await tableRepository.findById(TableId.create(tableId));
+      expect(table?.status).toBe(TableStatus.Reserved);
+    });
+
+    it('publishes only ReservationCreated, never a redundant ReservationApproved transition event', async () => {
+      const { useCase, eventPublisher } = await build({ autoApproval: true });
+
+      await useCase.execute({
+        actor: baseActor(),
+        branchId,
+        tableId,
+        reservationStartTime: '2026-08-01T18:00:00.000Z',
+        guests: 4,
+      });
+
+      expect(eventPublisher.events).toHaveLength(1);
+      expect(eventPublisher.events[0]).toBeInstanceOf(ReservationCreatedEvent);
+      expect(eventPublisher.events.some((event) => event instanceof ReservationApprovedEvent)).toBe(
+        false,
+      );
+    });
+
+    it('when autoApproval is false (regression), still creates Pending and leaves the table Available', async () => {
+      const { useCase, tableRepository } = await build({ autoApproval: false });
+
+      const result = await useCase.execute({
+        actor: baseActor(),
+        branchId,
+        tableId,
+        reservationStartTime: '2026-08-01T18:00:00.000Z',
+        guests: 4,
+      });
+
+      expect(result.status).toBe('Pending');
+      const table = await tableRepository.findByIdAndBranchId(
+        TableId.create(tableId),
+        BranchId.create(branchId),
+      );
+      expect(table?.status).toBe(TableStatus.Available);
+    });
   });
 });

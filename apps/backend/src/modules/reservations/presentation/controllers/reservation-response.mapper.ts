@@ -17,6 +17,11 @@ export function toReservationResponse(result: ReservationResult): ReservationRes
     status: result.status,
     source: result.source,
     notes: result.notes,
+    approvedBy: result.approvedBy,
+    approvedAt: result.approvedAt ? result.approvedAt.toISOString() : null,
+    cancelledAt: result.cancelledAt ? result.cancelledAt.toISOString() : null,
+    completedAt: result.completedAt ? result.completedAt.toISOString() : null,
+    noShowAt: result.noShowAt ? result.noShowAt.toISOString() : null,
     createdAt: result.createdAt.toISOString(),
     updatedAt: result.updatedAt.toISOString(),
   };

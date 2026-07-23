@@ -1,10 +1,11 @@
 import { PhoneNumber } from '@shared/domain/value-objects/phone-number.vo';
 
 /**
- * ADR-022 Decision #5 / #17: `Application -> VerificationMessagingPort ->
- * FonnteVerificationMessagingAdapter -> Fonnte HTTP API`. Domain/application
- * code depends only on this interface - never on Fonnte's HTTP payloads,
- * response shapes, status codes, error strings, or the API token.
+ * ADR-022 Decision #5 / #17, provider updated by ADR-024: `Application ->
+ * VerificationMessagingPort -> LightOtpVerificationMessagingAdapter ->
+ * LightOTP HTTP API`. Domain/application code depends only on this
+ * interface - never on the provider's HTTP payloads, response shapes,
+ * status codes, error strings, or the API key.
  *
  * A closed result type, not a passthrough of the provider's raw response
  * (mirrors `RotateRefreshTokenOutcome`'s existing closed-union precedent in

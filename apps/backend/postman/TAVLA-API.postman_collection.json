@@ -120,6 +120,11 @@
       "type": "string"
     },
     {
+      "key": "secondTableId",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "employeeId",
       "value": "",
       "type": "string"
@@ -608,7 +613,7 @@
                 "start"
               ]
             },
-            "description": "Validates username/phone availability and sends a 6-digit WhatsApp OTP via Fonnte. Does not create a User. Rate limited to 5 sends/hour/phone."
+            "description": "Validates username/phone availability and sends a 6-digit WhatsApp OTP via LightOTP. Does not create a User. Rate limited to 5 sends/hour/phone."
           },
           "response": []
         },
@@ -3104,6 +3109,188 @@
                   "if (jsonData && jsonData.data) {",
                   "    pm.collectionVariables.set('reservationId', jsonData.data.reservationId);",
                   "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cancel Reservation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Change of plans\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/reservations/{{reservationId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reservations",
+                "{{reservationId}}",
+                "cancel"
+              ]
+            },
+            "description": "Reachable by either the reservation's own Customer (ownership-based - request auth defaults to {{customerAccessToken}}) or a branch-scoped Employee holding reservations:cancel (override the Authorization token to {{accessToken}} for an Employee actor). Never blocked by the cancellation window (unlike Reschedule) - only flags ReservationHistory.withinCancellationWindow. Pending->Cancelled performs no Table operation; Approved->Cancelled releases the Table to Available. reason is optional."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Reservation cancelled (200)', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reschedule Reservation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tableId\": \"{{secondTableId}}\",\n  \"reservationStartTime\": \"2026-08-02T18:00:00.000Z\",\n  \"reservationEndTime\": \"2026-08-02T20:00:00.000Z\",\n  \"guests\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/reservations/{{reservationId}}/reschedule",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reservations",
+                "{{reservationId}}",
+                "reschedule"
+              ]
+            },
+            "description": "Reachable by either the reservation's own Customer (ownership-based - request auth defaults to {{customerAccessToken}}) or a branch-scoped Employee holding reservations:reschedule (override the Authorization token to {{accessToken}} for an Employee actor). All body fields are optional - any omitted field retains its current value, but at least one must be supplied. tableId (set {{secondTableId}} to a second Table's id in the same Branch to exercise a cross-table reschedule) may only target another Table within the same Branch (ADR-023's deterministic two-key advisory lock covers an Approved cross-table reschedule). Blocked with 409 RESERVATION_RESCHEDULE_WINDOW_EXPIRED once the restaurant's cancellationWindow before the current scheduled time has closed - the opposite of Cancel, which is never blocked."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Reservation rescheduled (200)', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Complete Reservation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reservations/{{reservationId}}/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reservations",
+                "{{reservationId}}",
+                "complete"
+              ]
+            },
+            "description": "Staff-only (reservations:complete, branch-scoped) - uses the collection-default {{accessToken}}, which must belong to an Employee actor holding that permission. Approved->Completed only, and only once the reservation's scheduled service window has begun (the request is rejected with VALIDATION_ERROR otherwise). Calls Table.release() unconditionally, returning the table directly to Available - never through Cleaning. No request body."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Reservation completed (200)', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mark Reservation No-Show",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reservations/{{reservationId}}/no-show",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reservations",
+                "{{reservationId}}",
+                "no-show"
+              ]
+            },
+            "description": "Staff-only (reservations:noshow - a dedicated permission slug, never a reuse of reservations:approve; hyphen-free because PermissionSlug rejects hyphenated segments) - uses the collection-default {{accessToken}}, which must belong to an Employee actor holding that permission. Approved->NoShow only, and only once the reservation's scheduled time has passed. Calls Table.release() unconditionally, identically to Complete (never through Cleaning). No request body."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Reservation marked NoShow (200)', function () { pm.response.to.have.status(200); });"
                 ]
               }
             }
