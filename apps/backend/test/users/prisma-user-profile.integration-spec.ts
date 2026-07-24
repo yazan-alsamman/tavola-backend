@@ -1,6 +1,7 @@
 import { PrismaClient, UserStatus } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaUserRepository } from '@modules/authentication/infrastructure/persistence/prisma-user.repository';
+import { PhoneAlreadyExistsException } from '@modules/authentication/domain/exceptions/phone-already-exists.exception';
 import { UserId } from '@shared/domain/value-objects/identifiers.vo';
 import { isDatabaseReachable, skipUnlessDatabaseAvailable } from '../support/live-database';
 import { createPrismaIntegrationModule } from '../support/prisma-integration-testing';
@@ -113,5 +114,83 @@ describe('User profile round-trip via PrismaUserRepository (integration)', () =>
     const rehydrated = await userRepository.findById(UserId.create(userId));
     expect(rehydrated!.phone).toBeNull();
     expect(rehydrated!.preferredCurrency).toBeNull();
+  });
+
+  it('is race-safe when two different users concurrently claim the same phone: exactly one save() succeeds', async () => {
+    if (!dbAvailable) {
+      return;
+    }
+
+    const targetPhone = '+963900000077';
+    const userIdA = randomUUID();
+    const userIdB = randomUUID();
+    await prisma.user.createMany({
+      data: [
+        {
+          id: userIdA,
+          firstName: 'Race',
+          lastName: 'A',
+          email: `${TEST_PREFIX}${randomUUID()}@example.com`,
+          passwordHash: 'argon2id$test',
+          phone: null,
+          language: 'en',
+          preferredCurrency: null,
+          status: UserStatus.Active,
+          emailVerified: true,
+        },
+        {
+          id: userIdB,
+          firstName: 'Race',
+          lastName: 'B',
+          email: `${TEST_PREFIX}${randomUUID()}@example.com`,
+          passwordHash: 'argon2id$test',
+          phone: null,
+          language: 'en',
+          preferredCurrency: null,
+          status: UserStatus.Active,
+          emailVerified: true,
+        },
+      ],
+    });
+
+    const userA = await userRepository.findById(UserId.create(userIdA));
+    const userB = await userRepository.findById(UserId.create(userIdB));
+    const at = new Date();
+    const updatedA = userA!.updateProfile(
+      {
+        firstName: 'Race',
+        lastName: 'A',
+        phone: targetPhone,
+        language: 'en',
+        preferredCurrency: null,
+      },
+      at,
+    );
+    const updatedB = userB!.updateProfile(
+      {
+        firstName: 'Race',
+        lastName: 'B',
+        phone: targetPhone,
+        language: 'en',
+        preferredCurrency: null,
+      },
+      at,
+    );
+
+    const results = await Promise.allSettled([
+      userRepository.save(updatedA),
+      userRepository.save(updatedB),
+    ]);
+
+    const fulfilled = results.filter((result) => result.status === 'fulfilled');
+    const rejected = results.filter((result) => result.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(
+      PhoneAlreadyExistsException,
+    );
+
+    const winnerCount = await prisma.user.count({ where: { phone: targetPhone } });
+    expect(winnerCount).toBe(1);
   });
 });

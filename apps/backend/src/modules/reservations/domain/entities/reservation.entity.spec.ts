@@ -14,6 +14,8 @@ describe('Reservation entity', () => {
     return {
       id: '11111111-1111-4111-8111-111111111111',
       userId: '22222222-2222-4222-8222-222222222222',
+      reservationGuestId: null,
+      source: ReservationSource.Online,
       restaurantId: '33333333-3333-4333-8333-333333333333',
       branchId: '44444444-4444-4444-8444-444444444444',
       tableId: '55555555-5555-4555-8555-555555555555',
@@ -63,6 +65,44 @@ describe('Reservation entity', () => {
   it('allows party size exactly equal to table capacity', () => {
     const reservation = Reservation.create(baseProps({ guests: 4, tableCapacity: 4 }));
     expect(reservation.guests).toBe(4);
+  });
+
+  describe('reservation-party invariant (Phase 7.4 decision #5)', () => {
+    it('creates a Phone/WalkIn reservation with reservationGuestId set and userId null', () => {
+      const reservation = Reservation.create(
+        baseProps({
+          userId: null,
+          reservationGuestId: '66666666-6666-4666-8666-666666666666',
+          source: ReservationSource.Phone,
+        }),
+      );
+
+      expect(reservation.userId).toBeNull();
+      expect(reservation.reservationGuestId).toBe('66666666-6666-4666-8666-666666666666');
+      expect(reservation.source).toBe(ReservationSource.Phone);
+    });
+
+    it('rejects both userId and reservationGuestId set', () => {
+      expect(() =>
+        Reservation.create(
+          baseProps({ reservationGuestId: '66666666-6666-4666-8666-666666666666' }),
+        ),
+      ).toThrow(InvalidReservationException);
+    });
+
+    it('rejects neither userId nor reservationGuestId set', () => {
+      expect(() => Reservation.create(baseProps({ userId: null }))).toThrow(
+        InvalidReservationException,
+      );
+    });
+
+    it('createAutoApproved() enforces the same invariant', () => {
+      expect(() =>
+        Reservation.createAutoApproved(
+          baseProps({ reservationGuestId: '66666666-6666-4666-8666-666666666666' }),
+        ),
+      ).toThrow(InvalidReservationException);
+    });
   });
 
   describe('createAutoApproved() (Phase 7.2 auto-approval path)', () => {

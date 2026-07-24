@@ -23,7 +23,12 @@ import { InMemoryBranchRepository } from '../../../../../test/branches/support/i
 import { InMemoryTableRepository } from '../../../../../test/tables/support/in-memory-table.repository';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
 import { InMemoryReservationRepository } from '../../../../../test/reservations/support/in-memory-reservation.repository';
+import { InMemoryReservationGuestRepository } from '../../../../../test/reservations/support/in-memory-reservation-guest.repository';
 import { InMemoryReservationExpirationScheduler } from '../../../../../test/reservations/support/in-memory-reservation-expiration-scheduler';
+import { ReservationSource } from '@modules/reservations/domain/enums/reservation.enums';
+import { PermissionDeniedException } from '@modules/authorization/domain/exceptions/permission-denied.exception';
+import { EmployeeBranchNotAssignedException } from '@modules/authorization/domain/exceptions/employee-branch-not-assigned.exception';
+import { InvalidReservationException } from '@modules/reservations/domain/exceptions/invalid-reservation.exception';
 
 describe('CreateReservationUseCase', () => {
   const fixedNow = new Date('2026-08-01T10:00:00.000Z');
@@ -42,6 +47,31 @@ describe('CreateReservationUseCase', () => {
     };
   }
 
+  function employeeActor(overrides?: { branchIds?: string[]; permissions?: string[] }) {
+    return {
+      actorType: AccessTokenActorType.Employee as const,
+      userId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      sessionId: 'session-2',
+      sessionVersion: 1,
+      tokenFamilyId: 'family-2',
+      employeeId: 'employee-1',
+      organizationId: 'org-1',
+      restaurantId,
+      branchIds: overrides?.branchIds ?? [],
+      permissions: overrides?.permissions ?? ['reservations:create'],
+      permissionsVersion: 1,
+    };
+  }
+
+  function guestPayload(overrides?: { fullName?: string; email?: string | null }) {
+    return {
+      fullName: overrides?.fullName ?? 'Jane Guest',
+      countryCode: 'SY',
+      phoneNumber: '0912345678',
+      email: overrides?.email,
+    };
+  }
+
   async function build(overrides?: {
     tableStatus?: TableStatus;
     tableCapacity?: number;
@@ -50,6 +80,7 @@ describe('CreateReservationUseCase', () => {
     const branchRepository = new InMemoryBranchRepository();
     const tableRepository = new InMemoryTableRepository();
     const reservationRepository = new InMemoryReservationRepository();
+    const reservationGuestRepository = new InMemoryReservationGuestRepository();
     const restaurantSettingsRepository = new InMemoryRestaurantSettingsRepository();
     const expirationScheduler = new InMemoryReservationExpirationScheduler();
 
@@ -118,6 +149,7 @@ describe('CreateReservationUseCase', () => {
       tableRepository,
       restaurantSettingsRepository,
       reservationRepository,
+      reservationGuestRepository,
       new FixedClock(fixedNow),
       new SequentialIdGenerator([
         reservationId,
@@ -130,7 +162,14 @@ describe('CreateReservationUseCase', () => {
       expirationScheduler,
     );
 
-    return { useCase, reservationRepository, tableRepository, eventPublisher, expirationScheduler };
+    return {
+      useCase,
+      reservationRepository,
+      reservationGuestRepository,
+      tableRepository,
+      eventPublisher,
+      expirationScheduler,
+    };
   }
 
   it('creates a Pending reservation with a client-supplied reservationEndTime', async () => {
@@ -336,6 +375,263 @@ describe('CreateReservationUseCase', () => {
         BranchId.create(branchId),
       );
       expect(table?.status).toBe(TableStatus.Available);
+    });
+  });
+
+  describe('Phone/WalkIn reservations (Phase 7.4)', () => {
+    it('an Employee creates a Phone reservation with a ReservationGuest, userId null, createdBy = employeeId', async () => {
+      const { useCase, reservationGuestRepository } = await build();
+
+      const result = await useCase.execute({
+        actor: employeeActor(),
+        branchId,
+        tableId,
+        reservationStartTime: '2026-08-01T18:00:00.000Z',
+        guests: 2,
+        source: ReservationSource.Phone,
+        reservationGuest: guestPayload(),
+      });
+
+      expect(result.userId).toBeNull();
+      expect(result.reservationGuestId).not.toBeNull();
+      expect(result.source).toBe(ReservationSource.Phone);
+      expect(reservationGuestRepository.size).toBe(1);
+      const guest = reservationGuestRepository.findById(result.reservationGuestId as string);
+      expect(guest?.fullName).toBe('Jane Guest');
+      expect(guest?.phone).toBe('+963912345678');
+    });
+
+    it('an Employee creates a WalkIn reservation identically to Phone, only source differs', async () => {
+      const { useCase } = await build();
+
+      const result = await useCase.execute({
+        actor: employeeActor(),
+        branchId,
+        tableId,
+        reservationStartTime: '2026-08-01T18:00:00.000Z',
+        guests: 2,
+        source: ReservationSource.WalkIn,
+        reservationGuest: guestPayload(),
+      });
+
+      expect(result.source).toBe(ReservationSource.WalkIn);
+      expect(result.userId).toBeNull();
+      expect(result.reservationGuestId).not.toBeNull();
+    });
+
+    it('publishes ReservationCreated with createdBy = employeeId and actorType resolvable to Employee', async () => {
+      const { useCase, eventPublisher } = await build();
+
+      await useCase.execute({
+        actor: employeeActor(),
+        branchId,
+        tableId,
+        reservationStartTime: '2026-08-01T18:00:00.000Z',
+        guests: 2,
+        source: ReservationSource.Phone,
+        reservationGuest: guestPayload(),
+      });
+
+      const event = eventPublisher.events[0] as ReservationCreatedEvent;
+      expect(event.payload.createdBy).toBe('employee-1');
+      expect(event.payload.userId).toBeNull();
+      expect(event.payload.reservationGuestId).not.toBeNull();
+      expect(event.payload.source).toBe(ReservationSource.Phone);
+    });
+
+    it('rejects a Customer actor supplying source Phone (PermissionDeniedException)', async () => {
+      const { useCase } = await build();
+
+      await expect(
+        useCase.execute({
+          actor: baseActor(),
+          branchId,
+          tableId,
+          reservationStartTime: '2026-08-01T18:00:00.000Z',
+          guests: 2,
+          source: ReservationSource.Phone,
+          reservationGuest: guestPayload(),
+        }),
+      ).rejects.toBeInstanceOf(PermissionDeniedException);
+    });
+
+    it('rejects a Customer actor supplying source WalkIn (PermissionDeniedException)', async () => {
+      const { useCase } = await build();
+
+      await expect(
+        useCase.execute({
+          actor: baseActor(),
+          branchId,
+          tableId,
+          reservationStartTime: '2026-08-01T18:00:00.000Z',
+          guests: 2,
+          source: ReservationSource.WalkIn,
+          reservationGuest: guestPayload(),
+        }),
+      ).rejects.toBeInstanceOf(PermissionDeniedException);
+    });
+
+    it('an Employee actor may still create source Online for themselves (Phase 7.1 self-booking, unchanged, not subject to reservations:create/branch scope)', async () => {
+      const { useCase } = await build();
+
+      const result = await useCase.execute({
+        actor: employeeActor({ branchIds: ['not-this-branch'], permissions: [] }),
+        branchId,
+        tableId,
+        reservationStartTime: '2026-08-01T18:00:00.000Z',
+        guests: 2,
+        source: ReservationSource.Online,
+      });
+
+      expect(result.source).toBe(ReservationSource.Online);
+      expect(result.userId).toBe('dddddddd-dddd-4ddd-8ddd-dddddddddddd');
+      expect(result.reservationGuestId).toBeNull();
+    });
+
+    it('an OrganizationMember actor may also create source Online for themselves (Phase 7.1 "any actor type" self-booking, unchanged)', async () => {
+      const { useCase } = await build();
+
+      const result = await useCase.execute({
+        actor: {
+          actorType: AccessTokenActorType.OrganizationMember as const,
+          userId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeef',
+          sessionId: 'session-3',
+          sessionVersion: 1,
+          tokenFamilyId: 'family-3',
+          organizationId: 'org-1',
+          orgRole: 'Owner',
+          permissionsVersion: 1,
+        },
+        branchId,
+        tableId,
+        reservationStartTime: '2026-08-01T18:00:00.000Z',
+        guests: 2,
+      });
+
+      expect(result.userId).toBe('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeef');
+      expect(result.source).toBe(ReservationSource.Online);
+    });
+
+    it('rejects an OrganizationMember actor supplying source Phone (PermissionDeniedException)', async () => {
+      const { useCase } = await build();
+
+      await expect(
+        useCase.execute({
+          actor: {
+            actorType: AccessTokenActorType.OrganizationMember as const,
+            userId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeef',
+            sessionId: 'session-3',
+            sessionVersion: 1,
+            tokenFamilyId: 'family-3',
+            organizationId: 'org-1',
+            orgRole: 'Owner',
+            permissionsVersion: 1,
+          },
+          branchId,
+          tableId,
+          reservationStartTime: '2026-08-01T18:00:00.000Z',
+          guests: 2,
+          source: ReservationSource.Phone,
+          reservationGuest: guestPayload(),
+        }),
+      ).rejects.toBeInstanceOf(PermissionDeniedException);
+    });
+
+    it('rejects an Employee actor lacking reservations:create (PermissionDeniedException)', async () => {
+      const { useCase } = await build();
+
+      await expect(
+        useCase.execute({
+          actor: employeeActor({ permissions: [] }),
+          branchId,
+          tableId,
+          reservationStartTime: '2026-08-01T18:00:00.000Z',
+          guests: 2,
+          source: ReservationSource.Phone,
+          reservationGuest: guestPayload(),
+        }),
+      ).rejects.toBeInstanceOf(PermissionDeniedException);
+    });
+
+    it('rejects an Employee actor outside branch scope (EmployeeBranchNotAssignedException)', async () => {
+      const { useCase } = await build();
+
+      await expect(
+        useCase.execute({
+          actor: employeeActor({ branchIds: ['99999999-9999-4999-8999-999999999996'] }),
+          branchId,
+          tableId,
+          reservationStartTime: '2026-08-01T18:00:00.000Z',
+          guests: 2,
+          source: ReservationSource.Phone,
+          reservationGuest: guestPayload(),
+        }),
+      ).rejects.toBeInstanceOf(EmployeeBranchNotAssignedException);
+    });
+
+    it('rejects an Employee actor from a different restaurant (BranchNotFoundException, IDOR-safe)', async () => {
+      const { useCase } = await build();
+
+      await expect(
+        useCase.execute({
+          actor: { ...employeeActor(), restaurantId: '99999999-9999-4999-8999-999999999995' },
+          branchId,
+          tableId,
+          reservationStartTime: '2026-08-01T18:00:00.000Z',
+          guests: 2,
+          source: ReservationSource.Phone,
+          reservationGuest: guestPayload(),
+        }),
+      ).rejects.toBeInstanceOf(BranchNotFoundException);
+    });
+
+    it('rejects a Phone/WalkIn create with no reservationGuest payload (InvalidReservationException)', async () => {
+      const { useCase } = await build();
+
+      await expect(
+        useCase.execute({
+          actor: employeeActor(),
+          branchId,
+          tableId,
+          reservationStartTime: '2026-08-01T18:00:00.000Z',
+          guests: 2,
+          source: ReservationSource.Phone,
+        }),
+      ).rejects.toBeInstanceOf(InvalidReservationException);
+    });
+
+    it('omitting source resolves to Online for a Customer actor (backward compatibility)', async () => {
+      const { useCase } = await build();
+
+      const result = await useCase.execute({
+        actor: baseActor(),
+        branchId,
+        tableId,
+        reservationStartTime: '2026-08-01T18:00:00.000Z',
+        guests: 2,
+      });
+
+      expect(result.source).toBe(ReservationSource.Online);
+      expect(result.userId).toBe('cccccccc-cccc-4ccc-8ccc-cccccccccccc');
+      expect(result.reservationGuestId).toBeNull();
+    });
+
+    it('auto-approval applies identically to a Phone reservation (Phase 7.4 decision #7)', async () => {
+      const { useCase, tableRepository } = await build({ autoApproval: true });
+
+      const result = await useCase.execute({
+        actor: employeeActor(),
+        branchId,
+        tableId,
+        reservationStartTime: '2026-08-01T18:00:00.000Z',
+        guests: 2,
+        source: ReservationSource.WalkIn,
+        reservationGuest: guestPayload(),
+      });
+
+      expect(result.status).toBe('Approved');
+      const table = await tableRepository.findById(TableId.create(tableId));
+      expect(table?.status).toBe(TableStatus.Reserved);
     });
   });
 });

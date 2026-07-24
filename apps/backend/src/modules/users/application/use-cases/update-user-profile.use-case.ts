@@ -5,12 +5,14 @@ import {
   AUDIT_LOG_WRITER,
 } from '@shared/application/ports/audit-log-writer.port';
 import { UserId } from '@shared/domain/value-objects/identifiers.vo';
+import { PhoneNumber } from '@shared/domain/value-objects/phone-number.vo';
 import { UserRepository } from '@modules/authentication/domain/repositories/authentication.repositories';
 import {
   CLOCK,
   USER_REPOSITORY,
 } from '@modules/authentication/domain/tokens/authentication.tokens';
 import { UserNotFoundException } from '@modules/authentication/application/exceptions/user-not-found.exception';
+import { PhoneAlreadyExistsException } from '@modules/authentication/domain/exceptions/phone-already-exists.exception';
 import { UpdateUserProfileCommand } from '../dto/update-user-profile.command';
 import { UserProfileResult } from '../dto/user-profile.result';
 
@@ -29,12 +31,32 @@ export class UpdateUserProfileUseCase {
       throw new UserNotFoundException();
     }
 
+    const phone =
+      command.countryCode !== null && command.phoneNumber !== null
+        ? PhoneNumber.create(command.countryCode, command.phoneNumber).value
+        : null;
+
+    // Friendlier pre-check for the common non-concurrent case, mirroring
+    // CompleteCustomerRegistrationUseCase's own pattern - the database's
+    // unique constraint on `phone` (enforced inside `userRepository.save()`,
+    // which converts a P2002 collision into this same
+    // `PhoneAlreadyExistsException`) remains the actual race-safe authority.
+    // Skipped when the phone is unchanged so re-submitting your own current
+    // number never produces a false conflict against yourself.
+    if (
+      phone !== null &&
+      phone !== user.phone &&
+      (await this.userRepository.existsByPhone(phone))
+    ) {
+      throw new PhoneAlreadyExistsException();
+    }
+
     const now = this.clock.now();
     const updated = user.updateProfile(
       {
         firstName: command.firstName,
         lastName: command.lastName,
-        phone: command.phone,
+        phone,
         language: command.language,
         preferredCurrency: command.preferredCurrency,
       },

@@ -1,6 +1,6 @@
 import { CompleteReservationUseCase } from './complete-reservation.use-case';
 import { Reservation } from '../../domain/entities/reservation.entity';
-import { ReservationStatus } from '../../domain/enums/reservation.enums';
+import { ReservationSource, ReservationStatus } from '../../domain/enums/reservation.enums';
 import { ReservationNotFoundException } from '../../domain/exceptions/reservation-not-found.exception';
 import { InvalidReservationStatusTransitionException } from '../../domain/exceptions/invalid-reservation-status-transition.exception';
 import { InvalidReservationTimeException } from '../../domain/exceptions/invalid-reservation-time.exception';
@@ -49,6 +49,8 @@ describe('CompleteReservationUseCase', () => {
     const created = Reservation.create({
       id: reservationId,
       userId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      reservationGuestId: null,
+      source: ReservationSource.Online,
       restaurantId,
       branchId,
       tableId,

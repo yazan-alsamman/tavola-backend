@@ -751,10 +751,12 @@ Indexes
 * composite (branchId, reservationDate, status) — the primary availability-search query filters by branch and date and excludes cancelled/expired reservations; this composite index directly serves that query without a full scan
 * composite (tableId, reservationDate, reservationStartTime) — supports the conflict-check query executed inside the advisory-locked transaction (ADR-013) that verifies no overlapping reservation exists for a specific table before insert
 * exclusion constraint EXCLUDE USING gist (tableId WITH =, tstzrange(reservationStartTime, reservationEndTime) WITH &&) WHERE status NOT IN ('Cancelled', 'Expired', 'Rejected', 'Pending') — the database-level safety net from ADR-013; guards only `Approved`/`Completed`/`NoShow` rows, matching "a table cannot have overlapping **confirmed** reservations" below — `Pending` is deliberately excluded so two overlapping Pending reservations for the same table may coexist (per the business rule immediately below), resolved at approval time, not blocked at creation time; requires the `btree_gist` extension
+* CHECK constraint `reservations_party_xor_chk` (Phase 7.4, migration `20260723184453_phase_7_4_reservation_guests`): `(userId IS NOT NULL AND reservationGuestId IS NULL) OR (userId IS NULL AND reservationGuestId IS NOT NULL)` — the reservation-party invariant enforced at the database layer in addition to the domain layer (`Reservation`'s own `validateParty`)
 
 Notes
 
 * Rescheduling a reservation updates the existing row in place (date/time/guests) rather than creating a new row, so a single `Reservation.id` remains stable for a customer across a reschedule; the full before/after values are captured in `Reservation History` instead. `rescheduledFromReservationId` is therefore reserved for a possible future "reschedule as a new booking" flow and is nullable/unused until such a flow is introduced — not required for the standard in-place reschedule described in DOMAIN_MODEL.md.
+* `reservationGuestId` gained its real foreign key to `ReservationGuest.id` (`ON DELETE RESTRICT`) in Phase 7.4's migration — previously (Phase 7.1–7.3) it was a plain, FK-less nullable UUID column, since `ReservationGuest` did not exist as a table yet.
 
 ---
 
@@ -762,7 +764,7 @@ Notes
 
 Purpose
 
-Represents the person a reservation is for when no registered User account exists (phone reservations, walk-ins). Personal data here is subject to the same anonymization rules as the User table (see ADR-014).
+Represents the person a reservation is for when no registered User account exists (phone reservations, walk-ins). Personal data here is subject to the same anonymization rules as the User table (see ADR-014). Dependent entity of the Reservation Aggregate (Phase 7.4 decision #4), not a standalone aggregate — persisted via its own repository (mirroring `ReservationHistory`'s own precedent), always inside the same transaction as the `Reservation` row that references it (Phase 7.4 binding clarification #2).
 
 Fields
 
@@ -770,13 +772,15 @@ Fields
 * fullName
 * phone
 * email (nullable)
-* anonymizedAt (nullable)
+* anonymizedAt (nullable) — schema is anonymization-*compatible*; no erasure subsystem is implemented as of Phase 7.4 (decision #13)
 * createdAt
 * updatedAt
 
 Indexes
 
 * phone
+
+**Implemented:** Phase 7.4 (Phone & Walk-In Reservations, architecture frozen 2026-07-23), migration `20260723184453_phase_7_4_reservation_guests`. Not implemented by Phase 7.1–7.3, which only ever produced `source = Online` reservations.
 
 ---
 

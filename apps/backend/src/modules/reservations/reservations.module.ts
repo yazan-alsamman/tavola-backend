@@ -17,9 +17,11 @@ import { ExpirePendingReservationUseCase } from './application/use-cases/expire-
 import { AutoRejectOverlappingPendingReservationsService } from './application/services/auto-reject-overlapping-pending-reservations.service';
 import { RESERVATION_REPOSITORY } from './domain/repositories/reservation.repository';
 import { RESERVATION_HISTORY_REPOSITORY } from './domain/repositories/reservation-history.repository';
+import { RESERVATION_GUEST_REPOSITORY } from './domain/repositories/reservation-guest.repository';
 import { RESERVATION_EXPIRATION_SCHEDULER } from './application/ports/reservation-expiration-scheduler.port';
 import { PrismaReservationRepository } from './infrastructure/persistence/prisma-reservation.repository';
 import { PrismaReservationHistoryRepository } from './infrastructure/persistence/prisma-reservation-history.repository';
+import { PrismaReservationGuestRepository } from './infrastructure/persistence/prisma-reservation-guest.repository';
 import { RESERVATION_QUEUE_NAME } from './infrastructure/bullmq/reservation-queue.constants';
 import { BullMqReservationExpirationScheduler } from './infrastructure/bullmq/reservation-expiration.scheduler';
 import { ExpireReservationProcessor } from './infrastructure/bullmq/expire-reservation.processor';
@@ -81,6 +83,8 @@ import { ReservationsController } from './presentation/controllers/reservations.
     { provide: RESERVATION_REPOSITORY, useExisting: PrismaReservationRepository },
     PrismaReservationHistoryRepository,
     { provide: RESERVATION_HISTORY_REPOSITORY, useExisting: PrismaReservationHistoryRepository },
+    PrismaReservationGuestRepository,
+    { provide: RESERVATION_GUEST_REPOSITORY, useExisting: PrismaReservationGuestRepository },
     BullMqReservationExpirationScheduler,
     {
       provide: RESERVATION_EXPIRATION_SCHEDULER,

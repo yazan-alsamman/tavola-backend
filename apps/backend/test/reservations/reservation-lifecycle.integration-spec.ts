@@ -6,7 +6,10 @@ import { PrismaReservationHistoryRepository } from '@modules/reservations/infras
 import { PrismaTableRepository } from '@modules/tables/infrastructure/persistence/prisma-table.repository';
 import { Reservation } from '@modules/reservations/domain/entities/reservation.entity';
 import { ReservationHistory } from '@modules/reservations/domain/entities/reservation-history.entity';
-import { ReservationStatus } from '@modules/reservations/domain/enums/reservation.enums';
+import {
+  ReservationSource,
+  ReservationStatus,
+} from '@modules/reservations/domain/enums/reservation.enums';
 import { ReservationConflictException } from '@modules/reservations/domain/exceptions/reservation-conflict.exception';
 import { ReservationAvailabilityService } from '@modules/reservations/domain/services/reservation-availability.service';
 import { CancellationWindowService } from '@modules/reservations/domain/services/cancellation-window.service';
@@ -158,6 +161,8 @@ describe('Phase 7.3 Reservation Lifecycle - Prisma repositories (integration)', 
     const created = Reservation.create({
       id: overrides.id ?? randomUUID(),
       userId,
+      reservationGuestId: null,
+      source: ReservationSource.Online,
       restaurantId,
       branchId,
       tableId,

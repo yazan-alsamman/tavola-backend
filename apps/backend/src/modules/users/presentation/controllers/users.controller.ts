@@ -126,6 +126,7 @@ export class UsersController {
     'AUTH_EMAIL_NOT_VERIFIED',
   ])
   @ApiErrorResponse(404, 'No user found for the authenticated actor', ['NOT_FOUND'])
+  @ApiErrorResponse(409, 'This phone number already belongs to another account', ['CONFLICT'])
   async updateCurrentProfile(
     @Body() body: UpdateUserProfileRequestDto,
     @CurrentActor() actor: AuthenticatedActor,
@@ -135,7 +136,8 @@ export class UsersController {
       actor,
       firstName: body.firstName,
       lastName: body.lastName,
-      phone: body.phone ?? null,
+      countryCode: body.countryCode ?? null,
+      phoneNumber: body.phoneNumber ?? null,
       language: body.language,
       preferredCurrency: body.preferredCurrency ?? null,
       ipAddress: resolveClientIp(request),

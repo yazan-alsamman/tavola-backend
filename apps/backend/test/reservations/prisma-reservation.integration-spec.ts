@@ -120,6 +120,8 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
     return Reservation.create({
       id: randomUUID(),
       userId,
+      reservationGuestId: null,
+      source: ReservationSource.Online,
       restaurantId,
       branchId,
       tableId,

@@ -5,6 +5,7 @@ export function toReservationResult(reservation: Reservation): ReservationResult
   return {
     reservationId: reservation.reservationId.value,
     userId: reservation.userId?.value ?? null,
+    reservationGuestId: reservation.reservationGuestId,
     restaurantId: reservation.restaurantId.value,
     branchId: reservation.branchId.value,
     tableId: reservation.tableId.value,

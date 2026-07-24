@@ -1,4 +1,5 @@
 import { DomainEvent } from '@shared/domain/base/domain-event.base';
+import { ReservationSource } from '../enums/reservation.enums';
 
 export interface ReservationEventPayload {
   correlationId?: string;
@@ -9,7 +10,15 @@ export interface ReservationEventPayload {
  * unlike Move Table/Status Management's audit-only precedent (which applied
  * because those actions had no consumers), `ReservationCreated` already has
  * named consumers in EVENTS.md/DOMAIN_MODEL.md (Analytics, Notifications,
- * WebSocket per Phase 8/9/14).
+ * WebSocket per Phase 8/9/14). Widened by Phase 7.4 decision #11 to carry
+ * `source` and both party fields, unifying Online/Phone/WalkIn onto this one
+ * event class (the legacy `PhoneReservationCreated`/`WalkInReservationCreated`
+ * proposal in EVENTS.md is superseded, not implemented). `userId` is `null`
+ * for a Phone/WalkIn reservation (`reservationGuestId` set instead);
+ * `createdBy` always carries the acting principal's own id - the Customer's
+ * `userId` for Online, the Employee's `employeeId` for Phone/WalkIn (Phase
+ * 7.4 decision #6, the same `approvedBy`/`actor.employeeId` precedent
+ * `ReservationApprovedEvent` already established).
  */
 export class ReservationCreatedEvent extends DomainEvent {
   public readonly eventName = 'ReservationCreated';
@@ -21,7 +30,10 @@ export class ReservationCreatedEvent extends DomainEvent {
       restaurantId: string;
       branchId: string;
       tableId: string;
-      userId: string;
+      userId: string | null;
+      reservationGuestId: string | null;
+      source: ReservationSource;
+      createdBy: string;
     },
     occurredAt: Date = new Date(),
     correlationId?: string,

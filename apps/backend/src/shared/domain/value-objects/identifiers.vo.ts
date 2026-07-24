@@ -129,3 +129,13 @@ export class ReservationId extends UuidId {
     return new ReservationId(value);
   }
 }
+
+export class ReservationGuestId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'ReservationGuestId');
+  }
+
+  static create(value: string): ReservationGuestId {
+    return new ReservationGuestId(value);
+  }
+}

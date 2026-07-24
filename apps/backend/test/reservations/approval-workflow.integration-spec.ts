@@ -4,7 +4,10 @@ import { PrismaContext } from '@infrastructure/prisma/prisma-context.service';
 import { PrismaReservationRepository } from '@modules/reservations/infrastructure/persistence/prisma-reservation.repository';
 import { PrismaTableRepository } from '@modules/tables/infrastructure/persistence/prisma-table.repository';
 import { Reservation } from '@modules/reservations/domain/entities/reservation.entity';
-import { ReservationStatus } from '@modules/reservations/domain/enums/reservation.enums';
+import {
+  ReservationSource,
+  ReservationStatus,
+} from '@modules/reservations/domain/enums/reservation.enums';
 import { ReservationConflictException } from '@modules/reservations/domain/exceptions/reservation-conflict.exception';
 import { ReservationAvailabilityService } from '@modules/reservations/domain/services/reservation-availability.service';
 import { TableStatus } from '@modules/tables/domain/enums/table.enums';
@@ -137,6 +140,8 @@ describe('Phase 7.2 Approval Workflow - PrismaReservationRepository + PrismaTabl
     return Reservation.create({
       id: overrides.id ?? randomUUID(),
       userId,
+      reservationGuestId: null,
+      source: ReservationSource.Online,
       restaurantId,
       branchId,
       tableId,
@@ -430,6 +435,8 @@ describe('Phase 7.2 Approval Workflow - PrismaReservationRepository + PrismaTabl
     const autoApproved = Reservation.createAutoApproved({
       id: randomUUID(),
       userId: user.id,
+      reservationGuestId: null,
+      source: ReservationSource.Online,
       restaurantId,
       branchId,
       tableId,

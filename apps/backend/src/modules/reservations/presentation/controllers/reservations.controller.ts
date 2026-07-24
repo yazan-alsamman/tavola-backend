@@ -115,20 +115,25 @@ export class ReservationsController {
   @ResponseMessage('Reservation created successfully.')
   @ApiOperation({
     operationId: 'reservationsCreate',
-    summary: 'Create a reservation (Online source, always Pending)',
+    summary: 'Create a reservation (Online, Phone, or WalkIn source)',
     description:
-      "Phase 7.1 Scope Amendment (TASKS.md, 2026-07-20): always produces status Pending, regardless of the restaurant's auto-approval setting - Approval is a later sub-phase. reservationEndTime is validated then persisted if supplied; if omitted, the backend derives it from the branch restaurant's default reservation duration - the backend is the single source of truth for the final persisted value either way. Protected at two independent layers per ADR-013 (an advisory lock and a database exclusion constraint), though neither can currently reject anything since this phase never produces a confirmed (Approved/Completed/NoShow) reservation.",
+      "Phase 7.1 Scope Amendment (TASKS.md, 2026-07-20): status is Pending unless the branch restaurant's RestaurantSettings.autoApproval is true, in which case it is created directly as Approved. reservationEndTime is validated then persisted if supplied; if omitted, the backend derives it from the branch restaurant's default reservation duration. Protected at two independent layers per ADR-013 (an advisory lock and a database exclusion constraint). Phase 7.4 (TASKS.md, 2026-07-23): source Online remains reachable by any authenticated actor type for themselves, unchanged from Phase 7.1 (self-booking, not subject to branch scope or reservations:create). source Phone/WalkIn is reachable only by an Employee actor, for a ReservationGuest, holding reservations:create for the target Branch - the same shared endpoint dispatches on the actor's own verified type, never on request payload fields.",
   })
   @ApiResponse({ status: 201, description: 'Reservation created', type: ReservationResponseDto })
   @ApiErrorResponse(
     400,
-    'Validation failure, invalid reservation time, or party size exceeds capacity',
+    'Validation failure, invalid reservation time, party size exceeds capacity, or reservationGuest missing for a Phone/WalkIn source',
     ['VALIDATION_ERROR'],
   )
   @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
     'AUTH_INVALID_TOKEN',
     'AUTH_EXPIRED_TOKEN',
   ])
+  @ApiErrorResponse(
+    403,
+    'Actor/source combination is not allowed, Employee lacks reservations:create, or is outside branch scope',
+    ['FORBIDDEN', 'EMPLOYEE_BRANCH_NOT_ASSIGNED'],
+  )
   @ApiErrorResponse(404, 'Branch or table not found (or table belongs to a different branch)', [
     'NOT_FOUND',
   ])
@@ -150,6 +155,8 @@ export class ReservationsController {
       reservationEndTime: body.reservationEndTime,
       guests: body.guests,
       notes: body.notes ?? null,
+      source: body.source,
+      reservationGuest: body.reservationGuest,
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
     return toReservationResponse(result);

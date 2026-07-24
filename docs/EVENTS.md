@@ -223,18 +223,9 @@ ReservationNoShow
 
 ---
 
-# Phone Reservation Events
+# Phone / Walk-In Reservation Events (superseded)
 
-* PhoneReservationCreated
-* PhoneReservationCancelled
-* PhoneReservationUpdated
-
----
-
-# Walk-In Reservation Events
-
-* WalkInReservationCreated
-* WalkInReservationUpdated
+**Superseded by the unified Reservation Workflow events above (TASKS.md Phase 7.4 — Pre-implementation architecture decisions, decision #11, approved 2026-07-23).** `PhoneReservationCreated`/`PhoneReservationCancelled`/`PhoneReservationUpdated` and `WalkInReservationCreated`/`WalkInReservationUpdated` are **not** implemented as separate event classes. Phone (`source = Phone`) and Walk-In (`source = WalkIn`) reservations use the same `ReservationCreated`/`ReservationCancelled`/etc. events as Online reservations - `source` is a field on the unified event/reservation, not a discriminator for a parallel event hierarchy. Retained here, struck from active use, only as the historical record of the pre-Phase-7-freeze proposal.
 
 ---
 

@@ -385,8 +385,8 @@ export class AuditingEventPublisher implements EventPublisherPort {
     if (event instanceof ReservationCreatedEvent) {
       return {
         ...base,
-        actorId: event.payload.userId,
-        actorType: 'User',
+        actorId: event.payload.createdBy,
+        actorType: event.payload.userId !== null ? 'User' : 'Employee',
         action: 'reservation.created',
         targetType: 'Reservation',
         targetId: event.payload.reservationId,

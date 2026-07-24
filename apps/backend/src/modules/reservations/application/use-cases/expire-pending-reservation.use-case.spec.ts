@@ -1,6 +1,6 @@
 import { ExpirePendingReservationUseCase } from './expire-pending-reservation.use-case';
 import { Reservation } from '../../domain/entities/reservation.entity';
-import { ReservationStatus } from '../../domain/enums/reservation.enums';
+import { ReservationSource, ReservationStatus } from '../../domain/enums/reservation.enums';
 import { ReservationExpiredEvent } from '../../domain/events/reservation.events';
 import { TenantContextService } from '@infrastructure/tenancy/tenant-context.service';
 import {
@@ -25,6 +25,8 @@ describe('ExpirePendingReservationUseCase', () => {
     const created = Reservation.create({
       id: reservationId,
       userId: customerId,
+      reservationGuestId: null,
+      source: ReservationSource.Online,
       restaurantId,
       branchId,
       tableId,

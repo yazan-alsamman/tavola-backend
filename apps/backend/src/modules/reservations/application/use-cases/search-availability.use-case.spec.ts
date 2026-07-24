@@ -5,6 +5,7 @@ import { Table } from '@modules/tables/domain/entities/table.entity';
 import { TableShape, TableStatus } from '@modules/tables/domain/enums/table.enums';
 import { RestaurantSettings } from '@modules/restaurants/domain/entities/restaurant-settings.entity';
 import { Reservation } from '@modules/reservations/domain/entities/reservation.entity';
+import { ReservationSource } from '@modules/reservations/domain/enums/reservation.enums';
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
 import { InMemoryTableRepository } from '../../../../../test/tables/support/in-memory-table.repository';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
@@ -112,6 +113,8 @@ describe('SearchAvailabilityUseCase', () => {
       Reservation.create({
         id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
         userId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        reservationGuestId: null,
+        source: ReservationSource.Online,
         restaurantId,
         branchId,
         tableId: availableTableId,

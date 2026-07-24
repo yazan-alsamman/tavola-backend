@@ -19,7 +19,8 @@ const ACCESS_SECRET = 'test-access-secret-at-least-32-characters-long';
 const VALID_PATCH_BODY = {
   firstName: 'Valid',
   lastName: 'Valid',
-  phone: null,
+  countryCode: null,
+  phoneNumber: null,
   language: 'en',
   preferredCurrency: null,
 };
@@ -146,7 +147,8 @@ describe('GET/PATCH /api/v1/users/me (e2e)', () => {
       .send({
         firstName: 'Updated',
         lastName: 'Person',
-        phone: '+963900000000',
+        countryCode: 'SY',
+        phoneNumber: '0900000000',
         language: 'ar',
         preferredCurrency: 'USD',
       })
@@ -279,7 +281,8 @@ describe('GET/PATCH /api/v1/users/me (e2e)', () => {
       .send({
         firstName: 'Valid',
         lastName: 'Valid',
-        phone: null,
+        countryCode: null,
+        phoneNumber: null,
         language: 'english', // invalid - must be 2-letter ISO code
         preferredCurrency: null,
       })
@@ -298,12 +301,191 @@ describe('GET/PATCH /api/v1/users/me (e2e)', () => {
       .send({
         firstName: 'Valid',
         lastName: 'Valid',
-        phone: null,
+        countryCode: null,
+        phoneNumber: null,
         language: 'en',
         preferredCurrency: 'usd', // invalid - must be uppercase 3-letter ISO code
       })
       .expect(400);
     expect(response.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('PATCH rejects a malformed phone number with 400', async () => {
+    if (!dbAvailable || !app) return;
+
+    const { accessToken } = await createAndLoginUser('validation-phone');
+
+    const response = await request(app.getHttpServer())
+      .patch('/api/v1/users/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        firstName: 'Valid',
+        lastName: 'Valid',
+        countryCode: 'SY',
+        phoneNumber: 'not-a-phone',
+        language: 'en',
+        preferredCurrency: null,
+      })
+      .expect(400);
+    expect(response.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('PATCH rejects an impossible phone number for the given country with 400', async () => {
+    if (!dbAvailable || !app) return;
+
+    const { accessToken } = await createAndLoginUser('validation-phone-impossible');
+
+    const response = await request(app.getHttpServer())
+      .patch('/api/v1/users/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        firstName: 'Valid',
+        lastName: 'Valid',
+        countryCode: 'SY',
+        phoneNumber: '1',
+        language: 'en',
+        preferredCurrency: null,
+      })
+      .expect(400);
+    expect(response.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('PATCH rejects countryCode supplied without phoneNumber (and vice versa) with 400', async () => {
+    if (!dbAvailable || !app) return;
+
+    const { accessToken } = await createAndLoginUser('validation-phone-paired');
+
+    const missingPhoneNumber = await request(app.getHttpServer())
+      .patch('/api/v1/users/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        firstName: 'Valid',
+        lastName: 'Valid',
+        countryCode: 'SY',
+        language: 'en',
+        preferredCurrency: null,
+      })
+      .expect(400);
+    expect(missingPhoneNumber.body.code).toBe('VALIDATION_ERROR');
+
+    const missingCountryCode = await request(app.getHttpServer())
+      .patch('/api/v1/users/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        firstName: 'Valid',
+        lastName: 'Valid',
+        phoneNumber: '0900000000',
+        language: 'en',
+        preferredCurrency: null,
+      })
+      .expect(400);
+    expect(missingCountryCode.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('PATCH rejects a phone number already belonging to another account with 409', async () => {
+    if (!dbAvailable || !app) return;
+
+    const owner = await createAndLoginUser('phone-conflict-owner');
+    await prisma.user.update({
+      where: { id: owner.userId },
+      data: { phone: '+963900000042' },
+    });
+    const { accessToken } = await createAndLoginUser('phone-conflict-claimer');
+
+    const response = await request(app.getHttpServer())
+      .patch('/api/v1/users/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        firstName: 'Valid',
+        lastName: 'Valid',
+        countryCode: 'SY',
+        phoneNumber: '0900000042',
+        language: 'en',
+        preferredCurrency: null,
+      })
+      .expect(409);
+    expect(response.body.code).toBe('CONFLICT');
+  });
+
+  it('PATCH rejects a canonically-equivalent duplicate phone entered in a different local format with 409', async () => {
+    if (!dbAvailable || !app) return;
+
+    const owner = await createAndLoginUser('phone-equiv-owner');
+    await prisma.user.update({
+      where: { id: owner.userId },
+      data: { phone: '+963900000043' },
+    });
+    const { accessToken } = await createAndLoginUser('phone-equiv-claimer');
+
+    const response = await request(app.getHttpServer())
+      .patch('/api/v1/users/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        firstName: 'Valid',
+        lastName: 'Valid',
+        countryCode: 'SY',
+        // Same real number as +963900000043, without the trunk zero.
+        phoneNumber: '900000043',
+        language: 'en',
+        preferredCurrency: null,
+      })
+      .expect(409);
+    expect(response.body.code).toBe('CONFLICT');
+  });
+
+  it('PATCH allows a user to keep resubmitting their own current phone number', async () => {
+    if (!dbAvailable || !app) return;
+
+    const { accessToken, userId } = await createAndLoginUser('phone-keep-own');
+    await prisma.user.update({
+      where: { id: userId },
+      data: { phone: '+963900000044' },
+    });
+
+    const response = await request(app.getHttpServer())
+      .patch('/api/v1/users/me')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        firstName: 'Valid',
+        lastName: 'Valid',
+        countryCode: 'SY',
+        phoneNumber: '0900000044',
+        language: 'en',
+        preferredCurrency: null,
+      })
+      .expect(200);
+    expect(response.body.data.phone).toBe('+963900000044');
+  });
+
+  it('PATCH is race-safe: two concurrent claims of the same phone by different users leave exactly one winner', async () => {
+    if (!dbAvailable || !app) return;
+
+    const userA = await createAndLoginUser('phone-race-a');
+    const userB = await createAndLoginUser('phone-race-b');
+
+    const patchWith = (accessToken: string) =>
+      request(app!.getHttpServer())
+        .patch('/api/v1/users/me')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          firstName: 'Valid',
+          lastName: 'Valid',
+          countryCode: 'SY',
+          phoneNumber: '0900000045',
+          language: 'en',
+          preferredCurrency: null,
+        });
+
+    const [responseA, responseB] = await Promise.all([
+      patchWith(userA.accessToken),
+      patchWith(userB.accessToken),
+    ]);
+
+    const statuses = [responseA.status, responseB.status].sort();
+    expect(statuses).toEqual([200, 409]);
+
+    const winnerCount = await prisma.user.count({ where: { phone: '+963900000045' } });
+    expect(winnerCount).toBe(1);
   });
 
   it('PATCH rejects a request with no Authorization header', async () => {
@@ -395,7 +577,13 @@ describe('GET/PATCH /api/v1/users/me (e2e)', () => {
     const response = await request(app.getHttpServer())
       .patch('/api/v1/users/me')
       .set('Authorization', `Bearer ${accessToken}`)
-      .send({ firstName: 'Valid', lastName: 'Valid', phone: null, preferredCurrency: null })
+      .send({
+        firstName: 'Valid',
+        lastName: 'Valid',
+        countryCode: null,
+        phoneNumber: null,
+        preferredCurrency: null,
+      })
       .expect(400);
     expect(response.body.code).toBe('VALIDATION_ERROR');
   });
@@ -412,7 +600,8 @@ describe('GET/PATCH /api/v1/users/me (e2e)', () => {
       .send({
         firstName: 'Has',
         lastName: 'Values',
-        phone: '+963900000099',
+        countryCode: 'SY',
+        phoneNumber: '0900000099',
         language: 'en',
         preferredCurrency: 'EUR',
       })
@@ -485,7 +674,8 @@ describe('GET/PATCH /api/v1/users/me (e2e)', () => {
       .send({
         firstName: 'UserA',
         lastName: 'Only',
-        phone: null,
+        countryCode: null,
+        phoneNumber: null,
         language: 'en',
         preferredCurrency: null,
       })

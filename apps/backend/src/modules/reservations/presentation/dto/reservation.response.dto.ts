@@ -11,6 +11,13 @@ export class ReservationResponseDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   userId!: string | null;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'Set instead of userId for a Phone/WalkIn reservation (Phase 7.4).',
+  })
+  reservationGuestId!: string | null;
+
   @ApiProperty({ format: 'uuid' })
   restaurantId!: string;
 

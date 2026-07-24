@@ -10,6 +10,9 @@ import {
   EVENT_PUBLISHER,
   UNIT_OF_WORK,
 } from '@modules/authentication/domain/tokens/authentication.tokens';
+import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
+import { AuthenticatedActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
+import { PermissionDeniedException } from '@modules/authorization/domain/exceptions/permission-denied.exception';
 import {
   BranchRepository,
   BRANCH_REPOSITORY,
@@ -26,8 +29,11 @@ import {
   RESTAURANT_SETTINGS_REPOSITORY,
 } from '@modules/restaurants/domain/repositories/restaurant-settings.repository';
 import { Reservation } from '../../domain/entities/reservation.entity';
+import { ReservationGuest } from '../../domain/entities/reservation-guest.entity';
+import { ReservationSource } from '../../domain/enums/reservation.enums';
 import { ReservationAvailabilityService } from '../../domain/services/reservation-availability.service';
 import { InvalidReservationTimeException } from '../../domain/exceptions/invalid-reservation-time.exception';
+import { InvalidReservationException } from '../../domain/exceptions/invalid-reservation.exception';
 import { TableUnavailableException } from '../../domain/exceptions/table-unavailable.exception';
 import { ReservationCreatedEvent } from '../../domain/events/reservation.events';
 import {
@@ -35,12 +41,44 @@ import {
   RESERVATION_REPOSITORY,
 } from '../../domain/repositories/reservation.repository';
 import {
+  ReservationGuestRepository,
+  RESERVATION_GUEST_REPOSITORY,
+} from '../../domain/repositories/reservation-guest.repository';
+import { assertEmployeeCanCreateReservation } from '../services/assert-employee-reservation-scope';
+import {
   ReservationExpirationSchedulerPort,
   RESERVATION_EXPIRATION_SCHEDULER,
 } from '../ports/reservation-expiration-scheduler.port';
 import { toReservationResult } from '../mappers/reservation-result.mapper';
 import { CreateReservationCommand } from '../dto/create-reservation.command';
 import { ReservationResult } from '../dto/reservation.result';
+
+/**
+ * Phase 7.4 decision #3's authorization matrix, resolved once up front
+ * before any repository call. `Online` is reachable by **any** authenticated
+ * actor type, unchanged from Phase 7.1's own frozen behavior ("Customer-facing
+ * (any authenticated actor type... - no organization/branch-scope guard",
+ * `CreateReservationUseCase`'s original doc comment) - this is the
+ * "already-frozen architecture rule" decision #3 itself names as the one
+ * exception to "Employee + Online -> forbidden": an Employee (or
+ * OrganizationMember) booking Online for themselves, attributed to their own
+ * `userId`, is unchanged self-service booking, not a staff-on-behalf-of-guest
+ * action, and Phase 7.4 must not narrow it (binding clarification: "preserve
+ * existing Customer Online reservation behavior"). `Phone`/`WalkIn` remain
+ * reachable only by an `Employee` actor, subject to
+ * `assertEmployeeCanCreateReservation`'s own branch-scope + `reservations:create`
+ * check, run later once the Branch is resolved.
+ */
+function assertActorSourceIsReachable(actor: AuthenticatedActor, source: ReservationSource): void {
+  const isStaffSource = source === ReservationSource.Phone || source === ReservationSource.WalkIn;
+  if (!isStaffSource) {
+    return;
+  }
+
+  if (actor.actorType !== AccessTokenActorType.Employee) {
+    throw new PermissionDeniedException();
+  }
+}
 
 /**
  * Phase 7.1 (TASKS.md Phase 7.1 Scope Amendment, 2026-07-20) produces a
@@ -69,6 +107,8 @@ export class CreateReservationUseCase {
     private readonly restaurantSettingsRepository: RestaurantSettingsRepository,
     @Inject(RESERVATION_REPOSITORY)
     private readonly reservationRepository: ReservationRepository,
+    @Inject(RESERVATION_GUEST_REPOSITORY)
+    private readonly reservationGuestRepository: ReservationGuestRepository,
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
@@ -78,12 +118,33 @@ export class CreateReservationUseCase {
   ) {}
 
   async execute(command: CreateReservationCommand): Promise<ReservationResult> {
+    // Phase 7.4 binding clarification #1: `source` is resolved to a concrete
+    // value here, at the presentation/application boundary - never left
+    // undefined past this point.
+    const source = command.source ?? ReservationSource.Online;
+    assertActorSourceIsReachable(command.actor, source);
+
     const branchId = BranchId.create(command.branchId);
     const tableId = TableId.create(command.tableId);
 
     const branch = await this.branchRepository.findById(branchId);
     if (branch === null) {
       throw new BranchNotFoundException();
+    }
+
+    // Branch-scope + reservations:create is only checked for the
+    // staff-on-behalf-of-guest path (Phone/WalkIn). An Employee actor
+    // creating source Online is self-booking, exactly like any other actor
+    // type, and is not subject to this check (see assertActorSourceIsReachable's
+    // own doc comment).
+    const isStaffSource = source === ReservationSource.Phone || source === ReservationSource.WalkIn;
+    if (isStaffSource && command.actor.actorType === AccessTokenActorType.Employee) {
+      assertEmployeeCanCreateReservation(
+        command.actor,
+        branch.restaurantId,
+        branchId,
+        'reservations:create',
+      );
     }
 
     const table = await this.tableRepository.findByIdAndBranchId(tableId, branchId);
@@ -109,9 +170,13 @@ export class CreateReservationUseCase {
       Date.UTC(startTime.getUTCFullYear(), startTime.getUTCMonth(), startTime.getUTCDate()),
     );
 
+    const party = this.resolveParty(command, source, now);
+
     const reservationProps = {
       id: this.idGenerator.generate(),
-      userId: command.actor.userId,
+      userId: party.userId,
+      reservationGuestId: party.reservationGuestId,
+      source,
       restaurantId: branch.restaurantId.value,
       branchId: branchId.value,
       tableId: tableId.value,
@@ -121,7 +186,7 @@ export class CreateReservationUseCase {
       guests: command.guests,
       tableCapacity: table.capacity,
       notes: command.notes ?? null,
-      createdBy: command.actor.userId,
+      createdBy: party.createdBy,
       now,
     };
 
@@ -148,8 +213,16 @@ export class CreateReservationUseCase {
       // unit. `createWithLockInTransaction` is the exact lock/conflict-check/
       // insert core `createWithLock` (the non-auto-approval path, below) uses
       // internally, reused here without its own transaction wrapper so the
-      // Table update joins the same transaction.
+      // Table update joins the same transaction. Phase 7.4 binding
+      // clarification #2: `ReservationGuest` (Phone/WalkIn only) is
+      // persisted inside this same transaction, before the reservation
+      // insert - an ADR-013 conflict, validation failure, or Table.reserve()
+      // failure rolls back the guest row too, never leaving it orphaned.
       await this.unitOfWork.execute(async () => {
+        if (party.guest !== null) {
+          await this.reservationGuestRepository.save(party.guest);
+        }
+
         await this.reservationRepository.createWithLockInTransaction(reservation, lockKey);
 
         const tableToReserve = await this.tableRepository.findById(tableId);
@@ -160,7 +233,21 @@ export class CreateReservationUseCase {
         await this.tableRepository.save(reservedTable);
       });
     } else {
-      await this.reservationRepository.createWithLock(reservation, lockKey);
+      // Phase 7.4 binding clarification #2: previously `createWithLock`
+      // (which opens its own internal transaction) was called directly here.
+      // `createWithLock` is defined as `runInTransaction(() =>
+      // createWithLockInTransaction(...))` - byte-identical to wrapping
+      // `createWithLockInTransaction` in `unitOfWork.execute` (both resolve
+      // to the same `PrismaContext.runInTransaction`), so this preserves
+      // ADR-013's lock/exclusion-constraint guarantees exactly while adding
+      // room for the guest row to join the same atomic operation.
+      await this.unitOfWork.execute(async () => {
+        if (party.guest !== null) {
+          await this.reservationGuestRepository.save(party.guest);
+        }
+
+        await this.reservationRepository.createWithLockInTransaction(reservation, lockKey);
+      });
 
       // Phase 7.3 (Reservation Lifecycle): schedule the Pending-expiration
       // BullMQ job only for the Pending path - an auto-approved reservation
@@ -185,7 +272,10 @@ export class CreateReservationUseCase {
           restaurantId: branch.restaurantId.value,
           branchId: branchId.value,
           tableId: tableId.value,
-          userId: command.actor.userId,
+          userId: party.userId,
+          reservationGuestId: party.reservationGuestId,
+          source,
+          createdBy: party.createdBy,
         },
         now,
         command.correlationId,
@@ -193,6 +283,66 @@ export class CreateReservationUseCase {
     );
 
     return toReservationResult(reservation);
+  }
+
+  /**
+   * Phase 7.4 decision #6: resolves the reservation-party fields and
+   * `createdBy` from the actor + resolved source, never from client-supplied
+   * identity fields. Online always uses the Customer's own `userId`
+   * (unchanged Phase 7.1 behavior). Phone/WalkIn (Employee actor only, per
+   * `assertActorSourceIsReachable`) builds a new `ReservationGuest` from
+   * `command.reservationGuest` and attributes `createdBy` to the Employee's
+   * own `employeeId` - the same `approvedBy`/`actor.employeeId` precedent
+   * `ApproveReservationUseCase` already established, never the Employee's
+   * own `userId`.
+   */
+  private resolveParty(
+    command: CreateReservationCommand,
+    source: ReservationSource,
+    now: Date,
+  ): {
+    userId: string | null;
+    reservationGuestId: string | null;
+    createdBy: string;
+    guest: ReservationGuest | null;
+  } {
+    if (source === ReservationSource.Online) {
+      return {
+        userId: command.actor.userId,
+        reservationGuestId: null,
+        createdBy: command.actor.userId,
+        guest: null,
+      };
+    }
+
+    if (command.actor.actorType !== AccessTokenActorType.Employee) {
+      // Unreachable: assertActorSourceIsReachable already rejected any
+      // non-Employee actor for a Phone/WalkIn source. Kept as a defensive
+      // guard so this method never silently mis-attributes a reservation.
+      throw new PermissionDeniedException();
+    }
+
+    if (!command.reservationGuest) {
+      throw new InvalidReservationException(
+        'reservationGuest is required when source is Phone or WalkIn.',
+      );
+    }
+
+    const guest = ReservationGuest.create({
+      id: this.idGenerator.generate(),
+      fullName: command.reservationGuest.fullName,
+      countryCode: command.reservationGuest.countryCode,
+      phoneNumber: command.reservationGuest.phoneNumber,
+      email: command.reservationGuest.email ?? null,
+      now,
+    });
+
+    return {
+      userId: null,
+      reservationGuestId: guest.guestId,
+      createdBy: command.actor.employeeId,
+      guest,
+    };
   }
 
   private resolveEndTime(

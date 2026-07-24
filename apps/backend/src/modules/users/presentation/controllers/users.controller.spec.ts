@@ -139,7 +139,8 @@ describe('UsersController', () => {
         {
           firstName: 'Updated',
           lastName: 'Person',
-          phone: '+963900000000',
+          countryCode: 'SY',
+          phoneNumber: '900000000',
           language: 'ar',
           preferredCurrency: 'USD',
         },
@@ -151,7 +152,8 @@ describe('UsersController', () => {
         actor,
         firstName: 'Updated',
         lastName: 'Person',
-        phone: '+963900000000',
+        countryCode: 'SY',
+        phoneNumber: '900000000',
         language: 'ar',
         preferredCurrency: 'USD',
         ipAddress: '203.0.113.44',
@@ -171,7 +173,12 @@ describe('UsersController', () => {
       );
 
       expect(updateExecute).toHaveBeenCalledWith(
-        expect.objectContaining({ phone: null, preferredCurrency: null, correlationId: undefined }),
+        expect.objectContaining({
+          countryCode: null,
+          phoneNumber: null,
+          preferredCurrency: null,
+          correlationId: undefined,
+        }),
       );
     });
 

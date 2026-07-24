@@ -2,7 +2,7 @@ import { ApproveReservationUseCase } from './approve-reservation.use-case';
 import { AutoRejectOverlappingPendingReservationsService } from '../services/auto-reject-overlapping-pending-reservations.service';
 import { InMemoryReservationExpirationScheduler } from '../../../../../test/reservations/support/in-memory-reservation-expiration-scheduler';
 import { Reservation } from '../../domain/entities/reservation.entity';
-import { ReservationStatus } from '../../domain/enums/reservation.enums';
+import { ReservationSource, ReservationStatus } from '../../domain/enums/reservation.enums';
 import { ReservationNotFoundException } from '../../domain/exceptions/reservation-not-found.exception';
 import { InvalidReservationStatusTransitionException } from '../../domain/exceptions/invalid-reservation-status-transition.exception';
 import { ReservationConflictException } from '../../domain/exceptions/reservation-conflict.exception';
@@ -63,6 +63,8 @@ describe('ApproveReservationUseCase', () => {
     return Reservation.create({
       id: overrides?.id ?? reservationId,
       userId: customerId,
+      reservationGuestId: null,
+      source: ReservationSource.Online,
       restaurantId: overrides?.restaurantId ?? restaurantId,
       branchId: overrides?.branchId ?? branchId,
       tableId,

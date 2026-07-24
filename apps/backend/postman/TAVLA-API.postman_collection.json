@@ -1106,7 +1106,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"phone\": \"+963900000000\",\n  \"language\": \"en\",\n  \"preferredCurrency\": \"USD\"\n}",
+              "raw": "{\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"countryCode\": \"{{customerCountryCode}}\",\n  \"phoneNumber\": \"{{customerPhoneNumber}}\",\n  \"language\": \"en\",\n  \"preferredCurrency\": \"USD\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1123,7 +1123,7 @@
                 "me"
               ]
             },
-            "description": "Full-replace update of name/phone/language/preferredCurrency for the caller only. Does not accept email, password, or any Authentication/Authorization field."
+            "description": "Full-replace update of name/language/preferredCurrency and phone (countryCode + phoneNumber, normalized server-side to canonical E.164 - never a pre-assembled phone string, per ADR-022 Decision #13) for the caller only. Does not accept email, password, or any Authentication/Authorization field."
           },
           "response": []
         },

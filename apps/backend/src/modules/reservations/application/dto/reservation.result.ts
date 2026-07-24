@@ -3,6 +3,7 @@ import { ReservationSource, ReservationStatus } from '../../domain/enums/reserva
 export interface ReservationResult {
   reservationId: string;
   userId: string | null;
+  reservationGuestId: string | null;
   restaurantId: string;
   branchId: string;
   tableId: string;

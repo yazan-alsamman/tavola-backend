@@ -1,6 +1,6 @@
 import { CancelReservationUseCase } from './cancel-reservation.use-case';
 import { Reservation } from '../../domain/entities/reservation.entity';
-import { ReservationStatus } from '../../domain/enums/reservation.enums';
+import { ReservationSource, ReservationStatus } from '../../domain/enums/reservation.enums';
 import { ReservationNotFoundException } from '../../domain/exceptions/reservation-not-found.exception';
 import { InvalidReservationStatusTransitionException } from '../../domain/exceptions/invalid-reservation-status-transition.exception';
 import { ReservationCancelledEvent } from '../../domain/events/reservation.events';
@@ -71,6 +71,8 @@ describe('CancelReservationUseCase', () => {
     const created = Reservation.create({
       id: reservationId,
       userId: customerId,
+      reservationGuestId: null,
+      source: ReservationSource.Online,
       restaurantId,
       branchId,
       tableId,

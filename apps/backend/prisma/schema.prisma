@@ -778,14 +778,17 @@ model Table {
 // `status = Pending`, `source = Online`, `userId` set (never
 // `reservationGuestId`) - Approval (manual or auto), Reject, Cancel,
 // Reschedule, Complete, No-Show, Phone/WalkIn, and Waitlist are later
-// sub-phases. `reservationGuestId`/`rescheduledFromReservationId` are plain
-// nullable UUID columns with no FK relation yet - mirroring `Table.mergeGroupId`'s
-// own precedent for a documented-but-not-yet-built future sub-phase (Phase
-// 7.4/7.3 respectively) - `ReservationGuest`/reschedule-as-new-row do not
-// exist as tables/flows yet. The `EXCLUDE USING gist` constraint (ADR-013)
-// cannot be expressed in the Prisma schema language itself; it is added via
-// raw SQL in this model's own migration, immediately after enabling the
-// `btree_gist` extension (MIGRATION_POLICY.md).
+// sub-phases. `rescheduledFromReservationId` remains a plain nullable UUID
+// column with no FK relation yet - mirroring `Table.mergeGroupId`'s own
+// precedent for a documented-but-not-yet-built future sub-phase (Phase 7.3's
+// possible future "reschedule as a new row" flow - reschedule-as-new-row
+// does not exist as a flow yet). `reservationGuestId` gained its real FK to
+// `ReservationGuest` in Phase 7.4 (Pre-implementation architecture decisions,
+// approved 2026-07-23, decision #12) - see that model below. The
+// `EXCLUDE USING gist` constraint (ADR-013) and the reservation-party
+// (`userId` XOR `reservationGuestId`) invariant (Phase 7.4 decision #5)
+// cannot be expressed in the Prisma schema language itself; both are added
+// via raw SQL in the relevant migration (MIGRATION_POLICY.md).
 // ---------------------------------------------------------------------------
 
 enum ReservationStatus {
@@ -832,11 +835,12 @@ model Reservation {
   createdAt                    DateTime          @default(now()) @map("created_at")
   updatedAt                    DateTime          @updatedAt @map("updated_at")
 
-  restaurant Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
-  branch     Branch               @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  table      Table                @relation(fields: [tableId], references: [id], onDelete: Restrict)
-  user       User?                @relation(fields: [userId], references: [id], onDelete: Restrict)
-  history    ReservationHistory[]
+  restaurant       Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  branch           Branch               @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  table            Table                @relation(fields: [tableId], references: [id], onDelete: Restrict)
+  user             User?                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  reservationGuest ReservationGuest?    @relation(fields: [reservationGuestId], references: [id], onDelete: Restrict)
+  history          ReservationHistory[]
 
   @@index([reservationDate])
   @@index([tableId])
@@ -845,6 +849,33 @@ model Reservation {
   @@index([branchId, reservationDate, status])
   @@index([tableId, reservationDate, reservationStartTime])
   @@map("reservations")
+}
+
+// ---------------------------------------------------------------------------
+// Reservation Guests (Phase 7.4 — Phone & Walk-In Reservations,
+// DATABASE_SCHEMA.md "Reservation Guests"). Represents the person a
+// reservation is for when no registered User account exists (Phone/WalkIn
+// sources). Dependent entity of the Reservation Aggregate, not a standalone
+// aggregate (Phase 7.4 decision #4) - persisted via its own repository
+// mirroring `ReservationHistory`'s own precedent, but with no lifecycle
+// independent of the Reservation(s) that reference it. `anonymizedAt`
+// exists so the row is anonymization-compatible (Phase 7.4 decision #13);
+// no erasure subsystem is implemented by this migration.
+// ---------------------------------------------------------------------------
+
+model ReservationGuest {
+  id           String    @id @default(uuid()) @db.Uuid
+  fullName     String    @map("full_name")
+  phone        String
+  email        String?
+  anonymizedAt DateTime? @map("anonymized_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  reservations Reservation[]
+
+  @@index([phone])
+  @@map("reservation_guests")
 }
 
 // ---------------------------------------------------------------------------

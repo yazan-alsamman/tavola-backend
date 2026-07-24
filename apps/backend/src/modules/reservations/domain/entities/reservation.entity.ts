@@ -92,14 +92,20 @@ export class Reservation extends Entity<ReservationProps> {
   }
 
   /**
-   * The only way a Reservation is created in Phase 7.1. `reservationGuestId`
-   * is always null here (Online-source, User-only path - Phase 7.4 builds
-   * the ReservationGuest path). `status` is always `Pending` - unconditional,
-   * not a parameter - per the Phase 7.1 Scope Amendment.
+   * The only way a `Pending` Reservation is created (Phase 7.1; widened by
+   * Phase 7.4 decision #5/#1 to accept either party reference and an
+   * explicit `source` - `CreateReservationUseCase` resolves an omitted
+   * `source` to `Online` at the presentation/application boundary, never
+   * leaving it undefined here). Exactly one of `userId`/`reservationGuestId`
+   * must be set - enforced by `validateParty` before construction. `status`
+   * is always `Pending` - unconditional, not a parameter - per the Phase 7.1
+   * Scope Amendment.
    */
   static create(props: {
     id: string;
-    userId: string;
+    userId: string | null;
+    reservationGuestId: string | null;
+    source: ReservationSource;
     restaurantId: string;
     branchId: string;
     tableId: string;
@@ -113,11 +119,12 @@ export class Reservation extends Entity<ReservationProps> {
     now: Date;
   }): Reservation {
     validate(props);
+    validateParty(props.userId, props.reservationGuestId);
 
     return new Reservation({
       id: props.id,
       userId: props.userId,
-      reservationGuestId: null,
+      reservationGuestId: props.reservationGuestId,
       restaurantId: props.restaurantId,
       branchId: props.branchId,
       tableId: props.tableId,
@@ -126,7 +133,7 @@ export class Reservation extends Entity<ReservationProps> {
       reservationEndTime: props.reservationEndTime,
       guests: props.guests,
       status: ReservationStatus.Pending,
-      source: ReservationSource.Online,
+      source: props.source,
       notes: props.notes,
       createdBy: props.createdBy,
       approvedBy: null,
@@ -150,11 +157,15 @@ export class Reservation extends Entity<ReservationProps> {
    * `Pending -> Approved` transition (and no corresponding event) ever
    * occurs for this path. `approvedBy` is `null` (a system/settings-driven
    * approval, not a specific Employee action) while `approvedAt` is set to
-   * `now`, matching the moment of creation.
+   * `now`, matching the moment of creation. Widened by Phase 7.4 decision
+   * #5/#1 exactly like `create()` above - either party reference, explicit
+   * `source`, same `validateParty` invariant.
    */
   static createAutoApproved(props: {
     id: string;
-    userId: string;
+    userId: string | null;
+    reservationGuestId: string | null;
+    source: ReservationSource;
     restaurantId: string;
     branchId: string;
     tableId: string;
@@ -168,11 +179,12 @@ export class Reservation extends Entity<ReservationProps> {
     now: Date;
   }): Reservation {
     validate(props);
+    validateParty(props.userId, props.reservationGuestId);
 
     return new Reservation({
       id: props.id,
       userId: props.userId,
-      reservationGuestId: null,
+      reservationGuestId: props.reservationGuestId,
       restaurantId: props.restaurantId,
       branchId: props.branchId,
       tableId: props.tableId,
@@ -181,7 +193,7 @@ export class Reservation extends Entity<ReservationProps> {
       reservationEndTime: props.reservationEndTime,
       guests: props.guests,
       status: ReservationStatus.Approved,
-      source: ReservationSource.Online,
+      source: props.source,
       notes: props.notes,
       createdBy: props.createdBy,
       approvedBy: null,
@@ -507,5 +519,21 @@ function validate(props: {
   }
   if (props.guests > props.tableCapacity) {
     throw new PartySizeExceedsCapacityException(props.guests, props.tableCapacity);
+  }
+}
+
+/**
+ * Phase 7.4 decision #5: "A reservation must represent exactly one
+ * reservation party identity." Never both `userId`/`reservationGuestId` set,
+ * never neither - the same shape DOMAIN_MODEL.md already codifies for
+ * `ReservationWaitlistEntry`'s own `userId`/`reservationGuestId` invariant.
+ */
+function validateParty(userId: string | null, reservationGuestId: string | null): void {
+  const hasUser = userId !== null;
+  const hasGuest = reservationGuestId !== null;
+  if (hasUser === hasGuest) {
+    throw new InvalidReservationException(
+      'A reservation must reference exactly one of userId or reservationGuestId, never both and never neither.',
+    );
   }
 }
