@@ -120,6 +120,9 @@ describe('Customer login (e2e)', () => {
     expect(result.accessToken).toBeDefined();
     expect(result.refreshToken).toBeDefined();
     expect(result.sessionId).toBeDefined();
+    // ADR-025 delivery: the field is always present on the login contract;
+    // null here because Identity Verification is unconfigured in the test env.
+    expect(result).toHaveProperty('onesignalIdentityToken', null);
   });
 
   it('logs in successfully with an international (+971 UAE) number', async () => {

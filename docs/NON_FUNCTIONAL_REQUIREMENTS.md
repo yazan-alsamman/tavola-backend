@@ -191,8 +191,6 @@ Image upload failure
 
 Analytics worker failure
 
-Email provider outage
-
 The platform must continue serving reservations.
 
 ---
@@ -208,6 +206,8 @@ Maximum retries
 5
 
 Dead Letter Queue required.
+
+**Exception (Phase 9, `NotificationQueue`, frozen/implemented 2026-07-25):** `TASKS.md`'s Phase 9 decision item 9 explicitly leaves exact retry count/backoff as an implementation detail (not frozen) and explicitly builds **no Dead Letter Queue** in v1 — after the configured attempts (`NOTIFICATION_PUSH_MAX_ATTEMPTS = 5`, chosen to match this section's own default) are exhausted, the terminal outcome is written `Failed` on the `Notification` row itself (queryable via `pushStatus`/`pushFailureReason`), which serves as this queue's own record of exhausted retries in place of a DLQ. This is a deliberate, narrower exception for this one queue, not a change to the general policy above.
 
 ---
 
@@ -327,6 +327,8 @@ Capabilities should include:
 * Configurable retention periods
 
 "Account deletion" is satisfied through anonymization-in-place, not physical deletion, reconciling this requirement with the immutable-audit-log and never-physically-delete-reservations rules elsewhere in this document and in DATABASE_SCHEMA.md. See ADR-014 for the full mechanism.
+
+**Delivery-time PII policy (Phase 9, frozen 2026-07-25, `TASKS.md`'s Phase 9 decision item 14 — implemented 2026-07-25):** push notification content (and the resolved in-app `title`/`body`, since both are produced by the same template mechanism) contains only the minimum user-facing information necessary and must never include `ReservationGuest.phone`/`email`/`fullName`, internal audit identifiers, or reservation notes. Prefer generic, lock-screen-safe wording — full detail remains retrievable only after the Customer opens the authenticated app and hits REST. This is stricter than, though built on the same principle as, Phase 8's own WebSocket PII-minimization precedent, since a push notification can appear on a locked screen — a materially more exposed surface than an authenticated WebSocket channel.
 
 ---
 
@@ -512,13 +514,15 @@ Notification system should support:
 
 Push
 
-Email
-
 WebSocket
 
 Future SMS
 
+(Email removed from scope — 2026-07-25 product decision; Email is not a planned notification delivery channel.)
+
 Failures should not affect reservation processing.
+
+**Reliability boundary (Phase 9, frozen 2026-07-25, `TASKS.md`'s Phase 9 decision item 11 — implemented 2026-07-25):** best-effort delivery, no transactional outbox. A `Notification` row is persisted first (fast, local, same-process write, immediately after the triggering domain event is handled) — only the *subsequent* BullMQ enqueue and everything downstream of it (queue processing, the OneSignal call itself) is best-effort. The accepted failure boundary is explicit: a process crash between persisting the `Notification` row and enqueueing its delivery job silently loses only that one notification's **push** attempt — the durable in-app record is never lost. This mirrors the platform's already-accepted tolerance for realtime/notification-adjacent failures (see "Notification provider failure" above, and Phase 8's own frozen "realtime is secondary/best-effort" contract). No current product requirement demands guaranteed push delivery; if one emerges later, it would require a dedicated architecture session and very likely a new ADR (a transactional outbox is new persistence/consistency infrastructure) — not introduced by this freeze.
 
 ---
 

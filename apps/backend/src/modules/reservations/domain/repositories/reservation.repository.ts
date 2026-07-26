@@ -28,6 +28,20 @@ export interface ReservationRepository {
   ): Promise<Reservation[]>;
 
   /**
+   * Batched counterpart of `findOverlappingPendingOrApproved`: every
+   * `Pending`/`Approved` reservation overlapping `[startTime, endTime)` for
+   * ANY of the given tables, in one query - used by
+   * `SearchAvailabilityUseCase` and `WaitlistPromotionService.selectTable` to
+   * avoid one round-trip per candidate table when scanning a whole branch's
+   * worth of Available tables.
+   */
+  findOverlappingPendingOrApprovedForTables(
+    tableIds: TableId[],
+    startTime: Date,
+    endTime: Date,
+  ): Promise<Reservation[]>;
+
+  /**
    * The ADR-013 advisory-locked create path: acquires
    * `pg_advisory_xact_lock(hashtextextended(lockKey, 0))`, re-checks for an
    * overlapping confirmed (`Approved`/`Completed`/`NoShow`) reservation for
@@ -127,7 +141,10 @@ export interface ReservationRepository {
    * Reservation column (`status`, `tableId`, `reservationDate`,
    * `reservationStartTime`, `reservationEndTime`, `guests`, `notes`,
    * `approvedBy`, `approvedAt`, `cancelledAt`, `completedAt`, `noShowAt`,
-   * `updatedAt`) from the given entity's current in-memory state. Same
+   * `lateArrivalNotifiedAt`, `tableReadyNotifiedAt`, `updatedAt`) from the
+   * given entity's current in-memory state (Phase 7.6: the two Operational
+   * Signal timestamps join this column list so Reschedule's unconditional
+   * reset - `Reservation.reschedule()` - actually persists). Same
    * `true`/`false`/`ReservationConflictException` semantics as
    * `updateTransitioningFromPending`.
    */
@@ -135,6 +152,46 @@ export interface ReservationRepository {
     reservation: Reservation,
     expectedCurrentStatus: ReservationStatus,
   ): Promise<boolean>;
+
+  /**
+   * Phase 7.6 (Operational Signals, ADR-019) - the Late-Arrival BullMQ job's
+   * sole write, a direct `UPDATE reservations SET late_arrival_notified_at =
+   * ?, updated_at = ? WHERE id = ? AND status = 'Approved' AND
+   * late_arrival_notified_at IS NULL`. Returns `true` only if the row
+   * actually matched (still `Approved`, not already notified) - the
+   * processor treats `false` as a safe no-op (the reservation moved on, or a
+   * concurrent run already notified it), never an error. Deliberately a
+   * narrower, single-column CAS than `updateTransitioningFrom` (no
+   * in-memory entity round-trip needed at the call site) since the job only
+   * ever has a reservation id and a timestamp, not a full loaded entity.
+   */
+  markLateArrivalNotifiedIfEligible(reservationId: ReservationId, at: Date): Promise<boolean>;
+
+  /**
+   * Phase 7.6 (Operational Signals, ADR-019) - the staff-initiated Table
+   * Ready action's sole write (`MarkTableReadyUseCase`), the same
+   * single-column CAS shape as `markLateArrivalNotifiedIfEligible` above:
+   * `UPDATE reservations SET table_ready_notified_at = ?, updated_at = ?
+   * WHERE id = ? AND status = 'Approved' AND table_ready_notified_at IS
+   * NULL`. Returns `false` when the reservation is no longer `Approved` or
+   * has already been marked ready - the use case surfaces that as
+   * `InvalidReservationStatusTransitionException`, not a silent no-op
+   * (unlike the Late-Arrival job, this is a direct staff action, not a
+   * background sweep).
+   */
+  markTableReadyNotifiedIfEligible(reservationId: ReservationId, at: Date): Promise<boolean>;
+
+  /**
+   * Phase 6 (Merge/Split Tables, ADR-026 decision #6) - Merge/Split's own
+   * reservation-blocking check: is there any `Pending`/`Approved`
+   * reservation for `tableId` whose `reservationEndTime` has not yet passed
+   * (`> now`)? `Rejected`/`Cancelled`/`Expired` and historical `Completed`/
+   * `NoShow` never block (they are excluded by the status filter). Must be
+   * called AFTER `TableRepository.acquireTopologyLocks` inside the same
+   * transaction, exactly like `findConfirmedOverlapExcluding`'s own
+   * "re-check inside the lock" placement for ADR-013.
+   */
+  hasBlockingReservation(tableId: TableId, now: Date): Promise<boolean>;
 }
 
 export const RESERVATION_REPOSITORY = Symbol('RESERVATION_REPOSITORY');

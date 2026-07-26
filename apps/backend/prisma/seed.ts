@@ -9,9 +9,106 @@
  * @see docs/AUTHORIZATION_ARCHITECTURE.md §5
  */
 
-import { PrismaClient, RolePermissionType, RoleScope } from '@prisma/client';
+import { NotificationChannel, PrismaClient, RolePermissionType, RoleScope } from '@prisma/client';
 
 const prisma = new PrismaClient();
+
+/**
+ * Phase 9 (Notification System, architecture frozen 2026-07-25) - one
+ * `isDefault: true` English row per `(eventType, channel)` pair the frozen
+ * event -> notification allow-list requires (TASKS.md decision item 17).
+ * `ReservationNoShow` seeds only `InApp` (its frozen classification is
+ * In-App-only - `NotificationDispatcher` never resolves a Push template for
+ * it, so seeding one would be dead data). Generic, lock-screen-safe copy
+ * only - never `ReservationGuest` contact fields, internal ids, or notes
+ * (the frozen PII policy). Additional languages are a pure content/data
+ * addition (LOCALIZATION.md), never a code change - not seeded here.
+ */
+const NOTIFICATION_TEMPLATES: Array<{
+  eventType: string;
+  channel: NotificationChannel;
+  title: string;
+  body: string;
+}> = [
+  {
+    eventType: 'ReservationApproved',
+    channel: NotificationChannel.InApp,
+    title: 'Reservation confirmed',
+    body: 'Your reservation has been confirmed.',
+  },
+  {
+    eventType: 'ReservationApproved',
+    channel: NotificationChannel.Push,
+    title: 'Reservation confirmed',
+    body: 'Your reservation has been confirmed. Tap to view details.',
+  },
+  {
+    eventType: 'ReservationCancelled',
+    channel: NotificationChannel.InApp,
+    title: 'Reservation cancelled',
+    body: 'Your reservation has been cancelled.',
+  },
+  {
+    eventType: 'ReservationCancelled',
+    channel: NotificationChannel.Push,
+    title: 'Reservation cancelled',
+    body: 'Your reservation has been cancelled. Tap for details.',
+  },
+  {
+    eventType: 'ReservationRescheduled',
+    channel: NotificationChannel.InApp,
+    title: 'Reservation rescheduled',
+    body: 'Your reservation time has changed.',
+  },
+  {
+    eventType: 'ReservationRescheduled',
+    channel: NotificationChannel.Push,
+    title: 'Reservation rescheduled',
+    body: 'Your reservation time has changed. Tap to view the new details.',
+  },
+  {
+    eventType: 'ReservationReminderDue',
+    channel: NotificationChannel.InApp,
+    title: 'Upcoming reservation',
+    body: 'You have an upcoming reservation soon.',
+  },
+  {
+    eventType: 'ReservationReminderDue',
+    channel: NotificationChannel.Push,
+    title: 'Reservation reminder',
+    body: 'Your reservation is coming up soon.',
+  },
+  {
+    eventType: 'TableReadyNotified',
+    channel: NotificationChannel.InApp,
+    title: 'Your table is ready',
+    body: 'Your table is ready for seating.',
+  },
+  {
+    eventType: 'TableReadyNotified',
+    channel: NotificationChannel.Push,
+    title: 'Table ready',
+    body: 'Your table is ready. Please head to the host stand.',
+  },
+  {
+    eventType: 'WaitlistEntryPromoted',
+    channel: NotificationChannel.InApp,
+    title: "You're off the waitlist",
+    body: 'A table is now available for you.',
+  },
+  {
+    eventType: 'WaitlistEntryPromoted',
+    channel: NotificationChannel.Push,
+    title: 'Table available',
+    body: 'A table is now available for you. Tap to view details.',
+  },
+  {
+    eventType: 'ReservationNoShow',
+    channel: NotificationChannel.InApp,
+    title: 'Marked as no-show',
+    body: 'Your reservation was marked as a no-show.',
+  },
+];
 
 const SYSTEM_CONFIGURATION: Array<{
   key: string;
@@ -103,6 +200,14 @@ const PERMISSIONS: Array<{ slug: string; description: string }> = [
     description: 'Mark approved reservations as a no-show',
   },
   {
+    slug: 'reservations:tableready',
+    description: 'Mark an approved reservation\'s table as ready for the guest',
+  },
+  {
+    slug: 'reservations:waitlist',
+    description: 'Join, cancel, and promote branch waitlist entries on behalf of guests',
+  },
+  {
     slug: 'tables:manage',
     description: 'Manage tables, merge, and split operations',
   },
@@ -141,6 +246,8 @@ const ROLES: Array<{
       'reservations:reschedule',
       'reservations:complete',
       'reservations:noshow',
+      'reservations:tableready',
+      'reservations:waitlist',
       'tables:manage',
       'employees:manage',
       'reports:view',
@@ -159,6 +266,8 @@ const ROLES: Array<{
       'reservations:reschedule',
       'reservations:complete',
       'reservations:noshow',
+      'reservations:tableready',
+      'reservations:waitlist',
     ],
   },
   {
@@ -291,12 +400,40 @@ async function seedRoles(permissionIds: Map<string, string>): Promise<void> {
   }
 }
 
+async function seedNotificationTemplates(): Promise<void> {
+  for (const template of NOTIFICATION_TEMPLATES) {
+    await prisma.notificationTemplate.upsert({
+      where: {
+        eventType_language_channel: {
+          eventType: template.eventType,
+          language: 'en',
+          channel: template.channel,
+        },
+      },
+      create: {
+        eventType: template.eventType,
+        language: 'en',
+        channel: template.channel,
+        title: template.title,
+        body: template.body,
+        isDefault: true,
+      },
+      update: {
+        title: template.title,
+        body: template.body,
+        isDefault: true,
+      },
+    });
+  }
+}
+
 async function main(): Promise<void> {
   await seedSystemConfiguration();
   const permissionIds = await seedPermissions();
   await seedRoles(permissionIds);
   await seedCuisineCategories();
   await seedOccasionCategories();
+  await seedNotificationTemplates();
 }
 
 main()

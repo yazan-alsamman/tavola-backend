@@ -14,6 +14,8 @@ export class RestaurantSettingsPrismaMapper {
       autoApproval: row.autoApproval,
       timezone: row.timezone,
       defaultCurrency: row.defaultCurrency,
+      reservationReminderMinutesBefore: row.reservationReminderMinutesBefore,
+      lateArrivalGraceMinutes: row.lateArrivalGraceMinutes,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     });
@@ -32,6 +34,8 @@ export class RestaurantSettingsPrismaMapper {
       autoApproval: props.autoApproval,
       timezone: props.timezone,
       defaultCurrency: props.defaultCurrency,
+      reservationReminderMinutesBefore: props.reservationReminderMinutesBefore,
+      lateArrivalGraceMinutes: props.lateArrivalGraceMinutes,
       createdAt: props.createdAt,
       updatedAt: props.updatedAt,
     };

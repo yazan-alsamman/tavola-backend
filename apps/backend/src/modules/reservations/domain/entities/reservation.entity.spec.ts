@@ -432,5 +432,116 @@ describe('Reservation entity', () => {
         }),
       ).toThrow(InvalidReservationStatusTransitionException);
     });
+
+    it('resets lateArrivalNotifiedAt and tableReadyNotifiedAt to null on an Approved reservation that had both set', () => {
+      const approved = Reservation.reconstitute({
+        ...Reservation.create(baseProps()).toProps(),
+        status: ReservationStatus.Approved,
+        lateArrivalNotifiedAt: new Date('2026-08-01T18:30:00.000Z'),
+        tableReadyNotifiedAt: new Date('2026-08-01T18:15:00.000Z'),
+      });
+
+      const rescheduled = approved.reschedule({
+        tableId: newTableId,
+        reservationDate: new Date('2026-08-02T00:00:00.000Z'),
+        reservationStartTime: newStartTime,
+        reservationEndTime: newEndTime,
+        guests: 3,
+        tableCapacity: 4,
+        now,
+      });
+
+      expect(rescheduled.lateArrivalNotifiedAt).toBeNull();
+      expect(rescheduled.tableReadyNotifiedAt).toBeNull();
+    });
+
+    it('leaves lateArrivalNotifiedAt/tableReadyNotifiedAt null on a Pending reschedule (already null)', () => {
+      const pending = Reservation.create(baseProps());
+
+      const rescheduled = pending.reschedule({
+        tableId: newTableId,
+        reservationDate: new Date('2026-08-02T00:00:00.000Z'),
+        reservationStartTime: newStartTime,
+        reservationEndTime: newEndTime,
+        guests: 3,
+        tableCapacity: 4,
+        now,
+      });
+
+      expect(rescheduled.lateArrivalNotifiedAt).toBeNull();
+      expect(rescheduled.tableReadyNotifiedAt).toBeNull();
+    });
+  });
+
+  describe('markLateArrivalNotified() (Phase 7.6, Operational Signals)', () => {
+    it('sets lateArrivalNotifiedAt on an Approved, not-yet-notified reservation', () => {
+      const reservation = Reservation.reconstitute({
+        ...Reservation.create(baseProps()).toProps(),
+        status: ReservationStatus.Approved,
+      });
+      const notifiedAt = new Date('2026-08-01T18:20:00.000Z');
+
+      const notified = reservation.markLateArrivalNotified(notifiedAt);
+
+      expect(notified.lateArrivalNotifiedAt).toEqual(notifiedAt);
+      expect(notified.updatedAt).toEqual(notifiedAt);
+      expect(notified.status).toBe(ReservationStatus.Approved);
+    });
+
+    it('rejects marking late-arrival on a reservation that is not Approved', () => {
+      const reservation = Reservation.create(baseProps());
+
+      expect(() => reservation.markLateArrivalNotified(now)).toThrow(
+        InvalidReservationStatusTransitionException,
+      );
+    });
+
+    it('rejects marking late-arrival twice', () => {
+      const reservation = Reservation.reconstitute({
+        ...Reservation.create(baseProps()).toProps(),
+        status: ReservationStatus.Approved,
+        lateArrivalNotifiedAt: new Date('2026-08-01T18:20:00.000Z'),
+      });
+
+      expect(() => reservation.markLateArrivalNotified(now)).toThrow(
+        InvalidReservationStatusTransitionException,
+      );
+    });
+  });
+
+  describe('markTableReadyNotified() (Phase 7.6, Operational Signals)', () => {
+    it('sets tableReadyNotifiedAt on an Approved, not-yet-notified reservation', () => {
+      const reservation = Reservation.reconstitute({
+        ...Reservation.create(baseProps()).toProps(),
+        status: ReservationStatus.Approved,
+      });
+      const notifiedAt = new Date('2026-08-01T17:50:00.000Z');
+
+      const notified = reservation.markTableReadyNotified(notifiedAt);
+
+      expect(notified.tableReadyNotifiedAt).toEqual(notifiedAt);
+      expect(notified.updatedAt).toEqual(notifiedAt);
+      expect(notified.status).toBe(ReservationStatus.Approved);
+    });
+
+    it('rejects marking table-ready on a reservation that is not Approved', () => {
+      const reservation = Reservation.create(baseProps());
+
+      expect(() => reservation.markTableReadyNotified(now)).toThrow(
+        InvalidReservationStatusTransitionException,
+      );
+    });
+
+    it('rejects marking table-ready twice', () => {
+      const reservation = Reservation.reconstitute({
+        ...Reservation.create(baseProps()).toProps(),
+        status: ReservationStatus.Approved,
+        tableReadyNotifiedAt: new Date('2026-08-01T17:50:00.000Z'),
+      });
+
+      expect(() => reservation.markTableReadyNotified(now)).toThrow(
+        InvalidReservationStatusTransitionException,
+      );
+    });
   });
 });

@@ -24,6 +24,7 @@ import {
 } from '@modules/tables/domain/repositories/table.repository';
 import { TableNotFoundException } from '@modules/tables/domain/exceptions/table-not-found.exception';
 import { TableStatus } from '@modules/tables/domain/enums/table.enums';
+import { TableMergeService } from '@modules/tables/domain/services/table-merge.service';
 import {
   RestaurantSettingsRepository,
   RESTAURANT_SETTINGS_REPOSITORY,
@@ -49,6 +50,7 @@ import {
   ReservationExpirationSchedulerPort,
   RESERVATION_EXPIRATION_SCHEDULER,
 } from '../ports/reservation-expiration-scheduler.port';
+import { ScheduleApprovedReservationSignalsService } from '../services/schedule-approved-reservation-signals.service';
 import { toReservationResult } from '../mappers/reservation-result.mapper';
 import { CreateReservationCommand } from '../dto/create-reservation.command';
 import { ReservationResult } from '../dto/reservation.result';
@@ -115,6 +117,7 @@ export class CreateReservationUseCase {
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
     @Inject(RESERVATION_EXPIRATION_SCHEDULER)
     private readonly expirationScheduler: ReservationExpirationSchedulerPort,
+    private readonly scheduleApprovedReservationSignals: ScheduleApprovedReservationSignalsService,
   ) {}
 
   async execute(command: CreateReservationCommand): Promise<ReservationResult> {
@@ -155,6 +158,19 @@ export class CreateReservationUseCase {
       throw new TableUnavailableException();
     }
 
+    // Phase 6 (Merge/Split Tables, ADR-026 decision #4/#14): an `Available`
+    // table with a `mergeGroupId` is necessarily the Primary (a secondary is
+    // always `Merged`, already rejected above) - party-size/tableCapacity
+    // validation must use the merge group's `effectiveCapacity`
+    // (SUM of every member's permanent capacity), not just the primary's own
+    // `capacity` column.
+    const tableCapacity =
+      table.mergeGroupId !== null
+        ? TableMergeService.computeEffectiveCapacity(
+            await this.tableRepository.findManyByMergeGroupId(table.mergeGroupId),
+          )
+        : table.capacity;
+
     const startTime = new Date(command.reservationStartTime);
     if (Number.isNaN(startTime.getTime())) {
       throw new InvalidReservationTimeException('reservationStartTime is not a valid date-time.');
@@ -184,7 +200,7 @@ export class CreateReservationUseCase {
       reservationStartTime: startTime,
       reservationEndTime: endTime,
       guests: command.guests,
-      tableCapacity: table.capacity,
+      tableCapacity,
       notes: command.notes ?? null,
       createdBy: party.createdBy,
       now,
@@ -219,6 +235,13 @@ export class CreateReservationUseCase {
       // insert - an ADR-013 conflict, validation failure, or Table.reserve()
       // failure rolls back the guest row too, never leaving it orphaned.
       await this.unitOfWork.execute(async () => {
+        // ADR-026 decision #7 "Compatibility with ADR-013/023": the topology
+        // lock (whether or not this table is actually merged) is acquired
+        // FIRST, before any ADR-013 slot lock, in every transaction that may
+        // read/write this Table row - preventing a concurrent Merge/Split
+        // from changing `mergeGroupId`/`status` underneath this reservation.
+        await this.tableRepository.acquireTopologyLocks([tableId.value]);
+
         if (party.guest !== null) {
           await this.reservationGuestRepository.save(party.guest);
         }
@@ -232,6 +255,17 @@ export class CreateReservationUseCase {
         const reservedTable = tableToReserve.reserve(reservation.reservationId.value, now);
         await this.tableRepository.save(reservedTable);
       });
+
+      // Phase 7.6 (Operational Signals, ADR-019): an auto-approved
+      // reservation is born Approved directly, never Pending - schedule the
+      // Reminder/Late-Arrival BullMQ jobs now, not the Pending-expiration
+      // job (that path is the `else` branch below, mutually exclusive with
+      // this one). External I/O, so only after the transaction has
+      // committed.
+      await this.scheduleApprovedReservationSignals.scheduleForApproved(
+        reservation,
+        command.correlationId,
+      );
     } else {
       // Phase 7.4 binding clarification #2: previously `createWithLock`
       // (which opens its own internal transaction) was called directly here.
@@ -242,6 +276,12 @@ export class CreateReservationUseCase {
       // ADR-013's lock/exclusion-constraint guarantees exactly while adding
       // room for the guest row to join the same atomic operation.
       await this.unitOfWork.execute(async () => {
+        // ADR-026 decision #7: same topology-lock-before-slot-lock ordering
+        // as the auto-approve branch above, even though a `Pending`
+        // reservation never itself calls `Table.reserve()` - Merge/Split
+        // must still never race a concurrent Create for this table.
+        await this.tableRepository.acquireTopologyLocks([tableId.value]);
+
         if (party.guest !== null) {
           await this.reservationGuestRepository.save(party.guest);
         }

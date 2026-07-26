@@ -26,7 +26,7 @@ export interface ReservationProps {
   status: ReservationStatus;
   source: ReservationSource;
   notes: string | null;
-  createdBy: string;
+  createdBy: string | null;
   approvedBy: string | null;
   approvedAt: Date | null;
   cancelledAt: Date | null;
@@ -54,6 +54,12 @@ export interface ReservationProps {
  * matrix below is defined in full, per the Scope Amendment's own "the
  * `ReservationStatus` enum itself is still defined in full... a data-type
  * definition, not a use case" reasoning applied one layer deeper.
+ *
+ * Phase 7.5 (Reservation Waitlist): `createdBy` is `string | null` -
+ * `null` means the Reservation was created by an automatic Waitlist
+ * promotion (System actor, no human/JWT-authenticated actor at all), never
+ * a placeholder id. Every other creation path (Online/Phone/WalkIn/Staff,
+ * and manual Waitlist promotion) still always sets a real actor id.
  */
 export class Reservation extends Entity<ReservationProps> {
   /**
@@ -115,7 +121,7 @@ export class Reservation extends Entity<ReservationProps> {
     guests: number;
     tableCapacity: number;
     notes: string | null;
-    createdBy: string;
+    createdBy: string | null;
     now: Date;
   }): Reservation {
     validate(props);
@@ -175,7 +181,7 @@ export class Reservation extends Entity<ReservationProps> {
     guests: number;
     tableCapacity: number;
     notes: string | null;
-    createdBy: string;
+    createdBy: string | null;
     now: Date;
   }): Reservation {
     validate(props);
@@ -265,7 +271,7 @@ export class Reservation extends Entity<ReservationProps> {
     return this.props.notes;
   }
 
-  get createdBy(): string {
+  get createdBy(): string | null {
     return this.props.createdBy;
   }
 
@@ -287,6 +293,18 @@ export class Reservation extends Entity<ReservationProps> {
 
   get noShowAt(): Date | null {
     return this.props.noShowAt ? new Date(this.props.noShowAt.getTime()) : null;
+  }
+
+  get lateArrivalNotifiedAt(): Date | null {
+    return this.props.lateArrivalNotifiedAt
+      ? new Date(this.props.lateArrivalNotifiedAt.getTime())
+      : null;
+  }
+
+  get tableReadyNotifiedAt(): Date | null {
+    return this.props.tableReadyNotifiedAt
+      ? new Date(this.props.tableReadyNotifiedAt.getTime())
+      : null;
   }
 
   get createdAt(): Date {
@@ -470,8 +488,71 @@ export class Reservation extends Entity<ReservationProps> {
       reservationStartTime: props.reservationStartTime,
       reservationEndTime: props.reservationEndTime,
       guests: props.guests,
+      // Phase 7.6 (Operational Signals, ADR-019): a reschedule always
+      // implies re-scheduling (or clearing, for a Pending target) the
+      // Reminder/Late-Arrival BullMQ jobs against the NEW window - any
+      // signal already fired against the OLD window is stale and must not
+      // survive. Reset unconditionally (both are already null for a
+      // Pending reservation, so this is a safe no-op there) rather than
+      // branching on status, per the frozen decision: "Approved Reschedule
+      // resets both; Pending reschedule can also null them since they're
+      // already null."
+      lateArrivalNotifiedAt: null,
+      tableReadyNotifiedAt: null,
       updatedAt: props.now,
     });
+  }
+
+  /**
+   * Phase 7.6 (Operational Signals, ADR-019). Fired by the Late-Arrival
+   * BullMQ job (`lateArrivalGraceMinutes` after `reservationStartTime`),
+   * only when the reservation is still `Approved` and has not already been
+   * notified - both conditions mirror the repository-layer CAS guard
+   * (`markLateArrivalNotifiedIfEligible`'s `WHERE status = 'Approved' AND
+   * late_arrival_notified_at IS NULL`), so a stale in-memory snapshot racing
+   * a concurrent writer is caught here too, not only at the database. Not a
+   * status transition - `status` is unchanged. No `Table` operation: a late
+   * arrival does not free the table (that remains a manual
+   * Cancel/NoShow decision).
+   */
+  markLateArrivalNotified(at: Date): Reservation {
+    this.assertNotifiable(this.props.lateArrivalNotifiedAt, 'late-arrival');
+    return Reservation.reconstitute({
+      ...this.props,
+      lateArrivalNotifiedAt: at,
+      updatedAt: at,
+    });
+  }
+
+  /**
+   * Phase 7.6 (Operational Signals, ADR-019). Staff-initiated (`POST
+   * /reservations/:id/table-ready`, `MarkTableReadyUseCase`) - marks that
+   * the table has been prepared and the guest may be seated. Same
+   * Approved-and-not-already-notified guard as `markLateArrivalNotified`,
+   * mirrored by `markTableReadyNotifiedIfEligible`'s repository-layer CAS.
+   * Not a status transition and performs no `Table` operation - readiness
+   * is informational for the front-of-house flow, not a capacity change.
+   */
+  markTableReadyNotified(at: Date): Reservation {
+    this.assertNotifiable(this.props.tableReadyNotifiedAt, 'table-ready');
+    return Reservation.reconstitute({
+      ...this.props,
+      tableReadyNotifiedAt: at,
+      updatedAt: at,
+    });
+  }
+
+  private assertNotifiable(alreadyNotifiedAt: Date | null, signal: string): void {
+    if (this.props.status !== ReservationStatus.Approved) {
+      throw new InvalidReservationStatusTransitionException(
+        `Cannot mark reservation "${this.props.id}" as ${signal}-notified - it is not Approved.`,
+      );
+    }
+    if (alreadyNotifiedAt !== null) {
+      throw new InvalidReservationStatusTransitionException(
+        `Cannot mark reservation "${this.props.id}" as ${signal}-notified - it has already been notified.`,
+      );
+    }
   }
 
   private assertTransition(target: ReservationStatus): void {

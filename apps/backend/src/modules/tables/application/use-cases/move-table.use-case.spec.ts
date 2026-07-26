@@ -2,6 +2,9 @@ import { MoveTableUseCase } from './move-table.use-case';
 import { CreateTableUseCase } from './create-table.use-case';
 import { TableNotFoundException } from '../../domain/exceptions/table-not-found.exception';
 import { FloorPlanNotFoundException } from '../../domain/exceptions/floor-plan-not-found.exception';
+import { TableMergedOperationForbiddenException } from '../../domain/exceptions/table-merged-operation-forbidden.exception';
+import { TableMovedEvent } from '../../domain/events/table.events';
+import { TableId } from '@shared/domain/value-objects/identifiers.vo';
 import { TableShape } from '../../domain/enums/table.enums';
 import { FloorPlan } from '../../domain/entities/floor-plan.entity';
 import { Restaurant } from '@modules/restaurants/domain/entities/restaurant.entity';
@@ -9,10 +12,10 @@ import { RestaurantStatus } from '@modules/restaurants/domain/enums/restaurant.e
 import { Branch } from '@modules/branches/domain/entities/branch.entity';
 import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
 import {
-  CollectingAuditLogWriter,
   CollectingEventPublisher,
   FixedClock,
   SequentialIdGenerator,
+  UuidGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
@@ -166,16 +169,17 @@ describe('MoveTableUseCase', () => {
       smoking: false,
     });
 
-    const auditLogWriter = new CollectingAuditLogWriter();
+    const eventPublisher = new CollectingEventPublisher();
     const useCase = new MoveTableUseCase(
       tableRepository,
       floorPlanRepository,
       branchRepository,
       restaurantRepository,
       new FixedClock(fixedNow),
-      auditLogWriter,
+      new UuidGenerator(),
+      eventPublisher,
     );
-    return { useCase, tableRepository, auditLogWriter };
+    return { useCase, tableRepository, eventPublisher };
   }
 
   it('moves a table to another floor plan of the same branch, changing only floorPlanId', async () => {
@@ -333,7 +337,8 @@ describe('MoveTableUseCase', () => {
       branchRepository,
       restaurantRepository,
       new FixedClock(fixedNow),
-      new CollectingAuditLogWriter(),
+      new UuidGenerator(),
+      new CollectingEventPublisher(),
     );
 
     await expect(
@@ -341,8 +346,34 @@ describe('MoveTableUseCase', () => {
     ).rejects.toBeInstanceOf(FloorPlanNotFoundException);
   });
 
-  it('writes a table.moved audit entry and does not publish any domain event', async () => {
-    const { useCase, auditLogWriter } = await build();
+  it('throws TableMergedOperationForbiddenException for a table currently part of an active merge group (ADR-026 decision #11/#13), leaving it untouched', async () => {
+    const { useCase, tableRepository } = await build();
+
+    const existing = await tableRepository.findById(TableId.create(tableId));
+    const merged = existing!.asMergePrimary('88888888-8888-4888-8888-888888888888', fixedNow);
+    await tableRepository.save(merged);
+
+    await expect(
+      useCase.execute({ actor: baseActor(), tableId, targetFloorPlanId: patioId }),
+    ).rejects.toBeInstanceOf(TableMergedOperationForbiddenException);
+
+    // Rejected BEFORE the target floor plan lookup - even an unknown target
+    // is rejected the same way, and the table is never touched either way.
+    await expect(
+      useCase.execute({
+        actor: baseActor(),
+        tableId,
+        targetFloorPlanId: '99999999-9999-4999-8999-999999999995',
+      }),
+    ).rejects.toBeInstanceOf(TableMergedOperationForbiddenException);
+
+    const stillMerged = await tableRepository.findById(TableId.create(tableId));
+    expect(stillMerged?.floorPlanId.value).toBe(mainFloorId);
+    expect(stillMerged?.mergeGroupId).toBe('88888888-8888-4888-8888-888888888888');
+  });
+
+  it('publishes a TableMovedEvent with the frozen Phase 8 payload shape', async () => {
+    const { useCase, eventPublisher } = await build();
 
     await useCase.execute({
       actor: baseActor(),
@@ -351,13 +382,18 @@ describe('MoveTableUseCase', () => {
       correlationId: 'corr-1',
     });
 
-    expect(auditLogWriter.entries).toHaveLength(1);
-    expect(auditLogWriter.entries[0]).toMatchObject({
-      action: 'table.moved',
-      targetType: 'Table',
-      targetId: tableId,
+    expect(eventPublisher.events).toHaveLength(1);
+    const event = eventPublisher.events[0] as TableMovedEvent;
+    expect(event).toBeInstanceOf(TableMovedEvent);
+    expect(event.eventName).toBe('TableMoved');
+    expect(event.correlationId).toBe('corr-1');
+    expect(event.payload).toMatchObject({
+      tableId,
+      branchId,
       organizationId,
-      correlationId: 'corr-1',
+      oldFloorPlanId: mainFloorId,
+      newFloorPlanId: patioId,
+      actorId: 'user-1',
     });
   });
 });

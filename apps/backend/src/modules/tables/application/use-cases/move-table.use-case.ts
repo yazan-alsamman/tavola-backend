@@ -1,11 +1,13 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ClockPort } from '@shared/application/ports/clock.port';
-import {
-  AuditLogWriterPort,
-  AUDIT_LOG_WRITER,
-} from '@shared/application/ports/audit-log-writer.port';
+import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
+import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
 import { FloorPlanId, TableId } from '@shared/domain/value-objects/identifiers.vo';
-import { CLOCK } from '@modules/authentication/domain/tokens/authentication.tokens';
+import {
+  CLOCK,
+  ID_GENERATOR,
+  EVENT_PUBLISHER,
+} from '@modules/authentication/domain/tokens/authentication.tokens';
 import {
   RestaurantRepository,
   RESTAURANT_REPOSITORY,
@@ -21,6 +23,8 @@ import {
 } from '../../domain/repositories/floor-plan.repository';
 import { TableNotFoundException } from '../../domain/exceptions/table-not-found.exception';
 import { FloorPlanNotFoundException } from '../../domain/exceptions/floor-plan-not-found.exception';
+import { TableMergedOperationForbiddenException } from '../../domain/exceptions/table-merged-operation-forbidden.exception';
+import { TableMovedEvent } from '../../domain/events/table.events';
 import { toTableResult } from '../mappers/table-result.mapper';
 import { MoveTableCommand } from '../dto/move-table.command';
 import { TableResult } from '../dto/table.result';
@@ -31,8 +35,10 @@ import { TableResult } from '../dto/table.result';
  * Tenant validation walks Table -> Branch -> Restaurant, exactly like
  * `GetTableUseCase`/`UpdateTableUseCase`/`DeleteTableUseCase`. Changes ONLY
  * `floorPlanId` - never `status`, capacity, position, or any other field.
- * Produces a `table.moved` audit-log entry only; no domain event class
- * exists for this action (decision #7 of the Phase 6.2 note).
+ * Publishes `TableMovedEvent` through `EVENT_PUBLISHER` (Phase 8 §6 —
+ * supersedes the prior "Phase 6.2 decision #7" audit-log-only precedent);
+ * `table.moved` auditing now flows through `AuditingEventPublisher` like
+ * every other domain event.
  */
 @Injectable()
 export class MoveTableUseCase {
@@ -42,7 +48,8 @@ export class MoveTableUseCase {
     @Inject(BRANCH_REPOSITORY) private readonly branchRepository: BranchRepository,
     @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
     @Inject(CLOCK) private readonly clock: ClockPort,
-    @Inject(AUDIT_LOG_WRITER) private readonly auditLogWriter: AuditLogWriterPort,
+    @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
+    @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
   ) {}
 
   async execute(command: MoveTableCommand): Promise<TableResult> {
@@ -62,6 +69,14 @@ export class MoveTableUseCase {
       throw new TableNotFoundException();
     }
 
+    // Phase 6 (Merge/Split Tables, ADR-026 decision #11/#13): a table
+    // currently part of an active merge group can never be moved - Split
+    // first. Checked here, BEFORE the target FloorPlan lookup, so the
+    // rejection is unconditional regardless of the requested target.
+    if (existing.mergeGroupId !== null) {
+      throw new TableMergedOperationForbiddenException('move');
+    }
+
     // Scope guard (Phase 6.2 decision #4): the target FloorPlan must exist,
     // belong to this Table's own branch, and not be soft-deleted - a single
     // compound lookup rejects unknown/cross-branch/soft-deleted targets
@@ -78,22 +93,25 @@ export class MoveTableUseCase {
     }
 
     const now = this.clock.now();
+    const oldFloorPlanId = existing.floorPlanId.value;
     const moved = existing.moveToFloorPlan(targetFloorPlanId.value, now);
     await this.tableRepository.save(moved);
 
-    // Phase 6.2 decision #7: no TableMovedEvent - direct audit-log write
-    // only, following UpdateRestaurantSettingsUseCase's own precedent.
-    await this.auditLogWriter.record({
-      actorId: command.actor.userId,
-      actorType: 'User',
-      action: 'table.moved',
-      targetType: 'Table',
-      targetId: moved.tableId.value,
-      organizationId: command.actor.organizationId,
-      correlationId: command.correlationId ?? null,
-      ipAddress: null,
-      occurredAt: now,
-    });
+    await this.eventPublisher.publish(
+      new TableMovedEvent(
+        this.idGenerator.generate(),
+        {
+          tableId: moved.tableId.value,
+          branchId: existing.branchId.value,
+          organizationId: restaurant.organizationId.value,
+          oldFloorPlanId,
+          newFloorPlanId: moved.floorPlanId.value,
+          actorId: command.actor.userId,
+        },
+        now,
+        command.correlationId,
+      ),
+    );
 
     return toTableResult(moved);
   }

@@ -13,6 +13,8 @@ describe('RestaurantSettings entity', () => {
     autoApproval: false,
     timezone: 'UTC',
     defaultCurrency: null,
+    reservationReminderMinutesBefore: 60,
+    lateArrivalGraceMinutes: 15,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   };
@@ -34,6 +36,8 @@ describe('RestaurantSettings entity', () => {
       expect(settings.autoApproval).toBe(false);
       expect(settings.timezone).toBe('UTC');
       expect(settings.defaultCurrency).toBeNull();
+      expect(settings.reservationReminderMinutesBefore).toBe(60);
+      expect(settings.lateArrivalGraceMinutes).toBe(15);
       expect(settings.restaurantId.value).toBe(baseProps.restaurantId);
     });
   });
@@ -53,6 +57,10 @@ describe('RestaurantSettings entity', () => {
       ['empty timezone', { timezone: '' }],
       ['lowercase defaultCurrency', { defaultCurrency: 'usd' }],
       ['too-short defaultCurrency', { defaultCurrency: 'US' }],
+      ['reservationReminderMinutesBefore too low', { reservationReminderMinutesBefore: 0 }],
+      ['reservationReminderMinutesBefore too high', { reservationReminderMinutesBefore: 10081 }],
+      ['lateArrivalGraceMinutes too low', { lateArrivalGraceMinutes: 0 }],
+      ['lateArrivalGraceMinutes too high', { lateArrivalGraceMinutes: 1441 }],
     ])('rejects %s', (_label, overrides) => {
       expect(() => RestaurantSettings.create({ ...baseProps, ...overrides })).toThrow(
         InvalidRestaurantSettingsException,
@@ -80,6 +88,8 @@ describe('RestaurantSettings entity', () => {
           autoApproval: true,
           timezone: 'Europe/Istanbul',
           defaultCurrency: 'EUR',
+          reservationReminderMinutesBefore: 120,
+          lateArrivalGraceMinutes: 30,
         },
         at,
       );
@@ -92,6 +102,8 @@ describe('RestaurantSettings entity', () => {
       expect(updated.autoApproval).toBe(true);
       expect(updated.timezone).toBe('Europe/Istanbul');
       expect(updated.defaultCurrency).toBe('EUR');
+      expect(updated.reservationReminderMinutesBefore).toBe(120);
+      expect(updated.lateArrivalGraceMinutes).toBe(30);
       expect(updated.updatedAt).toEqual(at);
     });
 
@@ -108,6 +120,8 @@ describe('RestaurantSettings entity', () => {
           autoApproval: true,
           timezone: 'Europe/Istanbul',
           defaultCurrency: 'EUR',
+          reservationReminderMinutesBefore: 120,
+          lateArrivalGraceMinutes: 30,
         },
         new Date('2026-02-01T00:00:00.000Z'),
       );
@@ -129,6 +143,8 @@ describe('RestaurantSettings entity', () => {
           autoApproval: true,
           timezone: 'Europe/Istanbul',
           defaultCurrency: 'EUR',
+          reservationReminderMinutesBefore: 120,
+          lateArrivalGraceMinutes: 30,
         },
         new Date('2026-02-01T00:00:00.000Z'),
       );
@@ -150,6 +166,8 @@ describe('RestaurantSettings entity', () => {
             autoApproval: true,
             timezone: 'UTC',
             defaultCurrency: null,
+            reservationReminderMinutesBefore: 60,
+            lateArrivalGraceMinutes: 15,
           },
           new Date('2026-02-01T00:00:00.000Z'),
         ),
@@ -169,6 +187,8 @@ describe('RestaurantSettings entity', () => {
           autoApproval: false,
           timezone: 'UTC',
           defaultCurrency: null,
+          reservationReminderMinutesBefore: 60,
+          lateArrivalGraceMinutes: 15,
         },
         new Date('2026-02-01T00:00:00.000Z'),
       );

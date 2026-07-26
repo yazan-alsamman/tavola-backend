@@ -74,6 +74,8 @@ describe('UpdateRestaurantSettingsUseCase', () => {
     autoApproval: true,
     timezone: 'Europe/Istanbul',
     defaultCurrency: 'TRY',
+    reservationReminderMinutesBefore: 90,
+    lateArrivalGraceMinutes: 20,
   };
 
   it('replaces every settings field and returns the updated result', async () => {

@@ -67,4 +67,28 @@ export class UpdateRestaurantSettingsRequestDto {
   @IsString()
   @Matches(/^[A-Z]{3}$/, { message: 'defaultCurrency must be a three-letter ISO 4217 code' })
   defaultCurrency?: string | null;
+
+  @ApiProperty({
+    example: 60,
+    minimum: 1,
+    maximum: 10080,
+    description:
+      'How many minutes before reservationStartTime the ReservationReminderDue signal fires (Phase 7.6).',
+  })
+  @IsInt()
+  @Min(1)
+  @Max(10080)
+  reservationReminderMinutesBefore!: number;
+
+  @ApiProperty({
+    example: 15,
+    minimum: 1,
+    maximum: 1440,
+    description:
+      'How many minutes after reservationStartTime the late-arrival signal fires (Phase 7.6).',
+  })
+  @IsInt()
+  @Min(1)
+  @Max(1440)
+  lateArrivalGraceMinutes!: number;
 }

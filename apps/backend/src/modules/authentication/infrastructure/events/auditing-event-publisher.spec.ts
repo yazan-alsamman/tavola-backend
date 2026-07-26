@@ -24,9 +24,24 @@ import {
   RestaurantUpdatedEvent,
 } from '@modules/restaurants/domain/events/restaurant.events';
 import {
+  TableMergedEvent,
+  TableMovedEvent,
+  TableSplitEvent,
+  TableStatusChangedEvent,
+} from '@modules/tables/domain/events/table.events';
+import { TableStatus } from '@modules/tables/domain/enums/table.enums';
+import {
   ReservationApprovedEvent,
+  ReservationCancelledEvent,
+  ReservationCompletedEvent,
+  ReservationExpiredEvent,
+  ReservationNoShowEvent,
   ReservationRejectedEvent,
+  ReservationRescheduledEvent,
+  ReservationReminderSentEvent,
 } from '@modules/reservations/domain/events/reservation.events';
+import { WaitlistEntryNotifiedEvent } from '@modules/waitlist/domain/events/waitlist.events';
+import { NotificationCreatedEvent } from '@modules/notifications/domain/events/notification.events';
 import { AuditingEventPublisher } from './auditing-event-publisher';
 import { LoggingEventPublisher } from './logging-event-publisher';
 
@@ -82,11 +97,15 @@ describe('AuditingEventPublisher', () => {
   const sessionId = '22222222-2222-4222-8222-222222222222';
   const tokenFamilyId = '33333333-3333-4333-8333-333333333333';
 
-  function createPublisher(organizationId: string | null = null) {
+  function createPublisher(
+    organizationId: string | null = null,
+    actorType: 'User' | 'Employee' | 'OrganizationMember' | null = null,
+  ) {
     const inner = new NoopLoggingEventPublisher();
     const auditLogWriter = new RecordingAuditLogWriter();
     const tenantContextService = {
       getOrganizationId: () => organizationId,
+      getActorType: () => actorType,
     } as unknown as TenantContextService;
     const publisher = new AuditingEventPublisher(inner, auditLogWriter, tenantContextService);
     return { publisher, inner, auditLogWriter };
@@ -406,6 +425,154 @@ describe('AuditingEventPublisher', () => {
     });
   });
 
+  describe('Table events (Phase 8 — TableStatusChanged / TableMoved)', () => {
+    const tableId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const branchId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const floorPlanId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const oldFloorPlanId = '01234567-0123-4123-8123-012345670123';
+    const newFloorPlanId = '76543210-7654-4654-8654-765432107654';
+    const organizationId = '55555555-5555-4555-8555-555555555555';
+
+    it('maps TableStatusChangedEvent to table.status_changed', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId);
+      await publisher.publish(
+        new TableStatusChangedEvent(
+          'event-1',
+          {
+            tableId,
+            branchId,
+            floorPlanId,
+            organizationId,
+            fromStatus: TableStatus.Available,
+            toStatus: TableStatus.Occupied,
+            actorId: userId,
+          },
+          now,
+          'corr-1',
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'table.status_changed',
+        actorId: userId,
+        actorType: 'User',
+        targetType: 'Table',
+        targetId: tableId,
+        organizationId,
+        correlationId: 'corr-1',
+      });
+    });
+
+    it('maps TableMovedEvent to table.moved', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId);
+      await publisher.publish(
+        new TableMovedEvent(
+          'event-1',
+          { tableId, branchId, organizationId, oldFloorPlanId, newFloorPlanId, actorId: userId },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'table.moved',
+        actorId: userId,
+        actorType: 'User',
+        targetType: 'Table',
+        targetId: tableId,
+        organizationId,
+      });
+    });
+
+    it('maps TableMergedEvent to table.merged, targeting the primary table id', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId);
+      const mergeGroupId = '99999999-9999-4999-8999-999999999999';
+      const otherTableId = '11223344-1122-4122-8122-112233441122';
+      await publisher.publish(
+        new TableMergedEvent(
+          'event-1',
+          {
+            mergeGroupId,
+            primaryTableId: tableId,
+            memberTableIds: [tableId, otherTableId],
+            branchId,
+            floorPlanId,
+            organizationId,
+            effectiveCapacity: 8,
+            actorId: userId,
+          },
+          now,
+          'corr-1',
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'table.merged',
+        actorId: userId,
+        actorType: 'User',
+        targetType: 'Table',
+        targetId: tableId,
+        organizationId,
+        correlationId: 'corr-1',
+      });
+    });
+
+    it('maps TableSplitEvent to table.split, targeting the (former) primary table id', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId);
+      const mergeGroupId = '99999999-9999-4999-8999-999999999999';
+      const otherTableId = '11223344-1122-4122-8122-112233441122';
+      await publisher.publish(
+        new TableSplitEvent(
+          'event-1',
+          {
+            mergeGroupId,
+            primaryTableId: tableId,
+            memberTableIds: [tableId, otherTableId],
+            branchId,
+            floorPlanId,
+            organizationId,
+            actorId: userId,
+          },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'table.split',
+        actorId: userId,
+        actorType: 'User',
+        targetType: 'Table',
+        targetId: tableId,
+        organizationId,
+      });
+    });
+
+    it('attributes TableMergedEvent to actorType Employee when the bound tenant context is an Employee', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId, 'Employee');
+      const employeeIdActor = '44444444-4444-4444-8444-444444444444';
+      await publisher.publish(
+        new TableMergedEvent(
+          'event-1',
+          {
+            mergeGroupId: '99999999-9999-4999-8999-999999999999',
+            primaryTableId: tableId,
+            memberTableIds: [tableId],
+            branchId,
+            floorPlanId,
+            organizationId,
+            effectiveCapacity: 4,
+            actorId: employeeIdActor,
+          },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        actorType: 'Employee',
+        actorId: employeeIdActor,
+      });
+    });
+  });
+
   describe('Reservation events (Phase 7.2)', () => {
     const reservationId = '66666666-6666-4666-8666-666666666666';
     const restaurantId = '77777777-7777-4777-8777-777777777777';
@@ -502,6 +669,257 @@ describe('AuditingEventPublisher', () => {
         actorType: 'System',
         targetType: 'Reservation',
         targetId: reservationId,
+      });
+    });
+  });
+
+  describe('Reservation lifecycle events (Phase 8 audit-hygiene fix)', () => {
+    const reservationId = '66666666-6666-4666-8666-666666666666';
+    const restaurantId = '77777777-7777-4777-8777-777777777777';
+    const branchId = '88888888-8888-4888-8888-888888888888';
+    const tableId = '99999999-9999-4999-8999-999999999999';
+    const oldTableId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const newTableId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const employeeId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+    it('no longer falls back to the generic auth.* namespace for these 5 events', async () => {
+      const { publisher, auditLogWriter } = createPublisher(null, 'User');
+      await publisher.publish(
+        new ReservationCancelledEvent(
+          'event-1',
+          {
+            reservationId,
+            restaurantId,
+            branchId,
+            tableId,
+            cancelledBy: userId,
+            withinCancellationWindow: true,
+          },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0].action).not.toMatch(/^auth\./);
+    });
+
+    it('maps ReservationCancelledEvent to reservation.cancelled, actorType User when cancelled by a Customer', async () => {
+      const { publisher, auditLogWriter } = createPublisher(null, 'User');
+      await publisher.publish(
+        new ReservationCancelledEvent(
+          'event-1',
+          {
+            reservationId,
+            restaurantId,
+            branchId,
+            tableId,
+            cancelledBy: userId,
+            withinCancellationWindow: false,
+          },
+          now,
+          'corr-1',
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'reservation.cancelled',
+        actorId: userId,
+        actorType: 'User',
+        targetType: 'Reservation',
+        targetId: reservationId,
+        correlationId: 'corr-1',
+      });
+    });
+
+    it('maps ReservationCancelledEvent to reservation.cancelled, actorType Employee when cancelled by staff', async () => {
+      const { publisher, auditLogWriter } = createPublisher(null, 'Employee');
+      await publisher.publish(
+        new ReservationCancelledEvent(
+          'event-1',
+          {
+            reservationId,
+            restaurantId,
+            branchId,
+            tableId,
+            cancelledBy: employeeId,
+            withinCancellationWindow: true,
+          },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'reservation.cancelled',
+        actorId: employeeId,
+        actorType: 'Employee',
+        targetType: 'Reservation',
+        targetId: reservationId,
+      });
+    });
+
+    it('maps ReservationRescheduledEvent to reservation.rescheduled, actorType User when rescheduled by a Customer', async () => {
+      const { publisher, auditLogWriter } = createPublisher(null, 'User');
+      await publisher.publish(
+        new ReservationRescheduledEvent(
+          'event-1',
+          { reservationId, restaurantId, branchId, oldTableId, newTableId, rescheduledBy: userId },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'reservation.rescheduled',
+        actorId: userId,
+        actorType: 'User',
+        targetType: 'Reservation',
+        targetId: reservationId,
+      });
+    });
+
+    it('maps ReservationRescheduledEvent to reservation.rescheduled, actorType Employee when rescheduled by staff', async () => {
+      const { publisher, auditLogWriter } = createPublisher(null, 'Employee');
+      await publisher.publish(
+        new ReservationRescheduledEvent(
+          'event-1',
+          {
+            reservationId,
+            restaurantId,
+            branchId,
+            oldTableId,
+            newTableId: oldTableId,
+            rescheduledBy: employeeId,
+          },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'reservation.rescheduled',
+        actorId: employeeId,
+        actorType: 'Employee',
+        targetType: 'Reservation',
+        targetId: reservationId,
+      });
+    });
+
+    it('maps ReservationCompletedEvent to reservation.completed, always actorType Employee', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      await publisher.publish(
+        new ReservationCompletedEvent(
+          'event-1',
+          { reservationId, restaurantId, branchId, tableId, completedBy: employeeId },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'reservation.completed',
+        actorId: employeeId,
+        actorType: 'Employee',
+        targetType: 'Reservation',
+        targetId: reservationId,
+      });
+    });
+
+    it('maps ReservationNoShowEvent to reservation.no_show, always actorType Employee', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      await publisher.publish(
+        new ReservationNoShowEvent(
+          'event-1',
+          { reservationId, restaurantId, branchId, tableId, markedBy: employeeId },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'reservation.no_show',
+        actorId: employeeId,
+        actorType: 'Employee',
+        targetType: 'Reservation',
+        targetId: reservationId,
+      });
+    });
+
+    it('maps ReservationExpiredEvent to reservation.expired, always actorType System with null actorId', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      await publisher.publish(
+        new ReservationExpiredEvent(
+          'event-1',
+          { reservationId, restaurantId, branchId, tableId },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'reservation.expired',
+        actorId: null,
+        actorType: 'System',
+        targetType: 'Reservation',
+        targetId: reservationId,
+      });
+    });
+  });
+
+  describe('Phase 9 events (Notification System, architecture frozen 2026-07-25)', () => {
+    const reservationId = '66666666-6666-4666-8666-666666666666';
+    const restaurantId = '77777777-7777-4777-8777-777777777777';
+    const branchId = '88888888-8888-4888-8888-888888888888';
+    const entryId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const notificationId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+    it('maps ReservationReminderSentEvent to reservation.reminder_sent, always actorType System with null actorId', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      await publisher.publish(
+        new ReservationReminderSentEvent(
+          'event-1',
+          { reservationId, restaurantId, branchId, reservationStartTime: now.toISOString() },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'reservation.reminder_sent',
+        actorId: null,
+        actorType: 'System',
+        targetType: 'Reservation',
+        targetId: reservationId,
+      });
+    });
+
+    it('maps WaitlistEntryNotifiedEvent to waitlist.notified, always actorType System with null actorId', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      await publisher.publish(
+        new WaitlistEntryNotifiedEvent(
+          'event-1',
+          { entryId, restaurantId, branchId, notifiedAt: now.toISOString() },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'waitlist.notified',
+        actorId: null,
+        actorType: 'System',
+        targetType: 'ReservationWaitlistEntry',
+        targetId: entryId,
+      });
+    });
+
+    it('maps NotificationCreatedEvent to notification.created, always actorType System with null actorId', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      await publisher.publish(
+        new NotificationCreatedEvent(
+          'event-1',
+          { notificationId, userId, type: 'ReservationApproved', reservationId },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'notification.created',
+        actorId: null,
+        actorType: 'System',
+        targetType: 'Notification',
+        targetId: notificationId,
       });
     });
   });

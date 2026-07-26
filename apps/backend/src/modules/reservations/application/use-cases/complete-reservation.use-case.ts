@@ -29,6 +29,7 @@ import {
   RESERVATION_HISTORY_REPOSITORY,
 } from '../../domain/repositories/reservation-history.repository';
 import { assertEmployeeCanActOnReservation } from '../services/assert-employee-reservation-scope';
+import { ScheduleApprovedReservationSignalsService } from '../services/schedule-approved-reservation-signals.service';
 import { toReservationResult } from '../mappers/reservation-result.mapper';
 import { CompleteReservationCommand } from '../dto/complete-reservation.command';
 import { ReservationResult } from '../dto/reservation.result';
@@ -55,6 +56,7 @@ export class CompleteReservationUseCase {
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
+    private readonly scheduleApprovedReservationSignals: ScheduleApprovedReservationSignalsService,
   ) {}
 
   async execute(command: CompleteReservationCommand): Promise<ReservationResult> {
@@ -105,6 +107,11 @@ export class CompleteReservationUseCase {
         }),
       );
     });
+
+    // Phase 7.6 (Operational Signals, ADR-019): Completed is only reachable
+    // from Approved, so this always fires - cancels both the Reminder and
+    // Late-Arrival jobs.
+    await this.scheduleApprovedReservationSignals.cancelForReservation(reservationId.value);
 
     await this.eventPublisher.publish(
       new ReservationCompletedEvent(

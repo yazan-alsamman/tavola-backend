@@ -482,9 +482,12 @@ Fields
 * maxGuestsPerReservation
 * cancellationWindowMinutes
 * pendingReservationTimeoutMinutes
+* defaultReservationDurationMinutes (Phase 7.1 — fallback `Reservation.reservationEndTime` duration when the client omits it)
 * autoApproval (boolean)
 * timezone
 * defaultCurrency
+* reservationReminderMinutesBefore (Phase 7.6 — ADR-019 Operational Signals; int, 1-10080, default 60; minutes before `reservationStartTime` the `ReservationReminderDue` BullMQ job fires)
+* lateArrivalGraceMinutes (Phase 7.6 — ADR-019 Operational Signals; int, 1-1440, default 15; minutes after `reservationStartTime` the `GuestLateArrivalNotified` BullMQ job fires)
 * createdAt
 * updatedAt
 
@@ -687,8 +690,9 @@ Fields
 * indoor
 * vip
 * smoking
-* status (`Available`, `Occupied`, `Cleaning`, `Disabled`, `Reserved` — Status Management architecture decision + Phase 7.2 Approval Workflow; see Notes)
+* status (`Available`, `Occupied`, `Cleaning`, `Disabled`, `Reserved`, `Merged` — Status Management + Phase 7.2 + **ADR-026 Merge/Split freeze**; see Notes)
 * mergeGroupId (nullable)
+* isMergePrimary (boolean, default false — **ADR-026**)
 * createdAt
 * updatedAt
 * deletedAt
@@ -700,12 +704,14 @@ Indexes
 * status
 * mergeGroupId
 * composite unique (branchId, tableNumber) — table numbers are unique within a branch
+* partial unique (mergeGroupId) WHERE isMergePrimary = true AND mergeGroupId IS NOT NULL — exactly one primary per active group (**ADR-026**, when enforceable)
 
 Notes
 
 * **Cascade:** soft-deleting a Branch cascades to soft-deleting its Tables (and its FloorPlans - see "Floor Plans" above), but never its historical Reservations, which are immutable per the Soft Delete Policy above (DOMAIN_MODEL.md's Branch Aggregate Notes, "Branch deletion"). **Executes inside one database transaction; partial completion is forbidden** - the system must never reach a state where the Branch is soft-deleted but its Tables and/or FloorPlans are not.
 * **Deletion guard:** a FloorPlan cannot be deleted while any (non-soft-deleted) Table still references it via `floorPlanId`; the operation must be rejected, not silently reassigned or orphaned (Aggregate Invariant, see "Floor Plans" above and DOMAIN_MODEL.md).
-* **`status` (Phase 6.1 decision, superseded by the Status Management architecture decision):** `Create Table` still always produces `Available`. The `TableStatus` enum also defines `Occupied`, `Cleaning`, and `Disabled` (Status Management architecture decision) - transitioned exclusively through the single dedicated Domain Action `POST /tables/{tableId}/status` (see API_GUIDELINES.md); `Update Table` (`PATCH /tables/:tableId`) never modifies `status`. Allowed transitions are restricted to `Available ↔ Occupied`, `Available ↔ Cleaning`, and `Available ↔ Disabled` only - every other combination (e.g. `Cleaning → Occupied`, `Disabled → Cleaning`) is rejected as an invalid transition. `Reserved` (**Phase 7.2 — Approval Workflow, complete and live-verified, 2026-07-23** - additive migration `20260723140000_phase_7_2_add_table_status_reserved`) is set/cleared exclusively by the new `Table.reserve(reservationId, at)` / `Table.release(at)` domain methods; `Table.transitionStatus`'s validator (frozen Phase 6.3) continues to reject `Reserved` as either the current or target status - `POST /tables/{tableId}/status` can never set or clear it. Status transitions produce an audit-log entry only (`table.status_changed`) - no domain event class exists for this action.
+* **`status` (Phase 6.1 decision, superseded by the Status Management architecture decision; `Merged` added by ADR-026):** `Create Table` still always produces `Available`. The `TableStatus` enum also defines `Occupied`, `Cleaning`, and `Disabled` (Status Management architecture decision) - transitioned exclusively through the single dedicated Domain Action `POST /tables/{tableId}/status` (see API_GUIDELINES.md); `Update Table` (`PATCH /tables/:tableId`) never modifies `status`. Allowed manual transitions are restricted to `Available ↔ Occupied`, `Available ↔ Cleaning`, and `Available ↔ Disabled` only - every other combination is rejected. `Reserved` (**Phase 7.2**) is set/cleared exclusively by `Table.reserve()` / `Table.release()`. **`Merged` (ADR-026)** applies only to **secondary** members of an active merge group and is set/cleared exclusively by Merge/Split — never via `POST /tables/{tableId}/status`. Status transitions publish `TableStatusChanged` for manual transitions only (Phase 8).
+* **`mergeGroupId` / `isMergePrimary` (ADR-026):** `mergeGroupId` remains a plain nullable UUID (not an FK — no MergeGroup table). Invariant: `mergeGroupId IS NULL ⇒ isMergePrimary = false`. For every non-null `mergeGroupId`, exactly one row has `isMergePrimary = true` (the reservable primary). Permanent `capacity` is never overwritten for merge; effective capacity of the primary while merged is the **sum** of member capacities (derived at read/search time).
 * **`shape` (Phase 6.1 architecture decision):** `TableShape` is presentation metadata only - it describes how a table renders on the floor plan and does not participate in reservation rules, capacity, or merge/split behavior. Its initial value set is intentionally minimal: `Rectangle` and `Round` only. A square table is represented as `Rectangle` with `width == height`; there is no separate `Square` value. `Oval`/`Triangle`/`Hexagon`/`Custom`/any other value are not defined and must not be inferred - a future product requirement may extend the enum, but only through an explicit architectural decision.
 
 ---
@@ -727,7 +733,7 @@ Fields
 * status
 * source
 * notes
-* createdBy
+* createdBy (nullable as of Phase 7.5, migration `20260724141815_phase_7_5_reservation_waitlist` — `null` means an automatic/System Waitlist promotion created the row; every other source (Online/Phone/WalkIn/Staff, manual Waitlist promotion) still always sets a real actor id)
 * approvedBy
 * approvedAt
 * cancelledAt
@@ -813,43 +819,47 @@ Indexes
 
 ## Reservation Waitlist Entries
 
-Guests who cannot be seated immediately join a branch-scoped waitlist (ADR-019). Distinct from `Reservations` — no table assignment until promoted.
+Guests who cannot be seated immediately join a branch-scoped, date-scoped waitlist (ADR-019). Distinct from `Reservations` — no table assignment until promoted (`WaitlistPromotionService`).
+
+**Implemented:** Phase 7.5 (Reservation Waitlist, architecture frozen 2026-07-24, implemented and live-verified 2026-07-24), migration `20260724141815_phase_7_5_reservation_waitlist`, corrected by the forward migration `20260724143130_phase_7_5_1_waitlist_remove_organization_id` (see "No `organizationId`" note below).
 
 Fields
 
 * id (UUID)
-* organizationId
 * restaurantId
 * branchId
 * userId (nullable — registered customer)
 * reservationGuestId (nullable — phone/walk-in guest; exactly one of `userId` or `reservationGuestId` required)
 * partySize
-* preferredDate (nullable — date-only preference)
-* preferredTimeFrom (nullable)
-* preferredTimeTo (nullable)
+* preferredDate (required — the queue service date; not nullable, unlike the original pre-implementation draft of this table)
+* preferredTimeFrom (required — Phase 7.5 final decision, 2026-07-24: the **authoritative** requested Reservation start time-of-day on promotion, interpreted in the target `Branch.timezone`; superseded the original "soft preference" framing)
+* preferredTimeTo (nullable — remains optional and non-authoritative, filtering metadata only, never used to construct a Reservation)
 * status (`Waiting`, `Notified`, `Converted`, `Expired`, `Cancelled`)
-* position (integer — queue order within branch for a given service window; recomputed on promotion/cancel)
-* convertedReservationId (nullable — set when promoted to `Reservations`)
-* notifiedAt (nullable)
-* expiresAt
+* position (integer — FIFO queue order within `(branchId, preferredDate)`; immutable once assigned, gaps allowed)
+* convertedReservationId (nullable, unique — set when promoted to `Reservations`; real FK to `Reservations.id`, `ON DELETE SET NULL`)
+* notifiedAt (nullable — reserved for Phase 7.6; no Phase 7.5 code path sets it)
+* expiresAt (end of `preferredDate` 23:59:59.999 in `Branch.timezone`, converted to UTC — never affected by `preferredTimeFrom`/`preferredTimeTo`)
 * notes (nullable)
+* createdBy (the joining Customer's `userId` or the joining Employee's `employeeId` — always a real actor id, never null; System never Joins)
 * createdAt
 * updatedAt
 * deletedAt
 
 Indexes
 
-* organizationId
 * branchId
 * status
-* composite (branchId, status, position)
 * composite (branchId, preferredDate, status)
+* composite (branchId, status, position)
 * userId
 * reservationGuestId
 
 Constraints
 
-* CHECK: (`userId` IS NOT NULL AND `reservationGuestId` IS NULL) OR (`userId` IS NULL AND `reservationGuestId` IS NOT NULL)
+* CHECK `reservation_waitlist_entries_party_xor_chk`: (`userId` IS NOT NULL AND `reservationGuestId` IS NULL) OR (`userId` IS NULL AND `reservationGuestId` IS NOT NULL) — mirrors `reservations_party_xor_chk`, raw SQL only (not expressible in `schema.prisma`)
+* Partial unique index `reservation_waitlist_entries_active_position_key` ON (`branchId`, `preferredDate`, `position`) WHERE `status` IN (`Waiting`, `Notified`) AND `deletedAt` IS NULL — at most one active entry may hold a given position within a queue scope; raw SQL only, same technique as `floor_plans_branch_id_active_key` (Phase 6.1). Concurrent Joins are additionally serialized by a transaction-scoped advisory lock keyed by `(branchId, preferredDate)` (the same `pg_advisory_xact_lock` technique ADR-013 established, generalized to a new lock namespace) before position is computed — this index is the database-level safety net, not the primary mechanism.
+
+No `organizationId` (tenancy correction, 2026-07-24): the originally-drafted shape of this table (before implementation) specified a direct `organizationId` column. That was found, during implementation, to be structurally incompatible with Customer-facing Join — a Customer actor has no bound `TenantContext.organizationId`, and `Restaurant` (the only path to discover one) is a `DIRECT_TENANT_OWNED_MODEL`, fail-closed with no context bound. A forward corrective migration dropped the column before any row existed. Tenant ownership is resolved transitively (`branchId -> Branch.restaurantId -> Restaurant.organizationId`), exactly like `Reservation` itself already does; this table remains unregistered in `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS`. See ADR-019's Phase 7.5 implementation decision note (`DECISIONS.md`) for the full account.
 
 ---
 
@@ -1145,17 +1155,29 @@ Indexes
 
 ## Notifications
 
+**Phase 9 pre-implementation architecture decisions (frozen 2026-07-25, see `TASKS.md`'s "Phase 9 — Notification System: Pre-implementation architecture decisions").** Durable record — REST/the database is the source of truth; Phase 8 WebSocket delivery is only a best-effort realtime presentation hint (decision item 1), never a substitute for this table. `userId`-owned only in v1 (decision item 2 — no `Employee`/`OrganizationMember`/`ReservationGuest` recipient exists yet). No direct `organizationId` — deliberately, to avoid the Phase 7.5 `ReservationWaitlistEntry.organizationId` mistake; a Customer's notifications span every organization they've ever booked with (decision item 13). Two independent state tracks on one row: `read`/`readAt` (in-app) and `pushStatus`/`pushSentAt`/`pushFailedAt` (push), deliberately decoupled (decision item 5) — reading never depends on push outcome. **Implemented 2026-07-25** — migration `20260725190000_phase_9_notifications`, additive only.
+
 Fields
 
 * id (UUID)
-* userId
-* type
-* templateId
-* title
-* body
-* read
-* sentAt
+* userId (FK → Users, required)
+* type (source domain eventType, e.g. `ReservationApproved` — see `EVENTS.md`'s Phase 9 event→notification allow-list)
+* templateId (nullable, FK → NotificationTemplates — traceability only; `title`/`body` below are already resolved/snapshotted at creation time and are never re-read from the template for rendering)
+* title (resolved, snapshotted at creation in the recipient's language)
+* body (resolved, snapshotted at creation)
+* data (nullable JSON — minimal deep-link payload only, e.g. `{ reservationId }`/`{ entryId }`; never `ReservationGuest` contact fields or internal audit identifiers — see the PII policy below)
+* read (boolean, default false)
+* readAt (nullable — set atomically with `read` transitioning to true)
+* pushStatus (`NotAttempted` [default] | `Queued` | `Accepted` | `Failed` — no `Delivered` value: OneSignal's synchronous Send API only proves provider acceptance, never on-device delivery; see `EVENTS.md`)
+* pushSentAt (nullable — the moment the provider *accepted* the request, not device delivery)
+* pushFailedAt (nullable)
+* pushFailureReason (nullable — coarse classification only, e.g. `no_subscription`/`rate_limited`/`provider_error`; never a raw provider error dump)
+* pushIdempotencyKey (nullable UUID — generated once per logical notification, reused across BullMQ retries, never regenerated per attempt)
+* pushProviderMessageId (nullable — OneSignal's returned notification id, once accepted)
 * createdAt
+* updatedAt
+
+No `deletedAt` — deletion/retention is explicitly undecided/deferred in the Phase 9 freeze (no current product requirement specifies it), additive later without migration risk. No `retryCount` column — BullMQ's own per-job `attempts`/backoff configuration is the retry-count authority (mirrors `ReminderQueue`/`LateArrivalQueue`, neither of which duplicates retry count on their own rows). **Explicitly not built:** a `PushSubscription`/device-registration table (OneSignal's own `external_id`-keyed Subscription model is the subscription source of truth — Tavola never persists device/subscription identifiers server-side in v1) and a `NotificationDeliveryAttempt` table (the fields above are sufficient for v1's observability needs; per-attempt history, if ever needed, lives in BullMQ's own job log).
 
 Indexes
 
@@ -1170,13 +1192,15 @@ Purpose
 
 Provides locale-aware notification content, resolved by `NotificationDispatcher` (see DOMAIN_MODEL.md). Justification: without a template entity, translated notification copy would have to live in application code, making it impossible for non-developers to manage content and impossible to add a language without a deployment.
 
+**Phase 9 freeze (2026-07-25):** platform-global only — no restaurant-specific override, no versioning (no current requirement demands either). Unique `(eventType, language, channel)` already supports Push and In-App carrying separate content for the same event/language without any schema change. `SMS` remains present in `channel` purely as documented schema foresight — not implemented against, no SMS template content or delivery code is in Phase 9 v1 scope.
+
 Fields
 
 * id (UUID)
 * eventType (e.g., `ReservationApproved`, `ReservationCancelled`)
 * language
-* channel (`Push`, `Email`, `InApp`, `SMS`)
-* subject (nullable — applies to Email)
+* channel (`Push`, `InApp`, `SMS` — `SMS` reserved/unimplemented; `Email` permanently removed from scope, 2026-07-25 product decision)
+* title (push heading / in-app title)
 * body
 * isDefault (boolean — marks the fallback used when no translation exists for the recipient's language)
 * createdAt

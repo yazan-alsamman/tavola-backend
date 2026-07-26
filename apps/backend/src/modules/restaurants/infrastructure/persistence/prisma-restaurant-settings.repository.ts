@@ -41,6 +41,8 @@ export class PrismaRestaurantSettingsRepository implements RestaurantSettingsRep
         autoApproval: data.autoApproval,
         timezone: data.timezone,
         defaultCurrency: data.defaultCurrency,
+        reservationReminderMinutesBefore: data.reservationReminderMinutesBefore,
+        lateArrivalGraceMinutes: data.lateArrivalGraceMinutes,
         updatedAt: data.updatedAt,
       },
     });

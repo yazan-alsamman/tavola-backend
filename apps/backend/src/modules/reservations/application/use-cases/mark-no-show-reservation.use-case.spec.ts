@@ -19,6 +19,10 @@ import {
 import { InMemoryTableRepository } from '../../../../../test/tables/support/in-memory-table.repository';
 import { InMemoryReservationRepository } from '../../../../../test/reservations/support/in-memory-reservation.repository';
 import { InMemoryReservationHistoryRepository } from '../../../../../test/reservations/support/in-memory-reservation-history.repository';
+import { InMemoryWaitlistRecheckScheduler } from '../../../../../test/reservations/support/in-memory-waitlist-recheck-scheduler';
+import { InMemoryApprovedReservationOperationalScheduler } from '../../../../../test/reservations/support/in-memory-approved-reservation-operational-scheduler';
+import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
+import { ScheduleApprovedReservationSignalsService } from '../services/schedule-approved-reservation-signals.service';
 
 describe('MarkNoShowReservationUseCase', () => {
   const fixedNow = new Date('2026-08-01T10:00:00.000Z');
@@ -94,6 +98,7 @@ describe('MarkNoShowReservationUseCase', () => {
         smoking: false,
         status: TableStatus.Reserved,
         mergeGroupId: null,
+        isMergePrimary: false,
         createdAt: fixedNow,
         updatedAt: fixedNow,
         deletedAt: null,
@@ -101,6 +106,13 @@ describe('MarkNoShowReservationUseCase', () => {
     );
 
     const eventPublisher = new CollectingEventPublisher();
+    const waitlistRecheckScheduler = new InMemoryWaitlistRecheckScheduler();
+    const restaurantSettingsRepository = new InMemoryRestaurantSettingsRepository();
+    const operationalScheduler = new InMemoryApprovedReservationOperationalScheduler();
+    const scheduleApprovedReservationSignals = new ScheduleApprovedReservationSignalsService(
+      operationalScheduler,
+      restaurantSettingsRepository,
+    );
     const useCase = new MarkNoShowReservationUseCase(
       reservationRepository,
       reservationHistoryRepository,
@@ -112,6 +124,8 @@ describe('MarkNoShowReservationUseCase', () => {
       ]),
       eventPublisher,
       new ImmediateUnitOfWork(),
+      waitlistRecheckScheduler,
+      scheduleApprovedReservationSignals,
     );
 
     return {
@@ -120,6 +134,8 @@ describe('MarkNoShowReservationUseCase', () => {
       reservationHistoryRepository,
       tableRepository,
       eventPublisher,
+      waitlistRecheckScheduler,
+      operationalScheduler,
     };
   }
 

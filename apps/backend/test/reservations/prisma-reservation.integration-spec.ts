@@ -8,7 +8,7 @@ import {
 } from '@modules/reservations/domain/enums/reservation.enums';
 import { ReservationConflictException } from '@modules/reservations/domain/exceptions/reservation-conflict.exception';
 import { ReservationAvailabilityService } from '@modules/reservations/domain/services/reservation-availability.service';
-import { TableId } from '@shared/domain/value-objects/identifiers.vo';
+import { ReservationId, TableId } from '@shared/domain/value-objects/identifiers.vo';
 import { isDatabaseReachable, skipUnlessDatabaseAvailable } from '../support/live-database';
 import { createPrismaIntegrationModule } from '../support/prisma-integration-testing';
 
@@ -367,5 +367,145 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
     await expect(
       forcedRepository.createWithLock(conflicting, `lock-${randomUUID()}`),
     ).rejects.toBeInstanceOf(ReservationConflictException);
+  });
+
+  describe('Phase 7.6 (Operational Signals, ADR-019) - single-column CAS updates', () => {
+    async function seedApprovedReservation(
+      restaurantId: string,
+      branchId: string,
+      tableId: string,
+      userId: string,
+    ): Promise<string> {
+      const created = await rawPrisma.reservation.create({
+        data: {
+          userId,
+          restaurantId,
+          branchId,
+          tableId,
+          reservationDate: new Date('2026-09-07T00:00:00.000Z'),
+          reservationStartTime: new Date('2026-09-07T18:00:00.000Z'),
+          reservationEndTime: new Date('2026-09-07T19:30:00.000Z'),
+          guests: 2,
+          status: 'Approved',
+          source: 'Online',
+          createdBy: userId,
+        },
+      });
+      return created.id;
+    }
+
+    it('markLateArrivalNotifiedIfEligible applies once for an Approved, not-yet-notified reservation', async () => {
+      if (!dbAvailable) return;
+
+      const { restaurantId, branchId, tableId } = await seedRestaurantBranchTable();
+      const user = await seedUser();
+      const id = await seedApprovedReservation(restaurantId, branchId, tableId, user.id);
+      const at = new Date('2026-09-07T18:20:00.000Z');
+
+      const applied = await repository.markLateArrivalNotifiedIfEligible(
+        ReservationId.create(id),
+        at,
+      );
+
+      expect(applied).toBe(true);
+      const row = await rawPrisma.reservation.findUnique({ where: { id } });
+      expect(row?.lateArrivalNotifiedAt).toEqual(at);
+    });
+
+    it('markLateArrivalNotifiedIfEligible: only ONE of N concurrent callers applies the CAS update (real Postgres row lock)', async () => {
+      if (!dbAvailable) return;
+
+      const { restaurantId, branchId, tableId } = await seedRestaurantBranchTable();
+      const user = await seedUser();
+      const id = await seedApprovedReservation(restaurantId, branchId, tableId, user.id);
+      const reservationId = ReservationId.create(id);
+
+      const attempts = 5;
+      const results = await Promise.all(
+        Array.from({ length: attempts }, (_, i) =>
+          repository.markLateArrivalNotifiedIfEligible(
+            reservationId,
+            new Date(Date.UTC(2026, 8, 7, 18, 20, i)),
+          ),
+        ),
+      );
+
+      expect(results.filter(Boolean)).toHaveLength(1);
+      const row = await rawPrisma.reservation.findUnique({ where: { id } });
+      expect(row?.lateArrivalNotifiedAt).not.toBeNull();
+    });
+
+    it('markTableReadyNotifiedIfEligible: only ONE of N concurrent callers applies the CAS update (real Postgres row lock)', async () => {
+      if (!dbAvailable) return;
+
+      const { restaurantId, branchId, tableId } = await seedRestaurantBranchTable();
+      const user = await seedUser();
+      const id = await seedApprovedReservation(restaurantId, branchId, tableId, user.id);
+      const reservationId = ReservationId.create(id);
+
+      const attempts = 5;
+      const results = await Promise.all(
+        Array.from({ length: attempts }, (_, i) =>
+          repository.markTableReadyNotifiedIfEligible(
+            reservationId,
+            new Date(Date.UTC(2026, 8, 7, 17, 50, i)),
+          ),
+        ),
+      );
+
+      expect(results.filter(Boolean)).toHaveLength(1);
+      const row = await rawPrisma.reservation.findUnique({ where: { id } });
+      expect(row?.tableReadyNotifiedAt).not.toBeNull();
+    });
+
+    it('markLateArrivalNotifiedIfEligible returns false when the reservation is no longer Approved', async () => {
+      if (!dbAvailable) return;
+
+      const { restaurantId, branchId, tableId } = await seedRestaurantBranchTable();
+      const user = await seedUser();
+      const created = await rawPrisma.reservation.create({
+        data: {
+          userId: user.id,
+          restaurantId,
+          branchId,
+          tableId,
+          reservationDate: new Date('2026-09-08T00:00:00.000Z'),
+          reservationStartTime: new Date('2026-09-08T18:00:00.000Z'),
+          reservationEndTime: new Date('2026-09-08T19:30:00.000Z'),
+          guests: 2,
+          status: 'Completed',
+          source: 'Online',
+          createdBy: user.id,
+        },
+      });
+
+      const applied = await repository.markLateArrivalNotifiedIfEligible(
+        ReservationId.create(created.id),
+        new Date(),
+      );
+
+      expect(applied).toBe(false);
+    });
+
+    it('markTableReadyNotifiedIfEligible returns false when already marked ready', async () => {
+      if (!dbAvailable) return;
+
+      const { restaurantId, branchId, tableId } = await seedRestaurantBranchTable();
+      const user = await seedUser();
+      const id = await seedApprovedReservation(restaurantId, branchId, tableId, user.id);
+      const reservationId = ReservationId.create(id);
+
+      const first = await repository.markTableReadyNotifiedIfEligible(
+        reservationId,
+        new Date('2026-09-07T17:50:00.000Z'),
+      );
+      const second = await repository.markTableReadyNotifiedIfEligible(
+        reservationId,
+        new Date('2026-09-07T17:55:00.000Z'),
+      );
+
+      expect(first).toBe(true);
+      expect(second).toBe(false);
+    });
   });
 });

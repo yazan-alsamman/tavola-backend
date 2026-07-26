@@ -6,7 +6,11 @@
 
 Version: **1.1**
 
-Status: **Phase 3 complete, fully verified — Phase 4 complete, fully verified (Restaurant CRUD, Restaurant Settings, Working Hours, Gallery, and Cuisine & Occasion Taxonomy Assignment all complete, live-verified) — Phase 5 COMPLETE (Branch CRUD, Working Schedule, Geo Coordinates, and Address all complete, live-verified; Maps frozen by architectural decision, not a backend responsibility) — Phase 6.1 (Table Module: Floor Plan & Table CRUD), Phase 6.2 (Move Table), and Status Management all complete, live-verified; Merge Tables and Split Tables are deferred until the Reservation Engine architecture has been approved and frozen (not cancelled - see TASKS.md's "Phase 6 — Merge/Split Tables Deferral" decision note) — Phase 7.0 (Employee Management) complete, live-verified; Phase 7.1 (Reservation Core) is now COMPLETE, live-verified, and production-verified (2026-07-20, see TASKS.md's "Phase 7.1 — Reservation Core" report and its "ADR-013 compliance fix" note) - Search Availability, Create Reservation, and the ADR-013 concurrency mechanism are fully implemented and tested; auto-approval/Approve/Reject/`Table.reserve()`/`TableStatus.Reserved` are deferred to Phase 7.2 by an approved Scope Amendment — **Phase 7.2 (Approval Workflow) is now COMPLETE, LIVE VERIFIED, and PRODUCTION VERIFIED** (2026-07-23, see TASKS.md's "Phase 7.2 — Approval Workflow" report) - Approve (`Table.reserve()`, auto-rejection of overlapping Pending reservations), Reject (no Table operation, per the approved Architecture Correction), and the auto-approval branch of Create Reservation are all implemented and tested end-to-end, including a corrected application of ADR-013's advisory lock to Approval-time concurrency, not only Create — **Phase 7.3 (Reservation Lifecycle) is now COMPLETE, LIVE VERIFIED, and PRODUCTION VERIFIED** (2026-07-23, see TASKS.md's "Phase 7.3 — Reservation Lifecycle" report and ADR-023): Cancel, Reschedule (including table-changing reschedule within the same Branch, with a deterministic two-key locking protocol per ADR-023, proven against real `pg_advisory_xact_lock` calls), Complete, No-Show, and the Expiration job (live-verified against real BullMQ/Redis) are all implemented and tested at every tier**
+Status: **Phases 0–5 COMPLETE. Phase 6 COMPLETE — CRUD/Move/Status COMPLETE; Merge/Split Tables IMPLEMENTED, LIVE VERIFIED (2026-07-26, ADR-026; architecture frozen 2026-07-25). Phase 7 — Reservation Engine COMPLETE through 7.6 (Employee Management, Reservation Core, Approval Workflow, Lifecycle, Phone & Walk-In, Waitlist, Operational Signals) — all live-verified and production-verified (final closure 2026-07-24). Phase 8 — WebSocket IMPLEMENTED, live-verified through Nginx, and E2E verification-closed (2026-07-25, see TASKS.md). Phase 9 — Notifications COMPLETE · LIVE VERIFIED · STRICT-E2E VERIFIED · NOT PRODUCTION VERIFIED (OneSignal external credentials deferred). See TASKS.md for authoritative checklists.**
+
+Prior narrative detail (Phases 3–7.4) retained below for continuity; for 7.5/7.6 and Phase 8 implementation detail see TASKS.md.
+
+**Historical status prose (through Phase 7.3 framing; superseded for current ordering by the Status line above):** Phase 3 complete, fully verified — Phase 4 complete, fully verified (Restaurant CRUD, Restaurant Settings, Working Hours, Gallery, and Cuisine & Occasion Taxonomy Assignment all complete, live-verified) — Phase 5 COMPLETE (Branch CRUD, Working Schedule, Geo Coordinates, and Address all complete, live-verified; Maps frozen by architectural decision, not a backend responsibility) — Phase 6.1 (Table Module: Floor Plan & Table CRUD), Phase 6.2 (Move Table), and Status Management all complete, live-verified; Merge Tables and Split Tables are deferred until the Reservation Engine architecture has been approved and frozen (not cancelled - see TASKS.md's "Phase 6 — Merge/Split Tables Deferral" decision note) — Phase 7.0 (Employee Management) complete, live-verified; Phase 7.1 (Reservation Core) is now COMPLETE, live-verified, and production-verified (2026-07-20, see TASKS.md's "Phase 7.1 — Reservation Core" report and its "ADR-013 compliance fix" note) - Search Availability, Create Reservation, and the ADR-013 concurrency mechanism are fully implemented and tested; auto-approval/Approve/Reject/`Table.reserve()`/`TableStatus.Reserved` are deferred to Phase 7.2 by an approved Scope Amendment — **Phase 7.2 (Approval Workflow) is now COMPLETE, LIVE VERIFIED, and PRODUCTION VERIFIED** (2026-07-23, see TASKS.md's "Phase 7.2 — Approval Workflow" report) - Approve (`Table.reserve()`, auto-rejection of overlapping Pending reservations), Reject (no Table operation, per the approved Architecture Correction), and the auto-approval branch of Create Reservation are all implemented and tested end-to-end, including a corrected application of ADR-013's advisory lock to Approval-time concurrency, not only Create — **Phase 7.3 (Reservation Lifecycle) is now COMPLETE, LIVE VERIFIED, and PRODUCTION VERIFIED** (2026-07-23, see TASKS.md's "Phase 7.3 — Reservation Lifecycle" report and ADR-023): Cancel, Reschedule (including table-changing reschedule within the same Branch, with a deterministic two-key locking protocol per ADR-023, proven against real `pg_advisory_xact_lock` calls), Complete, No-Show, and the Expiration job (live-verified against real BullMQ/Redis) are all implemented and tested at every tier**
 
 ---
 
@@ -57,10 +61,10 @@ Phase numbers below match TASKS.md exactly.
 | 3     | User Module              | ✅ Completed | 100%     |
 | 4     | Restaurant Module        | ✅ Completed | 100%     |
 | 5     | Branch Module            | ✅ Completed | 100%     |
-| 6     | Table Module             | 🔶 In Progress| 70%      |
-| 7     | Reservation Engine       | ⏳ Pending    | 0%       |
-| 8     | WebSocket                | ⏳ Pending    | 0%       |
-| 9     | Notification System      | ⏳ Pending    | 0%       |
+| 6     | Table Module             | ✅ Completed | 100%     |
+| 7     | Reservation Engine       | ✅ Completed | 100%     |
+| 8     | WebSocket                | ✅ Completed | 100%     |
+| 9     | Notification System      | 🟢 Complete, live + strict-E2E verified (not production-verified) | ~95% |
 | 10    | Reviews                  | ⏳ Pending    | 0%       |
 | 11    | Offers                   | ⏳ Pending    | 0%       |
 | 12    | Subscription System      | ⏳ Pending    | 0%       |
@@ -69,6 +73,8 @@ Phase numbers below match TASKS.md exactly.
 | 15    | Optimization             | ⏳ Pending    | 0%       |
 | 16    | Testing                  | ⏳ Pending    | 0%       |
 | 17    | Deployment               | ⏳ Pending    | 0%       |
+
+Phase 6 is now COMPLETE: Merge Tables / Split Tables (architecture-frozen ADR-026, 2026-07-25) are implemented and live-verified (2026-07-26) — see TASKS.md's "Phase 6 — Merge/Split Implementation & Verification Report". Phase 8 is implemented, live-verified, and E2E verification-closed (2026-07-25) — see TASKS.md's Phase 8 Implementation & Verification Report and its Verification Closure Addendum.
 
 ---
 
@@ -351,53 +357,59 @@ Capabilities considered and explicitly deferred, not currently scheduled on the 
 * Shapes ✅ (Phase 6.1 — intentionally minimal `TableShape` enum: `Rectangle`/`Round` only, presentation metadata with no business behavior; a square table is `Rectangle` with `width == height`)
 * Floors / Floor Plans ✅ (Phase 6.1 — FloorPlan Create/List/Activate, one-active-per-branch Aggregate Invariant, atomic activation swap)
 * Capacity ✅ (Phase 6.1)
-* Move ✅ (Phase 6.2 — `POST /api/v1/tables/:tableId/move`, a dedicated Domain Action that reassigns only `floorPlanId` within the same Branch; audit-logged, no domain event, see TASKS.md's "Phase 6.2 — Table Module: Move Table" report)
-* Merge — **deferred until the Reservation Engine architecture has been approved and frozen** (not cancelled, intentionally removed from the active implementation sequence; `mergeGroupId` column exists, unpopulated; see TASKS.md's "Phase 6 — Merge/Split Tables Deferral" decision note)
-* Split — **deferred until the Reservation Engine architecture has been approved and frozen** (not cancelled, intentionally removed from the active implementation sequence; see TASKS.md's "Phase 6 — Merge/Split Tables Deferral" decision note)
-* Status management ✅ (`TableStatus` = `Available`/`Occupied`/`Cleaning`/`Disabled`; `Reserved` excluded until the Reservation Engine architecture is frozen; single `POST /tables/{tableId}/status` Domain Action; restrictive state machine, `Available` ↔ each of the other three only; audit-only, no domain events; no `TablePolicy` - see TASKS.md's "Phase 6 — Status Management" report)
+* Move ✅ (Phase 6.2 — `POST /api/v1/tables/:tableId/move`, dedicated Domain Action reassigning only `floorPlanId` within the same Branch. **Phase 8 (implemented 2026-07-25):** Move publishes a real `TableMovedEvent` through `EVENT_PUBLISHER`; `table.moved` auditing flows through the normal event/audit-publisher path. See TASKS.md's Phase 8 Implementation & Verification Report / EVENTS.md Table Events.)
+* Merge ✅ (ADR-026 — Primary Table model; architecture frozen 2026-07-25, **IMPLEMENTED, LIVE VERIFIED 2026-07-26**. `POST /api/v1/tables/merge`. See TASKS.md's "Phase 6 — Merge/Split Tables: Final architecture freeze" and "Phase 6 — Merge/Split Implementation & Verification Report". Historical deferral note retained in TASKS.md.)
+* Split ✅ (ADR-026 — undo merge only; architecture frozen 2026-07-25, **IMPLEMENTED, LIVE VERIFIED 2026-07-26**. `POST /api/v1/tables/:tableId/split`. Same reports as Merge.)
+* Status management ✅ (`TableStatus` = `Available`/`Occupied`/`Cleaning`/`Disabled`/`Reserved` — `Reserved` is Reservation-write-path only since Phase 7.2; single `POST /tables/{tableId}/status` Domain Action for Available↔Occupied/Cleaning/Disabled; restrictive state machine. **Phase 8 (implemented 2026-07-25):** manual status transitions publish `TableStatusChangedEvent` (Option A — narrow); Reservation `reserve()`/`release()` still do not emit that event. See TASKS.md's Phase 8 Implementation & Verification Report.)
 
 ---
 
 # Phase 7 — Reservation Engine
 
-Status: Phase 7.0 (Employee Management) complete, live-verified. **Phase 7.1 (Reservation Core) is now COMPLETE, live-verified, and production-verified** (2026-07-20) - Search Availability (`GET /api/v1/reservations/availability`) and Create Reservation (`POST /api/v1/reservations`) are implemented exactly per both previously-open decisions (reservation end-time derivation; the Availability Search response contract), and ADR-013's concurrency mechanism (advisory lock + database exclusion-constraint safety net) is fully implemented, including a post-completion compliance fix (see TASKS.md's "Phase 7.1 — Reservation Core" report and its "ADR-013 compliance fix" note). **Phase 7.2 — Approval Workflow is now COMPLETE, LIVE VERIFIED, and PRODUCTION VERIFIED** (2026-07-23, see TASKS.md's "Phase 7.2 — Approval Workflow" report): Auto-approval, Approve (`POST /api/v1/reservations/:id/approve`), Reject (`POST /api/v1/reservations/:id/reject`), `Table.reserve()`/`Table.release()`, and `TableStatus.Reserved` (new additive migration) are all implemented and tested end-to-end. Reject performs no Table operation, per the approved Architecture Correction (a reservation can only be rejected while still Pending, and a Pending reservation never reserves a table) - enforced structurally, since `RejectReservationUseCase` has no `Table` repository dependency at all. ADR-013's advisory lock and confirmed-overlap re-check now also govern Approval, exactly as ADR-013's own Decision text already specified (a discrepancy in an interim readiness report's summary of this was found and corrected during implementation, not an ADR change). Approving the first of several overlapping Pending reservations for the same table automatically rejects the others (no Table operation for those either). **Phase 7.3 — Reservation Lifecycle is now COMPLETE, LIVE VERIFIED, and PRODUCTION VERIFIED** (2026-07-23, see TASKS.md's "Phase 7.3 — Reservation Lifecycle" report): Cancel (`POST /api/v1/reservations/:id/cancel`, Customer-own or branch-scoped Employee with `reservations:cancel`), Reschedule (`POST /api/v1/reservations/:id/reschedule`, FR-06.3, Customer-own or branch-scoped Employee with `reservations:reschedule` - may change the assigned Table within the same Branch, per a deterministic two-key advisory-lock protocol, ADR-023), Complete (`POST /api/v1/reservations/:id/complete`, staff-only, `reservations:complete`), No-Show (`POST /api/v1/reservations/:id/no-show`, staff-only, `reservations:noshow`), and the Expiration job (internal, BullMQ-driven, no public endpoint, live-verified against real Redis) are all implemented and tested at every tier. `ReservationHistory` (already documented in DATABASE_SCHEMA.md) is now implemented and persisted. **Phase 7.4 — Phone & Walk-In Reservations is now COMPLETE, LIVE VERIFIED, and PRODUCTION VERIFIED** (2026-07-23, see TASKS.md's "Phase 7.4 — Phone & Walk-In Reservations" report): the same `POST /api/v1/reservations` endpoint accepts `source: Phone|WalkIn` for a branch-scoped Employee holding `reservations:create` (no new permission slug), backed by a new `ReservationGuest` entity (`DATABASE_SCHEMA.md`'s "Reservation Guests", implemented for the first time via migration `20260723184453_phase_7_4_reservation_guests`) persisted atomically with the `Reservation` row - proven against a real Postgres transaction, not simulated. `source: Online` remains reachable by any authenticated actor type for themselves, unchanged from Phase 7.1.
+Status: ✅ **COMPLETE** through Phase 7.6 (2026-07-24). Phase 7.0 (Employee Management), 7.1 (Reservation Core), 7.2 (Approval Workflow), 7.3 (Reservation Lifecycle / ADR-023), 7.4 (Phone & Walk-In / ReservationGuest), 7.5 (Reservation Waitlist / ADR-019), and 7.6 (Operational Signals: ReminderDue / LateArrival / TableReady + ReminderQueue / LateArrivalQueue) are all COMPLETE, LIVE VERIFIED, and PRODUCTION VERIFIED. See TASKS.md for each sub-phase report. Deferred outside Phase 7: no-show banning; broader GDPR/erasure. Merge/Split Tables (ADR-026) is a Phase 6 deliverable, outside Phase 7 implementation scope — implemented and live-verified 2026-07-26 (see TASKS.md's Phase 6 Merge/Split Implementation & Verification Report). Phase 9 notification delivery shipped (OneSignal external production verification deferred separately).
 
 ## Features
 
 * Reservation requests
 * Approval workflow
-* Phone reservations
-* Rescheduling
-* Cancellation
-* Expiration
-* No-show tracking
-* Conflict prevention
-* Advisory-lock-based transaction locking (ADR-013)
+* Phone / Walk-In reservations (`ReservationGuest`)
+* Waitlist (FIFO ordered-first-serviceable promotion)
+* Rescheduling (incl. same-branch table change, ADR-023)
+* Cancellation / Completion / Expiration / No-show
+* Conflict prevention (ADR-013 advisory lock + exclusion constraint)
+* Operational signals (ReminderDue, LateArrival, TableReady — domain/event side; delivery is Phase 9)
 
 ---
 
 # Phase 8 — WebSocket
 
+Status: 🟢 **Implemented, live-verified, and E2E verification-closed (2026-07-25).** Full freeze decisions in TASKS.md "Phase 8 — WebSocket: Pre-implementation architecture decisions"; implementation/verification evidence in TASKS.md's Phase 8 Implementation & Verification Report and its Verification Closure Addendum. EVENTS.md WebSocket section synchronized.
+
 ## Features
 
-* Socket.IO
-* Redis Adapter for horizontal scaling (ADR-015)
-* Live availability
-* Live notifications
-* Live dashboard updates
+* Socket.IO gateway (`RealtimeGateway`) behind existing Redis Adapter (ADR-015) — already wired (`RedisIoAdapter`), now with a `close()` override fixing a discovered connection leak on shutdown
+* `RealtimeEventPublisher` outermost `EVENT_PUBLISHER` decorator + `RealtimeBroadcasterPort` (best-effort fan-out; never fails committed business ops) — live-verified through Nginx
+* Live Reservations / Live Tables / Live operational signals ("Live Notifications" = fan-out of existing domain/ops signals — **not** Phase 9 Notification subsystem)
+* Typed `room.subscribe` / `room.unsubscribe`; rooms: organization / restaurant / branch / reservation
+* Handshake authentication implemented as Socket.IO connection middleware (not the `OnGatewayConnection` lifecycle hook) to close a genuine race discovered during e2e testing; disconnect-at-JWT-exp; scope/ownership room authz (no new realtime permission slugs)
+* New domain events: `TableStatusChangedEvent` (manual status only), `TableMovedEvent` — both implemented, published through `EVENT_PUBLISHER`
+* No Prisma migration, no new external dependency (confirmed — `prisma migrate status` clean against the real dev database)
+* E2E coverage: all 8 allow-listed representative flows (`ReservationApproved`/`Cancelled`/`Rescheduled`/`NoShow`, `WaitlistEntryPromoted`, `TableReadyNotified`, `TableStatusChanged`, `TableMoved`) each have a dedicated real REST→WebSocket E2E round trip — see TASKS.md's Phase 8 Verification Closure Addendum
 
 ---
 
 # Phase 9 — Notification System
 
+Status: 🟢 **Complete, live verified, strict-E2E verified — NOT production-verified (2026-07-25).** Owner explicitly authorized implementation following the architecture freeze. Full frozen decisions in `TASKS.md`'s "Phase 9 — Notification System: Pre-implementation architecture decisions"; built exactly as frozen. Static/unit/integration/E2E verification passed; both Docker stacks rebuilt and force-recreated; live HTTP/WebSocket/BullMQ verification against the rebuilt dev stack passed (see TASKS.md's Phase 9 implementation note). A dedicated closure session (2026-07-25) additionally executed the strict-stack E2E suite (34 suites / 377 tests, PASS) and a full regression re-run (all gates green) — see TASKS.md's "Final Production Verification & Closure addendum". **ADR-025 Identity-Verification JWT delivery** was owner-approved (hybrid: login/refresh field + `GET /notifications/identity-token`) and implemented the same day. **One production-relevant item remains open:** external OneSignal delivery is BLOCKED — no live credentials (`ONESIGNAL_APP_ID`/`ONESIGNAL_API_KEY`/`ONESIGNAL_IDENTITY_VERIFICATION_PRIVATE_KEY`) and no real recipient. Email removed from scope (2026-07-25 product decision) — not a planned notification delivery channel.
+
 ## Features
 
-* OneSignal
-* Email
-* In-App
-* WebSocket
-* Provider abstraction
-* Notification templates / localization (see LOCALIZATION.md)
+* OneSignal (`external_id = User.id`; ES256 Identity Verification adopted, ADR-025)
+* In-App (durable `Notification` record; Phase 8 WebSocket is a best-effort realtime hint only, never a substitute)
+* Provider abstraction (`NotificationProvider`, ADR-007 Anti-Corruption Layer)
+* Notification templates / localization (see LOCALIZATION.md) — platform-global, unversioned in v1
+* Recipient scope: registered `User`/Customer only in v1 — no Employee/OrganizationMember inbox, no `ReservationGuest` recipient
+* Delivery ownership split: Phase 7.6 `ReminderQueue`/`LateArrivalQueue` schedule; a new `NotificationQueue` delivers
 
 ---
 

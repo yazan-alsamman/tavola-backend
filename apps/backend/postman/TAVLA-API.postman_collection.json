@@ -155,6 +155,16 @@
       "type": "string"
     },
     {
+      "key": "waitlistEntryId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "notificationId",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "customerUsername",
       "value": "jane_doe",
       "type": "string"
@@ -1298,6 +1308,142 @@
       ]
     },
     {
+      "name": "Notifications",
+      "description": "Phase 9 (frozen 2026-07-25). Base path: `/notifications`. Ownership-only authorization - no RBAC/organization scope; every route always targets the caller from the JWT, mirroring `/users/me/*`.",
+      "item": [
+        {
+          "name": "List Notifications",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications?page=1&limit=20&unread=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "unread",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "Paginated, ordered newest-first. Only the caller's own notifications. Set unread=true to filter to unread only. Auto-captures notificationId from the first item, if any."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Notifications retrieved (200)', function () { pm.response.to.have.status(200); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data && jsonData.data.items && jsonData.data.items.length > 0) {",
+                  "    pm.collectionVariables.set('notificationId', jsonData.data.items[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Unread Notification Count",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/unread-count",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "unread-count"
+              ]
+            },
+            "description": "A single count for a badge/indicator - the caller's own notifications only."
+          },
+          "response": []
+        },
+        {
+          "name": "Get OneSignal Identity Token",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/identity-token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "identity-token"
+              ]
+            },
+            "description": "ADR-025. Returns a short-lived ES256 JWT proving ownership of external_id = the caller's User.id, for OneSignal.login()/updateUserJwt(). token is null when Identity Verification is not configured in this environment."
+          },
+          "response": []
+        },
+        {
+          "name": "Mark Notification Read",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/:id/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                ":id",
+                "read"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{notificationId}}"
+                }
+              ]
+            },
+            "description": "Idempotent - marking an already-read notification succeeds. A non-owned or nonexistent id returns 404 (IDOR-safe). No request body."
+          },
+          "response": []
+        },
+        {
+          "name": "Mark All Notifications Read",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/read-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "read-all"
+              ]
+            },
+            "description": "Marks every one of the caller's unread notifications read. No request body, no params."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Taxonomy",
       "description": "Public, platform-managed reference data (cuisine/occasion categories) - no authentication required.",
       "item": [
@@ -1603,7 +1749,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reservationIntervalMinutes\": 30,\n  \"maxGuestsPerReservation\": 20,\n  \"cancellationWindowMinutes\": 60,\n  \"pendingReservationTimeoutMinutes\": 15,\n  \"defaultReservationDurationMinutes\": 90,\n  \"autoApproval\": false,\n  \"timezone\": \"UTC\",\n  \"defaultCurrency\": \"USD\"\n}",
+              "raw": "{\n  \"reservationIntervalMinutes\": 30,\n  \"maxGuestsPerReservation\": 20,\n  \"cancellationWindowMinutes\": 60,\n  \"pendingReservationTimeoutMinutes\": 15,\n  \"defaultReservationDurationMinutes\": 90,\n  \"autoApproval\": false,\n  \"timezone\": \"UTC\",\n  \"defaultCurrency\": \"USD\",\n  \"reservationReminderMinutesBefore\": 60,\n  \"lateArrivalGraceMinutes\": 15\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1627,7 +1773,7 @@
                 }
               ]
             },
-            "description": "Full-replace update of every settings field."
+            "description": "Full-replace update of every settings field, including the Phase 7.6 operational-signal fields reservationReminderMinutesBefore and lateArrivalGraceMinutes."
           },
           "response": []
         },
@@ -2577,6 +2723,55 @@
           "response": []
         },
         {
+          "name": "Merge Tables",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tableIds\": [\"{{tableId}}\", \"{{secondTableId}}\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/tables/merge",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tables",
+                "merge"
+              ]
+            },
+            "description": "Phase 6 (Merge/Split Tables, ADR-026). At least 2 distinct, currently Available tables in the same Branch and FloorPlan become one merge group sharing mergeGroupId - only the Primary (optional primaryTableId, else lowest tableNumber then id ascending) remains independently reservable; every other member becomes status Merged. Dual-actor: Owner/Admin organization member or Employee with tables:manage and branch scope (uses the collection-default {{accessToken}}). Set {{secondTableId}} to a second Table's id in the same Branch/FloorPlan before running."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Tables merged (200)', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Get Table By Id",
           "request": {
             "method": "GET",
@@ -2765,6 +2960,53 @@
             "description": "Domain Action: only Available<->Occupied, Available<->Cleaning, and Available<->Disabled transitions are allowed."
           },
           "response": []
+        },
+        {
+          "name": "Split Table",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/tables/:tableId/split",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tables",
+                ":tableId",
+                "split"
+              ],
+              "variable": [
+                {
+                  "key": "tableId",
+                  "value": "{{tableId}}"
+                }
+              ]
+            },
+            "description": "Phase 6 (Merge/Split Tables, ADR-026 decision #2): undo a merge - tableId may be ANY member of the active merge group, the full group is resolved from it. Clears mergeGroupId/isMergePrimary for every member; a former secondary becomes Available again. No Table row is created or destroyed. Same dual-actor authorization as Merge Tables (uses the collection-default {{accessToken}}). No request body."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Tables split (200)', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -3095,7 +3337,7 @@
                 "reservations"
               ]
             },
-            "description": "Always produces status Pending (Approval is a later phase). reservationEndTime is derived from the restaurant's default reservation duration when omitted. Enable the Idempotency-Key header to test safe retry semantics. Auto-captures reservationId."
+            "description": "Status is Pending unless the branch restaurant's RestaurantSettings.autoApproval is true, in which case it is created directly as Approved. reservationEndTime is derived from the restaurant's default reservation duration when omitted. source defaults to Online (self-booking, any authenticated actor); Phone/WalkIn are reachable only by an Employee actor holding reservations:create for the branch and require a reservationGuest object ({countryCode, phoneNumber, fullName, email?}) - see the 'Create Reservation (Phone/Walk-In)' example below. Enable the Idempotency-Key header to test safe retry semantics. Auto-captures reservationId."
           },
           "response": [],
           "event": [
@@ -3109,6 +3351,136 @@
                   "if (jsonData && jsonData.data) {",
                   "    pm.collectionVariables.set('reservationId', jsonData.data.reservationId);",
                   "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Reservation (Phone/Walk-In)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchId\": \"{{branchId}}\",\n  \"tableId\": \"{{secondTableId}}\",\n  \"reservationStartTime\": \"2026-08-01T18:00:00.000Z\",\n  \"reservationEndTime\": \"2026-08-01T20:00:00.000Z\",\n  \"guests\": 2,\n  \"notes\": \"Phone booking\",\n  \"source\": \"Phone\",\n  \"reservationGuest\": {\n    \"countryCode\": \"US\",\n    \"phoneNumber\": \"5551234567\",\n    \"fullName\": \"Jane Doe\",\n    \"email\": null\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/reservations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reservations"
+              ]
+            },
+            "description": "Phase 7.4: source Phone/WalkIn requires the caller to be an Employee actor holding reservations:create for the target branch (uses the collection-default {{accessToken}}, which must belong to such an Employee/Owner) plus a reservationGuest for the walk-in/phone party (no registered User account). Rejects with 403 if the actor is a Customer, or VALIDATION_ERROR if reservationGuest is missing. Set {{secondTableId}} to a second Table's id in the same Branch before running."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Phone/Walk-In reservation created (201)', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approve Reservation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reservations/{{reservationId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reservations",
+                "{{reservationId}}",
+                "approve"
+              ]
+            },
+            "description": "Domain Action (Phase 7.2). Staff-only (reservations:approve, branch-scoped) - uses the collection-default {{accessToken}}. Only a Pending reservation may be approved; calls Table.reserve() atomically with the status transition and auto-rejects any other overlapping Pending reservation for the same table. No request body."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Reservation approved (200)', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject Reservation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reservations/{{reservationId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reservations",
+                "{{reservationId}}",
+                "reject"
+              ]
+            },
+            "description": "Domain Action (Phase 7.2). Staff-only (reservations:approve, branch-scoped) - uses the collection-default {{accessToken}}. Only a Pending reservation may be rejected. Performs NO Table operation (a Pending reservation never reserved the table). No request body. Run against a fresh Pending reservation, not the one just Approved above."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Reservation rejected (200)', function () { pm.response.to.have.status(200); });"
                 ]
               }
             }
@@ -3291,6 +3663,182 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Reservation marked NoShow (200)', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mark Reservation Table Ready",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reservations/{{reservationId}}/table-ready",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reservations",
+                "{{reservationId}}",
+                "table-ready"
+              ]
+            },
+            "description": "Operational Signal (Phase 7.6) - not a status transition; status remains Approved and no Table operation is performed. Staff-only (reservations:tableready, branch-scoped) - uses the collection-default {{accessToken}}. May only be called once per reservation while it remains Approved. No request body."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Reservation marked table-ready (200)', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Waitlist",
+      "description": "Phase 7.5 (ADR-019, architecture frozen 2026-07-24). Base path: `/waitlist`. API surface deliberately frozen to exactly 3 endpoints - no list/reorder/dashboard/analytics endpoints exist.",
+      "item": [
+        {
+          "name": "Join Waitlist",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"branchId\": \"{{branchId}}\",\n  \"partySize\": 4,\n  \"preferredDate\": \"2026-08-01\",\n  \"preferredTimeFrom\": \"19:00\",\n  \"preferredTimeTo\": \"20:00\",\n  \"notes\": \"Prefers outdoor seating\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/waitlist",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "waitlist"
+              ]
+            },
+            "description": "Guard-light (JwtAuthGuard/SessionVersionGuard only), mirroring POST /reservations exactly. preferredDate and preferredTimeFrom are both required and together are the authoritative requested Reservation start time-of-day on promotion - not a soft preference. preferredTimeTo is optional/non-authoritative. reservationGuest (same shape as Reservations) is optional and reachable only by an Employee actor holding reservations:waitlist for the target branch - a Customer actor always joins for themselves. Auto-captures waitlistEntryId."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Joined waitlist (201)', function () { pm.response.to.have.status(201); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data) {",
+                  "    pm.collectionVariables.set('waitlistEntryId', jsonData.data.entryId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cancel Waitlist Entry",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/waitlist/{{waitlistEntryId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "waitlist",
+                "{{waitlistEntryId}}",
+                "cancel"
+              ]
+            },
+            "description": "Reachable from Waiting or Notified, by either the entry's own Customer (ownership-based - request auth defaults to {{customerAccessToken}}) or a branch-scoped Employee holding reservations:waitlist (override the Authorization token to {{accessToken}} for an Employee actor). Mirrors POST /reservations/:id/cancel exactly. No request body."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Waitlist entry cancelled (200)', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Promote Waitlist Entry",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/waitlist/{{waitlistEntryId}}/promote",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "waitlist",
+                "{{waitlistEntryId}}",
+                "promote"
+              ]
+            },
+            "description": "Domain Action, staff-only (reservations:waitlist, branch-scoped) - uses the collection-default {{accessToken}}. Uses the entry's own preferredDate/preferredTimeFrom to derive the requested window and searches for an available Table server-side (never the request body). Run against a fresh, non-cancelled entry - not the one just cancelled above. On success, status becomes Converted and convertedReservationId is populated."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Waitlist entry promoted (200)', function () { pm.response.to.have.status(200); });"
                 ]
               }
             }

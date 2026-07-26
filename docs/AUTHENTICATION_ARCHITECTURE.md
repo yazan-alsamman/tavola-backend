@@ -177,6 +177,10 @@ This table is retained (struck through, not deleted) per this project's ADR-immu
 
 **Reuse detection:** if a refresh token that was already rotated is presented, revoke all sessions in the `tokenFamilyId` and publish `SessionRevoked` with reason `token_reuse_detected`.
 
+**OneSignal Identity Verification JWT (ADR-025 delivery, additive):** when the refreshed actor is a Customer (`actorType = User`), the refresh response also includes `onesignalIdentityToken: string | null` — a short-lived ES256 JWT for OneSignal's client SDK only. It is not a Tavola access/refresh token, carries no Tavola authorization claims, and is never accepted by any Tavola guard. Customers may also obtain a fresh token via `GET /api/v1/notifications/identity-token`. See ADR-025 and `API_GUIDELINES.md` Notification Endpoints.
+
+**ADR-025 (OneSignal Identity Verification) — additive response field only:** for Customer (`User`) actors, successful `POST /auth/customer/login` and `POST /auth/refresh` also include `onesignalIdentityToken: string | null` (a short-lived ES256 JWT proving `external_id = User.id` ownership to OneSignal). This token carries **no** Tavola session/authorization semantics and is never accepted by any Tavola guard. On-demand refresh is `GET /notifications/identity-token`. See ADR-025 and `API_GUIDELINES.md`.
+
 ## 1.6 Authenticated Session
 
 Every authenticated HTTP request:

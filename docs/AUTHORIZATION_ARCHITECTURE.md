@@ -174,8 +174,15 @@ Permissions are **flat slugs**, grouped logically for documentation and UI:
 | `organization:*` | `organization:members:manage` | Owner, Admin |
 | `restaurants:*` | `restaurants:manage` | Owner, Admin, Manager |
 | `branches:*` | `branches:manage` | Manager |
-| `reservations:*` | `reservations:create`, `reservations:approve`, `reservations:cancel`, `reservations:reschedule`, `reservations:complete`, `reservations:noshow` | Receptionist, Manager |
+| `reservations:*` | `reservations:create`, `reservations:approve`, `reservations:cancel`, `reservations:reschedule`, `reservations:complete`, `reservations:noshow`, `reservations:waitlist`, `reservations:tableready` | Receptionist, Manager |
 | `tables:*` | `tables:manage` | Manager |
+
+**ADR-026 / Phase 6 Merge-Split (architecture frozen 2026-07-25; implemented, live-verified 2026-07-26 — see TASKS.md's Phase 6 Merge/Split Implementation & Verification Report):** Merge and Split reuse the existing seeded `tables:manage` slug — **do not** create `tables:merge` or `tables:split`. They are staff-side table-management operations with a **narrow dual-actor** model:
+
+* **OrganizationMember** Owner/Admin — existing organization-level table-management authority (same org ownership chain as today's Table CRUD), **or**
+* **Employee** — must hold `tables:manage` **and** be assigned to the target Branch.
+
+Route shape: `JwtAuthGuard` + `SessionVersionGuard` only; actor-type branching and OrgRole / permission+branch checks happen **inside the use case** (same pattern as Phase 7.3 Cancel/Reschedule dual-actor routes). This deliberately avoids NestJS multi-guard OR composition. ADR-026 itself satisfies `CHANGE_POLICY.md` criterion #4 for this narrowly scoped auth extension. **Do not** migrate every existing Table CRUD endpoint to this model in the Merge/Split phase — CRUD remains Owner/Admin-only until a separate authorization increment. Cross-organization access remains IDOR-safe (unknown/foreign tables → 404 via tenant chain).
 | `employees:*` | `employees:manage` | Manager |
 | `reports:*` | `reports:view` | Manager, Owner |
 | `offers:*` | `offers:manage` | Manager |
@@ -183,6 +190,8 @@ Permissions are **flat slugs**, grouped logically for documentation and UI:
 Namespace depth is conventional (colon-separated); authorization checks a single slug unless a policy aggregates multiple.
 
 **Phase 7.3 — Reservation Lifecycle (architecture frozen 2026-07-23; complete, live-verified, and production-verified 2026-07-23):** `reservations:cancel`, `reservations:reschedule`, `reservations:complete`, and `reservations:noshow` are four new, dedicated slugs - none reuse `reservations:approve`, which remains scoped exactly to Approve/Reject (Phase 7.2). Default role assignment (least-privilege, derived from each seeded role's own documented responsibility): **Manager** ("full restaurant operational access") and **Receptionist** ("front-of-house reservation and guest management") each receive all four; **Cashier** ("payment and checkout operations") receives none, matching its existing narrow `reservations:create`-only scope. Cancel and Reschedule are unusual in this catalog: they are also reachable by a **Customer** actor for their own reservation, via ownership-based authorization (no permission slug involved for that path at all) rather than RBAC - see §19's policy note and API_GUIDELINES.md's Domain Action section for how one route resolves both actor types without new guard composition.
+
+**Phase 7.6 — Operational Signals (architecture frozen 2026-07-24):** `reservations:tableready` is one new, dedicated slug guarding `POST /reservations/:id/table-ready` (`PermissionsGuard` + `@RequirePermission`, plus the same branch-scope `assertEmployeeCanActOnReservation` check Complete/No-Show already use) - staff-only, no Customer/ownership path, since marking a table ready is a front-of-house operational signal, not a party-initiated action. Default role assignment follows the same least-privilege pattern as Phase 7.3: **Manager** and **Receptionist** receive it; **Cashier** does not. The Reminder and Late-Arrival signals carry no permission slug at all - both are exclusively BullMQ-scheduled, System-attributed background jobs with no HTTP entry point and therefore nothing for RBAC to guard.
 
 ---
 
@@ -298,7 +307,7 @@ Decorators set metadata only; guards enforce.
 | **Restaurant Manager** (Employee) | Restaurant ops per role permissions + branch scope | RBAC + branch assignments |
 | **Receptionist** | Reservations, limited table read | RBAC subset |
 | **Cashier** | Payments/offers (future), read reservations | RBAC subset |
-| **Customer** | Own profile, own reservations, own reviews | `userId` match on resource |
+| **Customer** | Own profile, own reservations, own reviews, own notifications (Phase 9, implemented 2026-07-25) | `userId` match on resource |
 | **Reservation guest** | No account — staff creates on behalf | Staff permission, not customer JWT |
 
 **Restaurant Owner (display):** the Organization member with `Owner` role — not a separate `Restaurant.ownerId` (ADR-011).
@@ -310,6 +319,8 @@ allowed ⇔ resource.userId === principal.userId
 ```
 
 Staff bypass ownership only when holding the required permission slug **and** branch scope.
+
+**Phase 9 Notification inbox (frozen 2026-07-25, `TASKS.md`'s Phase 9 decision item 13):** ownership-only, no RBAC — `notification.userId === principal.userId` is the entire authorization rule for `GET /notifications`, `PATCH /notifications/:id/read`, `PATCH /notifications/read-all`, and `GET /notifications/unread-count`, mirroring `/users/me/*`'s existing precedent exactly. **No new permission slug is introduced** — v1 has no Employee/OrganizationMember recipient (see item 2), so there is nothing for RBAC to gate yet. A non-owned `:id` collapses to 404 (IDOR-safe), matching every other owned-resource route's existing convention.
 
 ---
 
@@ -427,7 +438,9 @@ Each policy exposes a simple decision interface. Application services depend on 
 |---|---|
 | `ReservationPolicy` | Status transitions, cancellation window, party size, branch scope, phone-reservation rules |
 | `RestaurantPolicy` | Suspended restaurant, subscription active, org membership |
-| `TablePolicy` | Merge/split, floor-plan edits, disabled table |
+| `TablePolicy` | Merge/split (ADR-026: Primary Table membership, `Merged` secondaries, Move/Status-while-merged guards), floor-plan edits, disabled table |
+
+**ADR-026 Merge/Split dual-actor note (architecture frozen 2026-07-25):** conceptually `TablePolicy.canMerge` / `canSplit` evaluate: (a) OrganizationMember Owner/Admin of the organization that transitively owns the tables, **or** (b) Employee with `tables:manage` and branch scope for the tables' `branchId`. Domain rules (same FloorPlan, Available members, reservation blocking, topology locks) remain in the Merge/Split use cases / domain layer, not in the policy alone. Distinct from Phase 7.0's still-deferred Manager-driven `employees:manage` OR-guard composition: Merge/Split does not introduce a new NestJS composed guard.
 | `EmployeePolicy` | Invite, assign role, branch assignment, cannot remove last manager |
 | `OfferPolicy` | Publish, expire, branch eligibility |
 | `ReviewPolicy` | Owner reply, delete, customer owns review |

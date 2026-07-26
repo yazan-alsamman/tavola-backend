@@ -91,6 +91,33 @@ describe('TenantContextService', () => {
     expect(observedB).toHaveLength(3);
   });
 
+  it('getActorType() returns null when nothing is bound', () => {
+    const service = new TenantContextService();
+
+    expect(service.getActorType()).toBeNull();
+  });
+
+  it('getActorType() exposes the bound actorType for the duration of the callback (Phase 8 audit-hygiene fix)', () => {
+    const service = new TenantContextService();
+
+    service.run(
+      { organizationId: null, userId: 'user-1', actorType: 'Employee', correlationId: 'corr-1' },
+      () => {
+        expect(service.getActorType()).toBe('Employee');
+      },
+    );
+
+    expect(service.getActorType()).toBeNull();
+  });
+
+  it('getActorType() returns null when the bound context omits actorType (e.g. bootstrap TenantBootstrapContext)', () => {
+    const service = new TenantContextService();
+
+    service.run({ organizationId: 'org-1', userId: null, correlationId: 'corr-1' }, () => {
+      expect(service.getActorType()).toBeNull();
+    });
+  });
+
   it('supports nested run() calls, restoring the outer context afterward', () => {
     const service = new TenantContextService();
 

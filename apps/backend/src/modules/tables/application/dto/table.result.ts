@@ -19,6 +19,7 @@ export interface TableResult {
   smoking: boolean;
   status: TableStatus;
   mergeGroupId: string | null;
+  isMergePrimary: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

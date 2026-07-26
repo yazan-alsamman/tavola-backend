@@ -73,6 +73,13 @@ describe('/api/v1/reservations (e2e, Phase 7.4 Phone/WalkIn)', () => {
       await prisma.reservation.deleteMany({
         where: { restaurant: { slug: { startsWith: TEST_PREFIX } } },
       });
+      // A phone/walk-in ReservationGuest may also be referenced by a
+      // ReservationWaitlistEntry (Phase 7.5) created by another suite sharing
+      // this same live Postgres instance - clear that reference first so the
+      // guest delete below never trips its FK constraint.
+      await prisma.reservationWaitlistEntry.deleteMany({
+        where: { reservationGuest: { phone: { startsWith: '+963' } } },
+      });
       await prisma.reservationGuest.deleteMany({ where: { phone: { startsWith: '+963' } } });
       await prisma.employeeBranchAssignment.deleteMany({
         where: { employee: { restaurant: { slug: { startsWith: TEST_PREFIX } } } },
@@ -212,9 +219,7 @@ describe('/api/v1/reservations (e2e, Phase 7.4 Phone/WalkIn)', () => {
     if (!dbAvailable) return;
 
     const owner = await registerAndLoginOwner('phone-owner');
-    const { restaurantId, branchId, tableId } = await setUpRestaurantBranchTable(
-      owner.accessToken,
-    );
+    const { restaurantId, branchId, tableId } = await setUpRestaurantBranchTable(owner.accessToken);
     const employee = await inviteAndLoginEmployee(owner.accessToken, restaurantId, managerRoleId, [
       branchId,
     ]);
@@ -261,9 +266,7 @@ describe('/api/v1/reservations (e2e, Phase 7.4 Phone/WalkIn)', () => {
     if (!dbAvailable) return;
 
     const owner = await registerAndLoginOwner('walkin-owner');
-    const { restaurantId, branchId, tableId } = await setUpRestaurantBranchTable(
-      owner.accessToken,
-    );
+    const { restaurantId, branchId, tableId } = await setUpRestaurantBranchTable(owner.accessToken);
     const employee = await inviteAndLoginEmployee(owner.accessToken, restaurantId, managerRoleId, [
       branchId,
     ]);
@@ -313,9 +316,7 @@ describe('/api/v1/reservations (e2e, Phase 7.4 Phone/WalkIn)', () => {
     if (!dbAvailable) return;
 
     const owner = await registerAndLoginOwner('no-perm-owner');
-    const { restaurantId, branchId, tableId } = await setUpRestaurantBranchTable(
-      owner.accessToken,
-    );
+    const { restaurantId, branchId, tableId } = await setUpRestaurantBranchTable(owner.accessToken);
     const employee = await inviteAndLoginEmployee(
       owner.accessToken,
       restaurantId,
@@ -343,9 +344,7 @@ describe('/api/v1/reservations (e2e, Phase 7.4 Phone/WalkIn)', () => {
     if (!dbAvailable) return;
 
     const owner = await registerAndLoginOwner('scope-owner');
-    const { restaurantId, branchId, tableId } = await setUpRestaurantBranchTable(
-      owner.accessToken,
-    );
+    const { restaurantId, branchId, tableId } = await setUpRestaurantBranchTable(owner.accessToken);
     // A second branch under the same restaurant - the Employee is scoped to
     // this one, not the one the reservation targets.
     const branchResponse = await request(app!.getHttpServer())
@@ -379,9 +378,7 @@ describe('/api/v1/reservations (e2e, Phase 7.4 Phone/WalkIn)', () => {
     if (!dbAvailable) return;
 
     const owner = await registerAndLoginOwner('no-guest-owner');
-    const { restaurantId, branchId, tableId } = await setUpRestaurantBranchTable(
-      owner.accessToken,
-    );
+    const { restaurantId, branchId, tableId } = await setUpRestaurantBranchTable(owner.accessToken);
     const employee = await inviteAndLoginEmployee(owner.accessToken, restaurantId, managerRoleId, [
       branchId,
     ]);
@@ -405,9 +402,7 @@ describe('/api/v1/reservations (e2e, Phase 7.4 Phone/WalkIn)', () => {
     if (!dbAvailable) return;
 
     const owner = await registerAndLoginOwner('bad-phone-owner');
-    const { restaurantId, branchId, tableId } = await setUpRestaurantBranchTable(
-      owner.accessToken,
-    );
+    const { restaurantId, branchId, tableId } = await setUpRestaurantBranchTable(owner.accessToken);
     const employee = await inviteAndLoginEmployee(owner.accessToken, restaurantId, managerRoleId, [
       branchId,
     ]);
@@ -432,9 +427,7 @@ describe('/api/v1/reservations (e2e, Phase 7.4 Phone/WalkIn)', () => {
     if (!dbAvailable) return;
 
     const owner = await registerAndLoginOwner('self-book-owner');
-    const { restaurantId, branchId, tableId } = await setUpRestaurantBranchTable(
-      owner.accessToken,
-    );
+    const { restaurantId, branchId, tableId } = await setUpRestaurantBranchTable(owner.accessToken);
     // Deliberately NOT assigned to this branch, and holding the no-permission
     // role - Online self-booking must not be gated by either.
     const employee = await inviteAndLoginEmployee(
@@ -462,9 +455,11 @@ describe('/api/v1/reservations (e2e, Phase 7.4 Phone/WalkIn)', () => {
     if (!dbAvailable) return;
 
     const ownerA = await registerAndLoginOwner('idor-a');
-    const { restaurantId: restaurantA, branchId: branchA, tableId } = await setUpRestaurantBranchTable(
-      ownerA.accessToken,
-    );
+    const {
+      restaurantId: restaurantA,
+      branchId: branchA,
+      tableId,
+    } = await setUpRestaurantBranchTable(ownerA.accessToken);
     const employee = await inviteAndLoginEmployee(ownerA.accessToken, restaurantA, managerRoleId, [
       branchA,
     ]);

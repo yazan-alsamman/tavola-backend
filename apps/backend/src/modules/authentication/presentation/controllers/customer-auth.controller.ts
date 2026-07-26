@@ -1,9 +1,22 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Inject,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiExtraModels, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { ResponseMessage } from '@common/decorators/response-message.decorator';
 import { ApiErrorResponse } from '@common/decorators/api-error-response.decorator';
 import { ErrorResponseDto } from '@common/dto/error-response.dto';
+import {
+  ONESIGNAL_IDENTITY_TOKEN_SIGNER,
+  OneSignalIdentityTokenSigner,
+} from '@shared/application/ports/onesignal-identity-token-signer.port';
 import { StartCustomerRegistrationUseCase } from '../../application/use-cases/start-customer-registration.use-case';
 import { ResendCustomerRegistrationUseCase } from '../../application/use-cases/resend-customer-registration.use-case';
 import { VerifyCustomerRegistrationUseCase } from '../../application/use-cases/verify-customer-registration.use-case';
@@ -51,6 +64,8 @@ export class CustomerAuthController {
     private readonly resendCustomerPasswordResetUseCase: ResendCustomerPasswordResetUseCase,
     private readonly verifyCustomerPasswordResetUseCase: VerifyCustomerPasswordResetUseCase,
     private readonly completeCustomerPasswordResetUseCase: CompleteCustomerPasswordResetUseCase,
+    @Inject(ONESIGNAL_IDENTITY_TOKEN_SIGNER)
+    private readonly onesignalIdentityTokenSigner: OneSignalIdentityTokenSigner,
   ) {}
 
   @Post('register/start')
@@ -307,6 +322,7 @@ export class CustomerAuthController {
       sessionVersion: result.sessionVersion,
       permissionsVersion: result.permissionsVersion,
       actorType: result.actorType,
+      onesignalIdentityToken: this.onesignalIdentityTokenSigner.sign(result.user.userId),
     };
   }
 }

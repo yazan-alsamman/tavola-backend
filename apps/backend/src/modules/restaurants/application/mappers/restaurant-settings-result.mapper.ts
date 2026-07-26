@@ -12,6 +12,8 @@ export function toRestaurantSettingsResult(settings: RestaurantSettings): Restau
     autoApproval: settings.autoApproval,
     timezone: settings.timezone,
     defaultCurrency: settings.defaultCurrency,
+    reservationReminderMinutesBefore: settings.reservationReminderMinutesBefore,
+    lateArrivalGraceMinutes: settings.lateArrivalGraceMinutes,
     createdAt: settings.createdAt,
     updatedAt: settings.updatedAt,
   };

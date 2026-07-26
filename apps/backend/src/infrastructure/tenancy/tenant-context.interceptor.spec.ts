@@ -148,6 +148,38 @@ describe('TenantContextInterceptor', () => {
     expect(observed).toMatchObject({ organizationId: null });
   });
 
+  it('binds actorType from the authenticated actor (Phase 8 audit-hygiene fix)', async () => {
+    const tenantContextService = new TenantContextService();
+    const interceptor = new TenantContextInterceptor(tenantContextService);
+    let observed: unknown;
+
+    const request: Record<string, unknown> = { headers: {} };
+    request[AUTHENTICATED_ACTOR_KEY] = currentActor;
+    const context = createExecutionContext(request);
+    const handler = createCallHandler(() => {
+      observed = tenantContextService.getContext();
+    });
+
+    await run(interceptor.intercept(context, handler));
+
+    expect(observed).toMatchObject({ actorType: AccessTokenActorType.User });
+  });
+
+  it('binds actorType: null for public (unauthenticated) routes', async () => {
+    const tenantContextService = new TenantContextService();
+    const interceptor = new TenantContextInterceptor(tenantContextService);
+    let observed: unknown;
+
+    const context = createExecutionContext({ headers: {} });
+    const handler = createCallHandler(() => {
+      observed = tenantContextService.getContext();
+    });
+
+    await run(interceptor.intercept(context, handler));
+
+    expect(observed).toMatchObject({ actorType: null });
+  });
+
   it('uses a safe client-supplied correlation id when present', async () => {
     const tenantContextService = new TenantContextService();
     const interceptor = new TenantContextInterceptor(tenantContextService);

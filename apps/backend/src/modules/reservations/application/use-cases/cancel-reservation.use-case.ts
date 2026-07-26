@@ -1,4 +1,4 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import { ClockPort } from '@shared/application/ports/clock.port';
 import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
 import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
@@ -41,6 +41,11 @@ import {
   ReservationExpirationSchedulerPort,
   RESERVATION_EXPIRATION_SCHEDULER,
 } from '../ports/reservation-expiration-scheduler.port';
+import {
+  WaitlistRecheckSchedulerPort,
+  WAITLIST_RECHECK_SCHEDULER,
+} from '../ports/waitlist-recheck-scheduler.port';
+import { ScheduleApprovedReservationSignalsService } from '../services/schedule-approved-reservation-signals.service';
 import { toReservationResult } from '../mappers/reservation-result.mapper';
 import { CancelReservationCommand } from '../dto/cancel-reservation.command';
 import { ReservationResult } from '../dto/reservation.result';
@@ -60,6 +65,8 @@ import { ReservationResult } from '../dto/reservation.result';
  */
 @Injectable()
 export class CancelReservationUseCase {
+  private readonly logger = new Logger(CancelReservationUseCase.name);
+
   constructor(
     @Inject(RESERVATION_REPOSITORY) private readonly reservationRepository: ReservationRepository,
     @Inject(RESERVATION_HISTORY_REPOSITORY)
@@ -73,6 +80,9 @@ export class CancelReservationUseCase {
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
     @Inject(RESERVATION_EXPIRATION_SCHEDULER)
     private readonly expirationScheduler: ReservationExpirationSchedulerPort,
+    @Inject(WAITLIST_RECHECK_SCHEDULER)
+    private readonly waitlistRecheckScheduler: WaitlistRecheckSchedulerPort,
+    private readonly scheduleApprovedReservationSignals: ScheduleApprovedReservationSignalsService,
   ) {}
 
   async execute(command: CancelReservationCommand): Promise<ReservationResult> {
@@ -140,6 +150,34 @@ export class CancelReservationUseCase {
     if (sourceStatus === ReservationStatus.Pending) {
       // Phase 7.3: no longer Pending - cancel its expiration job.
       await this.expirationScheduler.cancelExpiration(reservationId.value);
+    }
+
+    if (sourceStatus === ReservationStatus.Approved) {
+      // Phase 7.6 (Operational Signals, ADR-019): left Approved before
+      // either signal fired - cancel both the Reminder and Late-Arrival jobs.
+      await this.scheduleApprovedReservationSignals.cancelForReservation(reservationId.value);
+    }
+
+    if (sourceStatus === ReservationStatus.Approved) {
+      // Phase 7.5 (Blocker B resolution, corrected trigger set): only
+      // Approved -> Cancelled actually released a Table (Table.release()
+      // above) - Pending -> Cancelled never held one, so it never triggers a
+      // re-check. Best-effort relative to this Cancel: an enqueue failure is
+      // logged, never thrown - the cancellation itself has already
+      // committed and must not depend on this succeeding.
+      try {
+        await this.waitlistRecheckScheduler.enqueueRecheck(
+          existing.branchId.value,
+          existing.reservationDate,
+          null,
+          command.correlationId,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to enqueue waitlist re-check for branch "${existing.branchId.value}": ${(error as Error).message}`,
+          (error as Error).stack,
+        );
+      }
     }
 
     await this.eventPublisher.publish(

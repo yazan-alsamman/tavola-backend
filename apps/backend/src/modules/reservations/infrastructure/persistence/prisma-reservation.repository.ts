@@ -62,6 +62,26 @@ export class PrismaReservationRepository implements ReservationRepository {
     return rows.map((row) => ReservationPrismaMapper.toDomain(row));
   }
 
+  async findOverlappingPendingOrApprovedForTables(
+    tableIds: TableId[],
+    startTime: Date,
+    endTime: Date,
+  ): Promise<Reservation[]> {
+    if (tableIds.length === 0) {
+      return [];
+    }
+    const rows = await this.prismaContext.client.reservation.findMany({
+      where: {
+        tableId: { in: tableIds.map((id) => id.value) },
+        status: { in: [ReservationStatus.Pending, ReservationStatus.Approved] },
+        reservationStartTime: { lt: endTime },
+        reservationEndTime: { gt: startTime },
+      },
+    });
+
+    return rows.map((row) => ReservationPrismaMapper.toDomain(row));
+  }
+
   /**
    * ADR-013: acquires `pg_advisory_xact_lock(hashtextextended(lockKey, 0))`,
    * re-checks for an overlapping confirmed reservation, then inserts - all
@@ -184,6 +204,8 @@ export class PrismaReservationRepository implements ReservationRepository {
           cancelledAt: data.cancelledAt,
           completedAt: data.completedAt,
           noShowAt: data.noShowAt,
+          lateArrivalNotifiedAt: data.lateArrivalNotifiedAt,
+          tableReadyNotifiedAt: data.tableReadyNotifiedAt,
           updatedAt: data.updatedAt,
         },
       });
@@ -194,5 +216,32 @@ export class PrismaReservationRepository implements ReservationRepository {
       }
       throw error;
     }
+  }
+
+  async markLateArrivalNotifiedIfEligible(id: ReservationId, at: Date): Promise<boolean> {
+    const result = await this.prismaContext.client.reservation.updateMany({
+      where: { id: id.value, status: ReservationStatus.Approved, lateArrivalNotifiedAt: null },
+      data: { lateArrivalNotifiedAt: at, updatedAt: at },
+    });
+    return result.count > 0;
+  }
+
+  async markTableReadyNotifiedIfEligible(id: ReservationId, at: Date): Promise<boolean> {
+    const result = await this.prismaContext.client.reservation.updateMany({
+      where: { id: id.value, status: ReservationStatus.Approved, tableReadyNotifiedAt: null },
+      data: { tableReadyNotifiedAt: at, updatedAt: at },
+    });
+    return result.count > 0;
+  }
+
+  async hasBlockingReservation(tableId: TableId, now: Date): Promise<boolean> {
+    const count = await this.prismaContext.client.reservation.count({
+      where: {
+        tableId: tableId.value,
+        status: { in: [ReservationStatus.Pending, ReservationStatus.Approved] },
+        reservationEndTime: { gt: now },
+      },
+    });
+    return count > 0;
   }
 }

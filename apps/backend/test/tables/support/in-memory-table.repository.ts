@@ -1,5 +1,7 @@
 import { Table } from '@modules/tables/domain/entities/table.entity';
 import { TableStatus } from '@modules/tables/domain/enums/table.enums';
+import { TableMergeService } from '@modules/tables/domain/services/table-merge.service';
+import { TableTopologyLockService } from '@modules/tables/domain/services/table-topology-lock.service';
 import {
   TableListPage,
   TableRepository,
@@ -8,6 +10,7 @@ import { BranchId, FloorPlanId, TableId } from '@shared/domain/value-objects/ide
 
 export class InMemoryTableRepository implements TableRepository {
   private readonly rows = new Map<string, Table>();
+  public readonly acquiredLockKeys: string[] = [];
 
   async findById(id: TableId): Promise<Table | null> {
     const table = this.rows.get(id.value);
@@ -53,15 +56,27 @@ export class InMemoryTableRepository implements TableRepository {
     branchId: BranchId,
     minCapacity: number,
   ): Promise<Table[]> {
-    return [...this.rows.values()]
-      .filter(
-        (row) =>
-          row.branchId.value === branchId.value &&
-          !row.isSoftDeleted() &&
-          row.status === TableStatus.Available &&
-          row.capacity >= minCapacity,
-      )
-      .sort((a, b) => a.tableNumber.localeCompare(b.tableNumber));
+    const candidates = [...this.rows.values()].filter(
+      (row) =>
+        row.branchId.value === branchId.value &&
+        !row.isSoftDeleted() &&
+        row.status === TableStatus.Available,
+    );
+
+    const eligible: Table[] = [];
+    for (const table of candidates) {
+      if (table.mergeGroupId === null) {
+        if (table.capacity >= minCapacity) {
+          eligible.push(table);
+        }
+        continue;
+      }
+      const members = await this.findManyByMergeGroupId(table.mergeGroupId);
+      if (TableMergeService.computeEffectiveCapacity(members) >= minCapacity) {
+        eligible.push(table);
+      }
+    }
+    return eligible.sort((a, b) => a.tableNumber.localeCompare(b.tableNumber));
   }
 
   async existsByBranchIdAndTableNumber(
@@ -79,6 +94,28 @@ export class InMemoryTableRepository implements TableRepository {
 
   async save(table: Table): Promise<void> {
     this.rows.set(table.tableId.value, table);
+  }
+
+  async findManyByIds(ids: TableId[]): Promise<Table[]> {
+    return ids
+      .map((id) => this.rows.get(id.value))
+      .filter((row): row is Table => row !== undefined && !row.isSoftDeleted());
+  }
+
+  async findManyByMergeGroupId(mergeGroupId: string): Promise<Table[]> {
+    return [...this.rows.values()].filter(
+      (row) => row.mergeGroupId === mergeGroupId && !row.isSoftDeleted(),
+    );
+  }
+
+  async acquireTopologyLocks(tableIds: string[]): Promise<void> {
+    this.acquiredLockKeys.push(...TableTopologyLockService.deriveLockKeysInOrder(tableIds));
+  }
+
+  async saveMany(tables: Table[]): Promise<void> {
+    for (const table of tables) {
+      await this.save(table);
+    }
   }
 
   async softDeleteAllForBranch(branchId: BranchId, at: Date): Promise<void> {

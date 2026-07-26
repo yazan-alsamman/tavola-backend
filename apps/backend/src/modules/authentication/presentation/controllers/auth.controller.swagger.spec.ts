@@ -14,6 +14,7 @@ import { RevokeSessionUseCase } from '../../application/use-cases/revoke-session
 import { ForgotPasswordUseCase } from '../../application/use-cases/forgot-password.use-case';
 import { ResetPasswordUseCase } from '../../application/use-cases/reset-password.use-case';
 import { ChangePasswordUseCase } from '../../application/use-cases/change-password.use-case';
+import { ONESIGNAL_IDENTITY_TOKEN_SIGNER } from '@shared/application/ports/onesignal-identity-token-signer.port';
 
 /**
  * Boots only AuthController against the real @nestjs/swagger document
@@ -52,6 +53,10 @@ describe('AuthController Swagger document', () => {
         { provide: ForgotPasswordUseCase, useValue: {} },
         { provide: ResetPasswordUseCase, useValue: {} },
         { provide: ChangePasswordUseCase, useValue: {} },
+        {
+          provide: ONESIGNAL_IDENTITY_TOKEN_SIGNER,
+          useValue: { sign: () => null, getExpirySeconds: () => 3600 },
+        },
       ],
     })
       .overrideGuard(JwtAuthGuard)

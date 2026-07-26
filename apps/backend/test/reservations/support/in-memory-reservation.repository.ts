@@ -31,6 +31,20 @@ export class InMemoryReservationRepository implements ReservationRepository {
     );
   }
 
+  async findOverlappingPendingOrApprovedForTables(
+    tableIds: TableId[],
+    startTime: Date,
+    endTime: Date,
+  ): Promise<Reservation[]> {
+    const ids = new Set(tableIds.map((id) => id.value));
+    return [...this.rows.values()].filter(
+      (row) =>
+        ids.has(row.tableId.value) &&
+        (row.status === ReservationStatus.Pending || row.status === ReservationStatus.Approved) &&
+        overlaps(row.reservationStartTime, row.reservationEndTime, startTime, endTime),
+    );
+  }
+
   async createWithLock(reservation: Reservation, lockKey: string): Promise<void> {
     await this.createWithLockInTransaction(reservation, lockKey);
   }
@@ -124,6 +138,47 @@ export class InMemoryReservationRepository implements ReservationRepository {
     }
     this.rows.set(reservation.reservationId.value, reservation);
     return true;
+  }
+
+  async markLateArrivalNotifiedIfEligible(id: ReservationId, at: Date): Promise<boolean> {
+    const current = this.rows.get(id.value);
+    if (
+      !current ||
+      current.status !== ReservationStatus.Approved ||
+      current.lateArrivalNotifiedAt !== null
+    ) {
+      return false;
+    }
+    this.rows.set(
+      id.value,
+      Reservation.reconstitute({ ...current.toProps(), lateArrivalNotifiedAt: at, updatedAt: at }),
+    );
+    return true;
+  }
+
+  async markTableReadyNotifiedIfEligible(id: ReservationId, at: Date): Promise<boolean> {
+    const current = this.rows.get(id.value);
+    if (
+      !current ||
+      current.status !== ReservationStatus.Approved ||
+      current.tableReadyNotifiedAt !== null
+    ) {
+      return false;
+    }
+    this.rows.set(
+      id.value,
+      Reservation.reconstitute({ ...current.toProps(), tableReadyNotifiedAt: at, updatedAt: at }),
+    );
+    return true;
+  }
+
+  async hasBlockingReservation(tableId: TableId, now: Date): Promise<boolean> {
+    return [...this.rows.values()].some(
+      (row) =>
+        row.tableId.value === tableId.value &&
+        (row.status === ReservationStatus.Pending || row.status === ReservationStatus.Approved) &&
+        row.reservationEndTime.getTime() > now.getTime(),
+    );
   }
 
   /** Test-only helper: seeds a row directly, bypassing createWithLock's conflict check. */

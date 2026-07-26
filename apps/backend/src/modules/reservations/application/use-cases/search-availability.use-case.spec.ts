@@ -6,6 +6,7 @@ import { TableShape, TableStatus } from '@modules/tables/domain/enums/table.enum
 import { RestaurantSettings } from '@modules/restaurants/domain/entities/restaurant-settings.entity';
 import { Reservation } from '@modules/reservations/domain/entities/reservation.entity';
 import { ReservationSource } from '@modules/reservations/domain/enums/reservation.enums';
+import { BranchId, TableId } from '@shared/domain/value-objects/identifiers.vo';
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
 import { InMemoryTableRepository } from '../../../../../test/tables/support/in-memory-table.repository';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
@@ -72,6 +73,7 @@ describe('SearchAvailabilityUseCase', () => {
         smoking: false,
         status,
         mergeGroupId: null,
+        isMergePrimary: false,
         createdAt: fixedNow,
         updatedAt: fixedNow,
         deletedAt: null,
@@ -89,7 +91,7 @@ describe('SearchAvailabilityUseCase', () => {
       restaurantSettingsRepository,
     );
 
-    return { useCase, reservationRepository };
+    return { useCase, reservationRepository, tableRepository };
   }
 
   it('returns only Available-status tables with sufficient capacity', async () => {
@@ -151,6 +153,62 @@ describe('SearchAvailabilityUseCase', () => {
 
     // Both the 4-capacity and 2-capacity tables qualify for partySize 2.
     expect(results).toHaveLength(2);
+  });
+
+  it("reports the merge group effectiveCapacity (not the Primary's own capacity column) for a merged Primary table", async () => {
+    const { useCase, tableRepository } = await build();
+    const mergeGroupId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const secondaryTableId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    await tableRepository.save(
+      Table.create({
+        id: secondaryTableId,
+        branchId,
+        floorPlanId: '99999999-9999-4999-8999-999999999999',
+        tableNumber: 'S001',
+        capacity: 4,
+        floor: null,
+        positionX: null,
+        positionY: null,
+        width: null,
+        height: null,
+        rotation: null,
+        shape: TableShape.Rectangle,
+        layer: null,
+        indoor: true,
+        vip: false,
+        smoking: false,
+        status: TableStatus.Available,
+        mergeGroupId: null,
+        isMergePrimary: false,
+        createdAt: fixedNow,
+        updatedAt: fixedNow,
+        deletedAt: null,
+      }),
+    );
+    const primary = await tableRepository.findByIdAndBranchId(
+      TableId.create(availableTableId),
+      BranchId.create(branchId),
+    );
+    const secondary = await tableRepository.findByIdAndBranchId(
+      TableId.create(secondaryTableId),
+      BranchId.create(branchId),
+    );
+    await tableRepository.save(primary!.asMergePrimary(mergeGroupId, fixedNow));
+    await tableRepository.save(secondary!.asMergeSecondary(mergeGroupId, fixedNow));
+
+    // partySize 6 exceeds the Primary's own capacity column (4) but fits
+    // the merge group's effectiveCapacity (4 + 4 = 8) - `capacity` in the
+    // response must reflect that sum, matching why this table was even
+    // eligible to be returned at all.
+    const results = await useCase.execute({
+      branchId,
+      reservationStartTime: '2026-08-01T18:00:00.000Z',
+      partySize: 6,
+    });
+
+    const primaryResult = results.find((r) => r.tableId === availableTableId);
+    expect(primaryResult).toBeDefined();
+    expect(primaryResult?.capacity).toBe(8);
   });
 
   it('throws BranchNotFoundException for an unknown branch', async () => {

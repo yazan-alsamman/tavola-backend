@@ -28,6 +28,12 @@ export class RestaurantSettingsResponseDto {
   @ApiPropertyOptional({ example: null, nullable: true })
   defaultCurrency!: string | null;
 
+  @ApiProperty({ example: 60, minimum: 1, maximum: 10080 })
+  reservationReminderMinutesBefore!: number;
+
+  @ApiProperty({ example: 15, minimum: 1, maximum: 1440 })
+  lateArrivalGraceMinutes!: number;
+
   @ApiProperty({ example: '2026-07-16T12:00:00.000Z' })
   createdAt!: string;
 

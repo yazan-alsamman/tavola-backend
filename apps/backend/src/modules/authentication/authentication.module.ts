@@ -59,7 +59,6 @@ import {
   AUTH_REFRESH_POLICY,
   CLOCK,
   DEVICE_SESSION_REPOSITORY,
-  EVENT_PUBLISHER,
   ID_GENERATOR,
   LOGIN_ATTEMPT_REPOSITORY,
   OPAQUE_TOKEN_SERVICE,
@@ -83,6 +82,17 @@ import {
  * `PrismaEmailVerificationRepository`/`EMAIL_VERIFICATION_REPOSITORY` and
  * `RegisterOrganizationOwnerUseCase`/`VerifyEmailUseCase` are RETIRED - no
  * surviving actor requires them. See `DECISIONS.md` ADR-022.
+ *
+ * Phase 8 (WebSocket, architecture frozen 2026-07-24): this module no longer
+ * binds the `EVENT_PUBLISHER` token itself. `RealtimeModule` (`@Global()`)
+ * now owns that binding - `RealtimeEventPublisher` wrapping this module's own
+ * `AuditingEventPublisher` (still built and exported here unchanged) as the
+ * outermost decorator. Every existing `@Inject(EVENT_PUBLISHER)` call site
+ * across the codebase is unaffected: `RealtimeModule` being global makes the
+ * token ambiently available without any feature module adding it to its own
+ * `imports`, which also avoids a circular dependency this module would
+ * otherwise have on `RealtimeModule` (which itself needs Reservations/
+ * Branches/Restaurants repositories that transitively import this module).
  */
 @Module({
   imports: [PrismaModule, AuthorizationModule, OrganizationsModule],
@@ -172,7 +182,6 @@ import {
     { provide: SYSTEM_CONFIGURATION, useExisting: PrismaSystemConfiguration },
     { provide: UNIT_OF_WORK, useExisting: PrismaUnitOfWork },
     { provide: CLOCK, useExisting: SystemClock },
-    { provide: EVENT_PUBLISHER, useExisting: AuditingEventPublisher },
     { provide: ID_GENERATOR, useExisting: UuidIdGenerator },
     { provide: AUTH_TOKEN_TTL, useExisting: NestAuthTokenTtl },
     { provide: AUTH_REFRESH_POLICY, useExisting: NestAuthRefreshPolicy },
@@ -194,7 +203,6 @@ import {
     SYSTEM_CONFIGURATION,
     UNIT_OF_WORK,
     CLOCK,
-    EVENT_PUBLISHER,
     ID_GENERATOR,
     AUTH_TOKEN_TTL,
     AUTH_REFRESH_POLICY,
@@ -205,6 +213,12 @@ import {
     JwtAuthGuard,
     SessionVersionGuard,
     RateLimitGuard,
+    // Phase 8 (WebSocket): AuditingEventPublisher (the class itself, not just
+    // the EVENT_PUBLISHER token it used to be bound to here) is exported so
+    // RealtimeModule can @Inject(AuditingEventPublisher) it directly as the
+    // inner publisher RealtimeEventPublisher wraps - see RealtimeModule's own
+    // doc comment for why EVENT_PUBLISHER's binding moved out of this module.
+    AuditingEventPublisher,
     LoginUseCase,
     RefreshSessionUseCase,
     LogoutCurrentSessionUseCase,

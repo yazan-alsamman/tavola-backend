@@ -19,6 +19,9 @@ import {
 import { InMemoryTableRepository } from '../../../../../test/tables/support/in-memory-table.repository';
 import { InMemoryReservationRepository } from '../../../../../test/reservations/support/in-memory-reservation.repository';
 import { InMemoryReservationHistoryRepository } from '../../../../../test/reservations/support/in-memory-reservation-history.repository';
+import { InMemoryApprovedReservationOperationalScheduler } from '../../../../../test/reservations/support/in-memory-approved-reservation-operational-scheduler';
+import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
+import { ScheduleApprovedReservationSignalsService } from '../services/schedule-approved-reservation-signals.service';
 
 describe('CompleteReservationUseCase', () => {
   const fixedNow = new Date('2026-08-01T10:00:00.000Z');
@@ -94,6 +97,7 @@ describe('CompleteReservationUseCase', () => {
         smoking: false,
         status: TableStatus.Reserved,
         mergeGroupId: null,
+        isMergePrimary: false,
         createdAt: fixedNow,
         updatedAt: fixedNow,
         deletedAt: null,
@@ -101,6 +105,12 @@ describe('CompleteReservationUseCase', () => {
     );
 
     const eventPublisher = new CollectingEventPublisher();
+    const restaurantSettingsRepository = new InMemoryRestaurantSettingsRepository();
+    const operationalScheduler = new InMemoryApprovedReservationOperationalScheduler();
+    const scheduleApprovedReservationSignals = new ScheduleApprovedReservationSignalsService(
+      operationalScheduler,
+      restaurantSettingsRepository,
+    );
     const useCase = new CompleteReservationUseCase(
       reservationRepository,
       reservationHistoryRepository,
@@ -112,6 +122,7 @@ describe('CompleteReservationUseCase', () => {
       ]),
       eventPublisher,
       new ImmediateUnitOfWork(),
+      scheduleApprovedReservationSignals,
     );
 
     return {
@@ -120,6 +131,7 @@ describe('CompleteReservationUseCase', () => {
       reservationHistoryRepository,
       tableRepository,
       eventPublisher,
+      operationalScheduler,
     };
   }
 

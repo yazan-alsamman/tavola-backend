@@ -176,6 +176,8 @@ Tables
 
 Reservations
 
+Realtime (Phase 8 — WebSocket fan-out; `@Global()`, owns the Socket.IO gateway, handshake authentication, room authorization, event→room mapping/projection, and the `RealtimeEventPublisher`/`RealtimeBroadcasterPort` pair; see "Realtime Architecture" below and ADR-015)
+
 Reviews
 
 Menus
@@ -269,26 +271,46 @@ Realtime communication is event-driven.
 
 Socket.IO runs behind the Redis Adapter (`@socket.io/redis-adapter`) so that broadcasts propagate correctly across every horizontally-scaled, stateless API instance — not only to clients connected to the same process that triggered the event. This is required infrastructure, not an optimization: without it, a REST action handled by instance A would never reach a WebSocket client connected to instance B. See ADR-015 for the full architecture, room-authorization model, and the rationale for choosing Redis pub/sub over a dedicated message broker for this purpose.
 
+Implemented in Phase 8 (2026-07-25) as the `RealtimeModule` (`@Global()`, `src/modules/realtime/`): a single `RealtimeGateway` (Socket.IO connection middleware performs handshake JWT authentication before the `connection` event ever fires, closing a race an `OnGatewayConnection`-based design would otherwise have), `RoomAuthorizationService` (the Customer/Employee/OrganizationMember × organization/restaurant/branch/reservation authorization matrix), and `RealtimeEventPublisher` — the outermost `EVENT_PUBLISHER` decorator (`RealtimeEventPublisher` → `AuditingEventPublisher` → `LoggingEventPublisher`), which maps each already-published domain event through an explicit allow-list/room/projection table and fans it out via `RealtimeBroadcasterPort` (backed by the same Socket.IO server the Redis Adapter connects). Feature modules never import `RealtimeModule` directly — they continue publishing through `EVENT_PUBLISHER` only, which `RealtimeModule` (being global) rebinds ambiently. See TASKS.md's Phase 8 section for the full frozen room/event/authorization matrices and the Implementation & Verification Report for test/Docker/live-verification evidence.
+
 ---
 
 # Notification Architecture
 
-Notification Service
+**Phase 9 pre-implementation architecture decisions frozen 2026-07-25** (`TASKS.md`'s "Phase 9 — Notification System: Pre-implementation architecture decisions") — implemented 2026-07-25, built exactly as frozen.
 
-↓
+```
+Domain event (already committed + published via EVENT_PUBLISHER —
+  e.g. ReservationApproved, ReservationReminderDue, WaitlistEntryPromoted, ...)
+  ↓
+NotificationDispatcher (application-layer; reacts to already-committed events,
+  never mutates business state — same non-mutating posture RealtimeEventPublisher
+  already establishes for Phase 8)
+  ↓
+Resolve NotificationTemplate (event type × recipient User.language × channel)
+  ↓
+Persist Notification row (durable — In-App requirement satisfied here,
+  independent of everything below)
+  ↓
+Enqueue NotificationQueue delivery job (BullMQ, ADR-005) — separate from Phase 7.6's
+  ReminderQueue/LateArrivalQueue, which own scheduling only, never delivery
+  ↓
+NotificationQueue processor → Notification Provider Interface (Anti-Corruption Layer,
+  ADR-007 — application/domain code never calls a specific provider directly)
+  ↓
+OneSignal Provider (current provider; external_id = User.id; ES256 Identity
+  Verification adopted, ADR-025)
+```
 
-Notification Provider Interface
-
-↓
-
-OneSignal Provider
+REST/the database is the source of truth for a Notification's existence and read state; Phase 8's WebSocket fan-out (`NotificationCreated`, broadcast only to the existing `reservation:{id}` room — see EVENTS.md) is an optional, best-effort realtime hint layered on top, never a substitute. No new Socket.IO room type was introduced — Phase 8's frozen four-room contract is unchanged.
 
 Future providers:
 
 * APNs
 * Huawei Push
-* Email
 * SMS
+
+(Email removed from scope — 2026-07-25 product decision; Email is not a planned notification delivery channel.)
 
 The application never depends directly on a specific provider.
 

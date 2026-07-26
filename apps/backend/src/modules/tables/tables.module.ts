@@ -4,6 +4,7 @@ import { AuthenticationModule } from '@modules/authentication/authentication.mod
 import { AuthorizationModule } from '@modules/authorization/authorization.module';
 import { RestaurantsModule } from '@modules/restaurants/restaurants.module';
 import { BranchesModule } from '@modules/branches/branches.module';
+import { ReservationsModule } from '@modules/reservations/reservations.module';
 import { CreateFloorPlanUseCase } from './application/use-cases/create-floor-plan.use-case';
 import { ListFloorPlansUseCase } from './application/use-cases/list-floor-plans.use-case';
 import { ActivateFloorPlanUseCase } from './application/use-cases/activate-floor-plan.use-case';
@@ -12,6 +13,8 @@ import { UpdateTableUseCase } from './application/use-cases/update-table.use-cas
 import { DeleteTableUseCase } from './application/use-cases/delete-table.use-case';
 import { MoveTableUseCase } from './application/use-cases/move-table.use-case';
 import { ChangeTableStatusUseCase } from './application/use-cases/change-table-status.use-case';
+import { MergeTablesUseCase } from './application/use-cases/merge-tables.use-case';
+import { SplitTablesUseCase } from './application/use-cases/split-tables.use-case';
 import { GetTableUseCase } from './application/use-cases/get-table.use-case';
 import { ListTablesByBranchUseCase } from './application/use-cases/list-tables-by-branch.use-case';
 import { ListTablesByFloorPlanUseCase } from './application/use-cases/list-tables-by-floor-plan.use-case';
@@ -48,6 +51,15 @@ import { TableController } from './presentation/controllers/table.controller';
  * `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS` - see
  * `PrismaFloorPlanRepository`/`PrismaTableRepository`'s own doc comments.
  * `AUDIT_LOG_WRITER` is not listed - `AuditModule` is `@Global()`.
+ *
+ * Phase 6 (Merge/Split Tables, ADR-026) adds `MergeTablesUseCase`/
+ * `SplitTablesUseCase`, which need `RESERVATION_REPOSITORY`'s
+ * `hasBlockingReservation` (decision #6) - hence the new `forwardRef(() =>
+ * ReservationsModule)` import. `forwardRef` is required on both sides
+ * (mirroring the pre-existing `BranchesModule` edge above): `ReservationsModule`
+ * already imports `TablesModule` for `TABLE_REPOSITORY`, so this is a
+ * genuine circular dependency between the two feature modules, not a new
+ * architectural pattern.
  */
 @Module({
   imports: [
@@ -55,6 +67,7 @@ import { TableController } from './presentation/controllers/table.controller';
     AuthorizationModule,
     RestaurantsModule,
     forwardRef(() => BranchesModule),
+    forwardRef(() => ReservationsModule),
     PrismaModule,
   ],
   controllers: [FloorPlansController, TablesController, TableController],
@@ -67,6 +80,8 @@ import { TableController } from './presentation/controllers/table.controller';
     DeleteTableUseCase,
     MoveTableUseCase,
     ChangeTableStatusUseCase,
+    MergeTablesUseCase,
+    SplitTablesUseCase,
     GetTableUseCase,
     ListTablesByBranchUseCase,
     ListTablesByFloorPlanUseCase,

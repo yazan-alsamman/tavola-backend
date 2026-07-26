@@ -15,6 +15,8 @@ import {
   TABLE_REPOSITORY,
 } from '@modules/tables/domain/repositories/table.repository';
 import { TableNotFoundException } from '@modules/tables/domain/exceptions/table-not-found.exception';
+import { TableStatus } from '@modules/tables/domain/enums/table.enums';
+import { TableMergeService } from '@modules/tables/domain/services/table-merge.service';
 import {
   RestaurantSettingsRepository,
   RESTAURANT_SETTINGS_REPOSITORY,
@@ -30,6 +32,7 @@ import { InvalidReservationTimeException } from '../../domain/exceptions/invalid
 import { InvalidReservationStatusTransitionException } from '../../domain/exceptions/invalid-reservation-status-transition.exception';
 import { ReservationConflictException } from '../../domain/exceptions/reservation-conflict.exception';
 import { ReservationRescheduleWindowExpiredException } from '../../domain/exceptions/reservation-reschedule-window-expired.exception';
+import { TableUnavailableException } from '../../domain/exceptions/table-unavailable.exception';
 import {
   ReservationRejectedEvent,
   ReservationRescheduledEvent,
@@ -51,6 +54,7 @@ import {
   ReservationExpirationSchedulerPort,
   RESERVATION_EXPIRATION_SCHEDULER,
 } from '../ports/reservation-expiration-scheduler.port';
+import { ScheduleApprovedReservationSignalsService } from '../services/schedule-approved-reservation-signals.service';
 import { toReservationResult } from '../mappers/reservation-result.mapper';
 import { RescheduleReservationCommand } from '../dto/reschedule-reservation.command';
 import { ReservationResult } from '../dto/reservation.result';
@@ -93,6 +97,7 @@ export class RescheduleReservationUseCase {
     @Inject(RESERVATION_EXPIRATION_SCHEDULER)
     private readonly expirationScheduler: ReservationExpirationSchedulerPort,
     private readonly autoRejectOverlappingPendingReservations: AutoRejectOverlappingPendingReservationsService,
+    private readonly scheduleApprovedReservationSignals: ScheduleApprovedReservationSignalsService,
   ) {}
 
   async execute(command: RescheduleReservationCommand): Promise<ReservationResult> {
@@ -145,7 +150,26 @@ export class RescheduleReservationUseCase {
     if (targetTable === null) {
       throw new TableNotFoundException();
     }
+    // Phase 6 (Merge/Split Tables, ADR-026 decision #11): a `Merged`
+    // secondary is never independently reservable/reschedulable-to - only a
+    // merge Primary (which stays `Available`) or an ordinary unmerged table
+    // may be a reschedule target. `CreateReservationUseCase`'s own
+    // `TableStatus.Available` check has no direct analogue here (Reschedule
+    // may legitimately target the reservation's own currently-`Reserved`
+    // table), so this is a narrower, Merged-only guard.
+    if (targetTable.status === TableStatus.Merged) {
+      throw new TableUnavailableException();
+    }
     const tableChanged = targetTable.tableId.value !== existing.tableId.value;
+    // ADR-026 decision #4/#14: same effective-capacity resolution as
+    // `CreateReservationUseCase` - an `Available`/`Reserved` table with a
+    // `mergeGroupId` is necessarily the group's Primary.
+    const targetTableCapacity =
+      targetTable.mergeGroupId !== null
+        ? TableMergeService.computeEffectiveCapacity(
+            await this.tableRepository.findManyByMergeGroupId(targetTable.mergeGroupId),
+          )
+        : targetTable.capacity;
 
     const reservationDate = new Date(
       Date.UTC(
@@ -162,7 +186,7 @@ export class RescheduleReservationUseCase {
       reservationStartTime: targetStartTime,
       reservationEndTime: targetEndTime,
       guests: targetGuests,
-      tableCapacity: targetTable.capacity,
+      tableCapacity: targetTableCapacity,
       now,
     });
 
@@ -180,6 +204,21 @@ export class RescheduleReservationUseCase {
     let autoRejected: Reservation[] = [];
 
     await this.unitOfWork.execute(async () => {
+      // ADR-026 decision #7 "Compatibility with ADR-013/023": topology
+      // locks for every Table this reschedule touches - always the target,
+      // plus the current table too when an Approved reschedule is actually
+      // moving tables (the only case that calls `Table.release()`/
+      // `Table.reserve()` below) - are acquired BEFORE any ADR-023 slot
+      // lock. `acquireTopologyLocks` sorts internally, so passing both ids
+      // unordered here is safe and matches the same
+      // deadlock-avoidance guarantee as the `[firstKey, secondKey]` sort
+      // just below for the slot locks themselves.
+      const touchedTableIds =
+        sourceStatus === ReservationStatus.Approved && tableChanged
+          ? [targetTable.tableId.value, existing.tableId.value]
+          : [targetTable.tableId.value];
+      await this.tableRepository.acquireTopologyLocks(touchedTableIds);
+
       if (sourceStatus === ReservationStatus.Approved && tableChanged) {
         // ADR-023: two lock keys, deterministic sorted order - never
         // caller-dependent - so two concurrent reschedules moving in
@@ -289,6 +328,18 @@ export class RescheduleReservationUseCase {
 
     for (const rejected of autoRejected) {
       await this.expirationScheduler.cancelExpiration(rejected.reservationId.value);
+    }
+
+    if (sourceStatus === ReservationStatus.Approved) {
+      // Phase 7.6 (Operational Signals, ADR-019): the entity already reset
+      // both `lateArrivalNotifiedAt`/`tableReadyNotifiedAt` to null
+      // (`Reservation.reschedule()`) - re-schedule both BullMQ jobs against
+      // the NEW `reservationStartTime`, replacing whatever was scheduled
+      // against the old one.
+      await this.scheduleApprovedReservationSignals.replaceForApproved(
+        rescheduled,
+        command.correlationId,
+      );
     }
 
     await this.eventPublisher.publish(

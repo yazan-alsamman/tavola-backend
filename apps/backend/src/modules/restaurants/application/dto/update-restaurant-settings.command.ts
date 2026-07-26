@@ -13,5 +13,7 @@ export interface UpdateRestaurantSettingsCommand {
   autoApproval: boolean;
   timezone: string;
   defaultCurrency: string | null;
+  reservationReminderMinutesBefore: number;
+  lateArrivalGraceMinutes: number;
   correlationId?: string;
 }

@@ -15,6 +15,8 @@ import Redis from 'ioredis';
  */
 export class RedisIoAdapter extends IoAdapter {
   private adapterConstructor?: ReturnType<typeof createAdapter>;
+  private pubClient?: Redis;
+  private subClient?: Redis;
 
   constructor(app: INestApplicationContext) {
     super(app);
@@ -24,6 +26,8 @@ export class RedisIoAdapter extends IoAdapter {
     const pubClient = new Redis(url, { db });
     const subClient = pubClient.duplicate();
 
+    this.pubClient = pubClient;
+    this.subClient = subClient;
     this.adapterConstructor = createAdapter(pubClient, subClient);
   }
 
@@ -36,5 +40,21 @@ export class RedisIoAdapter extends IoAdapter {
 
     server.adapter(this.adapterConstructor);
     return server;
+  }
+
+  /**
+   * `IoAdapter.close()` only closes the Socket.IO server itself - it has no
+   * awareness of the two dedicated ioredis pub/sub clients this class opens
+   * in `connectToRedis`. Without this override, every graceful shutdown
+   * (SIGTERM during a rolling deploy, or - as discovered during Phase 8 e2e
+   * testing - a test harness calling `app.close()`) leaks two open Redis
+   * connections, which is exactly the kind of dangling handle that keeps a
+   * Jest process alive past its test run ("Jest did not exit one second
+   * after the test run has completed").
+   */
+  async close(server: import('socket.io').Server): Promise<void> {
+    await super.close(server);
+    this.pubClient?.disconnect();
+    this.subClient?.disconnect();
   }
 }

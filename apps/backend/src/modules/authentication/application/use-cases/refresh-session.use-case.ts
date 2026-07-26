@@ -168,6 +168,7 @@ export class RefreshSessionUseCase {
     );
 
     return {
+      userId: user.userId.value,
       accessToken,
       refreshToken: newRefreshToken,
       tokenType: 'Bearer',

@@ -20,6 +20,7 @@ import { SessionAccessDeniedException } from '../../application/exceptions/sessi
 import { UserStatus, DeviceType } from '../../domain/enums/authentication.enums';
 import { AccessTokenActorType } from '../../domain/services/access-token-claims';
 import { AuthenticatedUserActor } from '../../application/dto/authenticated-actor.dto';
+import { ONESIGNAL_IDENTITY_TOKEN_SIGNER } from '@shared/application/ports/onesignal-identity-token-signer.port';
 
 describe('AuthController', () => {
   let controller: AuthController;
@@ -28,6 +29,7 @@ describe('AuthController', () => {
   const logoutCurrentExecute = jest.fn();
   const logoutAllExecute = jest.fn();
   const listSessionsExecute = jest.fn();
+  const onesignalSign = jest.fn().mockReturnValue(null);
   const revokeSessionExecute = jest.fn();
   const forgotPasswordExecute = jest.fn();
   const resetPasswordExecute = jest.fn();
@@ -51,6 +53,7 @@ describe('AuthController', () => {
     forgotPasswordExecute.mockReset();
     resetPasswordExecute.mockReset();
     changePasswordExecute.mockReset();
+    onesignalSign.mockReset().mockReturnValue(null);
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AuthController],
@@ -90,6 +93,10 @@ describe('AuthController', () => {
         {
           provide: ChangePasswordUseCase,
           useValue: { execute: changePasswordExecute },
+        },
+        {
+          provide: ONESIGNAL_IDENTITY_TOKEN_SIGNER,
+          useValue: { sign: onesignalSign, getExpirySeconds: () => 3600 },
         },
       ],
     })
@@ -184,6 +191,7 @@ describe('AuthController', () => {
     const refreshExpires = new Date('2026-08-06T18:00:00.000Z');
     const issuedAt = new Date('2026-07-07T18:00:00.000Z');
     refreshExecute.mockResolvedValue({
+      userId: '11111111-1111-4111-8111-111111111111',
       accessToken: 'jwt-token',
       refreshToken: 'new-refresh-token',
       tokenType: 'Bearer',
@@ -210,10 +218,12 @@ describe('AuthController', () => {
       ipAddress: '203.0.113.44',
       userAgent: 'jest-agent',
     });
+    expect(onesignalSign).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111');
     expect(response.accessTokenExpiresAt).toBe(accessExpires.toISOString());
     expect(response.refreshTokenExpiresAt).toBe(refreshExpires.toISOString());
     expect(response.issuedAt).toBe(issuedAt.toISOString());
     expect(response.serverTime).toBe(issuedAt.toISOString());
+    expect(response.onesignalIdentityToken).toBeNull();
   });
 
   it('propagates refresh application exceptions', async () => {

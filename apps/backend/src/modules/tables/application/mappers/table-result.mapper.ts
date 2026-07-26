@@ -21,6 +21,7 @@ export function toTableResult(table: Table): TableResult {
     smoking: table.smoking,
     status: table.status,
     mergeGroupId: table.mergeGroupId,
+    isMergePrimary: table.isMergePrimary,
     createdAt: table.createdAt,
     updatedAt: table.updatedAt,
   };

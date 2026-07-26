@@ -38,6 +38,7 @@ import {
   ReservationExpirationSchedulerPort,
   RESERVATION_EXPIRATION_SCHEDULER,
 } from '../ports/reservation-expiration-scheduler.port';
+import { ScheduleApprovedReservationSignalsService } from '../services/schedule-approved-reservation-signals.service';
 import { toReservationResult } from '../mappers/reservation-result.mapper';
 import { ApproveReservationCommand } from '../dto/approve-reservation.command';
 import { ReservationResult } from '../dto/reservation.result';
@@ -74,6 +75,7 @@ export class ApproveReservationUseCase {
     @Inject(RESERVATION_EXPIRATION_SCHEDULER)
     private readonly expirationScheduler: ReservationExpirationSchedulerPort,
     private readonly autoRejectOverlappingPendingReservations: AutoRejectOverlappingPendingReservationsService,
+    private readonly scheduleApprovedReservationSignals: ScheduleApprovedReservationSignalsService,
   ) {}
 
   async execute(command: ApproveReservationCommand): Promise<ReservationResult> {
@@ -109,6 +111,12 @@ export class ApproveReservationUseCase {
     let autoRejected: Reservation[] = [];
 
     await this.unitOfWork.execute(async () => {
+      // ADR-026 decision #7 "Compatibility with ADR-013/023": the topology
+      // lock is acquired BEFORE the ADR-013 slot lock, in the same
+      // transaction that will call `Table.reserve()` below - a concurrent
+      // Merge/Split on this table can never race Approve.
+      await this.tableRepository.acquireTopologyLocks([existing.tableId.value]);
+
       // ADR-013 mechanics #1: lock first, then re-check, then write.
       await this.reservationRepository.acquireAdvisoryLock(lockKey);
 
@@ -157,6 +165,14 @@ export class ApproveReservationUseCase {
     // no longer Pending - cancel their expiration jobs (a safe no-op if none
     // exists). External I/O, so only after the transaction has committed.
     await this.expirationScheduler.cancelExpiration(reservationId.value);
+
+    // Phase 7.6 (Operational Signals, ADR-019): the reservation is now
+    // Approved - schedule both the Reminder and Late-Arrival BullMQ jobs.
+    // External I/O, so only after the transaction has committed.
+    await this.scheduleApprovedReservationSignals.scheduleForApproved(
+      approved,
+      command.correlationId,
+    );
 
     await this.eventPublisher.publish(
       new ReservationApprovedEvent(

@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Inject,
   Param,
   ParseUUIDPipe,
   Post,
@@ -42,6 +43,11 @@ import { LoginResult } from '../../application/dto/login.result';
 import { RefreshSessionResult } from '../../application/dto/refresh-session.result';
 import { ChangePasswordResult } from '../../application/dto/change-password.result';
 import { ListActiveSessionsResult } from '../../application/dto/list-active-sessions.dto';
+import { AccessTokenActorType } from '../../domain/services/access-token-claims';
+import {
+  ONESIGNAL_IDENTITY_TOKEN_SIGNER,
+  OneSignalIdentityTokenSigner,
+} from '@shared/application/ports/onesignal-identity-token-signer.port';
 import { CurrentActor } from '../decorators/current-actor.decorator';
 import { RateLimit } from '../decorators/rate-limit.decorator';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
@@ -71,6 +77,8 @@ export class AuthController {
     private readonly forgotPasswordUseCase: ForgotPasswordUseCase,
     private readonly resetPasswordUseCase: ResetPasswordUseCase,
     private readonly changePasswordUseCase: ChangePasswordUseCase,
+    @Inject(ONESIGNAL_IDENTITY_TOKEN_SIGNER)
+    private readonly onesignalIdentityTokenSigner: OneSignalIdentityTokenSigner,
   ) {}
 
   @Post('login')
@@ -378,6 +386,12 @@ export class AuthController {
       actorType: result.actorType,
       issuedAt: result.issuedAt.toISOString(),
       serverTime: result.serverTime.toISOString(),
+      // ADR-025: only Customer (User) actors have a OneSignal push identity
+      // (external_id = User.id). Owner/staff refreshes carry a null token.
+      onesignalIdentityToken:
+        result.actorType === AccessTokenActorType.User
+          ? this.onesignalIdentityTokenSigner.sign(result.userId)
+          : null,
     };
   }
 

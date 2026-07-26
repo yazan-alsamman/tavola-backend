@@ -33,10 +33,11 @@ export class TenantContextInterceptor implements NestInterceptor {
     const headers = request.headers as Record<string, string | string[] | undefined> | undefined;
     const organizationId = extractOrganizationId(actor);
     const userId = extractUserId(actor);
+    const actorType = actor?.actorType ?? null;
     const correlationId = resolveCorrelationId(headers?.['x-correlation-id']);
 
     return new Observable((subscriber) => {
-      this.tenantContextService.run({ organizationId, userId, correlationId }, () => {
+      this.tenantContextService.run({ organizationId, userId, actorType, correlationId }, () => {
         next.handle().subscribe(subscriber);
       });
     });

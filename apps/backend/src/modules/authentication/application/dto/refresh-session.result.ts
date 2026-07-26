@@ -1,6 +1,7 @@
 import { AccessTokenActorType } from '../../domain/services/access-token-claims';
 
 export interface RefreshSessionResult {
+  userId: string;
   accessToken: string;
   refreshToken: string;
   tokenType: 'Bearer';

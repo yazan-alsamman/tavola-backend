@@ -54,6 +54,8 @@ export class UpdateRestaurantSettingsUseCase {
         autoApproval: command.autoApproval,
         timezone: command.timezone,
         defaultCurrency: command.defaultCurrency,
+        reservationReminderMinutesBefore: command.reservationReminderMinutesBefore,
+        lateArrivalGraceMinutes: command.lateArrivalGraceMinutes,
       },
       now,
     );

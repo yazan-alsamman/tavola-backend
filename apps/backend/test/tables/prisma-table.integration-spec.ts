@@ -105,6 +105,7 @@ describe('Table round-trip via PrismaTableRepository (integration)', () => {
       smoking: false,
       status: TableStatus.Available,
       mergeGroupId: null,
+      isMergePrimary: false,
       createdAt: now,
       updatedAt: now,
       deletedAt: null,

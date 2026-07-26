@@ -13,6 +13,8 @@ export interface RestaurantSettingsProps {
   autoApproval: boolean;
   timezone: string;
   defaultCurrency: string | null;
+  reservationReminderMinutesBefore: number;
+  lateArrivalGraceMinutes: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -38,7 +40,10 @@ export class RestaurantSettings extends Entity<RestaurantSettingsProps> {
    * `autoApproval: false` is the safe default - staff review required until
    * the owner explicitly opts into auto-approval; `defaultCurrency: null`
    * since no Country/Currency selection exists yet at restaurant-creation
-   * time - the owner sets it explicitly via PATCH once relevant). */
+   * time - the owner sets it explicitly via PATCH once relevant).
+   * `reservationReminderMinutesBefore`/`lateArrivalGraceMinutes` (Phase 7.6,
+   * ADR-019) default to 60/15 minutes - the same sensible-default reasoning
+   * as `pendingReservationTimeoutMinutes`/`cancellationWindowMinutes`. */
   static createDefault(id: string, restaurantId: string, at: Date): RestaurantSettings {
     return RestaurantSettings.create({
       id,
@@ -51,6 +56,8 @@ export class RestaurantSettings extends Entity<RestaurantSettingsProps> {
       autoApproval: false,
       timezone: 'UTC',
       defaultCurrency: null,
+      reservationReminderMinutesBefore: 60,
+      lateArrivalGraceMinutes: 15,
       createdAt: at,
       updatedAt: at,
     });
@@ -96,6 +103,14 @@ export class RestaurantSettings extends Entity<RestaurantSettingsProps> {
     return this.props.defaultCurrency;
   }
 
+  get reservationReminderMinutesBefore(): number {
+    return this.props.reservationReminderMinutesBefore;
+  }
+
+  get lateArrivalGraceMinutes(): number {
+    return this.props.lateArrivalGraceMinutes;
+  }
+
   get createdAt(): Date {
     return new Date(this.props.createdAt.getTime());
   }
@@ -116,6 +131,8 @@ export class RestaurantSettings extends Entity<RestaurantSettingsProps> {
       autoApproval: boolean;
       timezone: string;
       defaultCurrency: string | null;
+      reservationReminderMinutesBefore: number;
+      lateArrivalGraceMinutes: number;
     },
     at: Date,
   ): RestaurantSettings {
@@ -168,6 +185,19 @@ function validate(props: RestaurantSettingsProps): void {
   if (props.defaultCurrency !== null && !CURRENCY_REGEX.test(props.defaultCurrency)) {
     throw new InvalidRestaurantSettingsException(
       'defaultCurrency must be a three-letter ISO 4217 code.',
+    );
+  }
+  if (
+    props.reservationReminderMinutesBefore < 1 ||
+    props.reservationReminderMinutesBefore > 10080
+  ) {
+    throw new InvalidRestaurantSettingsException(
+      'reservationReminderMinutesBefore must be between 1 and 10080.',
+    );
+  }
+  if (props.lateArrivalGraceMinutes < 1 || props.lateArrivalGraceMinutes > 1440) {
+    throw new InvalidRestaurantSettingsException(
+      'lateArrivalGraceMinutes must be between 1 and 1440.',
     );
   }
 }

@@ -1,4 +1,4 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import { ClockPort } from '@shared/application/ports/clock.port';
 import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
 import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
@@ -29,6 +29,11 @@ import {
   RESERVATION_HISTORY_REPOSITORY,
 } from '../../domain/repositories/reservation-history.repository';
 import { assertEmployeeCanActOnReservation } from '../services/assert-employee-reservation-scope';
+import {
+  WaitlistRecheckSchedulerPort,
+  WAITLIST_RECHECK_SCHEDULER,
+} from '../ports/waitlist-recheck-scheduler.port';
+import { ScheduleApprovedReservationSignalsService } from '../services/schedule-approved-reservation-signals.service';
 import { toReservationResult } from '../mappers/reservation-result.mapper';
 import { MarkNoShowReservationCommand } from '../dto/mark-no-show-reservation.command';
 import { ReservationResult } from '../dto/reservation.result';
@@ -40,10 +45,15 @@ import { ReservationResult } from '../dto/reservation.result';
  * once the reservation's scheduled time has passed (enforced by
  * `Reservation.markNoShow()` itself). Calls `Table.release()` atomically,
  * identically to Complete. No-show customer restriction/counting policy
- * remains a deferred future product decision - out of scope here.
+ * remains a deferred future product decision - out of scope here. Phase 7.5
+ * (Blocker B resolution): a genuine capacity-freeing event, so it also
+ * best-effort-enqueues a Waitlist re-check for the freed Branch after
+ * commit.
  */
 @Injectable()
 export class MarkNoShowReservationUseCase {
+  private readonly logger = new Logger(MarkNoShowReservationUseCase.name);
+
   constructor(
     @Inject(RESERVATION_REPOSITORY) private readonly reservationRepository: ReservationRepository,
     @Inject(RESERVATION_HISTORY_REPOSITORY)
@@ -53,6 +63,9 @@ export class MarkNoShowReservationUseCase {
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
+    @Inject(WAITLIST_RECHECK_SCHEDULER)
+    private readonly waitlistRecheckScheduler: WaitlistRecheckSchedulerPort,
+    private readonly scheduleApprovedReservationSignals: ScheduleApprovedReservationSignalsService,
   ) {}
 
   async execute(command: MarkNoShowReservationCommand): Promise<ReservationResult> {
@@ -103,6 +116,25 @@ export class MarkNoShowReservationUseCase {
         }),
       );
     });
+
+    // Phase 7.6 (Operational Signals, ADR-019): NoShow is only reachable
+    // from Approved, so this always fires - cancels both the Reminder and
+    // Late-Arrival jobs.
+    await this.scheduleApprovedReservationSignals.cancelForReservation(reservationId.value);
+
+    try {
+      await this.waitlistRecheckScheduler.enqueueRecheck(
+        existing.branchId.value,
+        existing.reservationDate,
+        null,
+        command.correlationId,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to enqueue waitlist re-check for branch "${existing.branchId.value}": ${(error as Error).message}`,
+        (error as Error).stack,
+      );
+    }
 
     await this.eventPublisher.publish(
       new ReservationNoShowEvent(

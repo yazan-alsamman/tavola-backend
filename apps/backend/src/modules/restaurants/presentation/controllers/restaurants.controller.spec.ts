@@ -85,6 +85,8 @@ describe('RestaurantsController', () => {
     autoApproval: false,
     timezone: 'UTC',
     defaultCurrency: null,
+    reservationReminderMinutesBefore: 60,
+    lateArrivalGraceMinutes: 15,
     createdAt: new Date('2026-07-16T12:00:00.000Z'),
     updatedAt: new Date('2026-07-16T12:00:00.000Z'),
   };
@@ -412,6 +414,8 @@ describe('RestaurantsController', () => {
       autoApproval: true,
       timezone: 'Europe/Istanbul',
       defaultCurrency: 'TRY',
+      reservationReminderMinutesBefore: 90,
+      lateArrivalGraceMinutes: 20,
     };
 
     it('delegates to the use case with the actor from the JWT, never a client-supplied id', async () => {

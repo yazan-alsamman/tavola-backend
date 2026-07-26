@@ -531,6 +531,8 @@ describe('/api/v1/reservations/:id/approve|reject (e2e, Phase 7.2)', () => {
           autoApproval: true,
           timezone: current.body.data.timezone,
           defaultCurrency: current.body.data.defaultCurrency,
+          reservationReminderMinutesBefore: current.body.data.reservationReminderMinutesBefore,
+          lateArrivalGraceMinutes: current.body.data.lateArrivalGraceMinutes,
         })
         .expect(200);
     }

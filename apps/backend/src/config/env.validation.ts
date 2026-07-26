@@ -118,4 +118,30 @@ export const envValidationSchema = Joi.object({
   LIGHTOTP_API_KEY: Joi.string().allow('').default(''),
   LIGHTOTP_API_URL: Joi.string().uri().default('https://api.lightotp.com/SendMessage'),
   LIGHTOTP_REQUEST_TIMEOUT_MS: Joi.number().integer().min(1).default(10000),
+
+  // Phase 8 (WebSocket, architecture frozen 2026-07-24). WS_MAX_ROOMS_PER_SOCKET's
+  // default of 32 is the one frozen numeric value in the freeze note - see
+  // realtime.config.ts's own doc comment. The rate-limit variables are not
+  // frozen numbers, only required to reuse the existing RateLimiterPort.
+  WS_MAX_ROOMS_PER_SOCKET: Joi.number().integer().min(1).default(32),
+  WS_RATE_LIMIT_HANDSHAKE_MAX: Joi.number().integer().min(1).default(20),
+  WS_RATE_LIMIT_HANDSHAKE_WINDOW_SECONDS: Joi.number().integer().min(1).default(60),
+  WS_RATE_LIMIT_SUBSCRIBE_MAX: Joi.number().integer().min(1).default(60),
+  WS_RATE_LIMIT_SUBSCRIBE_WINDOW_SECONDS: Joi.number().integer().min(1).default(60),
+  WS_RATE_LIMIT_UNSUBSCRIBE_MAX: Joi.number().integer().min(1).default(60),
+  WS_RATE_LIMIT_UNSUBSCRIBE_WINDOW_SECONDS: Joi.number().integer().min(1).default(60),
+  WS_RATE_LIMIT_UNKNOWN_EVENT_MAX: Joi.number().integer().min(1).default(20),
+  WS_RATE_LIMIT_UNKNOWN_EVENT_WINDOW_SECONDS: Joi.number().integer().min(1).default(60),
+
+  // Phase 9 (Notification System, ADR-007/ADR-025, architecture frozen
+  // 2026-07-25). Never `.required()` - mirrors LIGHTOTP_API_KEY's own
+  // precedent (`allow('').default('')`) so the application still boots
+  // without real OneSignal credentials configured; the adapter itself fails
+  // closed when unconfigured, never silently "succeeding".
+  ONESIGNAL_APP_ID: Joi.string().allow('').default(''),
+  ONESIGNAL_API_KEY: Joi.string().allow('').default(''),
+  ONESIGNAL_API_URL: Joi.string().uri().default('https://api.onesignal.com/notifications'),
+  ONESIGNAL_REQUEST_TIMEOUT_MS: Joi.number().integer().min(1).default(10000),
+  ONESIGNAL_IDENTITY_VERIFICATION_PRIVATE_KEY: Joi.string().allow('').default(''),
+  ONESIGNAL_IDENTITY_VERIFICATION_EXPIRY_SECONDS: Joi.number().integer().min(1).default(3600),
 });

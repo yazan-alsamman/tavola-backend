@@ -8,6 +8,8 @@ export interface RestaurantSettingsResult {
   autoApproval: boolean;
   timezone: string;
   defaultCurrency: string | null;
+  reservationReminderMinutesBefore: number;
+  lateArrivalGraceMinutes: number;
   createdAt: Date;
   updatedAt: Date;
 }

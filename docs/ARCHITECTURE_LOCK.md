@@ -35,29 +35,29 @@ Phase 2.1 (Prisma migrations) may **implement** locked architecture but must **n
 
 # Locked Architecture Decision Records (ADRs)
 
-All ADRs with status **Accepted** in `DECISIONS.md` are locked:
+All ADRs with status **Accepted** in `DECISIONS.md` are locked — this rule, not the enumeration table below, is the governing authority. (See "Numbering reconciliation, 2026-07-25" at the end of this section for a documentation-only correction to this table.)
 
 | ADR | Title | Locked decision (summary) |
 |---|---|---|
-| ADR-001 | Clean Architecture & Modular Monolith | Layer separation; microservice-ready monolith |
-| ADR-002 | NestJS as API Framework | NestJS for HTTP, WebSocket, DI |
-| ADR-003 | Prisma as ORM | Prisma + migrations; repository pattern mandatory |
-| ADR-004 | Redis for Caching, Sessions, Queues | Single Redis deployment; logical separation |
-| ADR-005 | BullMQ for Background Jobs | Async work via BullMQ only |
-| ADR-006 | MinIO for Object Storage | S3-compatible file storage |
-| ADR-007 | PostgreSQL as Primary Database | PostgreSQL 17+ |
-| ADR-008 | Argon2 for Password Hashing | Argon2id for credentials |
-| ADR-009 | Multi-Tenant Logical Isolation | Row-level isolation (superseded in mechanism by ADR-011/012; principle retained) |
-| ADR-010 | Soft Delete Policy | `deletedAt` on applicable entities |
-| ADR-011 | Organization as Tenant Boundary | `organizationId` is outermost tenant scope |
-| ADR-012 | Prisma Client Extension for Tenant Isolation | Automatic `organizationId` scoping via async context |
-| ADR-013 | Reservation Concurrency Control | Advisory lock + exclusion constraint |
-| ADR-014 | GDPR Anonymization Strategy | Anonymize-in-place; no hard delete of User row |
-| ADR-015 | Socket.IO Redis Adapter | Horizontal WebSocket fan-out via Redis |
-| ADR-016 | Authentication & Session Strategy | Identity, JWT, opaque refresh rotation, email verification gate. **Partially superseded by ADR-022** (2026-07-22): email verification no longer applies to customer registration or administratively-provisioned Restaurant Owner accounts. All other mechanics remain locked and unchanged. |
+| ADR-001 | Use NestJS as the Backend Framework | NestJS for HTTP, WebSocket, DI |
+| ADR-002 | Use PostgreSQL | PostgreSQL 17+ as the primary database |
+| ADR-003 | Use Prisma ORM | Prisma + migrations; repository pattern mandatory |
+| ADR-004 | Use Redis | Single Redis deployment; caching, sessions, queues, pub/sub, logical separation |
+| ADR-005 | Use BullMQ | Async work via BullMQ only |
+| ADR-006 | Use Socket.IO | Realtime transport choice (extended by ADR-015's Redis Adapter for horizontal scaling) |
+| ADR-007 | Use OneSignal Instead of Firebase | Provider-independent `NotificationProvider` abstraction; OneSignal is the current provider, never called directly by application/domain code. **Amended by ADR-025** (2026-07-25): OneSignal Identity Verification. |
+| ADR-008 | Use MinIO | S3-compatible object storage |
+| ADR-009 | Multi-Tenant Architecture | Row-level isolation (superseded in mechanism by ADR-011/012; principle retained) |
+| ADR-010 | Soft Delete Strategy | `deletedAt` on applicable entities |
+| ADR-011 | Introduce an Organization Aggregate as the Tenant Boundary | `organizationId` is outermost tenant scope |
+| ADR-012 | Tenant Isolation Strategy — Prisma Client Extension + Async Context Propagation | Automatic `organizationId` scoping via async context |
+| ADR-013 | Reservation Concurrency Strategy | Advisory lock + exclusion constraint |
+| ADR-014 | GDPR Data Retention and Anonymization Strategy | Anonymize-in-place; no hard delete of User row |
+| ADR-015 | WebSocket Horizontal Scaling — Socket.IO Redis Adapter | Horizontal WebSocket fan-out via Redis (implements Phase 8) |
+| ADR-016 | Authentication & Session Strategy | Identity, JWT, opaque refresh rotation, Argon2id password hashing (decision item 5), email verification gate. **Partially superseded by ADR-022** (2026-07-22): email verification no longer applies to customer registration or administratively-provisioned Restaurant Owner accounts. All other mechanics remain locked and unchanged. |
 | ADR-017 | Authorization Strategy | Auth/authz separation; Policy Engine; PermissionResolver |
 
-**Post-lock extensions (Architecture Compliance Audit 2026-07-07):**
+**Post-lock extensions (Architecture Compliance Audit 2026-07-07, and later additions):**
 
 | ADR | Title | Summary |
 |---|---|---|
@@ -68,8 +68,12 @@ All ADRs with status **Accepted** in `DECISIONS.md` are locked:
 | ADR-022 | Phone/WhatsApp-First Customer Registration (~~Fonnte~~ **provider updated to LightOTP by ADR-024**) & Administratively-Provisioned Restaurant Owners | Customer registration is phone-first (username + E.164 phone, WhatsApp OTP via LightOTP per ADR-024, password set only after verification); Restaurant Owners are administratively provisioned by Platform Admin (email + password, no verification step); partially supersedes ADR-016 (see that row) |
 | ADR-023 | Multi-Table Reservation Reschedule Concurrency | Extends ADR-013's single-table advisory-lock mechanism with a deterministic two-key acquisition protocol (sorted-order locking, one key per Table) for the one new scenario Phase 7.3 introduces: Rescheduling an Approved reservation to a different Table within the same Branch. Does not alter ADR-013's own text; same-table Reschedule and Reschedule-of-Pending reuse ADR-013's existing single-key mechanism unchanged. |
 | ADR-024 | OTP Delivery Provider Migration: Fonnte → LightOTP | Supersedes only ADR-022's "Fonnte Integration Boundary" subsection - the Customer phone-OTP business rule is unchanged, only the delivery provider. `VerificationMessagingPort` absorbs the swap with zero application/domain-layer changes; `toPhoneE164` now sent with its leading `+` (LightOTP requires it; Fonnte forbade it); LightOTP's API has no custom-message field, so the previously approved WhatsApp copy can no longer be sent as application-controlled text. |
+| ADR-025 | OneSignal Identity Verification (amends ADR-007's Implementation Rule) | Adopts ES256-signed JWTs (backend-held private key) to prove `external_id` ownership to OneSignal before it accepts subscription/identity operations, closing a documented spoofing risk in OneSignal's default `external_id` matching. Does not reopen ADR-007's provider choice or Anti-Corruption Layer requirement. Frozen alongside the Phase 9 pre-implementation architecture decisions (`TASKS.md`); implemented 2026-07-25 (signing code + unit tests) — no real key/secret provisioned this session, so live signing against a real OneSignal app remains unverified. |
+| ADR-026 | Table Merge/Split Topology and Concurrency (references ADR-013 and ADR-023) | Primary Table merge identity; `mergeGroupId` + `isMergePrimary`; `TableStatus.Merged` for secondaries; derived effective capacity (sum); reservation blocking by non-ended Pending/Approved; topology advisory locks on Table.id (acquired before ADR-013/023 slot locks); Split = undo merge only. Architecture frozen 2026-07-25; **implemented and live-verified 2026-07-26** (see `TASKS.md`'s Phase 6 Merge/Split Implementation & Verification Report). |
 
-These ADRs extend `DATABASE_SCHEMA.md` and `DOMAIN_MODEL.md` without breaking locked ADR-001–017 decisions. ADR-022 is the first post-lock extension to partially supersede an original locked ADR rather than only adding new scope — see its own entry above and ADR-016's annotated row. ADR-024 is the first post-lock extension to supersede only a *subsection* of another post-lock ADR (ADR-022's Fonnte contract) while leaving that ADR's remaining decisions (Customer identity, registration/recovery state machines, Owner provisioning) fully intact.
+These ADRs extend `DATABASE_SCHEMA.md` and `DOMAIN_MODEL.md` without breaking locked ADR-001–017 decisions. ADR-022 is the first post-lock extension to partially supersede an original locked ADR rather than only adding new scope — see its own entry above and ADR-016's annotated row. ADR-024 is the first post-lock extension to supersede only a *subsection* of another post-lock ADR (ADR-022's Fonnte contract) while leaving that ADR's remaining decisions (Customer identity, registration/recovery state machines, Owner provisioning) fully intact. ADR-025 is the second such narrow amendment, targeting only ADR-007's Implementation Rule. ADR-026 is a post-lock extension that **references** ADR-013/ADR-023 concurrency without rewriting their historical text (same style as ADR-023 relative to ADR-013).
+
+**Numbering reconciliation (2026-07-25):** this table previously listed a stale ADR-001–017 numbering (written 2026-07-07, before `DECISIONS.md` was expanded with additional early-stack ADRs — "Use Socket.IO" and "Use OneSignal Instead of Firebase" in particular — which shifted every subsequent ADR's number). The prior table, for example, showed "ADR-007 | PostgreSQL as Primary Database" and a standalone "ADR-008 | Argon2 for Password Hashing" — neither matches `DECISIONS.md`'s current, authoritative numbering (PostgreSQL is ADR-002; Argon2id is decision item 5 *within* ADR-016, not its own ADR at all). This was discovered during the Phase 9 pre-implementation readiness review (2026-07-25) and is corrected above by re-deriving the table directly from `DECISIONS.md`'s current `## ADR-NNN` headings. This is a documentation-only correction — no ADR was renumbered, no ADR content was rewritten, and the governing rule itself ("all Accepted ADRs in `DECISIONS.md` are locked") was never in question, since it does not depend on this table being accurate.
 
 ---
 

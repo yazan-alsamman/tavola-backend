@@ -156,7 +156,7 @@ Status: ✅ Completed
 - [x] PostgreSQL (live instance verified healthy via Docker Compose, UTF-8/C.UTF-8, TZ=UTC, btree_gist/pgcrypto enabled)
 - [x] Prisma (schema, generated client, `PrismaService` connection lifecycle wired - `SystemConfiguration` model, verified connecting live)
 - [x] Initial Migration (`20260706231718_init_system_configuration` - pure additive `CREATE TABLE` + unique index, applied and verified)
-- [ ] Seed System (nothing to seed yet - `SystemConfiguration` has no required rows; revisit once the first business entity needs default data)
+- [x] Seed System — **reconciled complete (editorial, 2026-07-24):** the original "nothing to seed yet" premise is obsolete. `apps/backend/prisma/seed.ts` seeds `SystemConfiguration`, permissions, roles, and taxonomy reference data; used by local/dev and test harnesses. No further Phase 1 seed work remains.
 
 ---
 
@@ -320,16 +320,16 @@ Reviewed `docs/CHANGE_POLICY.md`'s "When a New ADR Is Required" list against thi
 
 # Phase 6 — Table Module
 
-Status: 🔶 In Progress — Phase 6.1 (Floor Plan & Table CRUD), Phase 6.2 (Move Table), and Status Management all complete; Phase 6.3 (Live Docker Verification) additionally re-confirmed Status Management against freshly rebuilt, freshly restarted containers on both stacks (2026-07-19 - see "Phase 6.3 — Live Docker Verification" report below); Merge Tables and Split Tables are deferred until the Reservation Engine architecture has been approved and frozen (2026-07-17 architecture decision - see "Phase 6 — Merge/Split Tables Deferral" note below).
+Status: ✅ **COMPLETE** — Phase 6.1 (Floor Plan & Table CRUD), Phase 6.2 (Move Table), and Status Management all complete; Phase 6.3 (Live Docker Verification) re-confirmed Status Management (2026-07-19). **Merge Tables / Split Tables: IMPLEMENTED, LIVE VERIFIED (2026-07-26)** — architecture frozen 2026-07-25 (ADR-026); implementation followed and was live-verified the next day (see "Phase 6 — Merge/Split Implementation & Verification Report" below). Unlock condition (Phase 7.2) was already met; the freeze note and this implementation report close out Phase 6 in full.
 
 - [x] Create Table — `POST /api/v1/restaurants/:restaurantId/branches/:branchId/tables` (see "Phase 6.1 — Table Module: Floor Plan & Table CRUD" report below)
 - [x] Update Table — `PATCH /api/v1/tables/:tableId` (full-replace profile fields; never `floorPlanId`/`status`)
 - [x] Delete Table — `DELETE /api/v1/tables/:tableId` (soft delete)
 - [x] Move Table — `POST /api/v1/tables/:tableId/move` (Domain Action; changes only `floorPlanId`, within the same Branch; see "Phase 6.2 — Table Module: Move Table" report below)
-- [ ] Merge Tables — **deferred until the Reservation Engine architecture has been approved and frozen** (not cancelled; intentionally removed from the active implementation sequence; must not be implemented before that milestone - see decision note below)
-- [ ] Split Tables — **deferred until the Reservation Engine architecture has been approved and frozen** (not cancelled; intentionally removed from the active implementation sequence; must not be implemented before that milestone - see decision note below)
+- [x] Merge Tables — `POST /api/v1/tables/merge` (architecture frozen 2026-07-25, ADR-026; **implemented, live-verified 2026-07-26** — see "Phase 6 — Merge/Split Implementation & Verification Report" below)
+- [x] Split Tables — `POST /api/v1/tables/:tableId/split` (architecture frozen 2026-07-25, ADR-026; **implemented, live-verified 2026-07-26** — same report as Merge)
 - [x] Floor Plan — Create/List/Activate (`POST`/`GET /api/v1/restaurants/:restaurantId/branches/:branchId/floor-plans`, `PATCH .../floor-plans/:floorPlanId/activate`)
-- [x] Status Management — `POST /tables/:tableId/status` (Domain Action; `Available`/`Occupied`/`Cleaning`/`Disabled`; restrictive state machine, `Available` ↔ each of the other three only; see "Phase 6 — Status Management" report below)
+- [x] Status Management — `POST /tables/:tableId/status` (Domain Action; `Available`/`Occupied`/`Cleaning`/`Disabled`; restrictive state machine, `Available` ↔ each of the other three only; see "Phase 6 — Status Management" report below). **`Merged` is added by the Merge/Split freeze (ADR-026) for secondary merge members only — not a manual Status Management transition.**
 
 ## Phase 6 — Merge/Split Tables Deferral (approved architecture decision, 2026-07-17)
 
@@ -344,6 +344,35 @@ Rationale (full dependency analysis on record in this session's architecture rev
 5. No consumer exists today for a `TableMergedEvent`/`TableSplitEvent` beyond the same audit-log mechanism every other Table event already uses.
 
 **Must not be implemented before the Reservation Engine architecture is approved and frozen.** Revisit only at that point, with its own dedicated architecture decision session (mirroring how `TableStatus`/`TableShape` and Move Table were each resolved).
+
+**Deferral closure addendum (2026-07-25):** The unlock condition (Phase 7.2 Approval Workflow shipped) was already met. The dedicated architecture session required by this note has now run; decisions are recorded as **ADR-026** and the freeze note immediately below. Historical deferral rationale above is preserved.
+
+**Implementation closure addendum (2026-07-26):** Merge/Split was subsequently authorized, implemented exactly per ADR-026, and live-verified. Checklist items above are now checked. See "Phase 6 — Merge/Split Implementation & Verification Report".
+
+## Phase 6 — Merge/Split Tables: Final architecture freeze (owner-approved, 2026-07-25)
+
+**ARCHITECTURE FROZEN.** Binding decisions (full ADR: `docs/DECISIONS.md` ADR-026):
+
+**Amendment (2026-07-26): implementation authorized, completed, and live-verified.** The freeze text immediately below is preserved verbatim as the historical architecture record; it originally read "IMPLEMENTATION NOT STARTED. IMPLEMENTATION NOT YET AUTHORIZED." That gate has since been lifted — implementation proceeded exactly per the 16 binding decisions below, with zero re-litigation, and was live-verified against real Docker/Postgres/Redis on both the dev and strict stacks. See "Phase 6 — Merge/Split Implementation & Verification Report" (below, after Phase 6.3) for the full implementation record.
+
+1. **Identity — Primary Table.** Existing rows only; one primary; shared `mergeGroupId`; `Reservation.tableId` = primary.id; secondaries not independently reservable. Optional `primaryTableId`; else lowest `tableNumber`, then `Table.id` ascending.
+2. **Split = undo merge only** — no new Table rows; IDs and permanent capacities unchanged; clear merge membership.
+3. **`TableStatus.Merged`** for secondaries only. Primary uses Available/Reserved via existing `reserve()`/`release()`. No manual `Merged` via status endpoint.
+4. **Capacity** — derive `effectiveCapacity` = sum of member permanent capacities; never overwrite `capacity` columns.
+5. **Rules** — ≥2 distinct tables; same Branch; same FloorPlan; all Available; not already merged; no nested merges.
+6. **Temporary** operational topology only.
+7. **Reservation block** — Pending/Approved with `reservationEndTime` not yet passed block Merge (any component) and Split (primary). No automatic reassignment; ADR-023 not invoked.
+8. **New reservations** against merged unit → primary.id; Approve → primary.reserve(); secondaries stay Merged until Split.
+9. **Concurrency** — one transaction; sorted Table.id topology advisory locks; re-read; re-check; mutate. Create/Approve/Reschedule (and Waitlist reserve paths) acquire the same topology locks **before** ADR-013/023 slot locks.
+10. **Schema** — reuse `mergeGroupId`; add `isMergePrimary` (default false); add enum `Merged`; partial UNIQUE one primary per group when enforceable; additive migration only.
+11. **API** — `POST /api/v1/tables/merge`, `POST /api/v1/tables/:tableId/split`.
+12. **Auth** — dual-actor: Org Owner/Admin **or** Employee `tables:manage` + branch scope. No new slugs. Route = `JwtAuthGuard` + `SessionVersionGuard` only; checks inside the use case (no NestJS OR-guard composition). ADR-026 covers CHANGE_POLICY #4 for this narrow extension.
+13. **Move/Status** forbidden while merged (narrow guards only).
+14. **Availability** — primary with effectiveCapacity; secondaries excluded; applies to Online/Phone/WalkIn/WaitlistConversion.
+15. **Events** — `TableMerged` / `TableSplit`; audited; Phase 8 allow-list → `restaurant` + `branch` rooms (no floor-plan room exists). **No Phase 9 notifications.**
+16. **Audit** — Employee → `actorType=Employee` / `Employee.id`; Owner/Admin → existing Table event convention (`actorType=User` / `userId`).
+
+Out of scope: physical subdivision, synthetic combination tables, TableCombination aggregate, nested/cross-Branch/cross-FloorPlan merges, automatic reservation migration, Waitlist redesign, Phase 9/OneSignal, Phase 10, wholesale Table auth refactor.
 
 ## Phase 6.1 — Pre-implementation architecture decisions (approved, frozen)
 
@@ -401,6 +430,8 @@ Implemented exactly the eight frozen decisions above, nothing else. `MoveTableUs
 **Remaining technical debt:** unchanged from Phase 6.1, plus: Merge Tables and Split Tables remain fully unimplemented (Status Management was implemented in a later sub-phase - see its own report below); Move Table's reservation-conflict check remains deferred to Phase 7, per this phase's own explicit, documented decision (not an oversight).
 
 **Production readiness:** Move Table's declared scope is production-ready - tested at every tier (strict and non-strict), tenant-isolated and IDOR-hardened identically to every other Table route, audited, Swagger-documented, and introduces zero schema or architectural debt.
+
+**Amendment (2026-07-25, ADR-026 architecture freeze — documentation only):** Merge/Split is now architecture-frozen (Primary Table model) but still **implementation not started / not yet authorized**. Move Table gains a required narrow guard during Merge/Split *implementation*: any table in an active merge group cannot be Moved (Split first). No other MoveTable redesign.
 
 **PHASE 6.2 COMPLETE, LIVE-VERIFIED.**
 
@@ -470,17 +501,55 @@ No new implementation, architecture, or business logic - this sub-phase closes o
 
 ---
 
+## Phase 6 — Merge/Split Implementation & Verification Report (2026-07-26)
+
+Implements the architecture frozen the day before in "Phase 6 — Merge/Split Tables: Final architecture freeze" (`docs/DECISIONS.md` ADR-026), with no re-litigation of any of its 16 binding decisions.
+
+**Identity model.** Primary Table (Option A): a merge of ≥2 existing, currently-`Available` tables in the same Branch and FloorPlan shares one `mergeGroupId`; exactly one member is `isMergePrimary = true` (optional `primaryTableId`, else lowest `tableNumber` then `Table.id` ascending); `Reservation.tableId` for the merged unit always targets the primary. Every non-primary member transitions to `TableStatus.Merged`. Split resolves the full group from any member id, clears `mergeGroupId`/`isMergePrimary` for all members, restores former secondaries to `Available`, and creates or destroys no Table row - undo-merge only, exactly per decision #2.
+
+**Migration.** `20260725230000_phase_6_merge_split_tables`: purely additive - `ALTER TYPE "TableStatus" ADD VALUE 'Merged'`; `tables.is_merge_primary BOOLEAN NOT NULL DEFAULT false`; hand-written `tables_merge_primary_requires_group_check` CHECK (`merge_group_id IS NOT NULL OR is_merge_primary = false`); hand-written partial unique index `tables_merge_group_one_primary_key` on `(merge_group_id)` WHERE `is_merge_primary = true AND merge_group_id IS NOT NULL` (at most one primary per active group). Applied via `prisma migrate deploy` to both the dev (`localhost:5433`) and isolated strict-verification (`localhost:15433`) databases before any test tier ran.
+
+**Topology locks (`TableTopologyLockService`).** Extends ADR-013's concurrency guarantee, not its slot-key mechanism: inside one DB transaction, every involved `Table.id` is sorted ascending and a transaction-scoped PostgreSQL advisory lock is acquired for each, in a separate `topology:table:{id}` namespace from ADR-013/023's slot-bucket keys, before any conflict check or mutation. Create/Approve/Reschedule and Waitlist-reserve paths acquire the same locks, in the same sorted order, before their own ADR-013/023 slot locks, per decision #7's compatibility clause.
+
+**Dual-actor authorization (`assertActorCanManageTables`).** `POST /tables/merge` and `POST /tables/:tableId/split` use only `JwtAuthGuard` + `SessionVersionGuard` at the route - no `OrganizationMemberGuard`/`PermissionsGuard`, which would otherwise structurally deny one of the two legitimate actor types. Authorization is resolved inside the use case: an `OrganizationMember` must belong to the resolved `organizationId` and hold `Owner`/`Admin`; an `Employee` must belong to the same organization, pass branch scope, and hold the existing `tables:manage` permission slug (no new slug, per decision #12). Cross-organization actors collapse to 404 (`TableNotFoundException`, IDOR-safe); same-organization actors lacking role/permission/branch scope get 403. Audit attribution follows the existing convention: Employee → `actorType=Employee`/`Employee.id`; Owner/Admin → `actorType=User`/`userId`.
+
+**API routes.**
+- `POST /api/v1/tables/merge` — body `{ tableIds: string[], primaryTableId?: string }` → 200, `MergedUnitResponseDto`.
+- `POST /api/v1/tables/:tableId/split` — `tableId` may be any member of the active merge group → 200, `MergedUnitResponseDto`.
+
+Both reject with 409 (`TABLE_MERGE_CONFLICT`) when a component/primary has a Pending/Approved reservation whose `reservationEndTime` has not yet passed, per decision #7 - no automatic reassignment, ADR-023 not invoked.
+
+**Files created:** domain (`domain/services/table-topology-lock.service.ts`, `domain/exceptions/{table-merge-conflict,table-merged-operation-forbidden,table-not-merged}.exception.ts`), application (`application/services/assert-actor-can-manage-tables.ts`, `application/dto/{merge-tables.command,merged-unit.result,split-tables.command}.ts`, `application/use-cases/{merge-tables,split-tables}.use-case.ts` + `.spec.ts`), presentation (`presentation/dto/{merge-tables.request,merge-unit.response}.dto.ts`), plus the migration above. **Files modified:** `table.controller.ts` (merge/split routes), `table-response.mapper.ts` (`toMergedUnitResponse`), `table.entity.ts` (merge/split domain methods), `table.repository.ts`/`prisma-table.repository.ts` (topology-lock-aware persistence), `schema.prisma` (`isMergePrimary`), the Reservation Create/Approve/Reschedule and Waitlist-reserve call sites (topology locks acquired before their own slot locks per decision #7), and `auditing-event-publisher.ts` (`TableMerged`/`TableSplit` branches).
+
+**Testing summary (this phase's own new coverage - see note below on the totals):**
+- Unit: `merge-tables.use-case.spec.ts` and `split-tables.use-case.spec.ts`, covering the primary-selection rule, dual-actor authorization branches (Owner/Admin, in-scope/out-of-scope Employee, cross-org 404 collapse), the reservation-block conflict path, and topology-lock acquisition ordering.
+- Integration: `test/tables/merge-split.integration-spec.ts` - real Postgres round-trips against the new migration, including the partial-unique-index-backed "exactly one primary per group" invariant and the CHECK constraint.
+- E2E: `test/tables/merge-split.e2e-spec.ts` - full HTTP lifecycle for both routes, dual-actor authorization (Owner/Admin and Employee `tables:manage`), cross-organization IDOR, and the reservation-block 409 path.
+- Full-repo totals as of this session (not this sub-phase's own delta in isolation - see the "no invented historical counts" note below): Unit **151/1335**. Integration (non-strict and strict, `REQUIRE_LIVE_DATABASE=true` against the isolated strict stack): **40/249** each. E2E (non-strict and strict): **35/402** each.
+
+*Note on the totals above: these are the counts from this verification session's own tool output. They are recorded exactly as produced, without adjustment, restatement, or reconciliation against any full-suite historical baseline reported by earlier phases in this document - no earlier report's counts have been altered.*
+
+**Docker/live verification.** Both `tavla-backend` and `tavla-strict-backend` images were rebuilt from current source (`docker compose build backend` / strict-stack equivalent) and their containers recreated; both reported healthy alongside Postgres/Redis/MinIO. Live HTTP verification against the rebuilt dev stack: merge of 2 Available tables in the same Branch/FloorPlan → 200 with the expected primary/secondary `status`/`mergeGroupId`/`isMergePrimary` values; split of the resulting group via the secondary's own id → 200, both tables restored to independent `Available` tables with `mergeGroupId: null`. Direct `psql` confirmed the partial unique index and CHECK constraint are present and enforced, and confirmed `tables.status`/`merge_group_id`/`is_merge_primary` column values matched each HTTP response exactly at every step.
+
+**Scope confirmation - Phase 9 untouched.** No `NotificationProvider`, OneSignal, or notification-delivery code path was read, imported, or modified by this implementation, matching ADR-026 decision #15 ("No Phase 9 notifications"). `TableMerged`/`TableSplit` are audited and Phase 8 allow-listed to `restaurant`/`branch` rooms only.
+
+**HARD STOP.** Phase 6 is now fully implemented and live-verified. **No Phase 10 work of any kind was started, scoped, or implied by this session** - Phase 6 closure does not unlock or imply authorization for Phase 10 (Reviews); that remains a separate, not-yet-requested track per `TASKS.md`'s own phase-authorization discipline.
+
+**PHASE 6 — MERGE/SPLIT TABLES: IMPLEMENTATION COMPLETE, LIVE VERIFIED (2026-07-26). PHASE 6 CLOSED IN FULL.**
+
+---
+
 # Phase 7 — Reservation Engine
 
-Status: 🔶 In Progress — pre-implementation architecture decisions approved and frozen (2026-07-19); **Phase 7.0 (Employee Management) complete, live-verified at every test tier** (2026-07-20, see "Phase 7.0 — Employee Management" report below). **Phase 7.1 (Reservation Core) is now complete, live-verified, and production-verified** (2026-07-20, see "Phase 7.1 — Reservation Core" report below) - Search Availability, Create Reservation, and the ADR-013 concurrency mechanism (advisory lock + exclusion constraint) are implemented and tested end-to-end. **Phase 7.2 (Approval Workflow) is now COMPLETE, LIVE VERIFIED, and PRODUCTION VERIFIED** (2026-07-23, see "Phase 7.2 — Approval Workflow" report below) - Approve, Reject, auto-rejection of overlapping Pending reservations, the auto-approval branch of Create Reservation, `Table.reserve()`/`Table.release()`, and `TableStatus.Reserved` are all implemented and tested end-to-end, including a corrected application of ADR-013 to Approval-time concurrency (see that report's own "ADR-013 Discrepancy Correction" note). **Phase 7.3 (Reservation Lifecycle) is now COMPLETE, LIVE VERIFIED, and PRODUCTION VERIFIED** (2026-07-23, see "Phase 7.3 — Reservation Lifecycle" report below, and ADR-023) - Cancel, Reschedule (including table-changing reschedule within the same Branch), Complete, No-Show, and the Expiration job are all implemented, tested at every tier, and live-verified via Docker/real BullMQ-Redis. **Phase 7.4 (Phone & Walk-In Reservations) is now COMPLETE, LIVE VERIFIED, and PRODUCTION VERIFIED** (2026-07-23, see "Phase 7.4 — Phone & Walk-In Reservations" report below) - an Employee actor creates `source = Phone`/`WalkIn` via the same shared `POST /reservations` endpoint, backed by a new `ReservationGuest` entity persisted atomically with the `Reservation` row (proven against a real Postgres transaction); Phase 7.1's own "any actor type may self-book Online" rule is confirmed unchanged.
+Status: ✅ **COMPLETE** — Phase 7.0–7.6 all complete, live-verified, and production-verified (final sub-phase Phase 7.6 Operational Signals closed 2026-07-24). Pre-implementation architecture decisions were approved and frozen 2026-07-19. **Phase 7.0 (Employee Management)** complete, live-verified (2026-07-20). **Phase 7.1 (Reservation Core)** complete, live-verified, production-verified (2026-07-20). **Phase 7.2 (Approval Workflow)** COMPLETE, LIVE VERIFIED, PRODUCTION VERIFIED (2026-07-23). **Phase 7.3 (Reservation Lifecycle)** COMPLETE, LIVE VERIFIED, PRODUCTION VERIFIED (2026-07-23, ADR-023). **Phase 7.4 (Phone & Walk-In Reservations)** COMPLETE, LIVE VERIFIED, PRODUCTION VERIFIED (2026-07-23). **Phase 7.5 (Reservation Waitlist)** COMPLETE, LIVE VERIFIED, PRODUCTION VERIFIED (2026-07-24). **Phase 7.6 (Operational Signals)** COMPLETE, LIVE VERIFIED, PRODUCTION VERIFIED (2026-07-24). See each sub-phase report below. Deferred out of Phase 7 (not incomplete Phase 7 work): Phase 9 notification delivery (`ReservationReminderSent`, `WaitlistEntryNotified` activation, `NotificationProvider`); Merge/Split Tables (separate architecture track); no-show banning; broader GDPR/erasure.
 
 - [x] **Phase 7.0 — Employee Management** (prerequisite) — Invite Employee, Assign Role, Assign Employee to Branch, Remove Employee / Remove from Branch. Required before any staff-side Reservation action can authorize via the actual `Employee` actor + `reservations:*` permission + branch scope that AUTHORIZATION_ARCHITECTURE.md already specifies, rather than reusing `OrganizationMember`. See "Phase 7.0 — Employee Management" report below.
 - [x] **Phase 7.1 — Reservation Core** (originally: Conflict Detection, Transaction Locking, part of Reservation Workflow) — Search Availability, Create Reservation, advisory lock + exclusion constraint (ADR-013). `Table.reserve()` deferred to Phase 7.2 per the approved Scope Amendment. See "Phase 7.1 — Reservation Core" report below.
 - [x] **Phase 7.2 — Approval Workflow** (originally: Reservation Approval, Reservation Rejection) — Approve (calls `Table.reserve()`, incl. auto-rejection of overlapping Pending reservations), Reject (no Table operation - see "Phase 7.2 — Approval Workflow: Architecture Correction" note below). See "Phase 7.2 — Approval Workflow" report below. **Unlocks Merge/Split Tables** once shipped (see "Phase 6 — Merge/Split Tables Deferral" note) - that unlock condition is confirmed met (Phase 7.2 has shipped); Merge/Split Tables **itself** remains unimplemented, with its own architecture review still pending as a separate, not-yet-requested track (see the Post-Phase-7.2 Sequencing Review, session record, and that report's own "Merge/Split Dependency Status" note).
 - [x] **Phase 7.3 — Lifecycle** (originally: Reservation Cancellation, Completion, Expiration, remainder of Reservation Workflow) — Cancel, Reschedule (FR-06.3, including table-changing reschedule within the same Branch, ADR-023), Complete, No-Show, Expiration job. **Complete, live-verified, and production-verified (2026-07-23)** - see "Phase 7.3 — Reservation Lifecycle" report below.
 - [x] **Phase 7.4 — Phone & Walk-In Reservations** (originally: Phone Reservations, Walk-In Reservations) — same `POST /reservations` endpoint, `source: Phone|WalkIn` + `reservationGuest` payload. **Complete, live-verified, and production-verified (2026-07-23)** - see "Phase 7.4 — Phone & Walk-In Reservations" report below.
-- [ ] **Phase 7.5 — Reservation Waitlist** (ADR-019) (originally: Reservation Waitlist) — `WaitlistPromotionService`, automatic trigger on Cancelled/NoShow/Expired + manual staff trigger.
-- [ ] **Phase 7.6 — Operational Signals** (ADR-019) (originally: Reservation Reminders (BullMQ), Late Arrival & Table Ready Signals) — domain/event side only; actual notification delivery may be better sequenced alongside Phase 9 (`NotificationProvider`).
+- [x] **Phase 7.5 — Reservation Waitlist** (ADR-019) (originally: Reservation Waitlist) — `WaitlistPromotionService`, automatic trigger on `Approved -> Cancelled`/`Approved -> NoShow` (corrected from the original "Cancelled/NoShow/Expired" framing - see report) + manual staff trigger. **Complete, live-verified, and production-verified (2026-07-24)** - see "Phase 7.5 — Reservation Waitlist" report below.
+- [x] **Phase 7.6 — Operational Signals** (ADR-019) (originally: Reservation Reminders (BullMQ), Late Arrival & Table Ready Signals) — domain/event side only; actual notification delivery may be better sequenced alongside Phase 9 (`NotificationProvider`).
 
 ## Phase 7 — Reservation Engine: Pre-implementation architecture decisions (approved, frozen, 2026-07-19)
 
@@ -493,7 +562,7 @@ ADR-013 (Reservation Concurrency Strategy) and ADR-019 (Waitlist & Operational S
 5. **Cancellation-window clock resolves against the Branch's timezone**, not the Restaurant's - consistent with Branch already owning currency/working-hours (Phase 5 precedent).
 6. **`Table.reserve(reservationId, at)` / `Table.release(at)`: new, narrow domain methods on `Table`, separate from `transitionStatus`.** `TableStatus.Reserved` is added to the enum, but `Table.transitionStatus`'s validator (frozen Phase 6.3) is untouched and continues to reject `Reserved` exactly as today - `POST /tables/:tableId/status` remains unable to set or clear `Reserved`; only the Reservation write path may. **Timing, stated explicitly to leave no ambiguity:** `Table.reserve()` is called only at Approval (manual path) or at creation time for auto-approval (per decision #2) - never at Pending creation. During the Pending window, `Table.status` remains `Available`; two overlapping Pending reservations for the same table may coexist (DOMAIN_MODEL.md's own rule), resolved only at approval time, not by `TableStatus`. Double-booking prevention during Pending is exclusively the advisory lock + exclusion constraint's job (ADR-013) - this required correcting a genuine contradiction found in `DATABASE_SCHEMA.md`'s exclusion constraint, which did not previously exclude `Pending` from its guarded `WHERE` clause and would otherwise have made the "two pending reservations may coexist" rule unreachable at the database level (fixed: `WHERE status NOT IN ('Cancelled', 'Expired', 'Rejected', 'Pending')`, documentation-bug fix, not a new architectural decision). `Table.release(at)` is called on Cancel (of an Approved reservation), and after Complete/NoShow (Phase 7.3 — Reservation Lifecycle, architecture frozen 2026-07-23: both call `Table.release()` unconditionally, returning the table directly to `Available` - see that note for the full ruling). **Correction (2026-07-23, mechanical, not a new decision):** this item's original text speculatively listed Expire "(only relevant to auto-approved-then-expired, if that path is ever reachable)" as a fourth `Table.release()` trigger. The frozen `ReservationStatus` transition matrix (decision item 1, implemented and live-verified since Phase 7.2) contains no `Approved -> Expired` transition - only `Pending -> Expired` exists, and a `Pending` reservation never reserves a table in the first place (per this item's own timing rule above). That speculative path is therefore confirmed unreachable; Expire never calls `Table.release()`, full stop - the original hedge ("if that path is ever reachable") is resolved, not overridden. **Reject is deliberately excluded from this list - see the "Phase 7.2 — Approval Workflow: Architecture Correction" note below, which corrects this item's original text (this original decision note is left otherwise unmodified as the historical record; the correction note is authoritative on this specific point).**
 7. **Phone/walk-in:** `POST /reservations` with `source: 'Phone' | 'WalkIn'` and a `reservationGuest` payload instead of a caller-derived `userId` - same endpoint, not separate sub-routes, since `DATABASE_SCHEMA.md`'s `source` enum already unifies them on one table.
-8. **Waitlist promotion trigger (Phase 7.5):** automatic on `ReservationCancelled`/`ReservationNoShow`/`ReservationExpired` (a freed table re-checks the waitlist), plus a manual staff-triggered promotion endpoint - both call the same `WaitlistPromotionService` (ADR-019).
+8. **Waitlist promotion trigger (Phase 7.5):** automatic on `ReservationCancelled`/`ReservationNoShow`/`ReservationExpired` (a freed table re-checks the waitlist), plus a manual staff-triggered promotion endpoint - both call the same `WaitlistPromotionService` (ADR-019). **Correction (2026-07-24, Phase 7.5 architecture-freeze review, mechanical, not a new decision):** re-checked against the frozen Reservation/Table lifecycle (item 6 above) and found imprecise - `Pending -> Cancelled` and `Pending -> Expired` never call `Table.release()` (a `Pending` reservation never reserved a table), so "a freed table re-checks the waitlist" does not hold for those two. Only `Approved -> Cancelled` and `Approved -> NoShow` actually free a table and trigger a re-check; `ReservationExpired` (always `Pending -> Expired`) does not. See "Phase 7.5 — Reservation Waitlist" report below.
 9. **Expiration mechanism:** a BullMQ delayed job scheduled at creation time for `reservationDate + pendingReservationTimeout`, cancelled/rescheduled alongside reminder jobs on any status change - the same mechanism ADR-019 already assumes for reminders, not a separate periodic sweep.
 10. **Event classes vs audit-only:** `ReservationCreated`/`ReservationApproved`/`ReservationRejected`/`ReservationCancelled`/`ReservationRescheduled`/`ReservationCompleted`/`ReservationExpired`/`ReservationNoShow` become real domain event classes - unlike Move Table/Status Management's audit-only precedent (which applied specifically because those actions had no consumers), these already have named consumers in `EVENTS.md`/`DOMAIN_MODEL.md` (Analytics, Notifications, WebSocket per Phase 8/9/14). `GuestLateArrivalNotified`/`TableReadyNotified` (Phase 7.6) are likewise real event classes, since ADR-019 explicitly names `NotificationDispatcher` as a consumer.
 11. **Employee Management is a prerequisite sub-phase (Phase 7.0), inserted before Phase 7.2 (Approval).** Staff-side reservation actions (approve/reject/phone/walk-in/no-show) authorize via the real `Employee` actor + `reservations:*` permission slugs + branch scope - exactly as `AUTHORIZATION_ARCHITECTURE.md` already specifies (`ReservationPolicy.canApprove` pseudocode, `reservations:approve` slug, `BranchScopeGuard`) - not `OrganizationMember` + `RequireOrgRole` as Table/Branch/Restaurant use today. This is necessary because no Employee record can be created yet (`modules/employees/` is an empty scaffold; `prisma/seed.ts` states outright "Customer is an implicit actor (no Employee/Roles row)"), even though the `RbacPermissionResolver`/`EmployeeAccessResolverPort` chain has been fully wired at Login/Refresh since Phase 2 with zero consuming use cases until now.
@@ -799,25 +868,640 @@ Implemented exactly the frozen scope above: an Employee actor creates `source = 
 
 ---
 
+## Phase 7.5 — Reservation Waitlist
+
+Implemented the frozen scope from the multi-round Phase 7.5 architecture freeze (2026-07-24): `POST /waitlist` (Join), `POST /waitlist/:id/cancel` (Cancel), `POST /waitlist/:id/promote` (manual Promote), the FIFO-ordered-first-serviceable automatic re-check delivered via a durable BullMQ `WaitlistRecheckQueue`, and the atomic waitlist-entry-to-Reservation promotion transaction reusing the existing ADR-013 concurrency infrastructure directly (never `CreateReservationUseCase`).
+
+**Contradictions found and resolved during the freeze process itself (not silently changed - reported and re-approved before implementation, per the owner's own explicit process):**
+
+1. **Tenancy contradiction:** the originally pre-documented `ReservationWaitlistEntry` schema specified a required direct `organizationId` column. This is structurally incompatible with Customer-facing Join: a Customer actor has no bound `TenantContext.organizationId`, and `Restaurant` (the only path to discover one via `branchId -> Branch.restaurantId -> Restaurant.organizationId`) is a `DIRECT_TENANT_OWNED_MODEL`, fail-closed with no context bound (`TenantContextMissingException`) - there is no legitimate way to populate the column for a Customer-initiated row without bypassing tenant scoping. **Resolution (owner-approved):** the column was removed via a forward corrective migration (see Database Impact below); tenant ownership is resolved transitively, exactly like `Reservation` itself already does.
+2. **Promotion-claim/FK-ordering bug, found via integration testing, not by inspection:** the originally-planned single-step claim (`entry.convert(reservationId, now)` then one `updateTransitioningFrom` call, before the target `Reservation` row existed) violated `reservation_waitlist_entries_converted_reservation_id_fkey` - the referenced `Reservation` row did not exist in the database yet at claim time. **Resolution:** a two-phase claim (`claimStatusOnly` - status only, no FK-referencing column - then, once the `Reservation` row is inserted in the same transaction, a full `updateTransitioningFrom` that sets `convertedReservationId`). Both phases are inside one transaction, so the atomicity guarantee is unchanged; this was caught by `waitlist-promotion-concurrency.integration-spec.ts` against a real Postgres instance, not discovered by inspection.
+3. **A real bug in the position-conflict error-mapping**, also found via integration testing: `error.meta.target` for a Postgres `P2002` unique-violation is the raw **column list**, never the constraint/index name - the original name-substring check could never match. Fixed to match on the column set instead.
+
+**Files created:** the full `modules/waitlist/` tree (`domain/{entities,enums,events,exceptions,repositories,services}`, `application/{dto,mappers,ports,services,use-cases}`, `infrastructure/{persistence,bullmq}`, `presentation/{controllers,dto}`) - entity + state machine, `WaitlistSlotService` (timezone-aware slot derivation, `Intl.DateTimeFormat`-based, no third-party timezone dependency), 5 domain exceptions, `ReservationWaitlistEntryRepository` interface, `WaitlistPromotionService`, `JoinWaitlistUseCase`/`CancelWaitlistEntryUseCase`/`PromoteWaitlistEntryUseCase`/`ExpireWaitlistEntryUseCase`/`RecheckWaitlistUseCase`, `PrismaReservationWaitlistEntryRepository` + mapper, BullMQ expiration scheduler/processor (`WaitlistQueue`) + recheck consumer (`WaitlistRecheckQueue`), `WaitlistController` + DTOs + response mapper, `waitlist.module.ts`. Also created: `src/modules/reservations/application/ports/waitlist-recheck-scheduler.port.ts` + `infrastructure/bullmq/waitlist-recheck.scheduler.ts` (the `WaitlistRecheckQueue` **producer**, registered in `ReservationsModule` - deliberately NOT a circular import of `WaitlistModule`, see Architecture below), `src/shared/infrastructure/bullmq/waitlist-recheck-queue.constants.ts` (the one shared queue-name/job-data contract both modules import), two new migrations (see Database Impact), and full test coverage across all three tiers (see Testing).
+
+**Files modified:** `prisma/schema.prisma` (`ReservationWaitlistEntry`, `WaitlistStatus`, `Reservation.createdBy` nullable, back-relations), `prisma/seed.ts` (+`reservations:waitlist` permission, granted to `manager`/`receptionist` only), `src/app.module.ts` (+`WaitlistModule`), `domain/entities/reservation.entity.ts` (`createdBy: string | null`), `domain/events/reservation.events.ts` (`ReservationCreatedEvent.payload.createdBy: string | null`), `modules/authentication/infrastructure/events/auditing-event-publisher.ts` (three-way `ReservationCreatedEvent` attribution; 4 new Waitlist event branches), `reservations.module.ts` (+`WaitlistRecheckQueue` producer registration/provider, `exports: [RESERVATION_REPOSITORY, RESERVATION_GUEST_REPOSITORY]` so `WaitlistModule` can reuse them), `cancel-reservation.use-case.ts`/`mark-no-show-reservation.use-case.ts` (+best-effort `enqueueRecheck` call, `Approved`-source-only for Cancel).
+
+**Database impact:** two migrations. `20260724141815_phase_7_5_reservation_waitlist` - `CREATE TABLE reservation_waitlist_entries`, `WaitlistStatus` enum, `reservation_waitlist_entries_party_xor_chk` CHECK constraint, the partial unique active-position index (raw SQL, `(branch_id, preferred_date, position) WHERE status IN ('Waiting','Notified') AND deleted_at IS NULL`), `ALTER TABLE reservations ALTER COLUMN created_by DROP NOT NULL`. `20260724143130_phase_7_5_1_waitlist_remove_organization_id` - forward corrective migration (the original migration was already applied; per `MIGRATION_POLICY.md` it was not edited) dropping the `organization_id` column and its index - no data existed yet, a clean lossless drop. Both migrations applied to and verified clean (`prisma migrate status`: "Database schema is up to date!", zero drift) on both the dev (`localhost:5433`) and isolated strict-verification (`localhost:15433`) databases.
+
+**API:** `POST /api/v1/waitlist` (Join, guard-light dual-actor dispatch mirroring `POST /reservations`), `POST /api/v1/waitlist/:id/cancel` (dual-actor, mirroring `POST /reservations/:id/cancel`), `POST /api/v1/waitlist/:id/promote` (staff-only, `PermissionsGuard` + `reservations:waitlist`, mirroring `POST /reservations/:id/approve`). No list/reorder/admin-dashboard/analytics endpoints, per the frozen API surface.
+
+**Slot derivation:** `reservationStartTime = (preferredDate, preferredTimeFrom)` interpreted in the target `Branch.timezone`, converted to UTC via a two-pass `Intl.DateTimeFormat` convergence algorithm (verified correct across a full `America/New_York` DST-transition window in `waitlist-slot.service.spec.ts`, both spring-forward and fall-back); `reservationEndTime = reservationStartTime + RestaurantSettings.defaultReservationDurationMinutes`. `preferredTimeFrom` is authoritative (supersedes the original "soft preference" framing); `preferredTimeTo` remains optional/non-authoritative.
+
+**Table selection (promotion):** a fresh informational search against the entry's own derived window (`TableRepository.findManyAvailableByBranchIdAndMinCapacity` + `ReservationRepository.findOverlappingPendingOrApproved` - `SearchAvailabilityUseCase`'s own building blocks, reused verbatim), smallest-sufficient-capacity first, `tableNumber` ascending as tie-break (the repository's existing default order, not a new rule). Never the triggering Reservation's own table. ADR-013 remains the sole transactional concurrency authority.
+
+**Automatic trigger set (corrected from the original decision-note framing):** only `Approved -> Cancelled` and `Approved -> NoShow` enqueue a re-check - both are the only transitions that actually call `Table.release()`. `Pending -> Cancelled`/`Pending -> Expired` never held a table and do not trigger one - this required correcting `TASKS.md`'s own earlier "Cancelled/NoShow/Expired" framing (decision #8, this file, line 496), found to be imprecise during the Phase 7.5 architecture-freeze review itself.
+
+**Automatic re-check delivery:** durable BullMQ (`WaitlistRecheckQueue`), not a bare synchronous call - closes the crash/lost-opportunity gap a synchronous-only design would have. `ReservationsModule` registers the producer, `WaitlistModule` independently registers the consumer for the same queue name - two ordinary BullMQ producer/consumer registrations sharing one constants file, not a circular NestJS module import (this was the resolution to "Blocker B" from the pre-implementation review). Best-effort relative to the triggering Cancel/NoShow - an enqueue failure is logged, never thrown; the triggering action's own success never depends on this succeeding.
+
+**FIFO fairness:** FIFO-ORDERED FIRST-SERVICEABLE (owner-approved, final round) - the re-check scan evaluates active entries strictly in `position` order and promotes the first one that is actually serviceable; an unserviceable head-of-queue entry does not block later entries and is never mutated by being skipped (proven in `recheck-waitlist.use-case.spec.ts`: skipping leaves the entry's props byte-identical). At most one successful promotion per re-check attempt.
+
+**Promotion atomicity/concurrency:** the two-phase claim (see Contradiction #2 above) inside one `UnitOfWorkPort` transaction: claim (status-only) -> ADR-013 lock + Reservation insert -> Table.reserve() if auto-approved -> claim finalize (`convertedReservationId`). Proven against real concurrent Postgres transactions in `waitlist-promotion-concurrency.integration-spec.ts`: 5 simultaneous promotion attempts on the same entry produce exactly 1 success; manual-vs-automatic race produces exactly 1 Reservation; two entries racing for the branch's only table produce exactly 1 winner with the loser's entry rolled back to its exact pre-attempt state; two simulated "re-check workers" scanning the same queue concurrently never double-convert.
+
+**`Reservation.createdBy` nullable:** `null` means an automatic (System) Waitlist promotion created the row; every other path (Online/Phone/WalkIn/Staff, manual Waitlist promotion) still always sets a real actor id. `AuditingEventPublisher`'s `ReservationCreatedEvent` attribution is now three-way (`User`/`Employee`/`System`), verified live (see Manual HTTP verification below).
+
+**`ReservationGuest` reuse:** a guest-backed waitlist entry's `reservationGuestId` and the `Reservation` created on promotion reference the exact same `ReservationGuest` row - no duplication, no second guest entity.
+
+**Authorization:** `reservations:waitlist` (new permission, granted to `manager`/`receptionist`, not `cashier`) covers Join-on-behalf-of-guest, Cancel (Employee branch), and manual Promote. Join/Cancel are dual-actor (Customer ownership or Employee permission+scope, no `PermissionsGuard` at the route level, resolved inside the use case, mirroring Reservation's own established pattern); Promote is staff-only (`PermissionsGuard` + `@RequirePermission`), a Customer actor gets a structural 403.
+
+**Domain events/audit:** all 5 frozen event classes (`WaitlistEntryCreated`/`Notified`/`Promoted`/`Expired`/`Cancelled`) implemented; `WaitlistEntryNotified` is reserved for Phase 7.6 (class exists, no Phase 7.5 code path publishes it). `WaitlistEntryCancelledEvent` carries an explicit `cancelledByActorType: 'User' | 'Employee'` field (rather than inferring it) so audit attribution never has to guess from the entry's own ownership, since an Employee may cancel a User-owned entry. `AuditingEventPublisher` gained 4 new event branches plus the `ReservationCreatedEvent` three-way correction.
+
+**Testing:** 54 new unit tests (entity state machine, `WaitlistSlotService` including the DST round-trip, `WaitlistPromotionService`, all 5 use cases); 11 new integration tests (`prisma-reservation-waitlist-entry.integration-spec.ts` - round-trip, the partial unique index actually rejecting a duplicate active position, optimistic-concurrency `updateTransitioningFrom`, a real concurrent-Join race producing zero duplicate positions across 10 simultaneous joins; `waitlist-promotion-concurrency.integration-spec.ts` - the 5 concurrency scenarios described above); 8 new e2e tests (`waitlist.e2e-spec.ts` - Join for self/on-behalf-of-guest, permission/branch-scope rejections, Cancel with cross-Customer 404, Promote with Customer-403 and Employee-success, the full automatic-recheck flow via a real BullMQ worker, and an unserviceable (past-time) entry confirmed NOT auto-promoted). Two genuine test-infrastructure lessons surfaced and were corrected during this phase, noted for future phases: (a) e2e "Customer" fixtures must use the dedicated bare-`User` `registerAndLoginCustomer` helper, never `registerAndLoginOwner` (which resolves to `OrganizationMember`, not `User`) - an existing, previously-established pattern this phase's first e2e draft initially missed; (b) the full e2e suite must always run with `--runInBand` (serial) against the shared dev database - running it in Jest's default parallel-worker mode causes cross-file interference (observed: 229 spurious failures, including deletion of the shared seeded `receptionist` role by an unrelated file's cleanup running concurrently) with zero relation to this phase's own code, resolved by re-seeding and re-running serially.
+
+**Verification results:** `tsc --noEmit`: 0 errors. `eslint --fix`: 0 errors. `nest build`: clean. `prisma format`/`validate`/`migrate status`: clean on both stacks, zero drift. Unit: **1049/1049** (full repo, +54 from this phase). Integration (dev, `localhost:5433`, serial): **197/197**. Integration (strict, `localhost:15433`, serial, via `scripts/run-strict-tests.js`): **197/197**. E2E (dev, serial): **346/346** across 31 suites (+8 from this phase). E2E (strict, via `scripts/run-strict-tests.js`): **346/346** across 31 suites. Docker: both images rebuilt from current source (`tavla-backend`/`tavla-strict-backend` image ids changed), both backend containers force-recreated, both confirmed healthy (`/api/v1/health`: database/redis/minio all `up`), and `docker inspect <container> --format '{{.Image}}'` confirmed each running container's image matches the freshly built one exactly.
+
+**Manual HTTP verification (live Docker, not Jest):** against the freshly rebuilt dev container (`localhost:3000`) - provisioned a real Owner + Restaurant + Branch + two Tables + a `manager`-role Employee + three Customers, all via real HTTP calls (Owner/Employee/Customer accounts themselves provisioned directly at the database layer per this project's established ADR-022 convention - public Owner self-registration was retired - then authenticated via the real `POST /auth/login`). Confirmed live, with direct `psql`/Prisma inspection backing every HTTP-level result: (1) a Customer `POST /waitlist` creates a `Waiting` entry with the correct `userId`; (2) an Employee `POST /waitlist/:id/promote` converts it, and the resulting `Reservation` row has `source = WaitlistConversion`, `createdBy` = the Employee's own `employeeId`; (3) booking a second table as `Approved` (autoApproval on) then `POST /reservations/:id/cancel`-ing it, with a same-date waitlist entry already queued, resulted - within the polling window, via the real BullMQ worker, no test double involved - in that entry becoming `Converted` with a real `Reservation` row (`source = WaitlistConversion`, `createdBy = NULL`) and the table returning to `Reserved`; (4) a Customer `POST /waitlist/:id/cancel` on their own entry succeeded, and the same Customer's attempt to `POST /waitlist/:id/promote` was rejected `403`; (5) `audit_logs` rows exist for all three waitlist actions, with the automatic promotion's row explicitly `actorType: System`, `actorId: NULL`. All 20 assertions in this live flow passed. All scratch data (waitlist entries, reservations, reservation history, employees, tables, floor plans, branches, restaurant, organization/organization member, users, device sessions, token families) deleted afterward; the temporary verification script was not committed.
+
+**Bugs found:** three real defects, all self-discovered during this same implementation pass (via integration testing against a real Postgres instance and the architecture-freeze review process itself), none reaching Docker or live verification undetected - see "Contradictions found and resolved" above (tenancy column removal, the two-phase-claim FK-ordering fix, the P2002 column-list matching fix). **Bugs fixed:** all three; no other defects found.
+
+**Remaining technical debt:** none introduced by this phase beyond what was already explicitly out of scope per the frozen authorization for this phase - Phase 7.6 (Operational Signals: reminders, late-arrival, table-ready, the `WaitlistEntryNotified` event's actual publication), Merge/Split Tables, no-show banning/restriction, broader GDPR/erasure work, queue reordering/priority/VIP logic, and list/admin-dashboard/analytics endpoints all remain deferred exactly as frozen.
+
+**Production readiness:** Phase 7.5's declared scope is production-ready - tested at every tier (both database environments, unit/integration/e2e), the queue-position and party invariants enforced at both domain and database layers, promotion atomicity and every named concurrency scenario (concurrent same-entry claims, manual-vs-automatic race, two-entries-one-table race, duplicate re-check-worker replay) proven against real concurrent Postgres transactions (not simulated), tenant/branch-scope-safe for the Employee actor and IDOR-proof for cross-Customer/cross-branch targets, audited via the existing unified domain-event/audit pipeline with correct three-way actor attribution, and live-verified via both freshly rebuilt Docker images and a manual HTTP flow with direct database inspection covering Join, manual Promote, the real asynchronous BullMQ automatic-promotion path, Cancel, and the Customer/Employee authorization boundary.
+
+**PHASE 7.5 COMPLETE. PHASE 7.5 LIVE VERIFIED. PHASE 7.5 PRODUCTION VERIFIED.**
+
+---
+
+## Phase 7.6 — Operational Signals
+
+Implemented exactly the domain/event side named by the checklist item and ADR-019 - reminders, late-arrival, and table-ready are all real, delivered BullMQ-scheduled domain events/staff signals; actual notification *delivery* (`NotificationProvider`, LightOTP, push/SMS/email) remains explicitly deferred to Phase 9, per the checklist item's own scope note. **`WaitlistEntryNotified` and the production `Waiting → Notified` transition are NOT part of Phase 7.6** (Option A, owner-approved blocker resolution): the entity `notify()` method, `WaitlistEntryNotifiedEvent` class, and `ReservationWaitlistStatus.Notified` remain implemented but dormant - no HTTP endpoint, BullMQ trigger, head-of-queue notification, or serviceability-triggered path was invented. Activation semantics belong to Phase 9 notification architecture unless explicitly re-frozen earlier. **`ReservationReminderSent` is also deferred to Phase 9** - Phase 7.6 publishes only `ReservationReminderDue`.
+
+**New `RestaurantSettings` fields:** `reservationReminderMinutesBefore` (int, 1-10080, default 60) and `lateArrivalGraceMinutes` (int, 1-1440, default 15) - plumbed end-to-end (entity `createDefault`/`updateSettings`/`validate`, DTOs, mappers, `PATCH /restaurants/:id/settings`, and every existing settings test fixture) exactly like every prior `RestaurantSettings` field addition (Phase 7.1's `defaultReservationDurationMinutes` precedent).
+
+**Reservation domain:** two new narrow methods on `Reservation` - `markLateArrivalNotified(at)` and `markTableReadyNotified(at)`, each guarded by `assertNotifiable` (must be `Approved`, must not already carry that specific notification timestamp). `reschedule()` unconditionally resets both `lateArrivalNotifiedAt`/`tableReadyNotifiedAt` to `null`.
+
+**Repository CAS:** `updateTransitioningFrom` carries both timestamp columns; `markLateArrivalNotifiedIfEligible`/`markTableReadyNotifiedIfEligible` are Prisma `updateMany` CAS guards (`WHERE status = 'Approved' AND <column> IS NULL`). Proven against real concurrent Postgres transactions (5 simultaneous callers → exactly 1 success each).
+
+**BullMQ scheduling:** dedicated `ReminderQueue` and `LateArrivalQueue` (not mixed into `ReservationQueue`). `ApprovedReservationOperationalSchedulerPort` (`scheduleForApproved`/`replaceForApproved`/`cancelForReservation`) via `BullMqApprovedReservationOperationalScheduler`; job ids `reservation-reminder-{id}`/`reservation-late-{id}`; `delay = Math.max(0, dueAt - now)`. `ScheduleApprovedReservationSignalsService` resolves settings minutes once. Wired post-commit: Approve / Create auto-approve / WaitlistPromotion auto-approve (`scheduleForApproved`); Approved Reschedule (`replaceForApproved`); Cancel/Complete/NoShow from Approved (`cancelForReservation`).
+
+**Reminder/Late-Arrival processors:** `PublishReservationReminderUseCase` no-ops unless still `Approved` **and** `reservationStartTime` matches the job payload. `ProcessLateArrivalUseCase` applies the same start-time stale-job guard before CAS (implementation-time fix: Reschedule resets `lateArrivalNotifiedAt` to `null`, so CAS alone would incorrectly re-arm an in-flight stale Late job against the new window - mirroring Reminder's already-frozen stale protection). Both use `TenantContextService.runAsync`. Never auto-NoShow, never `Table.release()`, never status changes.
+
+**Table Ready:** `POST /api/v1/reservations/:id/table-ready` - `reservations:tableready` (Manager + Receptionist), Employee branch/org scope, Approved only, CAS, `TableReadyNotified` (Employee audit). No status/table mutation.
+
+**Events:** `ReservationReminderDue` / `GuestLateArrivalNotified` (System) and `TableReadyNotified` (Employee) - wired into `AuditingEventPublisher`.
+
+**Bugs found & fixed during this phase:** (1) `PrismaRestaurantSettingsRepository.save()` upsert `update:` initially omitted the two new columns - fixed. (2) Late Arrival lacked Reminder's start-time stale guard after Reschedule timestamp reset - fixed. (3) Pre-existing e2e FK cleanup race in phone-walkin/waitlist suites - fixed.
+
+**Verification results (full matrix):**
+- `tsc --noEmit`: 0 errors
+- `eslint --max-warnings 0 --fix`: 0 errors
+- `nest build`: clean
+- `prisma format` / `validate` / `migrate status`: clean on both stacks (dev `localhost:5433`, strict `localhost:15433`); migration `20260724190000_phase_7_6_operational_signals` applied; zero drift
+- Unit (full repo): **1097/1097**
+- Integration (dev, `--runInBand`): **206/206** (includes real-Redis BullMQ scheduler suite: schedule / past-due clamp / replace / cancel)
+- Integration (strict, `test:integration:verify`): **206/206**
+- E2E (dev, `--runInBand`): **351/351** across 32 suites
+- E2E (strict, `test:e2e:verify`): **351/351** across 32 suites
+- Docker: both images rebuilt from current source (`tavla-backend` → `bdfb5e383180`, previously `d1ea420f4bff`; `tavla-strict-backend` → `02259ad27282`, previously `e65c13010d6c`); both backends `--force-recreate`; both `healthy`; running container image IDs match freshly built images exactly
+- Live HTTP/BullMQ (`scripts/phase-7-6-live-verify.ts` against rebuilt `localhost:3000`): settings persistence; Approve schedules Reminder+Late; past-due Reminder clamps/fires with System audit; Table Ready (Customer 403, staff success, status/table unchanged, duplicate 400); Reschedule resets both timestamps and replaces jobs; Cancel removes both jobs; auto-approve Create schedules both; scratch data cleaned afterward. Env files/secrets untouched.
+
+**Remaining deferred scope:** Phase 9 notification delivery (`NotificationProvider`, `ReservationReminderSent`, activation of dormant `Waiting → Notified` / `WaitlistEntryNotified`); Merge/Split Tables; no-show banning; broader GDPR/erasure.
+
+**PHASE 7.6 COMPLETE.**
+**PHASE 7.6 LIVE VERIFIED.**
+**PHASE 7.6 PRODUCTION VERIFIED.**
+
+---
+
 # Phase 8 — WebSocket
 
-Status: ⏳ Pending
+Status: 🟢 **Implemented, live-verified, and E2E verification-closed (2026-07-25).** Full frozen architecture built exactly as specified below, with zero deviations. Automated E2E coverage now proves every §23-required event type end-to-end (real Redis, real `socket.io-client`, real REST mutation) — `ReservationApproved` plus, as of the Verification Closure Addendum, `ReservationCancelled`/`Rescheduled`/`NoShow`, `WaitlistEntryPromoted`, `TableReadyNotified`, `TableStatusChanged`, `TableMoved`. See the Implementation & Verification Report at the end of this section for the original build evidence (including the honestly-recorded coverage gap as it stood on first delivery), and the **Verification Closure Addendum** immediately after it for the closure pass, exact events proved, and final test totals.
 
-- [ ] Socket.IO
-- [ ] Live Reservations
-- [ ] Live Tables
-- [ ] Live Notifications
+- [x] Socket.IO — NestJS `@WebSocketGateway` + existing `RedisIoAdapter` (ADR-015); handshake JWT; typed `room.subscribe` / `room.unsubscribe`
+- [x] Live Reservations — allow-listed Reservation (+ operational signal) domain events → authorized rooms via `domain.event`
+- [x] Live Tables — Table CRUD events + new `TableStatusChanged` / `TableMoved` → staff rooms
+- [x] Live Notifications — **realtime fan-out of already-existing domain/operational signals** (e.g. `ReservationReminderDue`, `GuestLateArrivalNotified`, `TableReadyNotified`) to authorized connected clients. **Does not** mean the Phase 9 Notification aggregate, persistence, delivery providers, `notification.created`/`notification.read`, `ReservationReminderSent`, or `WaitlistEntryNotified` activation.
+
+## Phase 8 — WebSocket: Pre-implementation architecture decisions (approved, frozen, 2026-07-24)
+
+Owner-approved architecture freeze following the post-Phase-7.6 Implementation Readiness Review and the Phase 8 Pre-Implementation Architecture Decision Report. No new ADR is required (CHANGE_POLICY.md: implements ADR-015 / existing publisher pattern; TableStatusChanged/TableMoved are the explicit future-phase decisions EVENTS.md already anticipated). The following decisions are final and must not be re-debated during implementation. **This freeze does not authorize implementation** — wait for a separate explicit implementation authorization.
+
+### 1. Projection layer only
+
+REST remains the sole command surface. WebSocket distributes committed state-change signals. The gateway must never mutate Reservation, Table, Waitlist, or other business aggregates. Protected Phase 6–7 baselines (reservation state machine, table lifecycle, ADR-013, ADR-023, waitlist FIFO/promotion, ReservationGuest/source semantics, Reminder/Late Arrival/Table Ready behavior, existing authz, transaction boundaries, audit attribution) remain unchanged.
+
+### 2. Event fan-out
+
+Use the existing `EVENT_PUBLISHER` chain with `RealtimeEventPublisher` as the **outermost** decorator:
+
+```
+Use cases / BullMQ / System
+  → EVENT_PUBLISHER
+      → RealtimeEventPublisher
+          1. await inner.publish(event)   // AuditingEventPublisher
+          2. try broadcast via RealtimeBroadcasterPort; catch → log + swallow
+      → AuditingEventPublisher → LoggingEventPublisher → AuditLogWriter
+```
+
+- Feature modules continue depending only on `EVENT_PUBLISHER`.
+- Do **not** introduce a second general-purpose event bus.
+- Do **not** inject the WebSocket Gateway into domain/application use cases.
+- `RealtimeBroadcasterPort` is implemented by a Socket.IO adapter inside `RealtimeModule` (`server.to(room).emit(...)`); cross-instance fan-out is exclusively the existing Redis Socket.IO adapter (ADR-015). No second application-level Redis pub/sub bus.
+
+### 3. Failure semantics
+
+Business transaction is authoritative; realtime is secondary/best-effort.
+
+1. Domain transaction commits.
+2. Existing audit/log publisher path executes.
+3. Realtime broadcast is attempted.
+
+Socket.IO / Redis broadcast failures: logged, swallowed; must **not** cause HTTP 5xx, fail a BullMQ business job, or make a committed operation appear rolled back. No WebSocket retry queue, transactional outbox, or durable WS event history in Phase 8. Existing audit guarantees must not be weakened.
+
+### 4. Final broadcast allow-list
+
+**Broadcast (explicit allow-list; unknown events default to NOT broadcast):**
+
+- Reservation: `ReservationCreated`, `ReservationApproved`, `ReservationRejected`, `ReservationCancelled`, `ReservationRescheduled`, `ReservationCompleted`, `ReservationExpired`, `ReservationNoShow`
+- Waitlist: `WaitlistEntryCreated`, `WaitlistEntryPromoted`, `WaitlistEntryExpired`, `WaitlistEntryCancelled`
+- Operational signals: `ReservationReminderDue`, `GuestLateArrivalNotified`, `TableReadyNotified`
+- Table: `TableCreated`, `TableUpdated`, `TableDeleted`, **`TableStatusChanged`** (new), **`TableMoved`** (new)
+- Restaurant: `RestaurantCreated`, `RestaurantUpdated`, `RestaurantDeleted`, `RestaurantActivated`, `RestaurantSuspended`
+- Branch: `BranchCreated`, `BranchUpdated`, `BranchDeleted`
+
+**Do NOT broadcast:** `ReservationUpdated` (superseded by `ReservationRescheduled`), `ReservationPending`, `WaitlistEntryNotified` (Phase 9 — class may exist but must not gain a production `Waiting → Notified` path), `TableMerged`/`TableSplit` (deferred features), authentication/security events, unknown/unmapped events.
+
+### 5. TableStatusChangedEvent (Option A — narrow)
+
+Introduce a real `TableStatusChangedEvent` **only** for manual `Table.transitionStatus` flows via `ChangeTableStatusUseCase`.
+
+Payload: `{ tableId, branchId, floorPlanId, organizationId, fromStatus, toStatus, actorId }` plus normal `DomainEvent` metadata/correlation.
+
+Publish post-operation through `EVENT_PUBLISHER`. `table.status_changed` audit is produced through the AuditingEventPublisher mapping (not a disconnected direct-audit-only path).
+
+**Do NOT** emit `TableStatusChangedEvent` from Reservation-owned `Table.reserve()` / `Table.release()` (Approve, auto-approve, WaitlistConversion auto-approval, Approved Cancel, Complete, NoShow, Approved cross-table Reschedule). Those are represented by their Reservation domain events; clients reconcile Table state via REST. Does not alter ADR-013, ADR-023, reservation transaction boundaries, or Table lifecycle ownership.
+
+### 6. TableMovedEvent
+
+Introduce `TableMovedEvent` for the existing Move Table Domain Action (currently audit-only). Payload carries identifiers needed for floor-plan sync: `{ tableId, branchId, organizationId, oldFloorPlanId, newFloorPlanId, actorId }` (+ correlation/metadata), matching the successful move operation. Publish post-operation through `EVENT_PUBLISHER`; audit `table.moved` via AuditingEventPublisher. Merge/Split remain untouched.
+
+### 7. Rooms
+
+Exactly four rooms: `organization:{organizationId}`, `restaurant:{restaurantId}`, `branch:{branchId}`, `reservation:{reservationId}`. No `waitlist:{id}`, `notification:{id}`, `conversation:{id}`, or arbitrary custom rooms. Canonical room names are **server-generated after authorization**. Client never gains access merely by knowing/supplying a room string.
+
+### 8. Actor → room authorization matrix
+
+| Actor | organization | restaurant | branch | reservation |
+|---|---|---|---|---|
+| Customer/User | DENY | DENY | DENY | **CONDITIONAL** — `reservation.userId === authenticated User.id`. Guest-backed Phone/WalkIn/WaitlistConversion (`userId === null`) → **DENY**. No guest WebSocket authentication. |
+| Employee | DENY | **CONDITIONAL** — Employee's restaurant scope | **CONDITIONAL** — existing branch-assignment semantics | **CONDITIONAL** — reservation's branch under existing staff scope rules |
+| OrganizationMember (Owner/Admin) | **CONDITIONAL** — own organization | **CONDITIONAL** — restaurant.organizationId match | **CONDITIONAL** — branch via Restaurant → org | **CONDITIONAL** — reservation via Branch/Restaurant → org |
+
+OrganizationMember and Employee scope models remain distinct. Waitlist events are not customer-room broadcasts in Phase 8.
+
+### 9. Passive subscription permissions
+
+Room subscription is **scope/ownership-based**. Do **not** invent `realtime:*`, `websocket:*`, or `reservations:read`. Existing mutation permissions remain on REST command paths only. A branch-authorized Employee may receive passive branch sync events without holding the corresponding mutation permission.
+
+### 10. JWT / socket lifecycle
+
+At handshake: verify normal access JWT (signature, expiration, claims), build `AuthenticatedActor`, perform existing-equivalent one-time `sessionVersion` validation. Store actor snapshot on the socket. **Schedule server-side disconnect at JWT `exp`.** Client must reconnect with a fresh access token. No indefinitely trusted sockets. No continuous DB validation on every broadcast. `permissionsVersion` / role / branch-assignment changes take effect at reconnect (existing ≤15 min JWT staleness window). Immediate cross-instance socket eviction on logout-all / `sessionVersion` bump / permission changes is **not** Phase 8 (future security hardening; no new Redis invalidation infrastructure now).
+
+### 11. Handshake token contract
+
+Canonical: `handshake.auth.token` (normal access JWT). Also allow `Authorization: Bearer <token>` on the handshake when the client supports it. **Never** accept tokens via URL/query parameters. No WebSocket-specific token format. No anonymous business socket.
+
+### 12. Connection protocol
+
+Client events: `room.subscribe` / `room.unsubscribe` with payload `{ roomType: 'organization'|'restaurant'|'branch'|'reservation', resourceId: string }`.
+
+Server: validate typed request → authenticate actor → bind TenantContext where appropriate → resolve resource → authorize → construct canonical room name → join/leave. Do not accept arbitrary room names as authorization input.
+
+### 13. WebSocket envelope
+
+Dedicated realtime envelope (not the HTTP envelope):
+
+```
+{ eventId, eventType, occurredAt, aggregateType, aggregateId, correlationId?, data }
+```
+
+- `eventId` = `DomainEvent.eventId`; `eventType` = `DomainEvent.eventName` (PascalCase).
+- Emit on one canonical server channel: **`domain.event`** (eventType inside the envelope). Do not create an unbounded Socket.IO channel namespace per domain event.
+- REST remains authoritative; WebSocket is synchronization/invalidation.
+
+### 14. Event → room matrix (implementation contract)
+
+| Event | org | restaurant | branch | reservation | Customer | Employee | OrgMember |
+|---|---|---|---|---|---|---|---|
+| ReservationCreated/Approved/Rejected/Cancelled/Rescheduled/Completed/Expired/NoShow | — | ✓ | ✓ | ✓* | ✓ if owner | ✓ | ✓ |
+| ReservationReminderDue / GuestLateArrivalNotified | — | ✓ | ✓ | — | — | ✓ | ✓ |
+| TableReadyNotified | — | ✓ | ✓ | ✓* | ✓ if owner | ✓ | ✓ |
+| WaitlistEntryCreated/Promoted/Expired/Cancelled | — | ✓ | ✓ | — | — | ✓ | ✓ |
+| TableCreated/Updated/Deleted / TableStatusChanged / TableMoved | — | ✓ | ✓ | — | — | ✓ | ✓ |
+| Restaurant* | ✓ | ✓ | — | — | — | ✓ (rest.) | ✓ |
+| Branch* | ✓ | ✓ | ✓† | — | — | ✓ | ✓ |
+
+\* Reservation room only when a client has successfully subscribed under §8.  
+† BranchCreated may omit the branch room (room did not exist yet); Updated/Deleted target the branch room when applicable.
+
+Payloads are PII-minimized projections (§15), not full entities.
+
+### 15. PII policy
+
+No raw `ReservationGuest.phone` / `email` / `fullName` in generic Phase 8 WebSocket payloads. Do not broadcast entire entities. Staff rooms: minimum identifiers/state for UI sync. Customer reservation room: customer-safe booking state only. Do not expose audit internals, security metadata, or unnecessary staff identifiers. REST remains the authorized path for detailed retrieval.
+
+### 16. Delivery semantics
+
+Best-effort live delivery. Does **not** guarantee exactly-once, durable replay, global/cross-instance ordering, or offline history. Duplicates allowed (`eventId` for client dedup). After reconnect, clients reconcile via REST. No outbox / DB event-history architecture.
+
+### 17. Rate limiting / NFR boundary
+
+Reuse existing `RateLimiterPort` / Redis sliding-window infrastructure; no new dependency. Protect handshake, `room.subscribe`/`unsubscribe`, unknown/malformed client events, room enumeration, unbounded subscriptions. Configurable max rooms per socket — **default 32** unless implementation discovers a concrete reason to change (then STOP and report before changing). All limits via env/config, not hard-coded production policy.
+
+Phase 8 does **not** claim 25,000 concurrent connections proven. Requires: functional correctness, real Redis multi-instance fan-out proof, abuse-safe defaults, small concurrency smoke. Full 25k load/soak remains later staging/performance work (TESTING_STRATEGY.md Load Tests / Phase 15).
+
+### 18. Live Notifications vs Phase 9
+
+Phase 8 "Live Notifications" = realtime fan-out of **already existing** domain/operational signals to authorized sockets. It does **not** implement: Notification aggregate/repository, `notification.created`/`notification.read`, read/unread persistence, push/SMS/WhatsApp, OneSignal, NotificationProvider, delivery attempts, `ReservationReminderSent`, or `WaitlistEntryNotified` activation. Those remain Phase 9 (Email Notifications excepted — removed from product scope, 2026-07-25; see the Phase 9 section header). LightOTP remains Customer OTP infrastructure only.
+
+### 19. Tenancy
+
+Follow ADR-012 / TENANCY.md. TenantContext is not propagated through Redis Socket.IO. Each client-originated WS handler restores actor context, binds TenantContext only when the actor has organization scope, authorizes, then accesses repositories. Customer reservation ownership must not be forced through a `DIRECT_TENANT_OWNED_MODEL` lookup requiring `organizationId` they do not possess. No tenant-scoping-extension changes. If implementation proves such a change necessary: STOP and report.
+
+### 20. Module ownership
+
+Dedicated `RealtimeModule` owns: gateway, handshake auth, room authz, event→room mapping, PII-safe projection mapping, `RealtimeEventPublisher`, `RealtimeBroadcasterPort` implementation. Feature modules (`Reservations`/`Tables`/`Waitlist`/Restaurant/Branch) must **not** import `RealtimeModule`; they publish through `EVENT_PUBLISHER` only. Avoid circular module dependencies.
+
+### 21. AuditingEventPublisher hygiene (authorized for implementation)
+
+Existing defect: `ReservationCancelled` / `ReservationRescheduled` / `ReservationCompleted` / `ReservationExpired` / `ReservationNoShow` are not mapped correctly in `AuditingEventPublisher` and fall through to an incorrect generic fallback — contradicting documented Phase 7.3 audit semantics. Correct these mappings during Phase 8 implementation as a documentation/compliance defect fix (not an audit subsystem redesign). Add regression tests for `action` / `actorType` / `actorId` / resource attribution.
+
+### 22. Database / dependencies
+
+Expected Prisma/database impact: **NONE**. Do not create connection/presence/socket-session/outbox/event-history tables. Expected new external dependencies: **NONE** (use already-installed Socket.IO / Nest WebSocket / Redis adapter packages). If a migration or new dependency proves necessary: STOP and explain.
+
+### 23. Verification contract (for later implementation)
+
+Unit: handshake, expired/invalid JWT, typed room validation, Customer/Employee/OrgMember authz, guest-backed reservation denial, allow-list, event→room, PII minimization, disconnect-at-exp, idempotent subscribe/unsubscribe, broadcaster failure isolation, TableStatusChanged/TableMoved mapping, corrected Phase 7.3 audit mappings.
+
+Integration: **real Redis**; prove Instance A emit → Instance B client receives via Redis adapter; unauthorized/cross-org/cross-branch isolation; invalid/expired JWT rejection.
+
+E2E: real `socket.io-client` — connect → authenticate → subscribe → **real REST mutation** → receive `domain.event`. Cover Approved, Cancelled, Rescheduled, NoShow, Waitlist Promotion, Table Ready, TableStatusChanged, TableMoved; unauthorized socket receives nothing.
+
+LIVE VERIFIED requires: both normal and strict suites green; Docker images rebuilt from current source; containers force-recreated; image IDs match fresh builds; healthy; real Redis; real Socket.IO client; real REST→WS path; connection through production-style **Nginx `/socket.io/`** (direct backend-port alone is insufficient). Prefer multi-instance Redis-adapter proof when safely possible.
+
+### 24. Future hardening (explicitly out of Phase 8)
+
+Immediate cross-instance socket eviction after logout-all / `sessionVersion` bump / permission changes.
+
+No further architectural ambiguity remains for Phase 8 as of this note. Implementation begins only after separate explicit owner authorization.
+
+**PHASE 8 ARCHITECTURE FROZEN (2026-07-24).**
+
+## Phase 8 — Implementation & Verification Report (2026-07-25)
+
+Implemented exactly per the frozen architecture above; no deviations, no STOP-condition contradictions encountered.
+
+**Files created** — `src/modules/realtime/` (new module: `realtime.module.ts`; `application/` — `realtime-envelope.ts`, `room.ts`, `realtime-event-mapping.ts` (+spec), `ws-authentication.service.ts` (+spec), `room-authorization.service.ts` (+spec); `domain/ports/realtime-broadcaster.port.ts`; `infrastructure/` — `socket-io-realtime-broadcaster.ts`, `events/realtime-event-publisher.ts` (+spec); `presentation/gateways/realtime.gateway.ts` (+spec), `presentation/dto/room-subscription.dto.ts`); `src/config/realtime.config.ts`; `test/helpers/realtime-fixture.ts`; `test/realtime.e2e-spec.ts`; `test/realtime-redis-adapter.integration-spec.ts`; `scripts/phase8-live-nginx-verify.ts`, `scripts/phase8-concurrency-smoke.ts` (manual live-verification scripts, mirroring the Phase 7.6 `scripts/phase-7-6-live-verify.ts` convention).
+
+**Files modified** — `src/app.module.ts` (registers `RealtimeModule`); `src/modules/authentication/authentication.module.ts` (`EVENT_PUBLISHER` binding moved out to `RealtimeModule`; `AuditingEventPublisher` now exported); `src/modules/authentication/infrastructure/events/auditing-event-publisher.ts` (+spec) — Phase 7.3 audit-hygiene fix (item 21 below); `src/modules/tables/domain/events/table.events.ts` — added `TableStatusChangedEvent`/`TableMovedEvent`; `src/modules/tables/application/use-cases/change-table-status.use-case.ts` (+spec) and `move-table.use-case.ts` (+spec) — now publish through `EVENT_PUBLISHER` instead of writing the audit log directly; `src/infrastructure/tenancy/tenant-context.{types,service,interceptor}.ts` (+specs) — added optional `actorType` to `TenantContext`, needed by the audit-hygiene fix below; `src/infrastructure/websocket/redis-io.adapter.ts` — added a `close()` override that quits the two ioredis pub/sub clients (bug found during e2e testing: without it, every graceful shutdown leaked two open Redis connections); `src/config/{configuration.module,env.validation}.ts` (registers `realtime.config.ts`, `WS_*` env vars); `package.json` (adds `socket.io-client` devDependency for tests).
+
+**RealtimeModule structure** — `@Global()`, imports `AuthenticationModule`/`ReservationsModule`/`BranchesModule`/`RestaurantsModule` (strictly downward; nothing imports `RealtimeModule` back, so the graph stays acyclic). Binds `EVENT_PUBLISHER` to a factory producing `RealtimeEventPublisher`, exports only that token — every existing `@Inject(EVENT_PUBLISHER)` call site is unchanged.
+
+**EVENT_PUBLISHER composition** — `RealtimeEventPublisher` (outermost) → `AuditingEventPublisher` → `LoggingEventPublisher` → `AuditLogWriter`, exactly as frozen.
+
+**RealtimeEventPublisher failure semantics** — `await inner.publish(event)` always runs first and unconditionally; realtime fan-out (mapping + room resolution + broadcast) runs inside its own try/catch, logged and swallowed on any failure. Proven by unit test: a throwing `RealtimeBroadcasterPort` never prevents `inner.publish` from having already been called, and `publish()` still resolves normally to the caller.
+
+**Final event allow-list** — implemented exactly as frozen in `realtime-event-mapping.ts`'s `instanceof` dispatch chain (mirrors `AuditingEventPublisher.toAuditEntry`'s established convention); unmapped events return `null` (default-deny). Verified by 15 mapping unit tests covering every allow-listed event, three explicitly-excluded events (`ReservationUpdated`-shaped absence, `WaitlistEntryNotified`, an unknown future event), the `BranchCreatedEvent` room-omission special case, and Table-event `restaurantId` resolution (with and without a resolvable branch).
+
+**TableStatusChangedEvent** — new event class (`table.events.ts`), published by `ChangeTableStatusUseCase` only (never from `Table.reserve()`/`Table.release()` or any Reservation-owned transition); `table.status_changed` auditing now flows through `AuditingEventPublisher`'s normal event-mapped path instead of a direct audit-log write.
+
+**TableMovedEvent** — new event class, published by `MoveTableUseCase` only; `table.moved` auditing likewise moved onto the normal event/audit-publisher path. Merge/Split untouched (out of scope, unimplemented).
+
+**AuditingEventPublisher Phase 7.3 hygiene fix** — added the 5 missing branches (`ReservationCancelled`/`Rescheduled`/`Completed`/`Expired`/`NoShow`), replacing the incorrect generic `auth.*` fallback with correct `reservation.*`-namespaced actions and correct `actorType` attribution. `Cancelled`/`Rescheduled` are reachable by both Customer and Employee and their payload's `cancelledBy`/`rescheduledBy` field is an ambiguous id (no `actorType` on the payload itself, unlike `WaitlistEntryCancelledEvent`'s own precedent) — resolved via a new `TenantContextService.getActorType()` reading the same request-scoped `TenantContext` the interceptor already binds (added `actorType` to `TenantContext`/`TenantContextInterceptor`, additive and backward-compatible). `Completed`/`NoShow` are always Employee-only (mirroring their use cases' `assertEmployeeCanActOnReservation` guard); `Expired` is always `System`-attributed (no HTTP actor, BullMQ-driven). 8 new regression tests assert `action`/`actorType`/`actorId`/`targetType`/`targetId` for all 5, plus a regression guard proving the `auth.*` fallback is no longer reached.
+
+**Gateway protocol** — `room.subscribe`/`room.unsubscribe`, typed `{ roomType, resourceId }`, malformed/unknown-type rejection, server-built canonical room in the ack, idempotent subscribe/unsubscribe.
+
+**Handshake authentication** — `handshake.auth.token` canonical, `Authorization: Bearer` header also accepted, query-string never read. Implemented as Socket.IO connection **middleware** (`server.use`), not the `OnGatewayConnection` lifecycle hook — a genuine race was found during e2e testing where a real client emitting `room.subscribe` immediately after `connect` could reach the handler before the async, DB-backed `OnGatewayConnection` hook had finished attaching `client.data.actor`, crashing with a `TypeError`. Middleware closes that race entirely (authentication completes before `connection`/any client event can fire) and also gives a rejected handshake a proper `connect_error` instead of a connect-then-disconnect flicker.
+
+**SessionVersion behavior** — one-time check at handshake via `WsAuthenticationService`, reusing `SessionPolicy.isSessionVersionStale` and `User.canLogin()` against the same `TokenService`/`UserRepository` ports `JwtAuthGuard`/`SessionVersionGuard` use for HTTP. No per-event re-check (frozen ≤15 min staleness window, same as HTTP).
+
+**JWT expiration disconnect** — server-side `setTimeout` scheduled from the JWT's own `exp` claim at successful authentication; cleared on `handleDisconnect`. Verified live (Docker) with a real 2-second-expiry token.
+
+**Actor → Room authorization** — `RoomAuthorizationService` implements the frozen matrix exactly (Customer/Employee/OrganizationMember × organization/restaurant/branch/reservation), IDOR-safe (unknown/cross-org/cross-branch/non-owned all collapse to the same denial), guest-backed reservations (`userId === null`) always denied for Customer actors. 29 unit tests plus live-verified cross-branch and ownership denial through Nginx.
+
+**Event → Room routing** — implemented in `realtime-event-mapping.ts` per the frozen matrix; Table events resolve their restaurant room via `BranchRepository` (no `restaurantId` on the Table event payloads themselves).
+
+**TenantContext behavior** — bound via `TenantContextService.runAsync` inside `RoomAuthorizationService`'s OrganizationMember paths, reusing the existing Prisma tenant-scoping extension for the Restaurant lookup exactly as designed; no changes to the extension itself.
+
+**Payload envelope** — `{ eventId, eventType, occurredAt, aggregateType, aggregateId, correlationId, data }` on the single `domain.event` channel, exactly as frozen. Verified byte-for-byte live through Nginx.
+
+**PII minimization** — customer-safe projections strip the acting staff/customer identifier field per event (`approvedBy`/`rejectedBy`/`cancelledBy`/`rescheduledBy`/`completedBy`/`markedBy`); staff rooms receive the full payload. Verified both in unit tests and live (the live-verification script asserts `approvedBy` is present in the staff payload and absent from the customer payload).
+
+**Rate limiting / room limits** — reuses `RateLimiterPort`/`RedisSlidingWindowRateLimiter` (no new dependency) for handshake/subscribe/unsubscribe/unknown-event; defaults added to `realtime.config.ts`/`env.validation.ts` (`WS_RATE_LIMIT_*`, all env-overridable). `WS_MAX_ROOMS_PER_SOCKET` defaults to **32**, unchanged from the frozen value. The handshake limiter was verified live and correctly rejected an over-limit connection burst during the concurrency smoke script's first (over-budget) attempt.
+
+**Redis adapter / multi-instance behavior** — the existing `RedisIoAdapter` (ADR-015) is the only cross-instance mechanism; no second Redis pub/sub implementation was added. Proven with **two independent, fully separate `INestApplication`/Socket.IO server instances in one integration-test process, each with its own `RedisIoAdapter` connected to the same real Redis container** (`test/realtime-redis-adapter.integration-spec.ts`): Instance A receives a real REST mutation, Instance B's independently-connected, independently-authorized client receives the resulting broadcast purely via Redis pub/sub — no in-process path between the two instances exists. **Not proven**: two literal separate Docker containers behind the same Nginx upstream — the current `nginx/default.conf` `upstream backend_upstream` resolves the `backend` service name to a single static IP at Nginx startup (no `resolver`-based dynamic re-resolution), so scaling to two containers would not actually load-balance across them without a topology change, which was correctly not made solely to serve this proof (per explicit instruction not to redesign Docker for the test).
+
+**BullMQ/System-event compatibility** — `RealtimeEventPublisher` is bound at the `EVENT_PUBLISHER` DI token with no HTTP-request-scope dependency; the BullMQ-driven `ExpirePendingReservationUseCase`/reminder/late-arrival processors publish through the exact same token and therefore participate in realtime fan-out automatically, unchanged.
+
+**Transaction/post-commit guarantees** — no publish call site moved; every existing use case still calls `eventPublisher.publish` only after its `unitOfWork`/`prismaContext.runInTransaction` block resolves. ADR-013/ADR-023 concurrency behavior untouched.
+
+**Unit test results** — 85 new tests across 5 spec files (`realtime-event-mapping.spec.ts`: 15, `ws-authentication.service.spec.ts`: 12, `room-authorization.service.spec.ts`: 29, `realtime-event-publisher.spec.ts`: 7, `realtime.gateway.spec.ts`: 22), plus 8 new `AuditingEventPublisher` regression tests, 2 new `TenantContext`/interceptor tests, 2 new Table-use-case event-publishing tests (replacing the old audit-only assertions). **Full unit suite: 142 suites, 1197 tests, all passing** (verified after every change, including after the final lint auto-fix pass).
+
+**Integration results** — real Postgres + real Redis, `test/realtime-redis-adapter.integration-spec.ts`: 2/2 passing (cross-instance fan-out; cross-org isolation across instances). **Full integration suite: 37 suites, 208 tests, all passing** (no regressions in any pre-existing suite).
+
+**E2E results** — real Redis + real `socket.io-client` + real REST, `test/realtime.e2e-spec.ts`: 6/6 passing (invalid-JWT rejection, missing-token rejection, cross-branch subscribe denial, non-owned-reservation subscribe denial, full `ReservationApproved` REST→WS round trip with staff+customer projection verification and unauthorized-peer negative check, JWT-expiry disconnect). **Full e2e suite: 33 suites, 357 tests, all passing.** **Gap**: no dedicated E2E spec cases yet for `ReservationCancelled`/`Rescheduled`/`NoShow`, `WaitlistEntryPromoted`, `TableReadyNotified`, `TableStatusChanged`, `TableMoved` — each is unit/mapping-tested (event → room → projection) but not independently proven through a live REST→WS round trip the way `ReservationApproved` is.
+
+**Static/build/Prisma results** — `tsc --noEmit`: clean. `eslint "{src,test}/**/*.ts" --max-warnings 0`: clean (one pre-existing, out-of-scope untracked file from prior Phase 7.6 work was left untouched per git-scope discipline). `nest build`: clean. `prisma format`/`validate`/`migrate status`: schema valid, **no new migration, no drift** — confirmed against the real dev database.
+
+**Docker rebuild results** — both `tavla-backend` (project `tavla`) and `tavla-strict-backend` (project `tavla-strict`) images rebuilt from current source and force-recreated. Fresh image IDs confirmed distinct from the pre-rebuild baseline (`tavla-backend`: `bdfb5e383180` → `6fde149354f3`; `tavla-strict-backend`: `02259ad27282` → `3066ff87a7c7`) and confirmed the running containers reference exactly those new image digests. Both containers, plus Postgres/Redis/MinIO for both stacks and the shared Nginx container, healthy after recreation; "Nest application successfully started" with no errors in the fresh container's boot log.
+
+**Live Nginx `/socket.io/` verification** — `scripts/phase8-live-nginx-verify.ts`, run against the rebuilt, force-recreated `tavla-backend-1` container through `http://localhost/socket.io/` (not the direct backend port). 3 real `socket.io-client` connections authenticated through Nginx; branch/reservation room subscribe authorized correctly (staff/customer allowed, wrong-branch employee denied `FORBIDDEN`); a real `POST /api/v1/reservations/:id/approve` REST call through Nginx returned 200; both authorized sockets received the `domain.event` envelope with the correct shape and correctly staff-full/customer-minimized payloads; the unauthorized socket received nothing; the resulting `Approved` status was independently confirmed via a direct Postgres query; scratch data cleaned up afterward. **PASSED.**
+
+**Multi-instance live proof** — not performed at the literal two-Docker-container level; see "Redis adapter / multi-instance behavior" above for the substantive proof that was performed (two real, independent Socket.IO server instances sharing one real Redis) and the exact topology reason a literal two-container proof was not attempted.
+
+**Concurrency smoke result** — `scripts/phase8-concurrency-smoke.ts`, run against the live rebuilt stack through Nginx: 15 concurrent authenticated connections (kept under the live `WS_RATE_LIMIT_HANDSHAKE_MAX` default of 20/60s — a separate, unplanned proof that the handshake rate limiter itself works live, since an initial 60-connection attempt was correctly rejected with "Too many connection attempts"), 75 subscribe attempts across them, a 40-request rapid-subscribe burst on one socket, clean disconnect of all sockets, and a fresh post-burst connect+subscribe proving the gateway/Redis adapter remained fully functional afterward. All containers remained healthy throughout. **PASSED** (explicitly not a 25,000-connection load-test claim).
+
+**Security/IDOR tests** — cross-org, cross-branch, non-owned-reservation, and guest-backed-reservation denials all collapse to the same generic `FORBIDDEN` ack (no existence leakage), matching the codebase's established IDOR-safe convention; verified in both unit tests and live.
+
+**Documentation synchronized** — this section (TASKS.md); `docs/EVENTS.md` (Phase 8 audit-hygiene note updated to reflect the fix as shipped); `docs/ARCHITECTURE.md` (Feature Modules list now names `RealtimeModule`); `docs/PROJECT_ROADMAP.md`/`README.md` (Phase 8 status mirrored). `docs/AUTHORIZATION_ARCHITECTURE.md`/`docs/TESTING_STRATEGY.md` were reviewed and found to need no changes beyond what TASKS.md/EVENTS.md already record (both already documented the realtime authorization/testing intent at a level this implementation matches).
+
+**Bugs discovered during implementation** — (1) `RoomAuthorizationService`'s `authorize()` did not `await` its `Promise`-returning branch methods for Restaurant/Branch/Reservation room types, silently swallowing malformed-id `InvalidUuidException`s into the wrong catch path — fixed. (2) The pre-existing `RedisIoAdapter` never closed its two ioredis pub/sub clients on shutdown, leaking connections on every graceful close (discovered via a genuine "Jest did not exit" hang during e2e testing) — fixed with a `close()` override. (3) A genuine handshake-vs-first-client-event race in the original `OnGatewayConnection`-based design (see "Handshake authentication" above) — fixed by moving to Socket.IO middleware.
+
+**Deviations from frozen architecture** — none.
+
+**Explicit deferred/out-of-scope items** — exactly as frozen: Merge/Split Tables, Phase 9 Notification aggregate/delivery, `WaitlistEntryNotified` activation, presence tracking, socket persistence, offline replay/event history, transactional outbox, immediate cross-instance logout eviction, 25k load-test certification, Conversations/chat.
+
+**Remaining blockers (as of first delivery)** — none for the implementation itself. The one open item was the E2E coverage gap noted above (additional event-type E2E specs), additive test work, not an architecture or implementation defect. **Closed by the Verification Closure Addendum below.**
+
+## Phase 8 — WebSocket: Verification Closure Addendum (2026-07-25)
+
+Scope: **verification closure only** — no Phase 9 work, no architecture change, no frozen-decision re-debate. Closes exactly the gap the Implementation & Verification Report above honestly recorded: `ReservationApproved` was the only event type with a dedicated real REST→WebSocket E2E round trip.
+
+**Original gap** — `test/realtime.e2e-spec.ts` proved only `ReservationApproved` end-to-end; `ReservationCancelled`/`Rescheduled`/`NoShow`, `WaitlistEntryPromoted`, `TableReadyNotified`, `TableStatusChanged`, `TableMoved` were unit/mapping-tested (event → room → projection) but never independently proven through a live REST→WS round trip.
+
+**Tests added** — 8 new `it()` cases in the existing `test/realtime.e2e-spec.ts` suite (extended in place, not duplicated — reuses the same `beforeAll`-bootstrapped app/world/Redis/socket infrastructure): one dedicated E2E flow per remaining event type (`ReservationCancelled`, `ReservationRescheduled`, `ReservationNoShow`, `WaitlistEntryPromoted`, `TableReadyNotified`, `TableStatusChanged`, `TableMoved`), plus one additional negative-authorization case (Customer denied `room.subscribe` to a guest-backed reservation, `userId === null` — §11's "Customer cannot subscribe to guest-backed Reservation" proof, not previously covered at the E2E layer). `test/helpers/realtime-fixture.ts` gained four small additions to support them: `seedApprovedReservation` (direct-seed an Approved reservation + `Reserved` table, mirroring `seedPendingReservation`'s existing bypass-the-REST-precondition convention), `seedWaitlistEntry`, `seedAdditionalFloorPlan`, and the `REALTIME_TEST_GUEST_NAME` cleanup marker (`ReservationGuest` has no tenant-scoped column `cleanupRealtimeWorld` can filter by, unlike every other row the fixture creates).
+
+**Each new flow follows the required shape exactly**: a real authenticated `socket.io-client` connects → authenticates → subscribes to the authorized room(s) → a **real** `POST` REST mutation runs (`/reservations/:id/cancel`, `/reservations/:id/reschedule`, `/reservations/:id/no-show`, `/waitlist/:id/promote`, `/reservations/:id/table-ready`, `/tables/:id/status`, `/tables/:id/move`) → the resulting `domain.event` is received and asserted by `eventType`+`aggregateId` correlation (never "any event arrived"). No test calls `RealtimeBroadcaster`/`RealtimeEventPublisher`/the event mapper directly to manufacture an event.
+
+**Exact events now E2E-proven** — all 8: `ReservationApproved` (pre-existing), `ReservationCancelled`, `ReservationRescheduled`, `ReservationNoShow`, `WaitlistEntryPromoted`, `TableReadyNotified`, `TableStatusChanged`, `TableMoved`.
+
+**Per-flow detail**:
+- **ReservationCancelled** — Approved→Cancelled via a real Employee `POST /cancel`; staff room gets the full payload (incl. `cancelledBy`), the reservation room's Customer payload omits it; independently verified the Table released to `Available` and the Reservation row is `Cancelled`; wrong-branch Employee socket receives nothing.
+- **ReservationRescheduled** — Approved, cross-table reschedule via a real Employee `POST /reschedule`; asserts `oldTableId`/`newTableId` in both projections (customer payload omits `rescheduledBy`); a duplicate-delivery guard proves the Table release/reserve this performs never also broadcasts a spurious `TableStatusChanged` for either table (ADR-023 stays Table-event-silent, confirming TASKS.md §5's "do NOT emit `TableStatusChangedEvent` from Reservation-owned `Table.reserve()`/`Table.release()`" holds in a real end-to-end run, not just unit tests); independently verified both tables' persisted status and the reservation's new `tableId`.
+- **ReservationNoShow** — Approved with a past `reservationStartTime`, real Employee `POST /no-show`; same duplicate-`TableStatusChanged` guard as Reschedule (Table.release() here must also stay event-silent); wrong-branch Employee receives nothing; independently verified Table→`Available`, Reservation→`NoShow`.
+- **WaitlistEntryPromoted** — real manual Employee `POST /waitlist/:id/promote` (the deterministic path per TASKS.md §7's own instruction, not the BullMQ automatic path); staff room receives the full payload incl. `convertedReservationId`/`promotedBy`; a Customer socket is proven structurally unable to receive it — denied `room.subscribe` to the branch room outright (`FORBIDDEN`), since no `waitlist:{id}` room exists and Customer/branch is an unconditional DENY in the §8 matrix; independently verified the entry converted and (since this world has no `RestaurantSettings.autoApproval`) the candidate Table stayed `Available`.
+- **TableReadyNotified** — Approved reservation, real Employee `POST /table-ready`; staff/customer projections verified (customer omits `markedBy`); independently verified `tableReadyNotifiedAt` persisted, status/table unchanged; wrong-branch Employee receives nothing.
+- **TableStatusChanged** — real `OrganizationMember` (Owner/Admin) `POST /tables/:id/status`; asserts the frozen payload (`tableId`, `branchId`, `floorPlanId`, `organizationId`, `fromStatus`, `toStatus`, `actorId` — the full, unstripped staff payload, since Table events have no customer projection to strip from); a cross-organization `OrganizationMember` is denied the `restaurant:{id}` room and receives nothing; independently verified the Table's persisted status.
+- **TableMoved** — real `OrganizationMember` (Owner/Admin) `POST /tables/:id/move` to a second, real target FloorPlan; asserts `oldFloorPlanId`/`newFloorPlanId`/`organizationId`/`actorId`; independently verified the Table's persisted `floorPlanId`.
+
+**Negative authorization / isolation coverage across the closure pass** — wrong-branch Employee receives nothing (Cancelled, NoShow, TableReadyNotified), cross-organization actor receives nothing (TableStatusChanged), Customer denied a staff-only Waitlist room (WaitlistEntryPromoted), Customer denied `room.subscribe` to a guest-backed (`userId === null`) reservation (new standalone negative test) — all four of §11's minimum-required proofs are retained, on top of the pre-existing cross-branch/non-owner/invalid-JWT/no-token negative tests this file already had.
+
+**Wire payload / PII** — verified for every new event type: staff rooms receive the full frozen payload, the `reservation:{id}` customer projections (Cancelled/Rescheduled/NoShow/TableReadyNotified) omit the acting-staff-identifier field exactly as `realtime-event-mapping.ts`'s `omit()` specifies, and no `ReservationGuest.fullName`/`phone`/`email` or audit-internal field appears in any payload (none of the new flows' payloads carry guest fields at all — matching the frozen shapes in TASKS.md §14/EVENTS.md).
+
+**Duplicate-delivery observations** — Reschedule and NoShow each carry an explicit assertion that the Table.reserve()/release() they perform never also broadcasts a `TableStatusChanged` for that Table (a real, live-run confirmation of the frozen §5 rule, not only the pre-existing unit test). No other unexpected duplicate delivery was observed in this pass; Phase 8's existing "duplicates allowed, `eventId` for client dedup" contract (§16) is unchanged and not re-litigated here.
+
+**Bugs found and fixed during this pass** — both in the new **test fixtures only**, not production code:
+1. `seedAdditionalFloorPlan` originally seeded the second FloorPlan with `isActive: true`, violating the real `floor_plans_branch_id_active_key` partial unique index (Phase 6.1 decision #5: at most one active FloorPlan per Branch) — the world's own seeded "Main Floor" already holds that slot. Fixed to seed `isActive: false`; confirmed `MoveTableUseCase`'s target-FloorPlan lookup (`findByIdAndBranchId`) never requires the target to be active, only that it exist, belong to the same Branch, and not be soft-deleted.
+2. The file's ~25 real `socket.io-client` handshakes (up from ~9 before this pass), all from the shared loopback IP against one real Redis-backed sliding-window rate limiter, exceeded the frozen production default `WS_RATE_LIMIT_HANDSHAKE_MAX=20`/60s partway through the suite ("Too many connection attempts"). Fixed by raising `WS_RATE_LIMIT_HANDSHAKE_MAX` via `process.env` for this test file's own app bootstrap only (restored in `afterAll`) — the exact "all limits via env/config" escape valve §17 itself specifies, mirroring `rate-limit.e2e-spec.ts`'s own established precedent of overriding rate-limit envs for an isolated test app. No production code or default config value changed.
+
+Neither fix touched `src/`, required changing frozen architecture, or needed a STOP-and-report — both were test-fixture-only corrections against already-correct production behavior.
+
+**Production code changed** — **No.** Only `apps/backend/test/realtime.e2e-spec.ts` and `apps/backend/test/helpers/realtime-fixture.ts` were modified.
+
+**Final full-suite totals (this closure pass, real Postgres + real Redis)**:
+- Unit: **142 suites, 1197 tests, all passing** (unchanged from the original report — no regressions).
+- Integration: **37 suites, 208 tests, all passing** (unchanged from the original report — no regressions).
+- E2E: **33 suites, 365 tests, all passing** (was 357 before this pass; `test/realtime.e2e-spec.ts` alone grew from 6 to 14 tests).
+- `tsc --noEmit`: clean. `eslint "test/realtime.e2e-spec.ts" "test/helpers/realtime-fixture.ts" --max-warnings 0`: clean (one auto-fixable formatting pass applied). `nest build`: clean. `prisma format`/`validate`/`migrate status` against the real dev database: schema valid, 27 migrations, **no drift, no new migration**.
+
+**Docker status** — not rebuilt this pass, correctly: only test files changed (§18's own instruction — a rebuild is required only when production/runtime code changes). The dev (`tavla`) and strict-verify (`tavla-strict`) stacks, plus the shared Nginx container, were already running and healthy from the prior Phase 8 delivery; this pass ran its E2E suite from the host against the dev stack's exposed Postgres/Redis ports (`localhost:5433`/`localhost:6379`) and did not touch the running backend/Nginx containers. The original report's live Nginx `/socket.io/` verification (`ReservationApproved` through Nginx) stands unchanged and is not re-claimed as re-executed by this pass.
+
+**Multi-instance evidence** — unchanged from the original report: real cross-instance Redis fan-out proven via two independent `INestApplication`/Socket.IO instances sharing one real Redis (`test/realtime-redis-adapter.integration-spec.ts`, still 2/2 passing in this pass's integration run). **Not** a literal two-Docker-container proof — the exact same topology limitation the original report recorded (a single static-IP Nginx upstream, correctly left unchanged rather than redesigned solely to serve this proof) still applies and is not newly claimed as resolved.
+
+**Documentation synchronized** — this addendum (TASKS.md); the Phase 8 status line at the top of this section (no longer describes the gap as open); `docs/PROJECT_ROADMAP.md` and `README.md` Phase 8 status mirrors (updated to drop the "known coverage gap" language, per TASKS.md's own numbering-authority convention). `docs/EVENTS.md`'s WebSocket Broadcast Events section required no change — it documents the event catalogue/rooms/payloads, not per-event test-coverage status, and remains accurate.
+
+**Remaining gaps/blockers** — none for E2E event-type coverage (closed). The one item the original report already scoped as intentionally not attempted — a literal two-Docker-container live proof of cross-instance fan-out (vs. the two-`INestApplication`-instances proof that was performed) — remains exactly as documented above; no new architecture or Docker topology work was authorized or performed by this closure task.
+
+**PHASE 8 COMPLETE.**
+**PHASE 8 LIVE VERIFIED** (core `ReservationApproved` flow, real Nginx — evidence unchanged from the original report; not re-executed by this test-only closure pass, since no production code changed).
+**PHASE 8 PRODUCTION VERIFIED.**
+**PHASE 8 E2E EVENT-TYPE COVERAGE COMPLETE** — all 8 allow-listed representative flows (`ReservationApproved`/`Cancelled`/`Rescheduled`/`NoShow`, `WaitlistEntryPromoted`, `TableReadyNotified`, `TableStatusChanged`, `TableMoved`) now each independently E2E-proven.
 
 ---
 
 # Phase 9 — Notification System
 
-Status: ⏳ Pending
+Status: 🟢 **COMPLETE, LIVE VERIFIED, STRICT-E2E VERIFIED (2026-07-25).** Implementation explicitly authorized by the owner following the architecture freeze below; built exactly as frozen, zero deviations to the frozen decisions themselves (see the Phase 9 Engineering Report for the full account, including two documentation gaps found and fixed during implementation — see "Deviations"). Full static/unit/integration/E2E verification passed. Both Docker stacks (`tavla`, `tavla-strict`) rebuilt from current source and force-recreated. **ADR-025 Identity-Verification JWT delivery** (hybrid: login/refresh field + `GET /notifications/identity-token`) was owner-approved and implemented during the closure session. **EXTERNAL ONESIGNAL LIVE DELIVERY NOT VERIFIED — CREDENTIALS REQUIRED** — Phase 9 is therefore **NOT PRODUCTION VERIFIED**. **Email Notifications were removed from product scope before Phase 9 implementation began** (2026-07-25, binding product decision) — Email is no longer a planned notification delivery channel anywhere in this project. This does not affect Restaurant Owner email/password authentication, `ReservationGuest.email`, or any other non-notification use of email, all of which remain unchanged.
 
-- [ ] Notification Provider
-- [ ] OneSignal Integration
-- [ ] Email Notifications
-- [ ] In-App Notifications
+- [x] Notification Provider
+- [x] OneSignal Integration
+- [x] In-App Notifications
+
+## Phase 9 — Notification System: Pre-implementation architecture decisions (approved, frozen, 2026-07-25)
+
+Owner-approved architecture freeze following the Post-Email-Removal Implementation Readiness Review. Resolves every open item that review identified. The following decisions are final and must not be re-debated during implementation. **This freeze does not authorize implementation** — wait for a separate explicit implementation authorization, exactly as Phase 6.1/6.2/7/8 each required before their own implementation began.
+
+### 1. In-App Notification model — Option B (durable record + WebSocket supplemental)
+
+A `Notification` is a **durable, persisted record**; Phase 8 WebSocket delivery is an **optional, best-effort realtime presentation hint**, never the record itself. REST/the database is the single source of truth. A missed or undelivered WebSocket event must never mean a lost notification — the row already exists regardless of whether any realtime hint reached a connected client. This is why "In-App Notifications" has independent value beyond Phase 8 (already complete): it is the one thing Phase 8 explicitly does not provide (durability, offline retrieval, read state).
+
+Realtime hint mechanism (extends, does not redesign, Phase 8): one new allow-listed event, `NotificationCreated`, added to the Phase 8 broadcast allow-list (EVENTS.md), broadcast **only** to the existing `reservation:{reservationId}` room when the source domain event that produced the Notification carries a `reservationId` — using the existing Customer-ownership subscription rule already frozen in Phase 8 §8, with a minimized payload (`{ notificationId, type }` only — never `title`/`body`/PII). **No new Socket.IO room type is introduced** — Phase 8's frozen "exactly four rooms" contract (§7) is preserved unchanged. A notification with no associated reservation (none exist in the v1 allow-list, §20 below) has no realtime hint in v1 and is discovered by the client via REST on next poll/open — acceptable under Phase 8's own existing "best-effort, clients reconcile via REST" contract, not a new gap this freeze introduces.
+
+### 2. Recipient model — registered User/Customer only, v1
+
+Phase 9 v1 delivers to `User` (Customer) recipients only. `Employee`/`OrganizationMember` notification inboxes are explicitly deferred (no current requirement proves they're needed now — `DOMAIN_MODEL.md`'s only concrete rule already ties resolution to `User.language`). `ReservationGuest` is **not** an In-App recipient in v1 — there is no authenticated account/inbox identity for a guest to read from. This does **not** forbid a future guest-reachable channel (e.g. SMS/WhatsApp) — contact-data existence (`ReservationGuest.phone`/`email`) and notification-recipient eligibility are kept as separate concerns, exactly as instructed. A Customer's notification inbox is not organization-scoped (see item 13) — the same Customer receives notifications from reservations at any number of different restaurants/organizations, through one unified inbox, consistent with how `Reservation.userId` itself already crosses organizations freely.
+
+### 3. OneSignal identity model
+
+Tavola's canonical identity sent to OneSignal is **`external_id = User.id`** (the same UUID already used everywhere else as the canonical Customer identifier — no new identifier is minted). `DeviceSession` (authentication's session-tracking entity) is explicitly **not** reused as the push-identity model — it tracks login/refresh sessions, not push subscriptions, and the two remain unrelated.
+
+- **Subscription IDs are not persisted server-side in v1.** OneSignal's own User↔Subscription model (up to 20 Subscriptions per OneSignal User, merged under one `external_id`) is the subscription source of truth; Tavola never needs to know which/how-many devices a Customer has registered — sending to `external_id` alone reaches all of that Customer's current subscriptions. A `PushSubscription`/`DeviceRegistration` table is **explicitly not built** — this is a "smallest model" decision, not an oversight (§7/Decision #4 below).
+- **Multiple devices:** handled entirely by OneSignal (fan-out to all of a User's current Subscriptions); no Tavola-side logic needed.
+- **Logout behavior:** out of scope for v1 (unregistering a device from OneSignal on Tavola logout is a client-SDK-side concern, not a backend responsibility this freeze adds).
+- **Stale subscriptions:** OneSignal's own send response already reports zero-recipient outcomes (§24 below); Tavola does not track subscription staleness itself in v1.
+- **Account deletion/anonymization (ADR-014):** `AccountAnonymizationService` must, when it anonymizes a `User` row, also stop targeting that `external_id` — recorded here as a **required follow-up integration point for ADR-014's existing pass**, not a new anonymization mechanism; no new field is needed since `external_id = User.id` and the anonymized `User` row already stops being a valid recipient once anonymized (no separate cleanup call to OneSignal is required for v1 — a future hardening item, not blocking).
+- **Server-side device-registration endpoint:** **not needed** — the OneSignal client SDK registers Subscriptions directly against `external_id` from the client app; Tavola's backend only ever calls the Send API, never a device-registration API.
+
+**Identity Verification — explicitly evaluated and ADOPTED.** Current official OneSignal documentation (`documentation.onesignal.com/docs/en/identity-verification`, verified during this session) requires ES256-signed JWTs, generated server-side from a private key issued via the OneSignal dashboard, to prevent `external_id` spoofing (an attacker who learns/guesses a Customer's `external_id` could otherwise manipulate their subscriptions via client SDK calls). Adopted because: (a) it is a real, documented security gap ADR-007 never addressed, (b) Tavola already has an established, directly-analogous pattern (a backend-held private signing key producing short-lived tokens — `PLATFORM_ADMIN_JWT_SECRET`'s own precedent), and (c) the cost is one additional signing call at Customer session/app-open time, not new infrastructure. **Signing ownership:** the Tavola backend (not the client) generates the identity-verification JWT, mirroring every other JWT-signing responsibility already centralized in `modules/authentication/`. **Key type:** ES256 (ECDSA P-256/SHA-256) private key, PEM format, issued from the OneSignal dashboard for this app. **Config name (not created in this session):** `ONESIGNAL_IDENTITY_VERIFICATION_PRIVATE_KEY`, mirroring the existing `LIGHTOTP_API_KEY`/`JWT_ACCESS_SECRET` naming convention already used in `env.validation.ts`. **Trust boundary:** the private key lives only in backend configuration, never sent to any client; the resulting JWT is short-lived and scoped only to proving `external_id` ownership to OneSignal, carrying no Tavola session/authorization semantics of its own. **CHANGE_POLICY classification:** this amends ADR-007's Implementation Rule (new cryptographic trust boundary layered onto an already-accepted external dependency) — recorded as **ADR-025** (`docs/DECISIONS.md`), a narrow amendment in the same style ADR-023/ADR-024 already established (supersede/extend via a new, sequentially-numbered ADR; never edit an Accepted ADR in place). See item 22/38 below.
+
+### 4. Notification persistence schema (conceptual freeze; no migration in this session)
+
+**`Notification`** — the smallest model that preserves the state machine in item 5 and the realtime/read/push requirements above:
+
+```
+id                    UUID
+userId                UUID (FK -> User, required — v1 has exactly one recipient type)
+type                  string (source eventType, e.g. "ReservationApproved" — see item 20's allow-list)
+templateId            UUID, nullable (FK -> NotificationTemplates; traceability only — title/body below are
+                       already resolved/snapshotted at creation time, so this is never re-read for rendering)
+title                 string (resolved, snapshotted at creation in the recipient's language — item 15)
+body                  string (resolved, snapshotted at creation)
+data                  JSON, nullable (minimal deep-link payload only, e.g. { reservationId } / { entryId } —
+                       never guest contact fields, never internal audit identifiers — item 14)
+read                  boolean, default false
+readAt                timestamp, nullable
+pushStatus            enum: NotAttempted (default) | Queued | Accepted | Failed
+pushSentAt            timestamp, nullable (= the moment OneSignal ACCEPTED the request — never "delivered
+                       to device", per item 11's explicit distinction)
+pushFailedAt          timestamp, nullable
+pushFailureReason     string, nullable (coarse classification only — "no_subscription" / "rate_limited" /
+                       "provider_error" — never a raw provider error dump, PII/security hygiene)
+pushIdempotencyKey    UUID, nullable (generated once, reused across BullMQ retries — item 9)
+pushProviderMessageId string, nullable (OneSignal's returned notification id, once accepted)
+createdAt             timestamp
+updatedAt             timestamp
+```
+
+No `organizationId` (item 13). No `deletedAt` — deletion/retention is explicitly **not** decided in this session (no product requirement specifies it; same "undecided, deferred" treatment already given to `EmailVerificationToken`/`PasswordResetToken` retention) — additive later, no migration risk from omitting it now. `retryCount` is deliberately **not** a column — BullMQ's own per-job `attempts`/backoff configuration is the retry-count authority (mirrors `ReminderQueue`/`LateArrivalQueue`, neither of which duplicates retry count on their own domain rows either).
+
+**`NotificationTemplates`** (already sketched in `DATABASE_SCHEMA.md`, confirmed, minor finalization only): `id`, `eventType`, `language`, `channel` (`Push` | `InApp` — `SMS` remains a forward-looking enum value only, per item 6/20, never implemented against in v1), `title`, `body`, `isDefault`, `createdAt`, `updatedAt`. Unique `(eventType, language, channel)`. **Platform-global only** in v1 — no restaurant-specific template override, no versioning (neither is required by any current product requirement).
+
+**Explicitly not built:** a `PushSubscription`/`DeviceRegistration` table (item 3 — OneSignal `external_id` alone suffices); a `NotificationDeliveryAttempt` table (the `pushStatus`/`pushSentAt`/`pushFailedAt`/`pushFailureReason` fields directly on `Notification` are sufficient for v1's observability needs; per-attempt history, if ever needed, lives in BullMQ's own job log, outside the domain model). Both are "smallest model" decisions, not oversights — a later phase may add either without breaking this shape.
+
+### 5. Notification state machine
+
+Two **independent** tracks on the same row, deliberately decoupled (an in-app read has nothing to do with push outcome, and vice versa):
+
+**Read track:** `read: false → true` (one-way, `readAt` set atomically with the transition, mirroring `ReservationWaitlistEntry.notify()`'s own "state + timestamp in one write" pattern). Can happen **before, during, or after** any push outcome — reading the in-app list never depends on push having been attempted at all.
+
+**Push track:** `NotAttempted → Queued → { Accepted | Failed }`. `Accepted` and `Failed` are both terminal **as persisted values** — a BullMQ-level retry that eventually succeeds after an intermediate failed attempt updates the row directly from `Queued` to `Accepted` once, not through a visible `Failed` intermediate state (only the *final* outcome of the job's retry cycle is persisted; per-attempt detail is BullMQ's concern, not the domain's, per item 4). There is **no `Delivered` state** in v1 — OneSignal's synchronous Send API response only proves **provider acceptance**, never actual on-device delivery (confirmed by current OneSignal documentation, item 24); claiming "Delivered" would require a delivery-receipt webhook integration, which is **not built in this freeze** and is recorded as a future decision (item 43) if the product later requires a literal on-device-delivery guarantee. `NotificationCreated` (the row's own existence) is not itself a `pushStatus` value — it's already covered by the row simply existing (`createdAt`).
+
+`Notification-created-but-never-pushed` (e.g. `notificationOptIn = false`, item 19) is a valid, permanent `NotAttempted` state — not an error, not `Failed`.
+
+### 6. `ReservationReminderSent` semantics
+
+Frozen exactly as recommended: **`ReservationReminderSent` = successful provider acceptance of the reminder push request** — i.e., it fires when the corresponding `Notification.pushStatus` transitions to `Accepted`, never claiming device-level delivery. It fires **once per logical reminder** (not once per channel) — the underlying `Notification` row already covers both In-App (created regardless of push outcome) and Push (tracked via `pushStatus`) for that one reminder; a second, channel-specific event would duplicate information the row itself already carries.
+
+Explicit outcomes:
+- **In-App succeeds, Push succeeds:** `Notification` created (`read=false`), `pushStatus=Accepted`, `ReservationReminderSent` published.
+- **In-App succeeds, Push fails:** `Notification` created, `pushStatus=Failed` (after BullMQ's retry budget is exhausted) — `ReservationReminderSent` is **not** published (per its own definition above: it means provider *acceptance*, and acceptance never occurred). The in-app record still exists and is still readable — the Customer isn't left with nothing.
+- **Push disabled by `notificationOptIn=false`:** the delivery job is never enqueued at all (item 19) — `pushStatus` stays `NotAttempted` permanently; `ReservationReminderSent` is **not** published. In-App creation still occurs (item 19's own rule: `notificationOptIn` gates Push only, never In-App).
+- **No push subscription exists:** OneSignal itself reports zero matching recipients (§24) — `pushStatus=Failed`, `pushFailureReason="no_subscription"`; `ReservationReminderSent` not published.
+
+**Actor attribution:** `System` — mirrors every other BullMQ-originated event's own established convention (`ReservationReminderDue`/`GuestLateArrivalNotified`/`ReservationExpired`/`WaitlistEntryExpired` are all `actorType: 'System'`, `actorId: null`).
+
+### 7. `WaitlistEntryNotified` activation semantics
+
+`ReservationWaitlistEntry.notify()`/`WaitlistEntryNotifiedEvent` (both already exist, dormant since Phase 7.5 — `reservation-waitlist-entry.entity.ts:201-209`, `waitlist.events.ts:41`) are activated with this exact rule:
+
+**`Waiting → Notified` occurs only after the corresponding `Notification`'s push track resolves to a terminal outcome (`Accepted` or `Failed`) — never merely because a delivery job was queued** (rejecting option A outright, per the explicit instruction not to transition merely on enqueue) and **never gated on In-App creation alone** (rejecting option B) — because "Notified" is a waitlist-domain claim about the *guest having been reached*, and an unread, un-pushed in-app row does not support that claim for a guest who may not even have the app open. This is closest to option **C** (after provider acceptance), generalized to also cover the failure case explicitly rather than leaving it undefined:
+
+- **Provider accepts the push:** `notify()` is called, `Waiting → Notified`, `notifiedAt` set (atomic, per the entity's existing behavior).
+- **Provider returns failure / no subscription exists:** the entry **stays `Waiting`** — it is **not** transitioned to `Notified` on a failed push attempt. The in-app `Notification` row still exists (the guest can see it if/when they open the app), but the *waitlist* state machine's `Notified` claim specifically requires push-level reach, since a Waiting-list guest is, by definition, someone not necessarily watching the app in real time.
+- **Retry later succeeds:** if a retry (within BullMQ's own budget) eventually accepts, `notify()` fires then, at that later point — `Waiting → Notified` on the delayed success, not retroactively "as of" the original attempt.
+- **Guest-backed entry (`reservationGuestId` set, no `userId`):** **cannot** reach `Notified` via this mechanism in v1 at all, consistently with item 2 (guests have no Phase 9 recipient identity) — `notify()` is simply never called for a guest-backed entry; it remains `Waiting` until promoted/cancelled/expired through its existing, unaffected paths. This is a real, disclosed v1 limitation, not silently glossed over.
+- **Entry transitions to `Converted`/`Cancelled`/`Expired` while a delivery attempt is still in flight:** the in-flight push attempt is allowed to complete (fire-and-forget from the entry's perspective — same "stale job is a safe no-op" pattern already used by the Reminder/Late-Arrival jobs), but its outcome **must not** attempt to call `notify()` against an entry no longer in `Waiting` (the entity's own `assertTransition` guard, already present, already rejects `Notified` as a target from any non-`Waiting` status — no new guard is needed, this is existing behavior confirmed compatible).
+
+This preserves the frozen Phase 7.5 waitlist state machine exactly (`Waiting → {Notified, Converted, Cancelled, Expired}`) — no transition is added, removed, or reordered; only the trigger condition for the already-defined `Notified` transition is now specified.
+
+### 8. `NotificationProvider` contract (conceptual, provider-independent)
+
+```
+send(params): Promise<NotificationSendResult>
+
+NotificationSendResult =
+  | { outcome: 'accepted', providerMessageId: string }
+  | { outcome: 'noRecipients' }              // zero matching subscriptions - not a failure
+  | { outcome: 'retryableFailure', reason: string }   // 429, 5xx, network — safe to retry
+  | { outcome: 'permanentFailure', reason: string }   // 4xx other than 429 — retrying will not help
+```
+
+Distinguishes exactly the cases current OneSignal behavior actually produces (item 24): a `200` with an `id` is `accepted`; a `200` with no `id` is `noRecipients` (the request was valid, nothing to send — must never be recorded as `Failed`); `429` is `retryableFailure`; other `4xx` (malformed request, bad `app_id`) is `permanentFailure`; network/`5xx` is `retryableFailure`. This shape is a conceptual contract for the future interface, not code written in this session.
+
+### 9. Retries / idempotency
+
+One `pushIdempotencyKey` (RFC 9562 UUID) is generated **once**, at the moment a Notification's push delivery is first enqueued, and persisted on the `Notification` row (item 4). Every BullMQ retry of that same logical send **reuses the same key** — never generates a new one — so that if an earlier attempt actually succeeded but the success response was lost (network partition after OneSignal accepted), a retry is recognized by OneSignal as the same logical request (current OneSignal `idempotency_key` behavior, confirmed current, item 24: retried requests with an identical key return the original result, never double-send). Retry count/backoff itself is BullMQ's own job configuration (`attempts`, `backoff`), following the same convention already established by `ReminderQueue`/`LateArrivalQueue` — no new retry policy is invented; exact numeric values (attempt count, backoff curve) are an implementation detail for the implementation phase, not frozen here. After the configured attempts are exhausted, the terminal outcome is `Failed` (item 5) — no dead-letter queue or manual-retry UI is introduced in v1.
+
+### 10. BullMQ ownership — scheduling vs. delivery stay separate concerns
+
+Confirmed and frozen exactly as proposed:
+
+```
+Domain event (already published via EVENT_PUBLISHER, e.g. ReservationApproved / ReservationReminderDue / ...)
+    -> NotificationDispatcher (new, application-layer orchestration - mirrors NOT the Realtime module's
+       pattern of wrapping EVENT_PUBLISHER, but a plain event-driven subscriber reacting to already-committed
+       events, exactly like RealtimeEventPublisher itself does not mutate business state)
+    -> resolve NotificationTemplate (item 15) -> persist Notification row (item 4) - this alone already
+       satisfies the In-App half of item 1, independent of what happens next
+    -> enqueue a NotificationQueue delivery job (the queue name EVENTS.md already reserves, `EVENTS.md:431`)
+    -> NotificationQueue processor -> NotificationProvider (item 8) -> OneSignal adapter (behind the ACL,
+       ADR-007) -> updates Notification.pushStatus/pushSentAt/pushFailedAt/pushProviderMessageId
+```
+
+`ReminderQueue`/`LateArrivalQueue` (Phase 7.6) are **never** modified to call `NotificationProvider` directly — they continue to do exactly what they do today (compute *when*, publish the Due/Notified-eligible domain event) and nothing more. `NotificationQueue` is a new, dedicated queue owning *delivery* only, matching `EVENTS.md`'s own pre-existing placeholder name and the established one-concern-per-queue precedent (`ReminderQueue` vs. `LateArrivalQueue` being separate rather than shared).
+
+### 11. Crash / event-loss boundary — best-effort accepted, no transactional outbox
+
+**Decision: Option A (best-effort), not Option B (outbox).** Reasoning, grounded in existing repository evidence rather than invented: (1) `docs/NON_FUNCTIONAL_REQUIREMENTS.md`'s resilience section already lists "Notification provider failure" as an accepted graceful-degradation case ("the platform must continue serving reservations") — the existing NFR philosophy already treats notification delivery as a secondary, best-effort concern relative to the core reservation transaction, exactly mirroring Phase 8's own frozen "realtime is secondary/best-effort" contract (§3). (2) The exact same "log and swallow, never let this fail the caller's transaction" pattern is already used twice in this codebase for comparable non-critical post-commit work (`CancelReservationUseCase`/`MarkNoShowReservationUseCase`'s `waitlistRecheckScheduler.enqueueRecheck` calls, wrapped in try/catch, logged on failure, never rethrown) — Phase 9's Notification-persist-then-enqueue step follows the identical convention, not a new one.
+
+Critically, this is a **much better reliability position than "best-effort" alone implies**, because of the ordering already frozen in item 10: the `Notification` row is persisted **first**, as a fast, local, same-process database write, immediately after the triggering domain event is handled — only the **subsequent** BullMQ enqueue (and everything downstream of it) is best-effort/lossy. A crash between "row persisted" and "job enqueued" loses only the **push** delivery for that one notification; the durable in-app record already exists and is already visible to the Customer on next app open. This means the actual failure boundary is narrower than a naive read of "no outbox" would suggest — it is specifically **"a push notification may silently never be attempted,"** never **"the notification disappears entirely."**
+
+**Accepted failure boundary, stated explicitly (required by this decision):** a process crash between `Notification` row commit and `NotificationQueue` job enqueue results in that one notification's Push channel never being attempted, silently, with no automatic recovery. This is judged acceptable because (a) no current product requirement anywhere states guaranteed push delivery, (b) the in-app record is never lost, and (c) it matches the platform's existing, already-accepted tolerance for realtime/notification-adjacent failures. **No ADR is required** for this decision — it implements the already-accepted NFR/Phase-8 best-effort philosophy, not a new one (`CHANGE_POLICY.md`'s "implementing a documented design exactly as specified" carve-out applies once this note itself becomes the documented design). If a future product requirement demands guaranteed push delivery, that would require a dedicated new session and very likely a new ADR (transactional outbox is new persistence/consistency infrastructure, squarely "Architectural" under `CHANGE_POLICY.md:19,27`) — explicitly not decided or introduced here.
+
+### 12. REST API surface (minimum, v1)
+
+| Method | Route | Notes |
+|---|---|---|
+| `GET` | `/api/v1/notifications` | Own notifications only (ownership, item 13); paginated (existing cursor/offset convention, matching `GET /users/me/favorites`'s own precedent); default order newest-first; optional `unread=true` filter |
+| `PATCH` | `/api/v1/notifications/:id/read` | Marks one notification read; IDOR-safe (404, not 403, on a non-owned id — matching every other owned-resource route's existing collapse convention) |
+| `PATCH` | `/api/v1/notifications/read-all` | Marks all of the caller's unread notifications read |
+| `GET` | `/api/v1/notifications/unread-count` | Returns a single count, for a badge/indicator |
+| `GET` | `/api/v1/notifications/identity-token` | **ADR-025 delivery (owner-approved 2026-07-25):** on-demand OneSignal Identity-Verification JWT for the caller. Returns `{ token, expiresInSeconds }`; `token` is `null` when Identity Verification is unconfigured |
+
+No admin/staff notification API — v1 has no Employee/OrganizationMember recipient (item 2), so nothing for staff to administer yet. **No push-subscription-registration endpoint** — per item 3, the OneSignal client SDK registers subscriptions directly against `external_id`; a Tavola-side registration endpoint would be redundant and is not built. Response DTOs expose exactly the `Notification` fields relevant to a client (`id`, `type`, `title`, `body`, `data`, `read`, `readAt`, `createdAt`) — never `pushStatus`/`pushFailedAt`/`pushFailureReason`/`pushIdempotencyKey`/`pushProviderMessageId`, which are internal delivery-tracking detail, not client-facing contract (API_GUIDELINES.md's "never expose internals directly" convention, already established for every other module).
+
+**ADR-025 initial delivery (same owner approval):** `onesignalIdentityToken: string | null` is attached to `POST /api/v1/auth/customer/login` and to `POST /api/v1/auth/refresh` for Customer (`User`) actors, matching OneSignal's documented "include it in the auth response" requirement. Non-Customer refreshes return `null`. This field is not a Tavola session token.
+
+### 13. Authorization / tenancy
+
+**Ownership-only, no RBAC.** `notification.userId === actor.userId` is the entire authorization rule for all four routes above — the same pattern already established for `/users/me/*` (`TASKS.md`'s own Phase 3.1 precedent). **No new permission slug is introduced** (`prisma/seed.ts` is untouched by this freeze). `Notification` carries **no `organizationId` column** and is **not** added to `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS` (`tenant-scoped-prisma.extension.ts:26`, currently `{'OrganizationMember', 'Restaurant'}`) — this is the explicit, deliberate avoidance of the Phase 7.5 `ReservationWaitlistEntry.organizationId` mistake your review flagged: a Customer's notification inbox spans every organization they've ever booked with, exactly like `Reservation.userId` itself already does, and a required direct `organizationId` would be structurally wrong for the same reason it was wrong there (a Customer actor has no bound `TenantContext.organizationId` to populate it with). If Employee/OrganizationMember recipients are ever added in a later phase, their tenancy must be resolved **transitively** (through whatever restaurant/branch context the source event already carries), never as a direct column on `Notification` — recorded here so a future implementer does not have to rediscover this reasoning.
+
+### 14. Delivery-time PII policy
+
+**Push notification bodies (and In-App `title`/`body`, since both are resolved through the same template mechanism, item 15) contain only the minimum user-facing information necessary — never:** `ReservationGuest.phone`, `ReservationGuest.email`, `ReservationGuest.fullName` (a Customer's own push about their own reservation never needs another party's guest-contact data anyway, but this is stated explicitly to prevent a future template mistake), internal audit identifiers (`actorId`, `correlationId`, database ids beyond what `data`'s minimal deep-link payload needs), or reservation `notes`. Prefer generic, lock-screen-safe wording (e.g. *"Your reservation is confirmed"* rather than embedding the restaurant's full address or a table number on a possibly-shared/locked device) — full detail remains retrievable only after the Customer opens the authenticated app and hits REST, exactly mirroring Phase 8's own already-frozen "REST remains authoritative for full detail" principle (`EVENTS.md:1032`, carried over from the Phase 8 WebSocket PII policy as directly reusable precedent, not copied verbatim since push has a materially more exposed surface — a locked screen — than an authenticated WebSocket channel). `data` (the deep-link JSON field, item 4) carries only resource ids (`reservationId`/`entryId`), never any of the excluded fields above.
+
+### 15. Templates / localization
+
+**Platform-global templates only** in v1 (no restaurant-specific override — no current requirement demands one). Unique key: `(eventType, language, channel)`, exactly as already sketched in `DATABASE_SCHEMA.md`. **Language resolution:** `User.language` first; if no template exists for that language, fall back to the template row marked `isDefault` for that `(eventType, channel)` pair — this already matches `DOMAIN_MODEL.md:765`'s existing rule ("a notification is never sent with a missing/blank body") and needs no change, only confirmation that it still holds for the finalized channel set. **Push and In-App may have separate content** for the same `eventType`/`language` (already structurally supported by the `channel` column being part of the unique key — no schema change required to support this). **No template versioning** in v1 (no requirement demands it; templates are edited in place, matching how e.g. `RestaurantSettings` defaults are already managed without versioning). `SMS` remains present in the `channel` enum purely as documented schema foresight — **explicitly not implemented against, no SMS template content is expected to exist, and no SMS delivery code is authorized by this freeze** (item 20 confirms this again for the event allow-list specifically, to prevent any future reader from inferring SMS is active v1 scope merely because the enum lists it).
+
+### 16. `User.notificationOptIn` / `User.marketingOptIn` — reconciled
+
+**`notificationOptIn` (default `true`) governs Push delivery only.** It does **not** gate durable In-App notification creation — a transactional reservation notification (e.g. `ReservationApproved`) is **always** created as an in-app record regardless of this flag; the flag only decides whether the `NotificationQueue` delivery job is enqueued at all (item 6's "push disabled" outcome). This is the one place this freeze deviates from a literal reading of the field's generic name ("notification" opt-in) toward a narrower, transactional-safe interpretation — justified because: reservation-lifecycle notifications are not marketing/optional content the Customer can opt out of losing entirely (they'd still need *some* way to know their reservation was approved), and no current product requirement states that disabling this flag should hide in-app history. **No contradiction was found** against any current documented requirement — `DOMAIN_MODEL.md:762-765`'s existing Notification business rules say nothing about `notificationOptIn` at all (a true silent gap, not a conflicting statement), so this freeze is filling a genuine gap, not overriding a stated rule. **`marketingOptIn` (default `false`) remains completely unrelated to transactional reservation notifications** — it is reserved exclusively for a future promotional/marketing notification category, which is explicitly out of Phase 9 v1 scope (§40 of the prior readiness review, unchanged).
+
+### 17. Phase 9 event → notification allow-list (v1)
+
+Explicit, not inferred from event names. No event outside this list produces a Phase 9 notification in v1:
+
+| Event | Classification | Reason |
+|---|---|---|
+| `ReservationApproved` | **A — Push + In-App** | Core transactional confirmation; Customer needs to know even if the app isn't open |
+| `ReservationCancelled` | **A — Push + In-App** | Same reasoning — a cancellation the Customer didn't initiate themselves (staff-cancelled) is exactly the case push exists for |
+| `ReservationRescheduled` | **A — Push + In-App** | Same reasoning, staff-initiated case especially |
+| `ReservationReminderDue` | **A — Push + In-App** | This is the entire product reason `ReservationReminderSent` (item 6) exists |
+| `TableReadyNotified` | **A — Push + In-App** | Time-sensitive, staff-initiated, Customer benefits from a push even if the app is backgrounded |
+| `WaitlistEntryPromoted` | **A — Push + In-App** | This is the trigger for `WaitlistEntryNotified`'s activation (item 7) |
+| `ReservationNoShow` | **B — In-App only** | Not a "good news, check your phone now" event from the Customer's own perspective — a push here has no clear product benefit and risks feeling punitive; in-app history is sufficient |
+| `GuestLateArrivalNotified` | **D — no Phase 9 notification** | This is a **staff-facing** operational signal (front-of-house awareness that a guest hasn't arrived), not Customer-facing — sending the Customer a push telling them they're late has no documented product requirement and was not assumed |
+| `ReservationExpired` | **D — no Phase 9 notification** | A Pending reservation that was never confirmed timing out is a low-salience event; no current requirement supports notifying about it, and inventing one here would be exactly the "silently choosing product behavior the repository can't support" your review instructions forbid |
+| `WaitlistEntryNotified` (the activation event itself, item 7) | *(not separately listed — it's a consequence, not a source)* | `WaitlistEntryNotified` fires **as a result of** the `WaitlistEntryPromoted`-triggered notification's push outcome (item 7) — it is not itself a second, independent trigger for another notification |
+
+**Flagged for explicit owner/product confirmation, not silently frozen either way:** `ReservationNoShow`'s classification (In-App-only) and `GuestLateArrivalNotified`/`ReservationExpired`'s exclusion are the review's own best-supported reading of existing product intent, not directly stated anywhere — if the owner's actual intent differs for any of these three, that's a one-line change to this table before implementation, not a re-freeze of anything else in this document.
+
+### 18. `ARCHITECTURE_LOCK.md` reconciliation
+
+The stale ADR-numbering drift the prior readiness review found (`ARCHITECTURE_LOCK.md`'s lock table naming a different ADR-006/007/008 than `DECISIONS.md`'s actual, current numbering) has been corrected — see `ARCHITECTURE_LOCK.md`'s own updated table and note. This was a documentation-only reconciliation (the table's row-to-ADR mapping was updated to match `DECISIONS.md`'s real numbering); no ADR was renumbered, no ADR history was rewritten, and the governing rule itself ("all Accepted ADRs in DECISIONS.md are locked") was never in question.
+
+No new architectural ambiguity remains for Phase 9 as of this note. Implementation begins only after separate explicit owner authorization.
+
+**PHASE 9 ARCHITECTURE FROZEN (2026-07-25).**
+
+**Implementation note (2026-07-25):** Owner explicitly authorized implementation the same day, following this freeze. Built exactly as specified above — every one of the 18 decision items was implemented with no deviation to the frozen decision itself. Two documentation gaps were found and fixed during implementation, neither of which reopened any frozen decision: (1) `EVENTS.md` was missing the event→notification allow-list table this freeze's item 17 already defined (it existed only here, in `TASKS.md`) — added to `EVENTS.md`. (2) `NON_FUNCTIONAL_REQUIREMENTS.md`'s generic background-job retry policy ("Maximum retries: 5, Dead Letter Queue required") conflicted with this freeze's item 9 (retry count unfrozen, explicitly no DLQ in v1) — resolved in favor of this freeze's specific decision (no DLQ built), with `NON_FUNCTIONAL_REQUIREMENTS.md` updated to note the exception. See the Phase 9 Engineering Report (session record) for full implementation, verification, and live-verification detail. External OneSignal provider delivery itself remains unverified — no live credentials were available this session.
+
+**Final Production Verification & Closure addendum (2026-07-25).** A dedicated closure session executed the two verification gaps the implementation note left open (strict-stack E2E, and the external-OneSignal boundary), plus a full regression re-run against the actual current source. No production code was changed in this session (verification-only). Results, exactly as observed this run (not historical counts):
+
+- **Strict-stack E2E (the previously-unexecuted gap): PASS — 34 suites / 377 tests, 0 failures, 0 skips** (`npm run test:e2e:verify`, `REQUIRE_LIVE_DATABASE=true`, strict Postgres `:15433` / strict Redis `:16379` / strict MinIO `:19000`). This closes item (1) of the previous report's remaining list. The expected `ONESIGNAL_API_KEY/ONESIGNAL_APP_ID are not configured` provider errors appeared and were correctly handled fail-closed (`permanentFailure: not_configured`) without failing the reservation/notification flows.
+- **Regression gates (actual counts this run):** Unit `147 suites / 1263 tests` PASS; Integration (strict) `39 / 225` PASS; Integration (dev) `39 / 225` PASS; E2E (strict) `34 / 377` PASS; TypeScript typecheck PASS; `nest build` PASS; ESLint `--max-warnings 0` PASS (0 changes); `prisma format` OK; `prisma validate` valid; `prisma migrate status` = 28 migrations, database up to date.
+- **E2E (dev, non-strict parallel profile): environment artifact, NOT a Phase 9 defect.** The parallel dev profile reported 227/377 failing, all as identical `beforeAll` 5000 ms hook timeouts, because this host runs a rogue native `redis-server 5.0.14` sharing host port `6379` with the Docker dev Redis (`redis:7`, password-protected) and the parallel workers starve the default 5 s hook budget. Re-running the same previously-"failed" suites serially (`--runInBand`, the project's own established strict/verify convention) passes (`notifications` + `audit-log` e2e = 29/29). No test was weakened. The authoritative gate is the strict serial suite, which passes 377/377.
+- **Docker:** both stacks (`tavla`, `tavla-strict`) already current from the Phase 9 build; no production code changed this session, so per the closure policy they were verified rather than rebuilt — both `/api/v1/health` report `status: ok` with `database`/`redis`/`minio` all `up`; strict DB `prisma migrate status` = up to date.
+- **External OneSignal delivery — STILL BLOCKED (item (2) of the previous report's remaining list).** `ONESIGNAL_APP_ID`, `ONESIGNAL_API_KEY`, and `ONESIGNAL_IDENTITY_VERIFICATION_PRIVATE_KEY` are all empty (length 0) in the running backend container; no `.env` provisions them. **EXTERNAL ONESIGNAL VERIFICATION BLOCKED — CREDENTIALS REQUIRED.** Required environment variable **names** (values never requested/printed): `ONESIGNAL_APP_ID`, `ONESIGNAL_API_KEY`, `ONESIGNAL_IDENTITY_VERIFICATION_PRIVATE_KEY` (ES256 PEM), plus a real registered push subscription/device targeting `external_id = User.id` to observe actual on-device delivery. API acceptance and on-device delivery remain distinct and neither has been observed.
+- **ADR-025 Identity-Verification JWT delivery mechanism (item (3) of the previous report's remaining list) — OWNER ARCHITECTURE DECISION REQUIRED; STOPPED, not implemented.** `OneSignalIdentityVerificationService.sign()` exists, is unit-tested, and is registered in `NotificationsModule`, but is wired to **no** response or endpoint (confirmed: its only references are its own file, the module registration, its spec, and config). Current official OneSignal documentation (`documentation.onesignal.com/docs/en/identity-verification`, re-verified this session) requires BOTH (a) returning the token in the backend auth response at login/session time **and** (b) a dedicated authenticated backend endpoint that returns a **refreshed** JWT when the SDK fires `addUserJwtInvalidatedListener` (→ `OneSignal.updateUserJwt`). More than one materially valid Tavola placement satisfies this (attach to `CustomerLoginResponseDto`/refresh-session response vs. a dedicated `/auth/*`, `/users/me/*`, or `/notifications/*` identity-token endpoint — different module ownership and different frozen-contract amendments), and neither ADR-025 nor the frozen Phase 9 API surface selects one (ADR-025 explicitly defers it as "an explicit product/API decision this phase does not make unilaterally"). Per the closure task's CRITICAL STOP CONDITION, this session presents a decision report and awaits owner approval rather than unilaterally changing the frozen public API contract.
+
+**Phase 9 status after this closure session:** `COMPLETE` (unchanged) · `LIVE VERIFIED` (unchanged) · **strict-stack E2E now VERIFIED (377/377)** · **NOT `PRODUCTION VERIFIED`** — two production-relevant items remain open: external OneSignal delivery (credentials + real recipient required) and the ADR-025 JWT-delivery owner decision. Neither may be marked verified until genuinely satisfied.
+
+**ADR-025 delivery implementation addendum (2026-07-25, same closure session, after owner approval):** Owner selected the hybrid option. Implemented exactly as approved: (1) `onesignalIdentityToken` on Customer login + User-actor refresh responses; (2) `GET /api/v1/notifications/identity-token` for on-demand refresh; (3) `@Global()` `PushIdentityModule` binding `ONESIGNAL_IDENTITY_TOKEN_SIGNER`. Docs updated (`API_GUIDELINES.md`, ADR-025 status, Phase 9 freeze item 12). Unit/e2e coverage added. **External OneSignal delivery remains BLOCKED** (credentials still absent) — Phase 9 remains **NOT PRODUCTION VERIFIED**. Only the ADR-025 delivery-mechanism blocker is closed.
+
+**ADR-025 delivery follow-up (same day, owner-approved hybrid):** Owner selected hybrid delivery (attach `onesignalIdentityToken` to customer login + refresh responses, plus `GET /api/v1/notifications/identity-token`). Implemented exactly as approved: `@Global()` `PushIdentityModule` binds `ONESIGNAL_IDENTITY_TOKEN_SIGNER`; Customer login/refresh responses carry the field (null when unconfigured / non-User refresh); dedicated endpoint returns `{ token, expiresInSeconds }`. Docs amended (`API_GUIDELINES.md`, ADR-025 status, Phase 9 API surface in `TASKS.md`). Unit suite after implementation: 148 suites / 1266 tests PASS. **External OneSignal delivery remains the sole remaining production-verification blocker** (credentials + real recipient still absent; owner confirmed not available this session).
 
 ---
 
@@ -1011,8 +1695,8 @@ Phase 0, Phase 0.5, Phase 1, Phase 2.0–2.2 are complete. Phase 2.1 migrated 19
 - [x] **Change-password stale-token gap** — ruled an **implementation defect** (Option B), not correct-per-architecture: nothing in AUTHENTICATION_ARCHITECTURE.md deliberately intends the calling client's session to break after a successful, non-error call. Smallest fix applied: `ChangePasswordUseCase` now signs and returns a fresh access token (same session/token family, updated `sessionVersion`) in the response; the refresh token and `DeviceSession` row are unchanged (still preserved, not rotated), consistent with §1.8 "all sessions except current." `AUTHENTICATION_ARCHITECTURE.md` §9.2 documents the new `POST /auth/change-password` response shape. Verified end-to-end in `change-password.e2e-spec.ts`: the new access token is accepted by a guarded endpoint immediately, the old one is rejected.
 - [x] **`ForgotPasswordUseCase` timing-equalization** — added (trivial, matches `LoginUseCase`'s existing dummy-hash pattern via a new shared `timing-safe-dummy.ts` constant): the not-found/ineligible branch now performs a dummy Argon2 verify before returning the generic message.
 - [x] **`Organization`/`OrganizationMember`/`UserConsent` Prisma repositories** — `PrismaOrganizationRepository`, `PrismaOrganizationMemberRepository` (`modules/organizations/infrastructure/persistence/`), and `PrismaUserConsentRepository` (`modules/authentication/infrastructure/persistence/`) added, backed by a new `user_consents` table (migration `20260710191000_add_user_consents_table`). `rollback-injection.integration-spec.ts`'s Registration scenario now uses all-real Prisma repositories — no in-memory stand-ins remain on the Registration persistence path. (`OrganizationsModule`'s NestJS DI/HTTP wiring remains intentionally deferred to Phase 2.20 "Owner registration flow," per the existing phase plan — out of this blocker's scope.)
-- [ ] **Unit-test coverage on 3 of 7 critical use-cases below the 95% critical-module bar** — not addressed this session (non-blocking per the audit's own framing; requires new unit test cases, not a blocker fix).
-- [ ] **`REQUIRE_LIVE_DATABASE` strict verify mode is not a reliable whole-suite gate** — not fixed this session. **New finding:** `pnpm test:e2e:verify` (equivalently, `REQUIRE_LIVE_DATABASE=true` + `jest-e2e.verify.json` + `--runInBand`) hangs indefinitely (had to be killed after 10+ minutes) against a live, reachable database — a more severe manifestation than the previously-documented "silently 0 assertions" issue. `pnpm test:integration:verify` (same flag, integration config) runs correctly and passes. The non-strict `pnpm test:e2e` run passes all 26 tests. Still non-blocking for this closure (Phase 2.12's three named blockers did not include this), but flagged for a follow-up investigation before this gate is relied upon in CI.
+- [ ] **Unit-test coverage on 3 of 7 critical use-cases below the 95% critical-module bar** — not addressed this session (non-blocking per the audit's own framing; requires new unit test cases, not a blocker fix). Remains an open quality follow-up, not a phase gate.
+- [x] **`REQUIRE_LIVE_DATABASE` strict verify mode is not a reliable whole-suite gate** — not fixed this session. **New finding (2026-07-11):** `pnpm test:e2e:verify` (equivalently, `REQUIRE_LIVE_DATABASE=true` + `jest-e2e.verify.json` + `--runInBand`) hangs indefinitely (had to be killed after 10+ minutes) against a live, reachable database — a more severe manifestation than the previously-documented "silently 0 assertions" issue. `pnpm test:integration:verify` (same flag, integration config) runs correctly and passes. The non-strict `pnpm test:e2e` run passes all 26 tests. Still non-blocking for this closure (Phase 2.12's three named blockers did not include this), but flagged for a follow-up investigation before this gate is relied upon in CI. **Editorial reconciliation (2026-07-24):** this current-state defect was subsequently fixed by **Post-Phase-2 Test Infrastructure Hardening**; current `test:e2e:verify` / `test:integration:verify` are fail-closed and pass routinely (Phase 7.6 baseline: E2E strict 351/351, Integration strict 206/206). Checkbox marked complete as a superseded current-state marker; historical finding text retained.
 
 ### Test harness additions (2026-07-11 closure session)
 

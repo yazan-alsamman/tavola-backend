@@ -372,6 +372,8 @@ export class RestaurantsController {
       autoApproval: body.autoApproval,
       timezone: body.timezone,
       defaultCurrency: body.defaultCurrency ?? null,
+      reservationReminderMinutesBefore: body.reservationReminderMinutesBefore,
+      lateArrivalGraceMinutes: body.lateArrivalGraceMinutes,
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
     return this.toSettingsResponse(result);
@@ -799,6 +801,8 @@ export class RestaurantsController {
       autoApproval: result.autoApproval,
       timezone: result.timezone,
       defaultCurrency: result.defaultCurrency,
+      reservationReminderMinutesBefore: result.reservationReminderMinutesBefore,
+      lateArrivalGraceMinutes: result.lateArrivalGraceMinutes,
       createdAt: result.createdAt.toISOString(),
       updatedAt: result.updatedAt.toISOString(),
     };

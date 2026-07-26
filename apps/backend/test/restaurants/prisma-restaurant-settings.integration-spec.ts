@@ -112,6 +112,8 @@ describe('RestaurantSettings round-trip via PrismaRestaurantSettingsRepository (
         autoApproval: true,
         timezone: 'Europe/Istanbul',
         defaultCurrency: 'TRY',
+        reservationReminderMinutesBefore: 90,
+        lateArrivalGraceMinutes: 20,
       },
       new Date(),
     );

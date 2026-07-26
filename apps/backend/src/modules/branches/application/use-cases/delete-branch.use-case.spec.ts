@@ -197,6 +197,7 @@ describe('DeleteBranchUseCase', () => {
       smoking: false,
       status: TableStatus.Available,
       mergeGroupId: null,
+      isMergePrimary: false,
       createdAt: fixedNow,
       updatedAt: fixedNow,
       deletedAt: null,

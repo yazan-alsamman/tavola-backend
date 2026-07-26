@@ -22,6 +22,9 @@ import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restau
 import { InMemoryReservationRepository } from '../../../../../test/reservations/support/in-memory-reservation.repository';
 import { InMemoryReservationHistoryRepository } from '../../../../../test/reservations/support/in-memory-reservation-history.repository';
 import { InMemoryReservationExpirationScheduler } from '../../../../../test/reservations/support/in-memory-reservation-expiration-scheduler';
+import { InMemoryWaitlistRecheckScheduler } from '../../../../../test/reservations/support/in-memory-waitlist-recheck-scheduler';
+import { InMemoryApprovedReservationOperationalScheduler } from '../../../../../test/reservations/support/in-memory-approved-reservation-operational-scheduler';
+import { ScheduleApprovedReservationSignalsService } from '../services/schedule-approved-reservation-signals.service';
 
 describe('CancelReservationUseCase', () => {
   const fixedNow = new Date('2026-08-01T10:00:00.000Z');
@@ -96,6 +99,7 @@ describe('CancelReservationUseCase', () => {
     const tableRepository = new InMemoryTableRepository();
     const restaurantSettingsRepository = new InMemoryRestaurantSettingsRepository();
     const expirationScheduler = new InMemoryReservationExpirationScheduler();
+    const waitlistRecheckScheduler = new InMemoryWaitlistRecheckScheduler();
 
     await restaurantSettingsRepository.save(
       RestaurantSettings.createDefault('settings-1', restaurantId, fixedNow),
@@ -121,6 +125,7 @@ describe('CancelReservationUseCase', () => {
         smoking: false,
         status: TableStatus.Available,
         mergeGroupId: null,
+        isMergePrimary: false,
         createdAt: fixedNow,
         updatedAt: fixedNow,
         deletedAt: null,
@@ -128,6 +133,11 @@ describe('CancelReservationUseCase', () => {
     );
 
     const eventPublisher = new CollectingEventPublisher();
+    const operationalScheduler = new InMemoryApprovedReservationOperationalScheduler();
+    const scheduleApprovedReservationSignals = new ScheduleApprovedReservationSignalsService(
+      operationalScheduler,
+      restaurantSettingsRepository,
+    );
     const useCase = new CancelReservationUseCase(
       reservationRepository,
       reservationHistoryRepository,
@@ -141,6 +151,8 @@ describe('CancelReservationUseCase', () => {
       eventPublisher,
       new ImmediateUnitOfWork(),
       expirationScheduler,
+      waitlistRecheckScheduler,
+      scheduleApprovedReservationSignals,
     );
 
     return {
@@ -148,8 +160,10 @@ describe('CancelReservationUseCase', () => {
       reservationRepository,
       reservationHistoryRepository,
       tableRepository,
+      waitlistRecheckScheduler,
       eventPublisher,
       expirationScheduler,
+      operationalScheduler,
     };
   }
 

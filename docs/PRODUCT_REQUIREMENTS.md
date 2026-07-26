@@ -140,7 +140,7 @@ Multi-tenant SaaS enabling restaurants to manage reservations, operations, custo
 
 | ID | Requirement | Architecture reference |
 |---|---|---|
-| FR-10.1 | Multi-channel notifications (push, email, in-app) | Phase 9, `NotificationProvider` port |
+| FR-10.1 | Multi-channel notifications (push, in-app) — Email removed from scope (2026-07-25 product decision) | Phase 9, `NotificationProvider` port |
 | FR-10.2 | Template-driven content with localization | `NotificationTemplates`, `LOCALIZATION.md` |
 | FR-10.3 | Async delivery via BullMQ | ADR-005 |
 | FR-10.4 | Provider abstraction (OneSignal first) | `ARCHITECTURE.md` Anti-Corruption Layer |

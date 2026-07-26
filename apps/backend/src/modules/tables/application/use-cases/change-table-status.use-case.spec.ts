@@ -2,6 +2,9 @@ import { ChangeTableStatusUseCase } from './change-table-status.use-case';
 import { CreateTableUseCase } from './create-table.use-case';
 import { TableNotFoundException } from '../../domain/exceptions/table-not-found.exception';
 import { InvalidTableStatusTransitionException } from '../../domain/exceptions/invalid-table-status-transition.exception';
+import { TableMergedOperationForbiddenException } from '../../domain/exceptions/table-merged-operation-forbidden.exception';
+import { TableStatusChangedEvent } from '../../domain/events/table.events';
+import { TableId } from '@shared/domain/value-objects/identifiers.vo';
 import { TableShape, TableStatus } from '../../domain/enums/table.enums';
 import { FloorPlan } from '../../domain/entities/floor-plan.entity';
 import { Restaurant } from '@modules/restaurants/domain/entities/restaurant.entity';
@@ -9,10 +12,10 @@ import { RestaurantStatus } from '@modules/restaurants/domain/enums/restaurant.e
 import { Branch } from '@modules/branches/domain/entities/branch.entity';
 import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
 import {
-  CollectingAuditLogWriter,
   CollectingEventPublisher,
   FixedClock,
   SequentialIdGenerator,
+  UuidGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
@@ -123,15 +126,16 @@ describe('ChangeTableStatusUseCase', () => {
       smoking: false,
     });
 
-    const auditLogWriter = new CollectingAuditLogWriter();
+    const eventPublisher = new CollectingEventPublisher();
     const useCase = new ChangeTableStatusUseCase(
       tableRepository,
       branchRepository,
       restaurantRepository,
       new FixedClock(fixedNow),
-      auditLogWriter,
+      new UuidGenerator(),
+      eventPublisher,
     );
-    return { useCase, tableRepository, auditLogWriter };
+    return { useCase, tableRepository, eventPublisher };
   }
 
   it('transitions Available -> Occupied', async () => {
@@ -210,6 +214,22 @@ describe('ChangeTableStatusUseCase', () => {
     ).rejects.toBeInstanceOf(InvalidTableStatusTransitionException);
   });
 
+  it('throws TableMergedOperationForbiddenException for a table currently part of an active merge group (ADR-026 decision #11/#13), leaving it untouched', async () => {
+    const { useCase, tableRepository } = await build();
+
+    const existing = await tableRepository.findById(TableId.create(tableId));
+    const merged = existing!.asMergePrimary('88888888-8888-4888-8888-888888888888', fixedNow);
+    await tableRepository.save(merged);
+
+    await expect(
+      useCase.execute({ actor: baseActor(), tableId, status: TableStatus.Occupied }),
+    ).rejects.toBeInstanceOf(TableMergedOperationForbiddenException);
+
+    const stillMerged = await tableRepository.findById(TableId.create(tableId));
+    expect(stillMerged?.status).toBe(TableStatus.Available);
+    expect(stillMerged?.mergeGroupId).toBe('88888888-8888-4888-8888-888888888888');
+  });
+
   it('throws TableNotFoundException for an unknown table', async () => {
     const { useCase } = await build();
 
@@ -222,8 +242,8 @@ describe('ChangeTableStatusUseCase', () => {
     ).rejects.toBeInstanceOf(TableNotFoundException);
   });
 
-  it('writes a table.status_changed audit entry and produces no domain event', async () => {
-    const { useCase, auditLogWriter } = await build();
+  it('publishes a TableStatusChangedEvent with the frozen Phase 8 payload shape', async () => {
+    const { useCase, eventPublisher } = await build();
 
     await useCase.execute({
       actor: baseActor(),
@@ -232,13 +252,19 @@ describe('ChangeTableStatusUseCase', () => {
       correlationId: 'corr-1',
     });
 
-    expect(auditLogWriter.entries).toHaveLength(1);
-    expect(auditLogWriter.entries[0]).toMatchObject({
-      action: 'table.status_changed',
-      targetType: 'Table',
-      targetId: tableId,
+    expect(eventPublisher.events).toHaveLength(1);
+    const event = eventPublisher.events[0] as TableStatusChangedEvent;
+    expect(event).toBeInstanceOf(TableStatusChangedEvent);
+    expect(event.eventName).toBe('TableStatusChanged');
+    expect(event.correlationId).toBe('corr-1');
+    expect(event.payload).toMatchObject({
+      tableId,
+      branchId,
+      floorPlanId,
       organizationId,
-      correlationId: 'corr-1',
+      fromStatus: TableStatus.Available,
+      toStatus: TableStatus.Occupied,
+      actorId: 'user-1',
     });
   });
 });

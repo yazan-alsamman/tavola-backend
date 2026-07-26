@@ -1,5 +1,7 @@
 import { TableResult } from '../../application/dto/table.result';
+import { MergedUnitResult } from '../../application/dto/merged-unit.result';
 import { TableResponseDto } from '../dto/table.response.dto';
+import { MergedUnitResponseDto } from '../dto/merge-unit.response.dto';
 
 /**
  * Shared by every controller that returns a `TableResponseDto`
@@ -27,7 +29,23 @@ export function toTableResponse(result: TableResult): TableResponseDto {
     smoking: result.smoking,
     status: result.status,
     mergeGroupId: result.mergeGroupId,
+    isMergePrimary: result.isMergePrimary,
     createdAt: result.createdAt.toISOString(),
     updatedAt: result.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * Phase 6 (Merge/Split Tables, ADR-026) - shared by `TableController`'s
+ * `POST /tables/merge` and `POST /tables/:tableId/split` handlers.
+ */
+export function toMergedUnitResponse(result: MergedUnitResult): MergedUnitResponseDto {
+  return {
+    mergeGroupId: result.mergeGroupId,
+    primaryTableId: result.primaryTableId,
+    memberTableIds: result.memberTableIds,
+    effectiveCapacity: result.effectiveCapacity,
+    primary: toTableResponse(result.primary),
+    members: result.members.map(toTableResponse),
   };
 }

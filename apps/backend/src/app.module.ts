@@ -18,6 +18,10 @@ import { BranchesModule } from './modules/branches/branches.module';
 import { TablesModule } from './modules/tables/tables.module';
 import { EmployeesModule } from './modules/employees/employees.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
+import { WaitlistModule } from './modules/waitlist/waitlist.module';
+import { RealtimeModule } from './modules/realtime/realtime.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { PushIdentityModule } from './infrastructure/notifications/push-identity.module';
 
 @Module({
   imports: [
@@ -40,6 +44,10 @@ import { ReservationsModule } from './modules/reservations/reservations.module';
     TablesModule,
     EmployeesModule,
     ReservationsModule,
+    WaitlistModule,
+    RealtimeModule,
+    PushIdentityModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

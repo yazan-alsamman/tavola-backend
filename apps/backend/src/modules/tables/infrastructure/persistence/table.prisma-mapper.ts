@@ -23,6 +23,7 @@ export class TablePrismaMapper {
       smoking: row.smoking,
       status: row.status as TableStatus,
       mergeGroupId: row.mergeGroupId,
+      isMergePrimary: row.isMergePrimary,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       deletedAt: row.deletedAt,
@@ -48,6 +49,7 @@ export class TablePrismaMapper {
     smoking: boolean;
     status: TableStatus;
     mergeGroupId: string | null;
+    isMergePrimary: boolean;
     createdAt: Date;
     updatedAt: Date;
     deletedAt: Date | null;
@@ -72,6 +74,7 @@ export class TablePrismaMapper {
       smoking: props.smoking,
       status: props.status,
       mergeGroupId: props.mergeGroupId,
+      isMergePrimary: props.isMergePrimary,
       createdAt: props.createdAt,
       updatedAt: props.updatedAt,
       deletedAt: props.deletedAt,

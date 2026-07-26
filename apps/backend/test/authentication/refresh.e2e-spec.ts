@@ -114,6 +114,9 @@ describe('POST /api/v1/auth/refresh (e2e)', () => {
         actorType: 'User',
         issuedAt: expect.any(String),
         serverTime: expect.any(String),
+        // ADR-025 delivery: null here because OneSignal Identity Verification
+        // is not configured in the test environment (signer fails closed).
+        onesignalIdentityToken: null,
       },
       meta: {},
     });

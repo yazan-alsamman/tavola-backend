@@ -13,6 +13,7 @@ import {
   TableRepository,
   TABLE_REPOSITORY,
 } from '@modules/tables/domain/repositories/table.repository';
+import { TableMergeService } from '@modules/tables/domain/services/table-merge.service';
 import { InvalidReservationTimeException } from '../../domain/exceptions/invalid-reservation-time.exception';
 import { ReservationRepository } from '../../domain/repositories/reservation.repository';
 import { RESERVATION_REPOSITORY } from '../../domain/repositories/reservation.repository';
@@ -65,19 +66,40 @@ export class SearchAvailabilityUseCase {
       command.partySize,
     );
 
-    const results: TableAvailabilityResult[] = [];
-    for (const table of tables) {
-      const overlapping = await this.reservationRepository.findOverlappingPendingOrApproved(
-        table.tableId,
+    // One batched query for every candidate table's overlap check, instead
+    // of one round-trip per table (this loop can otherwise scan a whole
+    // branch's worth of Available tables).
+    const overlappingReservations =
+      await this.reservationRepository.findOverlappingPendingOrApprovedForTables(
+        tables.map((table) => table.tableId),
         startTime,
         endTime,
       );
+    const tableIdsWithOverlap = new Set(
+      overlappingReservations.map((reservation) => reservation.tableId.value),
+    );
+
+    const results: TableAvailabilityResult[] = [];
+    for (const table of tables) {
+      // Phase 6 (Merge/Split Tables, ADR-026 decision #4/#14): `capacity`
+      // in this informational, customer-facing response must reflect the
+      // *effective* capacity - `findManyAvailableByBranchIdAndMinCapacity`
+      // already filtered by it, so the displayed number must agree with why
+      // this table was returned at all. `tables` only ever contains
+      // `Available` rows, so a `mergeGroupId` here always means this table
+      // is the group's Primary.
+      const capacity =
+        table.mergeGroupId !== null
+          ? TableMergeService.computeEffectiveCapacity(
+              await this.tableRepository.findManyByMergeGroupId(table.mergeGroupId),
+            )
+          : table.capacity;
       results.push({
         tableId: table.tableId.value,
         tableNumber: table.tableNumber,
-        capacity: table.capacity,
+        capacity,
         shape: table.shape,
-        isAvailable: overlapping.length === 0,
+        isAvailable: !tableIdsWithOverlap.has(table.tableId.value),
       });
     }
 

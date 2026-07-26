@@ -57,4 +57,17 @@ export class TenantContextService implements TenantContextPort {
   getOrganizationId(): string | null {
     return this.storage.getStore()?.organizationId ?? null;
   }
+
+  /**
+   * Recovers the currently-acting actor's type from the same ALS scope
+   * `getOrganizationId()` reads — added for the Phase 8 `AuditingEventPublisher`
+   * hygiene fix, where a Reservation event payload (e.g. `cancelledBy`) carries
+   * only an id that is ambiguously either a `User.id` or an `Employee.id`
+   * (Cancel/Reschedule are reachable by both actor types). `undefined` on the
+   * stored context (bootstrap/`TenantBootstrapContext` callers) collapses to
+   * `null`, same as `getOrganizationId()`.
+   */
+  getActorType(): 'User' | 'Employee' | 'OrganizationMember' | null {
+    return this.storage.getStore()?.actorType ?? null;
+  }
 }

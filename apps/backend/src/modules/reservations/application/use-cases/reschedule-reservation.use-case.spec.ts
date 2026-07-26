@@ -7,6 +7,7 @@ import { InvalidReservationException } from '../../domain/exceptions/invalid-res
 import { InvalidReservationStatusTransitionException } from '../../domain/exceptions/invalid-reservation-status-transition.exception';
 import { ReservationConflictException } from '../../domain/exceptions/reservation-conflict.exception';
 import { ReservationRescheduleWindowExpiredException } from '../../domain/exceptions/reservation-reschedule-window-expired.exception';
+import { TableUnavailableException } from '../../domain/exceptions/table-unavailable.exception';
 import { TableNotFoundException } from '@modules/tables/domain/exceptions/table-not-found.exception';
 import { EmployeeBranchNotAssignedException } from '@modules/authorization/domain/exceptions/employee-branch-not-assigned.exception';
 import {
@@ -29,6 +30,8 @@ import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restau
 import { InMemoryReservationRepository } from '../../../../../test/reservations/support/in-memory-reservation.repository';
 import { InMemoryReservationHistoryRepository } from '../../../../../test/reservations/support/in-memory-reservation-history.repository';
 import { InMemoryReservationExpirationScheduler } from '../../../../../test/reservations/support/in-memory-reservation-expiration-scheduler';
+import { InMemoryApprovedReservationOperationalScheduler } from '../../../../../test/reservations/support/in-memory-approved-reservation-operational-scheduler';
+import { ScheduleApprovedReservationSignalsService } from '../services/schedule-approved-reservation-signals.service';
 
 describe('RescheduleReservationUseCase', () => {
   const creationTime = new Date('2026-07-25T10:00:00.000Z');
@@ -120,6 +123,7 @@ describe('RescheduleReservationUseCase', () => {
       smoking: false,
       status,
       mergeGroupId: null,
+      isMergePrimary: false,
       createdAt: creationTime,
       updatedAt: creationTime,
       deletedAt: null,
@@ -143,6 +147,11 @@ describe('RescheduleReservationUseCase', () => {
     const eventPublisher = new CollectingEventPublisher();
     const autoRejectOverlappingPendingReservations =
       new AutoRejectOverlappingPendingReservationsService(reservationRepository);
+    const operationalScheduler = new InMemoryApprovedReservationOperationalScheduler();
+    const scheduleApprovedReservationSignals = new ScheduleApprovedReservationSignalsService(
+      operationalScheduler,
+      restaurantSettingsRepository,
+    );
     const useCase = new RescheduleReservationUseCase(
       reservationRepository,
       reservationHistoryRepository,
@@ -159,11 +168,13 @@ describe('RescheduleReservationUseCase', () => {
       new ImmediateUnitOfWork(),
       expirationScheduler,
       autoRejectOverlappingPendingReservations,
+      scheduleApprovedReservationSignals,
     );
 
     return {
       useCase,
       reservationRepository,
+      operationalScheduler,
       reservationHistoryRepository,
       tableRepository,
       restaurantSettingsRepository,
@@ -219,6 +230,20 @@ describe('RescheduleReservationUseCase', () => {
       await useCase.execute({ actor: userActor(), reservationId, tableId: otherTableId });
 
       expect(reservationRepository.acquiredLockKeys).toHaveLength(1);
+    });
+
+    it('acquires the ADR-026 topology lock (target table only) BEFORE the ADR-023 slot lock for a Pending reschedule', async () => {
+      const { useCase, reservationRepository, tableRepository } = await build(withinLeadTimeClock);
+      await reservationRepository.seed(reservation());
+      const topologyLockSpy = jest.spyOn(tableRepository, 'acquireTopologyLocks');
+      const advisoryLockSpy = jest.spyOn(reservationRepository, 'acquireAdvisoryLock');
+
+      await useCase.execute({ actor: userActor(), reservationId, tableId: otherTableId });
+
+      expect(topologyLockSpy).toHaveBeenCalledWith([otherTableId]);
+      expect(topologyLockSpy.mock.invocationCallOrder[0]).toBeLessThan(
+        advisoryLockSpy.mock.invocationCallOrder[0],
+      );
     });
 
     it('reschedules the pending-expiration job to the new start time', async () => {
@@ -315,6 +340,21 @@ describe('RescheduleReservationUseCase', () => {
       expect([first, second]).toEqual([...[first, second]].sort());
     });
 
+    it('acquires ADR-026 topology locks for BOTH the old and new table BEFORE any ADR-023 slot lock, for a cross-table Approved reschedule', async () => {
+      const repos = await build(withinLeadTimeClock);
+      await seedApproved(repos);
+      const topologyLockSpy = jest.spyOn(repos.tableRepository, 'acquireTopologyLocks');
+      const advisoryLockSpy = jest.spyOn(repos.reservationRepository, 'acquireAdvisoryLock');
+
+      await repos.useCase.execute({ actor: userActor(), reservationId, tableId: otherTableId });
+
+      expect(topologyLockSpy).toHaveBeenCalledTimes(1);
+      expect(new Set(topologyLockSpy.mock.calls[0][0])).toEqual(new Set([tableId, otherTableId]));
+      expect(topologyLockSpy.mock.invocationCallOrder[0]).toBeLessThan(
+        advisoryLockSpy.mock.invocationCallOrder[0],
+      );
+    });
+
     it('auto-rejects another overlapping Pending reservation on the new table', async () => {
       const repos = await build(withinLeadTimeClock);
       await seedApproved(repos);
@@ -358,6 +398,43 @@ describe('RescheduleReservationUseCase', () => {
         repos.useCase.execute({ actor: userActor(), reservationId, tableId: otherTableId }),
       ).rejects.toBeInstanceOf(ReservationConflictException);
     });
+  });
+
+  it('rejects rescheduling onto a Merged secondary table (TableUnavailableException)', async () => {
+    const { useCase, reservationRepository, tableRepository } = await build(withinLeadTimeClock);
+    await reservationRepository.seed(reservation());
+    const mergeGroupId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const otherTable = await tableRepository.findById(TableId.create(otherTableId));
+    await tableRepository.save(otherTable!.asMergeSecondary(mergeGroupId, creationTime));
+
+    await expect(
+      useCase.execute({ actor: userActor(), reservationId, tableId: otherTableId }),
+    ).rejects.toBeInstanceOf(TableUnavailableException);
+  });
+
+  it("uses the merge group effectiveCapacity (not the Primary's own capacity column) when rescheduling onto a merge Primary table", async () => {
+    const { useCase, reservationRepository, tableRepository } = await build(withinLeadTimeClock);
+    await reservationRepository.seed(reservation({ tableId: otherTableId }));
+    const mergeGroupId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const primaryTable = await tableRepository.findById(TableId.create(tableId));
+    await tableRepository.save(primaryTable!.asMergePrimary(mergeGroupId, creationTime));
+    const secondaryTableId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    await tableRepository.save(table(secondaryTableId, branchId, TableStatus.Available));
+    const secondaryTable = await tableRepository.findById(TableId.create(secondaryTableId));
+    await tableRepository.save(secondaryTable!.asMergeSecondary(mergeGroupId, creationTime));
+
+    // 6 guests exceed the Primary's own capacity (4) but fit the merge
+    // group's effectiveCapacity (4 + 4 = 8) - this must succeed, proving the
+    // group sum was used, not `targetTable.capacity` alone.
+    const result = await useCase.execute({
+      actor: userActor(),
+      reservationId,
+      tableId,
+      guests: 6,
+    });
+
+    expect(result.tableId).toBe(tableId);
+    expect(result.guests).toBe(6);
   });
 
   it('rejects a target table belonging to a different Branch', async () => {

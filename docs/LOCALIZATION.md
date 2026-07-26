@@ -42,6 +42,8 @@ Per DOMAIN_MODEL.md's Notifications business rule and the `Notification Template
 
 Adding a new language for system notifications is a **content/data change** (inserting new `NotificationTemplate` rows), never a code or deployment change — this is the entire reason `NotificationTemplate` exists as a database entity rather than being embedded in application code (see the table's Purpose note in DATABASE_SCHEMA.md).
 
+**Phase 9 freeze note (2026-07-25, `TASKS.md`'s Phase 9 decision item 15 — implemented 2026-07-25):** this mechanism is confirmed as the frozen v1 design, unchanged from this section's existing description. Recipient language resolution is `User.language` only in v1 (Phase 9 v1 has no Employee/OrganizationMember/`ReservationGuest` recipient — see `DOMAIN_MODEL.md`'s Notifications rules). Templates are platform-global only (no restaurant-specific override) and unversioned. `Push` and `InApp` may carry separate resolved content for the same `(eventType, language)` pair, since `channel` is already part of the template's unique key.
+
 ---
 
 # Currency Formatting and Rounding

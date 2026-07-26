@@ -49,12 +49,18 @@ enum UserStatus {
  * transitions happen exclusively through the single dedicated Domain Action
  * `POST /tables/{tableId}/status`, restricted to `Available <-> Occupied`/
  * `Available <-> Cleaning`/`Available <-> Disabled` only - every other
- * combination is rejected. `Update Table` never transitions status. `Merged`
- * is deliberately excluded - it belongs to the deferred Merge/Split feature.
+ * combination is rejected. `Update Table` never transitions status.
  * `Reserved` (Phase 7.2 — Approval Workflow, architecture frozen 2026-07-20)
  * is exclusively a Reservation Engine concept - only `Table.reserve()`/
  * `Table.release()` may set or clear it; `Table.transitionStatus`/
- * `POST /tables/{tableId}/status` continue to reject it entirely.
+ * `POST /tables/{tableId}/status` continue to reject it entirely. `Merged`
+ * (ADR-026, Merge/Split Tables architecture freeze 2026-07-25) is exclusively
+ * a Merge/Split concept - only `Table.asMergeSecondary()`/
+ * `Table.clearMergeMembership()` may set/clear it on a secondary merge
+ * member; `Table.transitionStatus`/`POST /tables/{tableId}/status` reject it
+ * entirely, exactly like `Reserved`. A merge primary keeps using
+ * `Available`/`Reserved` via the existing `reserve()`/`release()` methods -
+ * `Merged` is never set on a primary.
  */
 enum TableStatus {
   Available
@@ -62,6 +68,7 @@ enum TableStatus {
   Cleaning
   Disabled
   Reserved
+  Merged
 }
 
 /**
@@ -223,6 +230,8 @@ model User {
   employees                   Employee[]
   favorites                   Favorite[]
   reservations                Reservation[]
+  waitlistEntries             ReservationWaitlistEntry[]
+  notifications               Notification[]
 
   @@unique([email])
   @@unique([phone])
@@ -428,6 +437,7 @@ model Restaurant {
   cuisineCategories  RestaurantCuisineCategory[]
   occasionCategories RestaurantOccasionCategory[]
   reservations       Reservation[]
+  waitlistEntries    ReservationWaitlistEntry[]
 
   @@index([organizationId])
   @@index([slug])
@@ -445,6 +455,12 @@ model Restaurant {
 // layer instead - every use case resolves the parent Restaurant through the
 // already-tenant-scoped RestaurantRepository first. See
 // PrismaRestaurantSettingsRepository's own doc comment.
+//
+// Phase 7.6 (Operational Signals, ADR-019) adds
+// reservationReminderMinutesBefore/lateArrivalGraceMinutes - configuration
+// for the Reminder/Late-Arrival BullMQ jobs scheduled alongside every
+// Approved reservation. Both are plain per-restaurant tuning knobs, exactly
+// like pendingReservationTimeoutMinutes/cancellationWindowMinutes above.
 // ---------------------------------------------------------------------------
 
 model RestaurantSettings {
@@ -458,6 +474,8 @@ model RestaurantSettings {
   autoApproval                      Boolean  @default(false) @map("auto_approval")
   timezone                          String   @default("UTC")
   defaultCurrency                   String?  @map("default_currency")
+  reservationReminderMinutesBefore  Int      @default(60) @map("reservation_reminder_minutes_before")
+  lateArrivalGraceMinutes           Int      @default(15) @map("late_arrival_grace_minutes")
   createdAt                         DateTime @default(now()) @map("created_at")
   updatedAt                         DateTime @updatedAt @map("updated_at")
 
@@ -647,6 +665,7 @@ model Branch {
   floorPlans                FloorPlan[]
   tables                    Table[]
   reservations              Reservation[]
+  waitlistEntries           ReservationWaitlistEntry[]
 
   @@index([restaurantId])
   @@index([city])
@@ -728,35 +747,45 @@ model FloorPlan {
 // `status`/`shape` value sets are intentionally minimal (Phase 6.1
 // architecture decision, TASKS.md Phase 6.1 decision #7) - see the
 // `TableStatus`/`TableShape` enum doc comments above. `mergeGroupId` is a
-// plain nullable UUID value (not a FK - no MergeGroup table exists), reserved
-// for the future Merge/Split sub-phase; never populated by any Phase 6.1 use
-// case. `(branchId, tableNumber)` is a plain (non-partial) unique constraint,
-// exactly as DATABASE_SCHEMA.md's index table documents it - a soft-deleted
-// table's number is not released for reuse.
+// plain nullable UUID value (not a FK - no MergeGroup table exists) - the
+// shared identifier of an active Merge/Split (ADR-026) topology group; `null`
+// for a table that is not currently merged. `isMergePrimary` marks exactly
+// one member of an active `mergeGroupId` group as the Primary Table
+// (ADR-026 decision #1, #8) - `Reservation.tableId` for the merged unit is
+// always this row's `id`; a database-level CHECK constraint
+// (`tables_merge_primary_requires_group_check`) enforces `mergeGroupId IS
+// NULL => isMergePrimary = false`, and a partial UNIQUE index
+// (`tables_merge_group_one_primary_key`) enforces at most one primary per
+// active group (added by hand in this sub-phase's migration SQL - Prisma's
+// schema DSL cannot express either). `(branchId, tableNumber)` is a plain
+// (non-partial) unique constraint, exactly as DATABASE_SCHEMA.md's index
+// table documents it - a soft-deleted table's number is not released for
+// reuse.
 // ---------------------------------------------------------------------------
 
 model Table {
-  id           String      @id @default(uuid()) @db.Uuid
-  branchId     String      @map("branch_id") @db.Uuid
-  floorPlanId  String      @map("floor_plan_id") @db.Uuid
-  tableNumber  String      @map("table_number")
-  capacity     Int
-  floor        Int?
-  positionX    Float?      @map("position_x")
-  positionY    Float?      @map("position_y")
-  width        Float?
-  height       Float?
-  rotation     Float?
-  shape        TableShape  @default(Rectangle)
-  layer        Int?
-  indoor       Boolean     @default(true)
-  vip          Boolean     @default(false)
-  smoking      Boolean     @default(false)
-  status       TableStatus @default(Available)
-  mergeGroupId String?     @map("merge_group_id") @db.Uuid
-  createdAt    DateTime    @default(now()) @map("created_at")
-  updatedAt    DateTime    @updatedAt @map("updated_at")
-  deletedAt    DateTime?   @map("deleted_at")
+  id             String      @id @default(uuid()) @db.Uuid
+  branchId       String      @map("branch_id") @db.Uuid
+  floorPlanId    String      @map("floor_plan_id") @db.Uuid
+  tableNumber    String      @map("table_number")
+  capacity       Int
+  floor          Int?
+  positionX      Float?      @map("position_x")
+  positionY      Float?      @map("position_y")
+  width          Float?
+  height         Float?
+  rotation       Float?
+  shape          TableShape  @default(Rectangle)
+  layer          Int?
+  indoor         Boolean     @default(true)
+  vip            Boolean     @default(false)
+  smoking        Boolean     @default(false)
+  status         TableStatus @default(Available)
+  mergeGroupId   String?     @map("merge_group_id") @db.Uuid
+  isMergePrimary Boolean     @default(false) @map("is_merge_primary")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+  deletedAt      DateTime?   @map("deleted_at")
 
   branch       Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
   floorPlan    FloorPlan     @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
@@ -788,7 +817,10 @@ model Table {
 // `EXCLUDE USING gist` constraint (ADR-013) and the reservation-party
 // (`userId` XOR `reservationGuestId`) invariant (Phase 7.4 decision #5)
 // cannot be expressed in the Prisma schema language itself; both are added
-// via raw SQL in the relevant migration (MIGRATION_POLICY.md).
+// via raw SQL in the relevant migration (MIGRATION_POLICY.md). Phase 7.5
+// (Reservation Waitlist, ADR-019) makes `createdBy` nullable: `null` means
+// the Reservation was created by an automatic Waitlist promotion (System
+// actor), never a placeholder id - see `ReservationWaitlistEntry` below.
 // ---------------------------------------------------------------------------
 
 enum ReservationStatus {
@@ -823,7 +855,7 @@ model Reservation {
   status                       ReservationStatus @default(Pending)
   source                       ReservationSource @default(Online)
   notes                        String?
-  createdBy                    String            @map("created_by") @db.Uuid
+  createdBy                    String?           @map("created_by") @db.Uuid
   approvedBy                   String?           @map("approved_by") @db.Uuid
   approvedAt                   DateTime?         @map("approved_at")
   cancelledAt                  DateTime?         @map("cancelled_at")
@@ -835,12 +867,13 @@ model Reservation {
   createdAt                    DateTime          @default(now()) @map("created_at")
   updatedAt                    DateTime          @updatedAt @map("updated_at")
 
-  restaurant       Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
-  branch           Branch               @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  table            Table                @relation(fields: [tableId], references: [id], onDelete: Restrict)
-  user             User?                @relation(fields: [userId], references: [id], onDelete: Restrict)
-  reservationGuest ReservationGuest?    @relation(fields: [reservationGuestId], references: [id], onDelete: Restrict)
+  restaurant       Restaurant                @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  branch           Branch                    @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  table            Table                     @relation(fields: [tableId], references: [id], onDelete: Restrict)
+  user             User?                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  reservationGuest ReservationGuest?         @relation(fields: [reservationGuestId], references: [id], onDelete: Restrict)
   history          ReservationHistory[]
+  waitlistEntry    ReservationWaitlistEntry?
 
   @@index([reservationDate])
   @@index([tableId])
@@ -872,10 +905,87 @@ model ReservationGuest {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  reservations Reservation[]
+  reservations    Reservation[]
+  waitlistEntries ReservationWaitlistEntry[]
 
   @@index([phone])
   @@map("reservation_guests")
+}
+
+// ---------------------------------------------------------------------------
+// Reservation Waitlist Entries (Phase 7.5 — Reservation Waitlist, ADR-019,
+// DATABASE_SCHEMA.md "Reservation Waitlist Entries"). Guests who cannot be
+// seated immediately join a branch-scoped, date-scoped waitlist. Distinct
+// from `Reservations` - no table assignment until promoted
+// (`WaitlistPromotionService`). `preferredDate` AND `preferredTimeFrom` are
+// both required at the Phase 7.5 Join application boundary (Phase 7.5
+// architecture freeze, final promotion-slot-semantics decision,
+// 2026-07-24): `preferredTimeFrom` is the authoritative requested
+// Reservation start time-of-day on promotion - no longer a merely "soft"
+// preference. `preferredTimeTo` remains optional/non-authoritative,
+// filtering metadata only, never used to construct a Reservation. The
+// `userId` XOR `reservationGuestId` CHECK constraint mirrors `Reservation`'s
+// own (Phase 7.4 decision #5) and, like that one, cannot be expressed in the
+// Prisma schema language - added via raw SQL in the Phase 7.5 migration,
+// together with the partial-unique active-queue-position index scoped by
+// `(branchId, preferredDate, position)` (queue scope per the Phase 7.5
+// freeze item 13). Phase 7.5 tenancy correction (2026-07-24, forward
+// corrective migration `phase_7_5_1_waitlist_remove_organization_id`):
+// deliberately carries NO direct `organizationId` column, unlike this
+// model's own originally-documented (pre-implementation) shape - a required
+// direct `organizationId` is structurally incompatible with Customer-facing
+// Join, which has no bound `TenantContext.organizationId` to populate it
+// with, and resolving it via `RestaurantRepository` would throw
+// `TenantContextMissingException` (`Restaurant` is a
+// `DIRECT_TENANT_OWNED_MODEL`, fail-closed with no context bound) or require
+// bypassing tenant scoping entirely - neither acceptable. Tenant ownership is
+// resolved transitively (`branchId -> Branch.restaurantId ->
+// Restaurant.organizationId`), exactly like `Reservation` itself already
+// does, not registered in `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS`.
+// ---------------------------------------------------------------------------
+
+enum WaitlistStatus {
+  Waiting
+  Notified
+  Converted
+  Cancelled
+  Expired
+}
+
+model ReservationWaitlistEntry {
+  id                     String         @id @default(uuid()) @db.Uuid
+  restaurantId           String         @map("restaurant_id") @db.Uuid
+  branchId               String         @map("branch_id") @db.Uuid
+  userId                 String?        @map("user_id") @db.Uuid
+  reservationGuestId     String?        @map("reservation_guest_id") @db.Uuid
+  partySize              Int            @map("party_size")
+  preferredDate          DateTime       @map("preferred_date") @db.Date
+  preferredTimeFrom      DateTime       @map("preferred_time_from") @db.Time
+  preferredTimeTo        DateTime?      @map("preferred_time_to") @db.Time
+  status                 WaitlistStatus @default(Waiting)
+  position               Int
+  convertedReservationId String?        @unique @map("converted_reservation_id") @db.Uuid
+  notifiedAt             DateTime?      @map("notified_at")
+  expiresAt              DateTime       @map("expires_at")
+  notes                  String?
+  createdBy              String         @map("created_by") @db.Uuid
+  createdAt              DateTime       @default(now()) @map("created_at")
+  updatedAt              DateTime       @updatedAt @map("updated_at")
+  deletedAt              DateTime?      @map("deleted_at")
+
+  restaurant           Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  branch               Branch            @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  user                 User?             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  reservationGuest     ReservationGuest? @relation(fields: [reservationGuestId], references: [id], onDelete: Restrict)
+  convertedReservation Reservation?      @relation(fields: [convertedReservationId], references: [id], onDelete: SetNull)
+
+  @@index([branchId])
+  @@index([status])
+  @@index([branchId, preferredDate, status])
+  @@index([branchId, status, position])
+  @@index([userId])
+  @@index([reservationGuestId])
+  @@map("reservation_waitlist_entries")
 }
 
 // ---------------------------------------------------------------------------
@@ -1061,4 +1171,95 @@ model SystemConfiguration {
   description String?
   updatedBy   String?
   updatedAt   DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Notifications (Phase 9 — Notification System, architecture frozen
+// 2026-07-25, TASKS.md's "Phase 9 — Notification System: Pre-implementation
+// architecture decisions"). `Notification` is `userId`-owned only (decision
+// item 2 — no Employee/OrganizationMember/ReservationGuest recipient exists
+// in v1) and carries no direct `organizationId` (decision item 13 — a
+// Customer's notification inbox spans every organization they've ever booked
+// with, exactly like `Reservation.userId` itself; mirrors the Phase 7.5
+// `ReservationWaitlistEntry.organizationId` correction). Deliberately NOT
+// added to `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS` — see
+// TENANCY.md. Read (`read`/`readAt`) and push (`pushStatus`/`pushSentAt`/
+// `pushFailedAt`) are two independent state tracks on one row (decision item
+// 5) — no separate lifecycle-event chain, no `Delivered` state (OneSignal's
+// Send API only proves provider acceptance, never on-device delivery).
+// ---------------------------------------------------------------------------
+
+enum NotificationPushStatus {
+  NotAttempted
+  Queued
+  Accepted
+  Failed
+}
+
+enum NotificationChannel {
+  Push
+  InApp
+  SMS
+}
+
+/**
+ * `templateId` is traceability only — `title`/`body` are resolved and
+ * snapshotted at creation time in the recipient's language and are never
+ * re-read from the template for rendering (decision item 4), so an edited or
+ * deleted template never changes a Customer's notification history. No
+ * `deletedAt` (retention undecided/deferred, additive later without
+ * migration risk) and no `retryCount` (BullMQ's own per-job `attempts`
+ * configuration is the retry-count authority, not a column on this row).
+ */
+model Notification {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  userId                String                 @map("user_id") @db.Uuid
+  type                  String
+  templateId            String?                @map("template_id") @db.Uuid
+  title                 String
+  body                  String
+  data                  Json?
+  read                  Boolean                @default(false)
+  readAt                DateTime?              @map("read_at")
+  pushStatus            NotificationPushStatus @default(NotAttempted) @map("push_status")
+  pushSentAt            DateTime?              @map("push_sent_at")
+  pushFailedAt          DateTime?              @map("push_failed_at")
+  pushFailureReason     String?                @map("push_failure_reason")
+  pushIdempotencyKey    String?                @map("push_idempotency_key") @db.Uuid
+  pushProviderMessageId String?                @map("push_provider_message_id")
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @updatedAt @map("updated_at")
+
+  user     User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([userId, read])
+  @@map("notifications")
+}
+
+/**
+ * Platform-global only (decision item 15 — no restaurant-specific override,
+ * no versioning). `SMS` remains present in `channel` purely as documented
+ * schema foresight (`NON_FUNCTIONAL_REQUIREMENTS.md`) — not implemented
+ * against; no SMS template content or delivery code exists in Phase 9 v1.
+ * `isDefault` marks the fallback used when no translation exists for the
+ * recipient's resolved `User.language` (LOCALIZATION.md).
+ */
+model NotificationTemplate {
+  id        String              @id @default(uuid()) @db.Uuid
+  eventType String              @map("event_type")
+  language  String
+  channel   NotificationChannel
+  title     String
+  body      String
+  isDefault Boolean             @default(false) @map("is_default")
+  createdAt DateTime            @default(now()) @map("created_at")
+  updatedAt DateTime            @updatedAt @map("updated_at")
+
+  notifications Notification[]
+
+  @@unique([eventType, language, channel])
+  @@index([eventType, channel, isDefault])
+  @@map("notification_templates")
 }

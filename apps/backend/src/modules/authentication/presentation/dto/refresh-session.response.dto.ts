@@ -34,4 +34,12 @@ export class RefreshSessionResponseDto {
 
   @ApiProperty({ type: String, format: 'date-time' })
   serverTime!: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'ADR-025: short-lived OneSignal Identity-Verification JWT for OneSignal.login()/updateUserJwt(). Present only for Customer (User) actors; null otherwise or when Identity Verification is not configured.',
+  })
+  onesignalIdentityToken!: string | null;
 }

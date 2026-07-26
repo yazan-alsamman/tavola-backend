@@ -90,8 +90,10 @@ export class CreateTableUseCase {
       // Phase 6.1 architecture decision (TASKS.md decision #7): always
       // Available. No Phase 6.1 endpoint accepts or transitions status.
       status: TableStatus.Available,
-      // Reserved for the future Merge/Split sub-phase - never populated here.
+      // Phase 6 (Merge/Split Tables, ADR-026): a freshly created table is
+      // never merged - Table.create() also enforces this independently.
       mergeGroupId: null,
+      isMergePrimary: false,
       createdAt: now,
       updatedAt: now,
       deletedAt: null,

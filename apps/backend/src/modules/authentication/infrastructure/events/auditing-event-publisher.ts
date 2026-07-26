@@ -37,13 +37,34 @@ import {
 import {
   TableCreatedEvent,
   TableDeletedEvent,
+  TableMergedEvent,
+  TableMovedEvent,
+  TableSplitEvent,
+  TableStatusChangedEvent,
   TableUpdatedEvent,
 } from '@modules/tables/domain/events/table.events';
 import {
   ReservationApprovedEvent,
+  ReservationCancelledEvent,
+  ReservationCompletedEvent,
   ReservationCreatedEvent,
+  ReservationExpiredEvent,
+  ReservationNoShowEvent,
   ReservationRejectedEvent,
+  ReservationRescheduledEvent,
+  ReservationReminderDueEvent,
+  ReservationReminderSentEvent,
+  GuestLateArrivalNotifiedEvent,
+  TableReadyNotifiedEvent,
 } from '@modules/reservations/domain/events/reservation.events';
+import {
+  WaitlistEntryCancelledEvent,
+  WaitlistEntryCreatedEvent,
+  WaitlistEntryExpiredEvent,
+  WaitlistEntryNotifiedEvent,
+  WaitlistEntryPromotedEvent,
+} from '@modules/waitlist/domain/events/waitlist.events';
+import { NotificationCreatedEvent } from '@modules/notifications/domain/events/notification.events';
 import { LoggingEventPublisher } from './logging-event-publisher';
 
 /**
@@ -382,11 +403,74 @@ export class AuditingEventPublisher implements EventPublisherPort {
       };
     }
 
+    if (event instanceof TableStatusChangedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'User',
+        action: 'table.status_changed',
+        targetType: 'Table',
+        targetId: event.payload.tableId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof TableMovedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'User',
+        action: 'table.moved',
+        targetType: 'Table',
+        targetId: event.payload.tableId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof TableMergedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        // ADR-026 decision #16: Employee -> actorType Employee/Employee.id;
+        // OrganizationMember Owner/Admin -> existing TableMoved/
+        // TableStatusChanged convention (actorType User/userId). Recovered
+        // from the request-scoped TenantContext, same mechanism already
+        // used by ReservationCancelledEvent/ReservationRescheduledEvent for
+        // an identically actor-ambiguous payload id.
+        actorType: this.tenantContextService.getActorType() === 'Employee' ? 'Employee' : 'User',
+        action: 'table.merged',
+        targetType: 'Table',
+        targetId: event.payload.primaryTableId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof TableSplitEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: this.tenantContextService.getActorType() === 'Employee' ? 'Employee' : 'User',
+        action: 'table.split',
+        targetType: 'Table',
+        targetId: event.payload.primaryTableId,
+        ipAddress: null,
+      };
+    }
+
     if (event instanceof ReservationCreatedEvent) {
       return {
         ...base,
         actorId: event.payload.createdBy,
-        actorType: event.payload.userId !== null ? 'User' : 'Employee',
+        // Phase 7.5: three-way attribution - userId set -> User;
+        // userId null but createdBy set -> Employee (Phone/WalkIn/manual
+        // Waitlist promotion); both null -> System (automatic Waitlist
+        // promotion, source: WaitlistConversion).
+        actorType:
+          event.payload.userId !== null
+            ? 'User'
+            : event.payload.createdBy !== null
+              ? 'Employee'
+              : 'System',
         action: 'reservation.created',
         targetType: 'Reservation',
         targetId: event.payload.reservationId,
@@ -414,6 +498,192 @@ export class AuditingEventPublisher implements EventPublisherPort {
         action: 'reservation.rejected',
         targetType: 'Reservation',
         targetId: event.payload.reservationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof ReservationCancelledEvent) {
+      return {
+        ...base,
+        actorId: event.payload.cancelledBy,
+        // Phase 8 audit-hygiene fix (EVENTS.md Phase 8 note, 2026-07-24):
+        // `cancelledBy` is ambiguously a User's userId or an Employee's
+        // employeeId (Cancel is reachable by both -
+        // `assertActorCanModifyReservation`) - recovered from the same
+        // request-scoped TenantContext the acting guard already populated,
+        // rather than widening this already-frozen Phase 7.3 event payload.
+        actorType: this.tenantContextService.getActorType() === 'Employee' ? 'Employee' : 'User',
+        action: 'reservation.cancelled',
+        targetType: 'Reservation',
+        targetId: event.payload.reservationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof ReservationRescheduledEvent) {
+      return {
+        ...base,
+        actorId: event.payload.rescheduledBy,
+        actorType: this.tenantContextService.getActorType() === 'Employee' ? 'Employee' : 'User',
+        action: 'reservation.rescheduled',
+        targetType: 'Reservation',
+        targetId: event.payload.reservationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof ReservationCompletedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.completedBy,
+        actorType: 'Employee',
+        action: 'reservation.completed',
+        targetType: 'Reservation',
+        targetId: event.payload.reservationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof ReservationNoShowEvent) {
+      return {
+        ...base,
+        actorId: event.payload.markedBy,
+        actorType: 'Employee',
+        action: 'reservation.no_show',
+        targetType: 'Reservation',
+        targetId: event.payload.reservationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof ReservationExpiredEvent) {
+      return {
+        ...base,
+        actorId: null,
+        actorType: 'System',
+        action: 'reservation.expired',
+        targetType: 'Reservation',
+        targetId: event.payload.reservationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof ReservationReminderDueEvent) {
+      return {
+        ...base,
+        actorId: null,
+        actorType: 'System',
+        action: 'reservation.reminder_due',
+        targetType: 'Reservation',
+        targetId: event.payload.reservationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof ReservationReminderSentEvent) {
+      return {
+        ...base,
+        actorId: null,
+        actorType: 'System',
+        action: 'reservation.reminder_sent',
+        targetType: 'Reservation',
+        targetId: event.payload.reservationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof GuestLateArrivalNotifiedEvent) {
+      return {
+        ...base,
+        actorId: null,
+        actorType: 'System',
+        action: 'reservation.late_arrival_notified',
+        targetType: 'Reservation',
+        targetId: event.payload.reservationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof TableReadyNotifiedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.markedBy,
+        actorType: 'Employee',
+        action: 'reservation.table_ready_notified',
+        targetType: 'Reservation',
+        targetId: event.payload.reservationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof WaitlistEntryCreatedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.createdBy,
+        actorType: event.payload.userId !== null ? 'User' : 'Employee',
+        action: 'waitlist.created',
+        targetType: 'ReservationWaitlistEntry',
+        targetId: event.payload.entryId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof WaitlistEntryPromotedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.promotedBy,
+        actorType: event.payload.promotedBy ? 'Employee' : 'System',
+        action: 'waitlist.promoted',
+        targetType: 'ReservationWaitlistEntry',
+        targetId: event.payload.entryId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof WaitlistEntryNotifiedEvent) {
+      return {
+        ...base,
+        actorId: null,
+        actorType: 'System',
+        action: 'waitlist.notified',
+        targetType: 'ReservationWaitlistEntry',
+        targetId: event.payload.entryId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof WaitlistEntryExpiredEvent) {
+      return {
+        ...base,
+        actorId: null,
+        actorType: 'System',
+        action: 'waitlist.expired',
+        targetType: 'ReservationWaitlistEntry',
+        targetId: event.payload.entryId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof WaitlistEntryCancelledEvent) {
+      return {
+        ...base,
+        actorId: event.payload.cancelledBy,
+        actorType: event.payload.cancelledByActorType,
+        action: 'waitlist.cancelled',
+        targetType: 'ReservationWaitlistEntry',
+        targetId: event.payload.entryId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof NotificationCreatedEvent) {
+      return {
+        ...base,
+        actorId: null,
+        actorType: 'System',
+        action: 'notification.created',
+        targetType: 'Notification',
+        targetId: event.payload.notificationId,
         ipAddress: null,
       };
     }

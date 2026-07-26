@@ -15,10 +15,14 @@ export interface ReservationEventPayload {
  * event class (the legacy `PhoneReservationCreated`/`WalkInReservationCreated`
  * proposal in EVENTS.md is superseded, not implemented). `userId` is `null`
  * for a Phone/WalkIn reservation (`reservationGuestId` set instead);
- * `createdBy` always carries the acting principal's own id - the Customer's
+ * `createdBy` carries the acting principal's own id - the Customer's
  * `userId` for Online, the Employee's `employeeId` for Phone/WalkIn (Phase
  * 7.4 decision #6, the same `approvedBy`/`actor.employeeId` precedent
- * `ReservationApprovedEvent` already established).
+ * `ReservationApprovedEvent` already established) - or `null` for `source:
+ * WaitlistConversion` created by an automatic (System) Waitlist promotion
+ * (Phase 7.5). `AuditingEventPublisher.toAuditEntry`'s `ReservationCreatedEvent`
+ * branch derives the three-way `actorType` (`User`/`Employee`/`System`) from
+ * `userId`/`createdBy` together (Phase 7.5).
  */
 export class ReservationCreatedEvent extends DomainEvent {
   public readonly eventName = 'ReservationCreated';
@@ -33,7 +37,7 @@ export class ReservationCreatedEvent extends DomainEvent {
       userId: string | null;
       reservationGuestId: string | null;
       source: ReservationSource;
-      createdBy: string;
+      createdBy: string | null;
     },
     occurredAt: Date = new Date(),
     correlationId?: string,
@@ -215,6 +219,126 @@ export class ReservationExpiredEvent extends DomainEvent {
       restaurantId: string;
       branchId: string;
       tableId: string;
+    },
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+  }
+}
+
+/**
+ * Phase 7.6 (Operational Signals, ADR-019) - domain/event side only, per
+ * TASKS.md's own scope note ("actual notification delivery may be better
+ * sequenced alongside Phase 9's `NotificationProvider`"). Published by the
+ * Reminder BullMQ job (`ReminderProcessor`), scheduled
+ * `reservationReminderMinutesBefore` minutes before `reservationStartTime`
+ * for every Approved reservation. No authenticated HTTP actor - always
+ * `actorType: System` (`AuditingEventPublisher`), matching
+ * `ReservationExpiredEvent`'s own precedent. The processor itself performs
+ * no state mutation (reminders are informational only, unlike Late Arrival
+ * which flips `lateArrivalNotifiedAt`) - this event's own publication IS the
+ * signal, so it carries no "already notified" guard.
+ */
+export class ReservationReminderDueEvent extends DomainEvent {
+  public readonly eventName = 'ReservationReminderDue';
+
+  constructor(
+    eventId: string,
+    public readonly payload: ReservationEventPayload & {
+      reservationId: string;
+      restaurantId: string;
+      branchId: string;
+      reservationStartTime: string;
+    },
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+  }
+}
+
+/**
+ * Phase 9 (architecture frozen 2026-07-25, TASKS.md decision item 6) - "Due"
+ * (scheduled/computed, Phase 7.6) and "Sent" (actual provider-acceptance
+ * confirmation, Phase 9) are deliberately distinct concepts. Fires once per
+ * logical reminder (never once per channel), published by
+ * `RecordPushOutcomeUseCase` only when the corresponding `Notification`'s
+ * `pushStatus` transitions to `Accepted` - never on `notificationOptIn =
+ * false` (push never attempted) or a `Failed` push (retry budget
+ * exhausted). Never claims device-level delivery - only that the provider
+ * (OneSignal) accepted the send request. No authenticated actor - always
+ * `actorType: System`, mirroring `ReservationReminderDueEvent`'s own
+ * precedent.
+ */
+export class ReservationReminderSentEvent extends DomainEvent {
+  public readonly eventName = 'ReservationReminderSent';
+
+  constructor(
+    eventId: string,
+    public readonly payload: ReservationEventPayload & {
+      reservationId: string;
+      restaurantId: string;
+      branchId: string;
+      reservationStartTime: string;
+    },
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+  }
+}
+
+/**
+ * Phase 7.6 (Operational Signals, ADR-019) - published by the Late-Arrival
+ * BullMQ job (`LateArrivalProcessor`) only when
+ * `Reservation.markLateArrivalNotifiedIfEligible` actually applied (still
+ * `Approved`, not already notified) - a stale/no-op firing (reservation
+ * already left `Approved`, or already notified by a prior run) publishes
+ * nothing. No authenticated HTTP actor - always `actorType: System`, exactly
+ * like `ReservationReminderDueEvent` above. Does NOT free the table or
+ * change `status` - a late arrival remains a staff decision
+ * (Cancel/NoShow), never automatic.
+ */
+export class GuestLateArrivalNotifiedEvent extends DomainEvent {
+  public readonly eventName = 'GuestLateArrivalNotified';
+
+  constructor(
+    eventId: string,
+    public readonly payload: ReservationEventPayload & {
+      reservationId: string;
+      restaurantId: string;
+      branchId: string;
+      reservationStartTime: string;
+      lateArrivalNotifiedAt: string;
+    },
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+  }
+}
+
+/**
+ * Phase 7.6 (Operational Signals, ADR-019) - the one Operational Signal that
+ * is staff-initiated rather than BullMQ-driven (`POST
+ * /reservations/:id/table-ready`, `MarkTableReadyUseCase`). `markedBy`
+ * always carries the acting Employee's id, mirroring
+ * `ReservationCompletedEvent`/`ReservationNoShowEvent`'s own staff-only
+ * `markedBy`/`completedBy` pattern - never `null`.
+ */
+export class TableReadyNotifiedEvent extends DomainEvent {
+  public readonly eventName = 'TableReadyNotified';
+
+  constructor(
+    eventId: string,
+    public readonly payload: ReservationEventPayload & {
+      reservationId: string;
+      restaurantId: string;
+      branchId: string;
+      reservationStartTime: string;
+      tableReadyNotifiedAt: string;
+      markedBy: string;
     },
     occurredAt: Date = new Date(),
     correlationId?: string,

@@ -8,6 +8,8 @@ import loggingConfig from './logging.config';
 import authConfig from './auth.config';
 import lightotpConfig from './lightotp.config';
 import platformAdminAuthConfig from './platform-admin-auth.config';
+import realtimeConfig from './realtime.config';
+import onesignalConfig from './onesignal.config';
 import { envValidationSchema } from './env.validation';
 
 const nodeEnv = process.env.NODE_ENV ?? 'development';
@@ -32,6 +34,8 @@ const nodeEnv = process.env.NODE_ENV ?? 'development';
         authConfig,
         lightotpConfig,
         platformAdminAuthConfig,
+        realtimeConfig,
+        onesignalConfig,
       ],
       validationSchema: envValidationSchema,
       validationOptions: {

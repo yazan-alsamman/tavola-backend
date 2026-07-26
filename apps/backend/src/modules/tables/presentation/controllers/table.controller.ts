@@ -25,7 +25,10 @@ import { ResponseMessage } from '@common/decorators/response-message.decorator';
 import { ApiErrorResponse } from '@common/decorators/api-error-response.decorator';
 import { ErrorResponseDto } from '@common/dto/error-response.dto';
 import { SkipResponseEnvelope } from '@common/decorators/skip-response-envelope.decorator';
-import { AuthenticatedOrganizationMemberActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
+import {
+  AuthenticatedActor,
+  AuthenticatedOrganizationMemberActor,
+} from '@modules/authentication/application/dto/authenticated-actor.dto';
 import { CurrentActor } from '@modules/authentication/presentation/decorators/current-actor.decorator';
 import { JwtAuthGuard } from '@modules/authentication/presentation/guards/jwt-auth.guard';
 import { SessionVersionGuard } from '@modules/authentication/presentation/guards/session-version.guard';
@@ -38,11 +41,15 @@ import { UpdateTableUseCase } from '../../application/use-cases/update-table.use
 import { DeleteTableUseCase } from '../../application/use-cases/delete-table.use-case';
 import { MoveTableUseCase } from '../../application/use-cases/move-table.use-case';
 import { ChangeTableStatusUseCase } from '../../application/use-cases/change-table-status.use-case';
+import { MergeTablesUseCase } from '../../application/use-cases/merge-tables.use-case';
+import { SplitTablesUseCase } from '../../application/use-cases/split-tables.use-case';
 import { UpdateTableRequestDto } from '../dto/update-table.request.dto';
 import { MoveTableRequestDto } from '../dto/move-table.request.dto';
 import { ChangeTableStatusRequestDto } from '../dto/change-table-status.request.dto';
+import { MergeTablesRequestDto } from '../dto/merge-tables.request.dto';
 import { TableResponseDto } from '../dto/table.response.dto';
-import { toTableResponse } from './table-response.mapper';
+import { MergedUnitResponseDto } from '../dto/merge-unit.response.dto';
+import { toTableResponse, toMergedUnitResponse } from './table-response.mapper';
 
 /**
  * Flat individual resource (`/tables/:tableId`, TASKS.md Phase 6.1 Routing
@@ -63,7 +70,62 @@ export class TableController {
     private readonly deleteTableUseCase: DeleteTableUseCase,
     private readonly moveTableUseCase: MoveTableUseCase,
     private readonly changeTableStatusUseCase: ChangeTableStatusUseCase,
+    private readonly mergeTablesUseCase: MergeTablesUseCase,
+    private readonly splitTablesUseCase: SplitTablesUseCase,
   ) {}
+
+  // Registered BEFORE the `:tableId/...` routes below (Nest route
+  // resolution/readability convention) - `POST /tables/merge` is a distinct
+  // 2-segment path shape from the 3-segment `:tableId/move`/`:tableId/status`
+  // routes, so there is no actual matching ambiguity, but keeping the
+  // static-first ordering avoids ever having to reason about it.
+  @Post('merge')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Tables merged successfully.')
+  @ApiOperation({
+    operationId: 'tablesMerge',
+    summary: 'Merge two or more tables into one reservable unit (Domain Action)',
+    description:
+      'Phase 6 (Merge/Split Tables, ADR-026 - Primary Table model): at least 2 distinct, currently Available tables in the same Branch and FloorPlan, none already merged, become one merge group sharing mergeGroupId. Exactly one becomes the Primary (optional primaryTableId, else lowest tableNumber then Table.id ascending) - only the Primary is independently reservable (Reservation.tableId always targets it); every other member becomes status Merged. Rejected if any component has a Pending/Approved reservation whose reservationEndTime has not passed. Dual-actor authorization resolved inside the use case (no NestJS OrgRole/Permissions guard): OrganizationMember Owner/Admin of the owning organization, or Employee with tables:manage and branch scope.',
+  })
+  @ApiResponse({ status: 200, description: 'Tables merged', type: MergedUnitResponseDto })
+  @ApiErrorResponse(
+    400,
+    'Malformed request (fewer than 2 ids, duplicate ids, or invalid primaryTableId)',
+    ['VALIDATION_ERROR'],
+  )
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(
+    403,
+    'Caller is neither an Owner/Admin organization member nor a tables:manage-scoped employee',
+    ['FORBIDDEN', 'EMPLOYEE_BRANCH_NOT_ASSIGNED'],
+  )
+  @ApiErrorResponse(404, 'A table id was not found (or belongs to another organization)', [
+    'NOT_FOUND',
+  ])
+  @ApiErrorResponse(
+    409,
+    'A table is not Available, already merged, in a different branch/floor plan, or has a blocking reservation',
+    ['TABLE_MERGE_CONFLICT'],
+  )
+  async merge(
+    @Body() body: MergeTablesRequestDto,
+    @CurrentActor() actor: AuthenticatedActor,
+    @Req() request: Request,
+  ): Promise<MergedUnitResponseDto> {
+    const result = await this.mergeTablesUseCase.execute({
+      actor,
+      tableIds: body.tableIds,
+      primaryTableId: body.primaryTableId,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return toMergedUnitResponse(result);
+  }
 
   @Get(':tableId')
   @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
@@ -253,5 +315,47 @@ export class TableController {
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
     return toTableResponse(result);
+  }
+
+  @Post(':tableId/split')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Tables split successfully.')
+  @ApiOperation({
+    operationId: 'tablesSplit',
+    summary: 'Undo a merge, restoring every member as an independent table (Domain Action)',
+    description:
+      'Phase 6 (Merge/Split Tables, ADR-026 decision #2): tableId may be ANY member of the active merge group - the full group is resolved from it. Clears mergeGroupId/isMergePrimary for every member; a former secondary (status Merged) becomes Available again, the former primary keeps its current status unchanged. No Table row is created or destroyed and no capacity column is touched - "Split = undo merge only." Rejected if the Primary has a Pending/Approved reservation whose reservationEndTime has not passed. Same dual-actor authorization as Merge.',
+  })
+  @ApiParam({ name: 'tableId', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Tables split', type: MergedUnitResponseDto })
+  @ApiErrorResponse(400, 'tableId is not a valid UUID', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(
+    403,
+    'Caller is neither an Owner/Admin organization member nor a tables:manage-scoped employee',
+    ['FORBIDDEN', 'EMPLOYEE_BRANCH_NOT_ASSIGNED'],
+  )
+  @ApiErrorResponse(404, 'Table not found (or belongs to another organization)', ['NOT_FOUND'])
+  @ApiErrorResponse(
+    409,
+    'Table is not part of a merge group, or the primary has a blocking reservation',
+    ['CONFLICT', 'TABLE_MERGE_CONFLICT'],
+  )
+  async split(
+    @Param('tableId', ParseUUIDPipe) tableId: string,
+    @CurrentActor() actor: AuthenticatedActor,
+    @Req() request: Request,
+  ): Promise<MergedUnitResponseDto> {
+    const result = await this.splitTablesUseCase.execute({
+      actor,
+      tableId,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return toMergedUnitResponse(result);
   }
 }

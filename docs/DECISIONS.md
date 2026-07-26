@@ -254,8 +254,9 @@ Future providers may include:
 
 * Apple Push Notification Service (APNs)
 * Huawei Push Kit
-* Email providers
 * SMS providers
+
+(Email providers removed from scope — 2026-07-25 product decision, TASKS.md's Phase 9 section; this illustrative list was never a binding requirement to reuse Email specifically, so no ADR amendment/supersession was needed — only this example list changed.)
 
 ---
 
@@ -832,6 +833,30 @@ Product scope includes reservation waiting list, reminders, late-arrival handlin
 
 **Phase 7 pre-implementation decision note (2026-07-19) amendment:** mapped to sub-phases - waitlist itself is **Phase 7.5** (automatic promotion trigger on `ReservationCancelled`/`ReservationNoShow`/`ReservationExpired`, plus manual staff trigger); reminders/late-arrival/table-ready are **Phase 7.6**, with `GuestLateArrivalNotified`/`TableReadyNotified` confirmed as real domain event classes (named `NotificationDispatcher` consumer already documented here), not audit-only.
 
+**Phase 7.5 implementation decision note (architecture frozen 2026-07-24, implemented and live-verified same day) — supersedes the sub-phase amendment above where noted:**
+
+1. **Join requires `preferredDate` AND `preferredTimeFrom`** at the API boundary (`POST /waitlist`); `preferredTimeFrom` is the **authoritative** requested Reservation start time-of-day on promotion, not merely a soft preference (the original ADR-019/DATABASE_SCHEMA.md text calling it "soft" is superseded). `preferredTimeTo` remains optional and non-authoritative (filtering metadata only, never used to construct a Reservation).
+2. **Slot derivation**: `reservationStartTime = (preferredDate, preferredTimeFrom)` interpreted in `Branch.timezone`, converted to UTC via the runtime's own `Intl.DateTimeFormat` (no third-party timezone dependency); `reservationEndTime = reservationStartTime + RestaurantSettings.defaultReservationDurationMinutes`. `RestaurantSettings.timezone` is never used. A request whose derived start time is already in the past is rejected at Join, and an entry that later becomes past-due is simply left `Waiting`/`Notified` (never reinterpreted as "seat now") until its own expiration fires.
+3. **Expiration**: end of `preferredDate` (23:59:59.999) in `Branch.timezone`, converted to UTC - unaffected by `preferredTimeFrom`/`preferredTimeTo`. Scheduled via a dedicated `WaitlistQueue` BullMQ delayed job, direct structural mirror of Phase 7.3's `ReservationQueue` expiration mechanism (same idempotent conditional-transition guard, same deterministic-`jobId`/dash-separated-id precedent).
+4. **State machine (frozen)**: `Waiting -> {Notified, Converted, Cancelled, Expired}`, `Notified -> {Converted, Cancelled, Expired}`; `Converted`/`Cancelled`/`Expired` terminal; `Notified -> Waiting` not allowed; `Waiting -> Converted` valid directly (notification is not a promotion prerequisite).
+5. **Table selection (promotion)**: never the triggering Reservation's own table - a fresh informational search (`TableRepository.findManyAvailableByBranchIdAndMinCapacity` + `ReservationRepository.findOverlappingPendingOrApproved`, the same building blocks `SearchAvailabilityUseCase` already uses) against the entry's own derived window, smallest-sufficient-capacity first, `tableNumber` ascending as tie-break. ADR-013 remains the sole transactional concurrency authority; the search is informational only.
+6. **Automatic trigger set (corrects the original "Cancelled/NoShow/Expired" framing above)**: only `Approved -> Cancelled` and `Approved -> NoShow` trigger a re-check - both are the only transitions that actually call `Table.release()`. `Pending -> Cancelled` and `Pending -> Expired` never held a table and do not trigger one.
+7. **Automatic re-check delivery**: a durable, BullMQ-enqueued `WaitlistRecheckQueue` job (not a bare synchronous call) - `ReservationsModule` registers the producer (`BullMqWaitlistRecheckScheduler`, called from `CancelReservationUseCase`'s `Approved` branch and `MarkNoShowReservationUseCase` after their own transaction commits, best-effort/non-blocking relative to that action) and `WaitlistModule` independently registers the consumer (`WaitlistRecheckProcessor`) for the same queue name - two ordinary BullMQ producer/consumer registrations, not a circular NestJS module import.
+8. **FIFO fairness — FIFO-ORDERED FIRST-SERVICEABLE**: the re-check scan evaluates active entries strictly in `position` order and promotes the first one that is actually serviceable; an unserviceable head-of-queue entry does not block later entries and is never mutated (no cancel/expire/reorder) by being skipped. At most one successful promotion per re-check attempt.
+9. **Promotion ownership**: `WaitlistPromotionService` reuses `ReservationRepository.createWithLockInTransaction` directly (never `CreateReservationUseCase`). A two-phase database claim (status-only first, `convertedReservationId` attached second, once the Reservation row exists) is required because that column carries a real FK to `reservations.id` and the target row does not exist at claim time - discovered and fixed via live concurrency testing (two-phase claim, same transaction, same atomicity guarantee).
+10. **`Reservation.createdBy` is now `string | null`** - `null` means an automatic (System) Waitlist promotion created the Reservation; every other path (Online/Phone/WalkIn/Staff, manual Waitlist promotion) still always sets a real actor id. `AuditingEventPublisher`'s `ReservationCreatedEvent` attribution is three-way: `userId` set → `User`; `userId` null & `createdBy` set → `Employee`; both null → `System`.
+11. **`reservations:waitlist` permission** - covers Join-on-behalf-of-guest, Cancel (Employee branch), and manual Promote; granted to `manager`/`receptionist`, not `cashier`.
+12. **Tenancy correction (supersedes the schema shape implied by this ADR's original "separate table/aggregate" decision item 1)**: `ReservationWaitlistEntry` carries **no** direct `organizationId` column, despite the pre-implementation `DATABASE_SCHEMA.md` draft specifying one. A required direct `organizationId` is structurally incompatible with Customer-facing Join: a Customer actor has no bound `TenantContext.organizationId`, and `Restaurant` (the only path to discover one via `branchId -> Branch.restaurantId -> Restaurant.organizationId`) is a `DIRECT_TENANT_OWNED_MODEL`, fail-closed with no context bound (`TenantContextMissingException`) - there is no legitimate way to populate the column for a Customer-initiated row without bypassing tenant scoping, which was explicitly rejected. Tenant ownership is instead resolved transitively, exactly like `Reservation` itself already does; `ReservationWaitlistEntry` remains unregistered in `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS`. A forward corrective migration (`20260724143130_phase_7_5_1_waitlist_remove_organization_id`) dropped the column after the original Phase 7.5 migration had already been applied - no data existed yet, a clean lossless drop.
+
+**Phase 7.6 implementation amendment (architecture frozen 2026-07-24, implemented same day) — domain/event scope only, per this ADR's own decision items 2-4:**
+
+1. **Reminder/Late-Arrival offsets live on `RestaurantSettings`**, not hardcoded: `reservationReminderMinutesBefore` (default 60, 1-10080) and `lateArrivalGraceMinutes` (default 15, 1-1440) - two new dedicated queues (`ReminderQueue`, `LateArrivalQueue`) rather than one shared queue, keyed `reservation-reminder-{id}`/`reservation-late-{id}`, scheduled/re-timed/cancelled through one new `ApprovedReservationOperationalSchedulerPort` wrapped by `ScheduleApprovedReservationSignalsService`, wired post-commit into Approve/Create-auto-approve/Waitlist-promotion-auto-approve (schedule), Reschedule-while-Approved (replace), and Cancel/Complete/NoShow-from-Approved (cancel).
+2. **`ReservationReminderDue`/`GuestLateArrivalNotified` confirmed real event classes (per decision item 2/3 above), System-attributed**; a stale Reminder job (one that survived a reschedule without being correctly re-timed) is a no-op, guarded by re-checking the reservation's current `status`/`reservationStartTime` against the job's own captured values - it does not blindly fire. `markLateArrivalNotifiedIfEligible`'s repository-level CAS (`WHERE status = 'Approved' AND lateArrivalNotifiedAt IS NULL`) is the sole eligibility gate for the late-arrival job, proven race-safe against real concurrent Postgres transactions.
+3. **Table Ready is staff-initiated only (`POST /reservations/:id/table-ready`, new `reservations:tableready` permission), never a scheduled job** - decision item 4's "staff marks table ready" is implemented exactly as written; the "push/SMS to guest" half of that item remains Phase 9 (`NotificationProvider`) scope, not built here. Unlike the background jobs, a CAS failure here is a staff-facing 400, not a silent no-op.
+4. **`ReservationReminderSent` and `WaitlistEntryNotified`'s production path both remain explicitly deferred to Phase 9** - this ADR's own decision items are satisfied by "Due" (computed/scheduled) and "Notified" (Employee-confirmed) signals; actual notification *delivery* confirmation is a `NotificationProvider` concern this phase does not implement, per the Phase 7.6 checklist's own scope note.
+
+No new ADR was required for the above - all four items implement already-accepted decision items 2-4 of this ADR exactly as specified (CHANGE_POLICY.md's "not required" carve-out).
+
 ---
 
 ## ADR-020
@@ -1233,6 +1258,145 @@ ADR-022 (§"Fonnte Integration Boundary") introduced Fonnte as the Customer phon
 ### Impact
 
 Affects: `src/config/lightotp.config.ts` (new, replaces `fonnte.config.ts`), `LightOtpVerificationMessagingAdapter` (new, replaces `FonnteVerificationMessagingAdapter`), `PhoneNumber` value object (two Fonnte-specific methods removed), `env.validation.ts`, `configuration.module.ts`, `authentication.module.ts`, `docker-compose.yml`, `ENVIRONMENT_SETUP.md`, `AUTHENTICATION_ARCHITECTURE.md` §15.8 (rewritten in place to describe the current LightOTP contract, per that document's own "authoritative current specification" convention), `ARCHITECTURE_LOCK.md` (this ADR added to the locked table; ADR-022's row annotated), `PRODUCT_REQUIREMENTS.md` FR-01.1a, `DOMAIN_MODEL.md`, `EVENTS.md`, `TESTING_STRATEGY.md`, `README.md`, `PROJECT_ROADMAP.md`, `TASKS.md` (new migration report). Does not affect Customer identity rules, Owner email/password authentication, Owner provisioning, Employee authentication, phone-number normalization/canonical-E.164 architecture, or any Reservation-domain architecture (Phase 7.x).
+
+---
+
+## ADR-025
+
+### Title
+
+OneSignal Identity Verification (amends ADR-007's Implementation Rule)
+
+### Status
+
+Accepted — architecture frozen alongside the Phase 9 pre-implementation freeze (`TASKS.md`'s "Phase 9 — Notification System: Pre-implementation architecture decisions"). Signing code (`OneSignalIdentityVerificationService`, ES256, unit-tested with a locally-generated test key pair) implemented 2026-07-25; no real `ONESIGNAL_IDENTITY_VERIFICATION_PRIVATE_KEY` has been provisioned this session, so live signing against a real OneSignal app remains unverified.
+
+**Delivery mechanism (owner-approved 2026-07-25, implemented same day):** Hybrid delivery matching current official OneSignal Identity Verification documentation (`documentation.onesignal.com/docs/en/identity-verification`):
+
+1. **Initial token at authentication:** `onesignalIdentityToken: string | null` is attached to `POST /api/v1/auth/customer/login` and to `POST /api/v1/auth/refresh` when `actorType === User` (Customer). Non-Customer refreshes and unconfigured environments return `null` (signer fails closed — never fabricates an unsigned token).
+2. **On-demand refresh endpoint:** `GET /api/v1/notifications/identity-token` (JwtAuthGuard + SessionVersionGuard) returns `{ token, expiresInSeconds }` for the caller's `User.id`, for app-open and for OneSignal's `addUserJwtInvalidatedListener` → `OneSignal.updateUserJwt` path.
+3. **Wiring:** signer is bound behind `ONESIGNAL_IDENTITY_TOKEN_SIGNER` in a `@Global()` `PushIdentityModule` so Authentication and Notifications consume the port without a module cycle.
+4. **Does not** change Tavola session/JWT semantics, RBAC, or the four original Customer inbox endpoints' ownership rules. External live OneSignal delivery remains separately blocked pending credentials.
+
+### Date
+
+2026-07-25
+
+### Context
+
+ADR-007 accepted OneSignal as the notification provider and froze one Implementation Rule: *"The application must never communicate directly with OneSignal. All notifications pass through: NotificationProvider."* It did not address how OneSignal itself authenticates the `external_id` a backend sends it. Current official OneSignal documentation (`documentation.onesignal.com/docs/en/identity-verification`, verified during the Phase 9 pre-implementation review, 2026-07-25) describes a real, documented risk: without Identity Verification, any client knowing or guessing another user's `external_id` can manipulate that user's OneSignal subscriptions via client-SDK calls, since OneSignal's default `external_id` matching performs no ownership proof. Tavola's own frozen decision (Phase 9 pre-implementation freeze, item 3) sets `external_id = User.id` — a UUID that, while not trivially guessable, is not treated as a secret anywhere else in the system (it already appears in JWTs, URLs, and API responses the Customer's own client legitimately sees) — so relying on its secrecy alone is not an adequate control.
+
+This is not a new external dependency (OneSignal is already ADR-007-accepted) and does not change Tavola's own authentication/session model (`AUTHENTICATION_ARCHITECTURE.md` is untouched) — it is a narrow addition of cryptographic trust-proof specifically for OneSignal's own `external_id`/subscription endpoints, analogous in shape (a backend-held private key signing short-lived, narrowly-scoped tokens) to the already-established `PLATFORM_ADMIN_JWT_SECRET` pattern, just for a different, external-facing purpose.
+
+### Decision
+
+1. **Identity Verification is adopted.** The Tavola backend generates an ES256-signed (ECDSA P-256/SHA-256— the only algorithm OneSignal's Identity Verification accepts; per current OneSignal documentation, other algorithms are rejected) JWT proving ownership of a given `external_id` before OneSignal accepts subscription/identity operations for it.
+2. **Signing ownership:** the backend only (never any client) — mirrors every other JWT-signing responsibility already centralized in `modules/authentication/`. The private key is never sent to a client.
+3. **Key type:** ES256 private key, PEM format, issued from the OneSignal dashboard for the Tavola OneSignal app (an operational/dashboard action, out of this ADR's scope to perform).
+4. **Configuration (name reserved, not created by this ADR):** `ONESIGNAL_IDENTITY_VERIFICATION_PRIVATE_KEY` — naming mirrors the existing `LIGHTOTP_API_KEY`/`JWT_ACCESS_SECRET`/`PLATFORM_ADMIN_JWT_SECRET` convention already established in `env.validation.ts`. No value is created, printed, or handled by this ADR or the session that authored it.
+5. **Trust boundary:** the resulting JWT proves only `external_id` ownership to OneSignal — it carries no Tavola session/authorization semantics of its own and is never accepted by any Tavola-side guard.
+6. **Scope:** this ADR amends only ADR-007's Implementation Rule (the "how the app authenticates to/with OneSignal" detail) — ADR-007's provider choice, its Anti-Corruption Layer requirement, and every other part of that ADR are unchanged and not reopened, following the same narrow-amendment convention ADR-023/ADR-024 already established for ADR-013/ADR-022.
+
+### Alternatives Considered
+
+* **Rely on `external_id` matching alone, without Identity Verification.** Rejected: a real, currently-documented spoofing risk with no mitigating control elsewhere in the system: `User.id` is not treated as a secret today.
+* **Mint a separate, Tavola-generated opaque token as the `external_id` instead of `User.id`, to reduce guessability, without adopting Identity Verification.** Rejected: security-through-obscurity, not a real ownership proof — a client-side SDK call with a leaked/observed opaque id would remain exactly as exploitable as one with a leaked UUID; also requires a new persistent id-mapping table Decision #3 of the Phase 9 freeze explicitly avoided introducing (no `PushSubscription`/`DeviceRegistration` table in v1).
+* **Defer this decision entirely to a later phase.** Rejected: the risk is inherent in the identity model Phase 9 v1 already needs (`external_id = User.id`) — deferring it would mean shipping the vulnerable configuration first and hardening it later, a strictly worse ordering than deciding it now, before any implementation exists.
+
+### Consequences
+
+#### Positive
+
+* Closes a real, currently-documented OneSignal-side spoofing vector before any implementation exists, rather than after.
+* Reuses an already-established backend-signing-key pattern (`PLATFORM_ADMIN_JWT_SECRET`) — no new architectural shape, only a new instance of an existing one.
+
+#### Negative
+
+* One additional signing operation per relevant client session/app-open, and one new secret to provision and rotate operationally (out of this ADR's scope — an operational/deployment concern, not an architecture change).
+* Ties Tavola's OneSignal integration to a specific OneSignal feature (Identity Verification) that would need re-evaluation if OneSignal is ever replaced — an acceptable, disclosed coupling given ADR-007's Anti-Corruption Layer already isolates this behind `NotificationProvider`, so a future provider swap only needs to review this ADR, not touch application/domain code.
+
+### Impact
+
+Affects: `docs/DECISIONS.md` (this ADR), `TASKS.md`'s Phase 9 pre-implementation freeze (item 3, cross-referenced), `docs/ARCHITECTURE_LOCK.md` (added to the locked ADR table). Does not affect `AUTHENTICATION_ARCHITECTURE.md`, Tavola's own JWT/session architecture, or any Reservation/Waitlist/Table domain architecture. No key, secret, or environment variable is created by this ADR — reserved for the implementation phase, under separate explicit authorization.
+
+---
+
+## ADR-026
+
+### Title
+
+Table Merge/Split Topology and Concurrency (references ADR-013 and ADR-023)
+
+### Status
+
+Accepted — implemented and live-verified 2026-07-26 (architecture frozen 2026-07-25, `TASKS.md` "Phase 6 — Merge/Split Tables: Final architecture freeze"; implementation and live verification recorded in `TASKS.md`'s "Phase 6 — Merge/Split Implementation & Verification Report").
+
+### Date
+
+2026-07-25
+
+### Context
+
+`DOMAIN_MODEL.md` has long described Merge/Split (shared `mergeGroupId`, status `Merged`, combined capacity as one reservable unit, reservation conflict rules). Phase 6 deferred the feature until the Reservation Engine existed; Phase 7.2 unlocked that dependency, but Status Management deliberately excluded `Merged`, `Reservation.tableId` still targets a single `Table`, and ADR-013's advisory locks are **time-bucket slot keys** (`branchId:tableId:date:bucket`), not table-topology locks. Implementing docs literally without a freeze would either invent a TableCombination aggregate (rejected) or race Merge against Create/Approve/Reschedule.
+
+This ADR freezes the owner-approved Primary Table model and the concurrency extension required so topology mutation and reservation mutation cannot observe partial merge membership. It **references** ADR-013 and ADR-023; it does **not** rewrite their historical Decision text.
+
+### Decision
+
+1. **Identity — Primary Table (Option A).** A merge of N ≥ 2 existing Tables shares one `mergeGroupId`. Exactly one member is primary (`isMergePrimary = true`). `Reservation.tableId` for reservations against the merged unit is always the **primary** `Table.id`. No synthetic Table, no `TableCombination` aggregate, no second reservation-target abstraction.
+
+2. **Split = undo merge only.** Clears `mergeGroupId` / `isMergePrimary` / secondary `Merged` status. Does not create or destroy Table rows; permanent `capacity` and Table IDs are unchanged. Historical reservations continue to reference the (former) primary `Table.id`.
+
+3. **`TableStatus.Merged`.** Secondaries are `Merged` while in an active group (not independently reservable; not availability candidates). Primary remains `Available` when free and uses existing `reserve()`/`release()` ↔ `Reserved` when an Approved reservation targets the merged unit. `Merged` is never set via `POST /tables/:id/status`.
+
+4. **Effective capacity.** Permanent `capacity` columns are never overwritten. `effectiveCapacity(primary) = SUM(member capacities)` while merged; unmerged tables use their own `capacity`. Mixed capacities allowed.
+
+5. **Membership rules.** Same Branch, same FloorPlan, all `Available` at merge time, not already merged, no nested merges, min 2 distinct IDs. Primary selection: optional `primaryTableId` ∈ `tableIds`; else lowest `tableNumber`, then `Table.id` ascending.
+
+6. **Reservation blocking.** Merge/Split rejected if any involved primary/component (Merge: every component; Split: the primary) has a **Pending** or **Approved** reservation whose `reservationEndTime` has not passed. Rejected/Cancelled/Expired and historical Completed/NoShow do not block. No automatic reservation reassignment; ADR-023 is not invoked by Merge/Split.
+
+7. **Topology locking (extends ADR-013's concurrency *guarantee*, not its slot-key mechanism).** Inside one DB transaction, before conflict checks or mutation:
+   1. Collect every involved `Table.id`.
+   2. Sort IDs ascending.
+   3. Acquire transaction-scoped PostgreSQL advisory locks for those table IDs (topology namespace).
+   4. Re-read tables; re-check membership/status; re-check reservation conflicts; mutate; commit.
+
+   **Compatibility with ADR-013/023:** Reservation Create, Approve, and Approved Reschedule (and Waitlist auto-approve paths that call `reserve()`) MUST also acquire the same **table-id topology lock(s)** for every `Table.id` they touch, **before** acquiring existing ADR-013/023 slot advisory locks, using the same sorted Table.id order. Slot-lock semantics of ADR-013/023 remain unchanged. This additive ordering (topology locks → slot locks) prevents Merge↔Create/Approve/Reschedule races and avoids cross-namespace deadlock.
+
+8. **Schema (additive).** Reuse `mergeGroupId`. Add `isMergePrimary boolean NOT NULL DEFAULT false`. Invariant: `mergeGroupId IS NULL ⇒ isMergePrimary = false`; exactly one primary per active `mergeGroupId` (partial UNIQUE index when enforceable). Enum add `Merged`.
+
+9. **API.** `POST /api/v1/tables/merge`, `POST /api/v1/tables/:tableId/split` (any member). Dual-actor auth: OrganizationMember Owner/Admin **or** Employee with `tables:manage` + branch assignment. No new permission slugs.
+
+10. **Events / realtime.** Real domain events `TableMerged` / `TableSplit` with minimized payloads; audited; Phase 8 allow-list → existing staff `restaurant:{id}` + `branch:{id}` rooms only (no floor-plan room exists; no new room type). No Phase 9 notifications. **Audit attribution:** Employee → `actorType = Employee`, `actorId = Employee.id`; OrganizationMember Owner/Admin → existing TableMoved/TableStatusChanged convention (`actorType = User`, `actorId = OrganizationMember.userId`).
+
+11. **Move / Status guards.** Any table in an active merge group cannot be Moved or ChangeTableStatus'd; Split first. Merge/Split alone set/clear secondary `Merged`.
+
+12. **Dual-actor authorization (use-case branching).** Merge/Split routes use `JwtAuthGuard` + `SessionVersionGuard` only; authorization is resolved inside the use case: OrganizationMember Owner/Admin of the owning org **or** Employee with `tables:manage` + branch assignment. No NestJS OR-composed OrgRole/Permissions guards; no wholesale Table CRUD auth migration. ADR-026 satisfies `CHANGE_POLICY.md` criterion #4 for this narrow extension (distinct from Phase 7.0's still-deferred Manager-driven `employees:manage` composed-guard track).
+
+### Alternatives Considered
+
+* **Synthetic combination Table / TableCombination aggregate.** Rejected: breaks or expands `Reservation.tableId`; larger schema/API blast radius; owner-rejected.
+* **Use `Disabled` instead of `Merged`.** Rejected: conflates operational disablement with topology membership; owner-rejected.
+* **Rely on ADR-013 slot locks alone for Merge.** Rejected: slot keys are time-bucketed; cannot serialize topology mutation against arbitrary future Create/Approve.
+* **Amend ADR-013 text in place.** Rejected per CHANGE_POLICY / ADR-023 precedent: extend via new sequentially numbered ADR.
+
+### Consequences
+
+#### Positive
+
+* Preserves Reservation, ADR-013 slot locking, and ADR-023 two-key Reschedule unchanged at their cores.
+* Gives a deterministic, implementable merge identity and capacity model.
+* Closes the DOMAIN_MODEL vs Status Management `Merged` contradiction explicitly.
+
+#### Negative
+
+* Narrow additive lock acquisition on Create/Approve/Reschedule/Waitlist-reserve paths (topology lock before slot lock).
+* New enum value and `isMergePrimary` column.
+* Dual-actor authorization for Merge/Split differs from today's Owner/Admin-only Table CRUD routes (intentional, narrowly scoped; not a wholesale Table auth refactor).
+
+### Impact
+
+Affects: `DECISIONS.md` (this ADR), `ARCHITECTURE_LOCK.md`, `TASKS.md` Phase 6 freeze note, `DOMAIN_MODEL.md`, `DATABASE_SCHEMA.md`, `EVENTS.md`, `API_GUIDELINES.md`, `AUTHORIZATION_ARCHITECTURE.md`. Implementation touches `modules/tables/**`, reservation create/approve/reschedule/waitlist lock ordering, realtime allow-list mapping, Prisma migration (forward/additive only). Does not alter ADR-013 or ADR-023 historical text. No Phase 9 / OneSignal impact.
 
 ---
 

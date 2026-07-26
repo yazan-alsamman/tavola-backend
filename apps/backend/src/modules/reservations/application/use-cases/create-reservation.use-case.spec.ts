@@ -25,6 +25,8 @@ import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restau
 import { InMemoryReservationRepository } from '../../../../../test/reservations/support/in-memory-reservation.repository';
 import { InMemoryReservationGuestRepository } from '../../../../../test/reservations/support/in-memory-reservation-guest.repository';
 import { InMemoryReservationExpirationScheduler } from '../../../../../test/reservations/support/in-memory-reservation-expiration-scheduler';
+import { InMemoryApprovedReservationOperationalScheduler } from '../../../../../test/reservations/support/in-memory-approved-reservation-operational-scheduler';
+import { ScheduleApprovedReservationSignalsService } from '@modules/reservations/application/services/schedule-approved-reservation-signals.service';
 import { ReservationSource } from '@modules/reservations/domain/enums/reservation.enums';
 import { PermissionDeniedException } from '@modules/authorization/domain/exceptions/permission-denied.exception';
 import { EmployeeBranchNotAssignedException } from '@modules/authorization/domain/exceptions/employee-branch-not-assigned.exception';
@@ -137,6 +139,7 @@ describe('CreateReservationUseCase', () => {
         smoking: false,
         status: overrides?.tableStatus ?? TableStatus.Available,
         mergeGroupId: null,
+        isMergePrimary: false,
         createdAt: fixedNow,
         updatedAt: fixedNow,
         deletedAt: null,
@@ -144,6 +147,11 @@ describe('CreateReservationUseCase', () => {
     );
 
     const eventPublisher = new CollectingEventPublisher();
+    const operationalScheduler = new InMemoryApprovedReservationOperationalScheduler();
+    const scheduleApprovedReservationSignals = new ScheduleApprovedReservationSignalsService(
+      operationalScheduler,
+      restaurantSettingsRepository,
+    );
     const useCase = new CreateReservationUseCase(
       branchRepository,
       tableRepository,
@@ -160,6 +168,7 @@ describe('CreateReservationUseCase', () => {
       eventPublisher,
       new ImmediateUnitOfWork(),
       expirationScheduler,
+      scheduleApprovedReservationSignals,
     );
 
     return {
@@ -169,6 +178,7 @@ describe('CreateReservationUseCase', () => {
       tableRepository,
       eventPublisher,
       expirationScheduler,
+      operationalScheduler,
     };
   }
 
@@ -232,6 +242,44 @@ describe('CreateReservationUseCase', () => {
     expect(reservationRepository.acquiredLockKeys).toHaveLength(1);
   });
 
+  it('acquires the ADR-026 topology lock BEFORE the ADR-013 slot lock/insert (Pending path)', async () => {
+    const { useCase, tableRepository, reservationRepository } = await build();
+    const topologyLockSpy = jest.spyOn(tableRepository, 'acquireTopologyLocks');
+    const createWithLockSpy = jest.spyOn(reservationRepository, 'createWithLockInTransaction');
+
+    await useCase.execute({
+      actor: baseActor(),
+      branchId,
+      tableId,
+      reservationStartTime: '2026-08-01T18:00:00.000Z',
+      guests: 4,
+    });
+
+    expect(topologyLockSpy).toHaveBeenCalledWith([tableId]);
+    expect(topologyLockSpy.mock.invocationCallOrder[0]).toBeLessThan(
+      createWithLockSpy.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('acquires the ADR-026 topology lock BEFORE the ADR-013 slot lock/insert (auto-approval path)', async () => {
+    const { useCase, tableRepository, reservationRepository } = await build({ autoApproval: true });
+    const topologyLockSpy = jest.spyOn(tableRepository, 'acquireTopologyLocks');
+    const createWithLockSpy = jest.spyOn(reservationRepository, 'createWithLockInTransaction');
+
+    await useCase.execute({
+      actor: baseActor(),
+      branchId,
+      tableId,
+      reservationStartTime: '2026-08-01T18:00:00.000Z',
+      guests: 4,
+    });
+
+    expect(topologyLockSpy).toHaveBeenCalledWith([tableId]);
+    expect(topologyLockSpy.mock.invocationCallOrder[0]).toBeLessThan(
+      createWithLockSpy.mock.invocationCallOrder[0],
+    );
+  });
+
   it('throws BranchNotFoundException for an unknown branch', async () => {
     const { useCase } = await build();
 
@@ -272,6 +320,57 @@ describe('CreateReservationUseCase', () => {
         guests: 4,
       }),
     ).rejects.toBeInstanceOf(TableUnavailableException);
+  });
+
+  it('uses the merge group effectiveCapacity (SUM of every member) for a merge Primary table, not its own capacity column', async () => {
+    const { useCase, tableRepository } = await build({ tableCapacity: 2 });
+    const secondaryTableId = '99999999-9999-4999-8999-999999999994';
+    await tableRepository.save(
+      Table.create({
+        id: secondaryTableId,
+        branchId,
+        floorPlanId: '88888888-8888-4888-8888-888888888888',
+        tableNumber: 'T2',
+        capacity: 4,
+        floor: null,
+        positionX: null,
+        positionY: null,
+        width: null,
+        height: null,
+        rotation: null,
+        shape: TableShape.Rectangle,
+        layer: null,
+        indoor: true,
+        vip: false,
+        smoking: false,
+        status: TableStatus.Available,
+        mergeGroupId: null,
+        isMergePrimary: false,
+        createdAt: fixedNow,
+        updatedAt: fixedNow,
+        deletedAt: null,
+      }),
+    );
+    const mergeGroupId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const primary = await tableRepository.findById(TableId.create(tableId));
+    const secondary = await tableRepository.findById(TableId.create(secondaryTableId));
+    await tableRepository.save(primary!.asMergePrimary(mergeGroupId, fixedNow));
+    await tableRepository.save(secondary!.asMergeSecondary(mergeGroupId, fixedNow));
+
+    // Own capacity (2) alone could not seat 4 guests -
+    // PartySizeExceedsCapacityException would fire if `table.capacity` were
+    // used directly - but the merge group's effectiveCapacity (2 + 4 = 6)
+    // can, so this must succeed.
+    const result = await useCase.execute({
+      actor: baseActor(),
+      branchId,
+      tableId,
+      reservationStartTime: '2026-08-01T18:00:00.000Z',
+      guests: 4,
+    });
+
+    expect(result.status).toBe('Pending');
+    expect(result.guests).toBe(4);
   });
 
   it('throws PartySizeExceedsCapacityException when guests exceed table capacity', async () => {

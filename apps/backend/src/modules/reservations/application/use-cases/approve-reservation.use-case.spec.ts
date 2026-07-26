@@ -1,6 +1,8 @@
 import { ApproveReservationUseCase } from './approve-reservation.use-case';
 import { AutoRejectOverlappingPendingReservationsService } from '../services/auto-reject-overlapping-pending-reservations.service';
+import { ScheduleApprovedReservationSignalsService } from '../services/schedule-approved-reservation-signals.service';
 import { InMemoryReservationExpirationScheduler } from '../../../../../test/reservations/support/in-memory-reservation-expiration-scheduler';
+import { InMemoryApprovedReservationOperationalScheduler } from '../../../../../test/reservations/support/in-memory-approved-reservation-operational-scheduler';
 import { Reservation } from '../../domain/entities/reservation.entity';
 import { ReservationSource, ReservationStatus } from '../../domain/enums/reservation.enums';
 import { ReservationNotFoundException } from '../../domain/exceptions/reservation-not-found.exception';
@@ -109,6 +111,7 @@ describe('ApproveReservationUseCase', () => {
         smoking: false,
         status: TableStatus.Available,
         mergeGroupId: null,
+        isMergePrimary: false,
         createdAt: fixedNow,
         updatedAt: fixedNow,
         deletedAt: null,
@@ -116,6 +119,11 @@ describe('ApproveReservationUseCase', () => {
     );
 
     const eventPublisher = new CollectingEventPublisher();
+    const operationalScheduler = new InMemoryApprovedReservationOperationalScheduler();
+    const scheduleApprovedReservationSignals = new ScheduleApprovedReservationSignalsService(
+      operationalScheduler,
+      restaurantSettingsRepository,
+    );
     const useCase = new ApproveReservationUseCase(
       reservationRepository,
       tableRepository,
@@ -133,9 +141,17 @@ describe('ApproveReservationUseCase', () => {
       new ImmediateUnitOfWork(),
       expirationScheduler,
       new AutoRejectOverlappingPendingReservationsService(reservationRepository),
+      scheduleApprovedReservationSignals,
     );
 
-    return { useCase, reservationRepository, tableRepository, eventPublisher, expirationScheduler };
+    return {
+      useCase,
+      reservationRepository,
+      tableRepository,
+      eventPublisher,
+      expirationScheduler,
+      operationalScheduler,
+    };
   }
 
   it('approves a Pending reservation, records approvedBy/approvedAt, and reserves the table', async () => {
@@ -321,5 +337,19 @@ describe('ApproveReservationUseCase', () => {
     await useCase.execute({ actor: employeeActor(), reservationId });
 
     expect(reservationRepository.acquiredLockKeys).toHaveLength(1);
+  });
+
+  it('acquires the ADR-026 topology lock BEFORE the ADR-013 advisory lock', async () => {
+    const { useCase, reservationRepository, tableRepository } = await build();
+    await reservationRepository.seed(pendingReservation());
+    const topologyLockSpy = jest.spyOn(tableRepository, 'acquireTopologyLocks');
+    const advisoryLockSpy = jest.spyOn(reservationRepository, 'acquireAdvisoryLock');
+
+    await useCase.execute({ actor: employeeActor(), reservationId });
+
+    expect(topologyLockSpy).toHaveBeenCalledWith([tableId]);
+    expect(topologyLockSpy.mock.invocationCallOrder[0]).toBeLessThan(
+      advisoryLockSpy.mock.invocationCallOrder[0],
+    );
   });
 });

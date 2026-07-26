@@ -60,9 +60,17 @@ export class TableResponseDto {
   @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,
-    description: 'Reserved for the future Merge/Split sub-phase - always null in Phase 6.1.',
+    description:
+      "Phase 6 (Merge/Split Tables, ADR-026): the shared identifier of this table's active merge group, or null when not currently merged.",
   })
   mergeGroupId!: string | null;
+
+  @ApiProperty({
+    example: false,
+    description:
+      "Phase 6 (Merge/Split Tables, ADR-026): true only for the Primary of an active merge group - Reservation.tableId for the merged unit is always the primary's id. Always false when mergeGroupId is null.",
+  })
+  isMergePrimary!: boolean;
 
   @ApiProperty({ format: 'date-time' })
   createdAt!: string;

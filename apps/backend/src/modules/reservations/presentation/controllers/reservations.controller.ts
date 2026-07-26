@@ -40,6 +40,7 @@ import { CancelReservationUseCase } from '../../application/use-cases/cancel-res
 import { RescheduleReservationUseCase } from '../../application/use-cases/reschedule-reservation.use-case';
 import { CompleteReservationUseCase } from '../../application/use-cases/complete-reservation.use-case';
 import { MarkNoShowReservationUseCase } from '../../application/use-cases/mark-no-show-reservation.use-case';
+import { MarkTableReadyReservationUseCase } from '../../application/use-cases/mark-table-ready-reservation.use-case';
 import { SearchAvailabilityQueryDto } from '../dto/search-availability.query.dto';
 import { CreateReservationRequestDto } from '../dto/create-reservation.request.dto';
 import { CancelReservationRequestDto } from '../dto/cancel-reservation.request.dto';
@@ -72,6 +73,7 @@ export class ReservationsController {
     private readonly rescheduleReservationUseCase: RescheduleReservationUseCase,
     private readonly completeReservationUseCase: CompleteReservationUseCase,
     private readonly markNoShowReservationUseCase: MarkNoShowReservationUseCase,
+    private readonly markTableReadyReservationUseCase: MarkTableReadyReservationUseCase,
   ) {}
 
   @Get('availability')
@@ -413,6 +415,51 @@ export class ReservationsController {
     @Req() request: Request,
   ): Promise<ReservationResponseDto> {
     const result = await this.markNoShowReservationUseCase.execute({
+      actor,
+      reservationId: id,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return toReservationResponse(result);
+  }
+
+  @Post(':id/table-ready')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, PermissionsGuard)
+  @RequirePermission('reservations:tableready')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Reservation marked table-ready successfully.')
+  @ApiOperation({
+    operationId: 'reservationsMarkTableReady',
+    summary: "Mark an Approved reservation's table as ready (Operational Signal, Phase 7.6)",
+    description:
+      'Staff-only (reservations:tableready, branch-scoped) - not a status transition, status remains Approved and no Table operation is performed. Informational only for the front-of-house flow; may only be called once per reservation while it remains Approved.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({
+    status: 200,
+    description: 'Reservation marked table-ready',
+    type: ReservationResponseDto,
+  })
+  @ApiErrorResponse(
+    400,
+    'Reservation is not currently Approved, or has already been marked table-ready',
+    ['VALIDATION_ERROR'],
+  )
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller lacks reservations:tableready or is outside branch scope', [
+    'FORBIDDEN',
+    'EMPLOYEE_BRANCH_NOT_ASSIGNED',
+  ])
+  @ApiErrorResponse(404, 'Reservation not found', ['NOT_FOUND'])
+  async markTableReady(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentActor() actor: AuthenticatedEmployeeActor,
+    @Req() request: Request,
+  ): Promise<ReservationResponseDto> {
+    const result = await this.markTableReadyReservationUseCase.execute({
       actor,
       reservationId: id,
       correlationId: request.headers['x-correlation-id'] as string | undefined,

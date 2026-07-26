@@ -406,6 +406,8 @@ describe('/api/v1/restaurants (e2e)', () => {
     autoApproval: true,
     timezone: 'Europe/Istanbul',
     defaultCurrency: 'TRY',
+    reservationReminderMinutesBefore: 90,
+    lateArrivalGraceMinutes: 20,
   };
 
   it('GET /restaurants/{id}/settings returns the auto-created defaults right after creation', async () => {

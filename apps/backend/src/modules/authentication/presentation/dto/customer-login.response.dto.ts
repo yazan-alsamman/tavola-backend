@@ -43,4 +43,12 @@ export class CustomerLoginResponseDto {
 
   @ApiProperty({ enum: AccessTokenActorType, example: AccessTokenActorType.User })
   actorType!: AccessTokenActorType;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'ADR-025: short-lived OneSignal Identity-Verification JWT for OneSignal.login(). null when Identity Verification is not configured. Refresh on-demand via GET /notifications/identity-token.',
+  })
+  onesignalIdentityToken!: string | null;
 }
