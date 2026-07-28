@@ -1,6 +1,11 @@
 import { Reservation } from '../entities/reservation.entity';
 import { ReservationStatus } from '../enums/reservation.enums';
-import { ReservationId, TableId } from '@shared/domain/value-objects/identifiers.vo';
+import { ReservationId, TableId, UserId } from '@shared/domain/value-objects/identifiers.vo';
+
+export interface ReservationListPage {
+  items: Reservation[];
+  total: number;
+}
 
 /**
  * `Reservation` carries `restaurantId`/`branchId` directly but is not in
@@ -192,6 +197,17 @@ export interface ReservationRepository {
    * "re-check inside the lock" placement for ADR-013.
    */
   hasBlockingReservation(tableId: TableId, now: Date): Promise<boolean>;
+
+  /**
+   * Customer Restaurant Discovery & Public Read Surface: every Reservation
+   * owned by this Customer (`Reservation.userId` match), newest-created
+   * first, paginated - the sole authority for `GET /reservations` (mine).
+   * A guest (Phone/WalkIn) reservation has `userId: null` and never matches
+   * any `UserId`, so it is structurally excluded - never returned to any
+   * Customer actor, matching AUTHORIZATION_ARCHITECTURE.md's Customer
+   * ownership rule (`resource.userId === principal.userId`).
+   */
+  findManyByUserId(userId: UserId, page: number, limit: number): Promise<ReservationListPage>;
 }
 
 export const RESERVATION_REPOSITORY = Symbol('RESERVATION_REPOSITORY');

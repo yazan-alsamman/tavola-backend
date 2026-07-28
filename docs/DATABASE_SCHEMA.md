@@ -1077,41 +1077,46 @@ Notes
 
 ## Reviews
 
+**Phase 10 architecture frozen (owner-approved) — see `TASKS.md`'s "Phase 10 — Reviews: Pre-implementation architecture decisions" for the full freeze.** `Review.restaurantId` is a direct FK to `Restaurant` — the sole tenant-resolution hop (`Review.restaurantId → Restaurant.organizationId`); `Review` carries **no `organizationId` column** and is **not** in `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS` (see TENANCY.md). `Review.userId` is the ownership column, spanning organizations exactly like `Reservation.userId`/`Notification.userId` — the two concerns (tenant resolution vs. ownership authorization) are independent, same pattern already established platform-wide.
+
 Fields
 
 * id (UUID)
-* userId
-* restaurantId
-* reservationId
-* rating
-* comment
+* userId (FK -> `users.id`, NOT NULL — reviews are authenticated-User-owned only; guest-only/ReservationGuest reservations are never review-eligible in Phase 10)
+* restaurantId (FK -> `restaurants.id`, NOT NULL)
+* reservationId (FK -> `reservations.id`, NOT NULL, UNIQUE — plain, not partial; deleting a Review does **not** free its reservation for resubmission, by design)
+* rating (Int, NOT NULL — `CHECK (rating BETWEEN 1 AND 5)`)
+* comment (String, NULLABLE — optional)
 * createdAt
-* updatedAt
-* deletedAt
+* updatedAt (retained for bookkeeping/`deletedAt`-adjacent writes only — Reviews are immutable content after creation; no endpoint ever changes `rating`/`comment`)
+* deletedAt (NULLABLE — soft delete only, ADR-010)
 
 Indexes
 
 * restaurantId
 * userId
-* composite unique (reservationId) — enforces "one reservation may produce only one review"
+* unique (reservationId) — enforces "one reservation may produce only one review," permanently (not partial/conditional on `deletedAt`)
 
 ---
 
 ## Review Images
 
-Stores uploaded review photos.
+Stores uploaded review photos. Reuses the existing Files/MinIO pipeline (`FileOwnerType.Review`, already present in the `File` model's owner-type enum) exactly as `RestaurantGalleryImage` reuses it for `FileOwnerType.Restaurant` — no second upload subsystem.
 
 Fields
 
 * id (UUID)
-* reviewId
-* fileId
-* sortOrder
+* reviewId (FK -> `reviews.id`, NOT NULL)
+* fileId (FK -> `files.id`, NOT NULL — no DB-level relation, same as every other `File` consumer; ownership is application-enforced)
+* sortOrder (Int, NOT NULL, >= 0)
 * createdAt
+* deletedAt (NULLABLE — added by the Phase 10 freeze; the original sketch omitted this, leaving no column for the individual-image-delete capability (owner decision #16) or the parent-Review soft-delete cascade (owner decision #7/#8) to write into)
 
 Indexes
 
 * reviewId
+
+Limits (policy constants, not hardcoded inline — mirrors `GALLERY_MAX_IMAGES_PER_RESTAURANT`/`GALLERY_IMAGE_MAX_SIZE_BYTES`): maximum 5 images per Review; same MIME allowlist (`image/jpeg`, `image/png`, `image/webp`) and magic-byte verification (`detectImageMimeType`) as Restaurant Gallery; same size cap policy shape.
 
 ---
 
@@ -1119,20 +1124,21 @@ Indexes
 
 Purpose
 
-A restaurant's single reply to a review (DOMAIN_MODEL.md: "Restaurant owners may reply once to a review").
+A restaurant's single reply to a review (DOMAIN_MODEL.md: "Restaurant owners may reply once to a review"). **Phase 10 architecture freeze correction:** the original sketch's `repliedBy (employeeId)` was a documentation error — `AUTHORIZATION_ARCHITECTURE.md` §10 defines "Restaurant Owner" as the `OrganizationMember.Owner` role, a **User**-backed actor with no `Employee` row at all; owner decision #11 confirms Owner/Admin-only, no Employee participation, no new permission slug. Corrected below.
 
 Fields
 
 * id (UUID)
-* reviewId
-* repliedBy (employeeId)
-* comment
+* reviewId (FK -> `reviews.id`, NOT NULL, UNIQUE — zero-or-one reply per review)
+* repliedByUserId (FK -> `users.id`, NOT NULL — the OrganizationMember Owner/Admin's own `User.id`; **never** an `employeeId`)
+* comment (String, NOT NULL)
 * createdAt
-* updatedAt
+* updatedAt (present for schema symmetry only — the reply is immutable in Phase 10, owner decision #12: no edit, delete, or repost)
+* — no `deletedAt` — Phase 10 does not support deleting a reply independently (owner decision #12). Its only Phase 10 lifecycle event is being created once; it never needs its own soft-delete write because visibility is always inherited through its parent Review — every read path already joins/filters on `Review.deletedAt IS NULL`, so a reply automatically stops being visible the instant its parent Review is soft-deleted, with no second write required
 
 Indexes
 
-* composite unique (reviewId) — enforces at most one reply per review
+* unique (reviewId) — enforces at most one reply per review
 
 ---
 
@@ -1217,10 +1223,13 @@ Indexes
 
 Restaurant promotions.
 
+**Phase 11 freeze (2026-07-28):** a single generic `Offer` aggregate covers Promotions, Coupons, and Events — not three separate tables — distinguished only by the additive `type` field below. Coupons are display-only in v1 (no redemption code, usage tracking, or reservation/payment integration — Payments is Phase 13, unscheduled). Content is editable only while `status = Draft`; `Published`/`Expired` are immutable. Soft-delete is available to Owner/Admin from any state. `Published -> Expired` is a BullMQ-scheduled, CAS-guarded transition (`WHERE status = 'Published'`), not a lazy/computed status. Transitively tenant-owned via `restaurantId -> Restaurant.organizationId` (same pattern as `RestaurantGallery`/`RestaurantSettings`/`Review`) — not added to `DIRECT_TENANT_OWNED_MODELS`, no `organizationId` column.
+
 Fields
 
 * id (UUID)
 * restaurantId
+* type (`Promotion`, `Coupon`, `Event`)
 * title
 * description
 * discountType (`Percentage`, `FixedAmount`)

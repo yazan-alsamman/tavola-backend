@@ -1,8 +1,11 @@
 import { Reservation } from '@modules/reservations/domain/entities/reservation.entity';
 import { ReservationStatus } from '@modules/reservations/domain/enums/reservation.enums';
 import { ReservationConflictException } from '@modules/reservations/domain/exceptions/reservation-conflict.exception';
-import { ReservationRepository } from '@modules/reservations/domain/repositories/reservation.repository';
-import { ReservationId, TableId } from '@shared/domain/value-objects/identifiers.vo';
+import {
+  ReservationListPage,
+  ReservationRepository,
+} from '@modules/reservations/domain/repositories/reservation.repository';
+import { ReservationId, TableId, UserId } from '@shared/domain/value-objects/identifiers.vo';
 
 function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
   return aStart.getTime() < bEnd.getTime() && aEnd.getTime() > bStart.getTime();
@@ -179,6 +182,18 @@ export class InMemoryReservationRepository implements ReservationRepository {
         (row.status === ReservationStatus.Pending || row.status === ReservationStatus.Approved) &&
         row.reservationEndTime.getTime() > now.getTime(),
     );
+  }
+
+  async findManyByUserId(
+    userId: UserId,
+    page: number,
+    limit: number,
+  ): Promise<ReservationListPage> {
+    const all = [...this.rows.values()]
+      .filter((row) => row.userId?.value === userId.value)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const start = (page - 1) * limit;
+    return { items: all.slice(start, start + limit), total: all.length };
   }
 
   /** Test-only helper: seeds a row directly, bypassing createWithLock's conflict check. */

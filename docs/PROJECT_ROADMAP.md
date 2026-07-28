@@ -74,7 +74,7 @@ Phase numbers below match TASKS.md exactly.
 | 16    | Testing                  | ⏳ Pending    | 0%       |
 | 17    | Deployment               | ⏳ Pending    | 0%       |
 
-Phase 6 is now COMPLETE: Merge Tables / Split Tables (architecture-frozen ADR-026, 2026-07-25) are implemented and live-verified (2026-07-26) — see TASKS.md's "Phase 6 — Merge/Split Implementation & Verification Report". Phase 8 is implemented, live-verified, and E2E verification-closed (2026-07-25) — see TASKS.md's Phase 8 Implementation & Verification Report and its Verification Closure Addendum.
+Phase 6 is now COMPLETE: Merge Tables / Split Tables (architecture-frozen ADR-026, 2026-07-25) are implemented and live-verified (2026-07-26) — see TASKS.md's "Phase 6 — Merge/Split Implementation & Verification Report". Phase 8 is implemented, live-verified, and E2E verification-closed (2026-07-25) — see TASKS.md's Phase 8 Implementation & Verification Report and its Verification Closure Addendum. Phase 11 (Offers) architecture is now frozen (2026-07-28) — see TASKS.md's "Phase 11 — Offers: Pre-implementation architecture decisions"; implementation not yet authorized. A phase-independent Customer Restaurant Discovery & Public Read Surface (public restaurant/branch/floor-plan/table-topology browsing, plus Customer own-reservation read endpoints) was implemented and live-verified the same day — see TASKS.md's "Customer Restaurant Discovery & Public Read Surface — Implementation & Verification Report".
 
 ---
 
@@ -415,6 +415,8 @@ Status: 🟢 **Complete, live verified, strict-E2E verified — NOT production-v
 
 # Phase 10 — Reviews
 
+Status: ✅ **COMPLETE, LIVE VERIFIED, AND PRODUCTION VERIFIED (2026-07-27).** Full implementation report in `TASKS.md`'s "Phase 10 — Reviews." Delivered exactly the frozen scope: authenticated-Customer-owned only (guest reservations not review-eligible); rating mandatory integer 1–5, comment optional; Reviews immutable after creation (no edit endpoint - confirmed live); soft delete by the owning Customer or the Restaurant's Organization Owner/Admin (not Employees); zero-or-one `RestaurantReply` by Organization Owner/Admin only (no Employee reply, no new permission slug); Review images reuse the existing Files/MinIO pipeline (`FileOwnerType.Review`, max 5 per review, live-verified against real MinIO); `Restaurant.averageRating` recomputed transactionally, no BullMQ queue; tenancy transitive via `Review.restaurantId → Restaurant.organizationId` (no `organizationId` column); excluded from Phase 8 realtime and Phase 9 notifications; no moderation subsystem. A real lost-update race in the `averageRating` recompute under concurrent Review submissions was found during live concurrency verification and fixed (`RestaurantRepository.lockForRatingRecompute`, acquired before the triggering Review insert/delete) - see TASKS.md for the full root-cause analysis and proof.
+
 ## Features
 
 * Ratings
@@ -426,12 +428,15 @@ Status: 🟢 **Complete, live verified, strict-E2E verified — NOT production-v
 
 # Phase 11 — Offers
 
+Status: ⏳ Pending — **architecture frozen (2026-07-28)**, implementation not yet authorized. Single generic `Offer` aggregate with a `type` discriminator (`Promotion | Coupon | Event`) — not three separate aggregates. Coupons are display-only in v1 (no redemption engine). Owner/Admin-only management, no new Employee permission slug. Restaurant-scoped public read only, no platform-wide discovery endpoint. Excluded from Phase 8 realtime and Phase 9 notifications in v1 (Phase 9 impact: none; Phase 8 impact: none). See `TASKS.md`'s "Phase 11 — Offers: Pre-implementation architecture decisions" for the full freeze.
+
 ## Features
 
 * Coupons
 * Promotions
 * Events
-* Happy Hour
+
+**Happy Hour is explicitly out of scope for Phase 11** (this bullet previously appeared here but not in `TASKS.md`'s authoritative checklist — reconciled 2026-07-28; no recurring/day-of-week/time-of-day schedule concept exists in the frozen `Offer` model).
 
 ---
 

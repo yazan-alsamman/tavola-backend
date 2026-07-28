@@ -61,6 +61,20 @@ class TenantScopedFakeRestaurantRepository implements RestaurantRepository {
   async save(restaurant: Restaurant): Promise<void> {
     this.rows.set(restaurant.restaurantId.value, restaurant);
   }
+
+  async recomputeAverageRating(): Promise<void> {
+    // Not exercised by this spec - Reviews are outside room-authorization's
+    // own scope.
+  }
+
+  async lockForRatingRecompute(): Promise<void> {
+    // Not exercised by this spec - Reviews are outside room-authorization's
+    // own scope.
+  }
+
+  async existsPubliclyById(id: RestaurantId): Promise<boolean> {
+    return this.rows.has(id.value);
+  }
 }
 
 function userActor(overrides: Partial<AuthenticatedUserActor> = {}): AuthenticatedUserActor {

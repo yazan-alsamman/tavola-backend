@@ -36,6 +36,7 @@ module.exports = {
       excludedFiles: [
         '**/prisma-login-organization-reader.ts',
         '**/prisma-restaurant-directory-reader.ts',
+        '**/prisma-discovery-reader.ts',
       ],
       rules: {
         'no-restricted-imports': [

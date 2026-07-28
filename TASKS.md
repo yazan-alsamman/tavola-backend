@@ -1507,22 +1507,290 @@ No new architectural ambiguity remains for Phase 9 as of this note. Implementati
 
 # Phase 10 — Reviews
 
-Status: ⏳ Pending
+Status: ⏳ Pending implementation — **architecture frozen, owner-approved, 2026-07-26.** Implementation is **not yet authorized**; wait for a separate explicit authorization, exactly as Phase 6.1/6.2/7/8/9 each required before their own implementation began.
 
 - [ ] Ratings
 - [ ] Comments
 - [ ] Images
 - [ ] Replies
 
+## Phase 10 — Reviews: Pre-implementation architecture decisions (approved, frozen, 2026-07-26)
+
+Owner-approved architecture freeze following a dedicated pre-implementation decision/review session (independently re-verified against the current repository, not taken on the prior session's word alone). The following 27 decisions are final and must not be re-debated during implementation.
+
+### 1. Review eligibility & ownership
+
+A Review may be submitted **only** by the authenticated Customer/`User` who owns a `Completed` Reservation: `reservation.status === Completed` **and** `reservation.userId === principal.userId` — pure ownership authorization, no RBAC, identical mechanism to Reservation/Notification ownership (`AUTHORIZATION_ARCHITECTURE.md` §10). `OrganizationMember`, `Employee`, and `System` actors never submit Reviews — there is no product basis for any of the three. **Guest-only reservations are not review-eligible in Phase 10**: a `Completed` reservation with `userId === null` and `reservationGuestId !== null` (Phone/WalkIn, Phase 7.4) has no eligible submitter — Reviews remain strictly authenticated-`User`-owned, and no OTP/contact-based retroactive identity-link mechanism is introduced to work around this. `Review.reservationId` is `UNIQUE`, permanently — **deleting a Review never restores eligibility to submit a new one for that same reservation** (the unique index is plain, not partial/conditional on `deletedAt`). Two concurrent Submit attempts for the same reservation are resolved by this same `UNIQUE` constraint: the losing insert receives a Postgres unique-violation, mapped to `ReviewAlreadyExistsException` (409) — the identical mechanism already used for `User.email` uniqueness, not a new concurrency primitive.
+
+### 2. Rating model
+
+`rating`: mandatory, integer, `CHECK (rating BETWEEN 1 AND 5)` — zero is never valid. `comment`: optional, nullable string — a rating-only Review (no comment) is valid. No multi-dimensional rating (food/service/ambience) exists. Rating and comment are both set once, at creation, and never changed afterward (see Decision 6).
+
+### 3. Review deletion — actors & mechanics
+
+Soft delete only (`deletedAt`, ADR-010) — never physical. Reachable by **either**:
+
+* the owning Customer (`Review.userId === principal.userId`, ownership check, no RBAC), **or**
+* an Organization Owner/Admin of the Restaurant the Review belongs to (`OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)` — the same org-role gate `RestaurantsController`'s own settings/gallery endpoints already use).
+
+**Employees may not delete Reviews in Phase 10** — no exception. A deleted Review is excluded from every read path (`deletedAt IS NULL` on every query) and from `Restaurant.averageRating` (Decision 6), but its row — and its permanent claim on `Review.reservationId`'s uniqueness — persists. Deletion is not reversible (no restore endpoint, matching every other soft-deleted resource in this codebase). A concurrent second delete attempt (either actor) against an already-deleted Review matches zero rows on its own guarded `UPDATE ... WHERE id = ? AND deleted_at IS NULL` and is treated as "already deleted" (404), not an error — no new conditional-write mechanism, reuses the existing convention already established by `updateTransitioningFrom`-style guarded writes elsewhere in this codebase.
+
+### 4. RestaurantReply actor model (resolves contradiction: "owners may reply" vs. sketch's `repliedBy = employeeId`)
+
+**Organization Owner/Admin only** (`OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)`) — the schema sketch's `repliedBy (employeeId)` was a documentation defect: `AUTHORIZATION_ARCHITECTURE.md` §10 already defines "Restaurant Owner" as the `OrganizationMember.Owner` role, a `User`-backed actor with no `Employee` row to reference at all. **Employees do not reply to Reviews in Phase 10, and no `reviews:reply` (or any other) permission slug is introduced** — evaluated and explicitly declined as unnecessary scope for this phase (a documented, compatible future option, not adopted now; if ever adopted, it would need its own ADR per the same CHANGE_POLICY.md criterion #4 reasoning ADR-026 itself cites for Merge/Split's dual-actor extension — not decided here). `RestaurantReply.repliedByUserId` (FK -> `users.id`) replaces the sketch's `repliedBy (employeeId)`.
+
+### 5. RestaurantReply cardinality & lifecycle
+
+Zero-or-one per Review, enforced by `UNIQUE(reviewId)` on `RestaurantReply`. **Immutable in Phase 10: no edit, no delete, no replacement/repost.** A concurrent second reply attempt against the same Review receives a Postgres unique-violation, mapped to `ReviewAlreadyRepliedException` (409) — same mechanism as Decision 1's Review-submission race, no new concurrency primitive. If the parent Review is later soft-deleted, the reply is never independently soft-deleted (`RestaurantReply` carries no `deletedAt` column) — it simply becomes unreachable the instant any read path's existing `deletedAt IS NULL` filter on the parent `Review` excludes it; no second write is needed.
+
+### 6. `Restaurant.averageRating` — transactional recompute, single aggregate column
+
+`Restaurant.averageRating` (already exists, `Decimal(3,2)`, currently always `null`) is recomputed as `AVG(rating)` over that restaurant's **active** (`deletedAt IS NULL`) Reviews, **inside the same database transaction** as the triggering Review create or delete (`UnitOfWorkPort.execute`, short-lived, no external I/O inside it — the same discipline ADR-013 already established, generalized). Rounded to the column's own 2-decimal scale. **`null` when a restaurant has zero active Reviews — never `0`.** Soft-deleted Reviews never count. There is no edit path to affect it (Decision 2/immutability). **No second aggregate column is added** (no incremental sum/count pair, no background rollup, no BullMQ queue) — a single, always-correct, transactionally-recomputed scalar is the entire mechanism. Concurrency: the recompute's `UPDATE` acquires a row-level lock on the target `Restaurant` row (`SELECT ... FOR UPDATE`, a conventional row lock, not a new advisory-lock namespace) to serialize concurrent recomputes for the *same* restaurant only — unrelated restaurants' Review writes never contend. **ADR-013, ADR-023, and ADR-026 are unmodified and unrelated** — this is an ordinary row lock on the aggregate root being updated, not a new lock keyspace.
+
+### 7. Tenancy — transitive via Restaurant
+
+`Review.restaurantId` (a direct FK, already in the original schema sketch) is the **single-hop tenant-resolution path**: `Review.restaurantId → Restaurant.organizationId`, resolved by the calling use case via the already-tenant-scoped `RestaurantRepository` — identical mechanism to `AddRestaurantGalleryImageUseCase`'s own resolution of `RestaurantGalleryImage`'s tenancy. **`Review` carries no `organizationId` column and is *not* added to `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS`** (`tenant-scoped-prisma.extension.ts:26`, remains exactly `{'OrganizationMember', 'Restaurant'}`, unchanged). This is the same, already-precedented pattern used by `Table`, `Branch`, `Reservation`, and (after its own Phase 7.5 correction, forward migration `20260724143130_phase_7_5_1_waitlist_remove_organization_id`) `ReservationWaitlistEntry` — **not a new architecture decision**, and specifically not the mistake that migration already reverted once. `Review.userId` is a *separate* concern (ownership authorization, Decision 1), spanning organizations exactly like `Reservation.userId`/`Notification.userId` — tenancy resolution and ownership authorization are independent axes, neither substituting for the other.
+
+### 8. Database schema (conceptual freeze; no migration in this session)
+
+```
+Review
+  id              UUID PK
+  userId          UUID FK -> users.id, NOT NULL
+  restaurantId    UUID FK -> restaurants.id, NOT NULL   -- tenancy resolution hop, Decision 7
+  reservationId   UUID FK -> reservations.id, NOT NULL, UNIQUE   -- plain, permanent (Decision 1)
+  rating          Int, NOT NULL, CHECK (rating BETWEEN 1 AND 5)  -- Decision 2
+  comment         String, NULLABLE
+  createdAt       DateTime default(now())
+  updatedAt       DateTime @updatedAt   -- bookkeeping only; content never changes post-create (Decision 2)
+  deletedAt       DateTime NULLABLE     -- soft delete (Decision 3)
+
+  @@index([restaurantId])
+  @@index([userId])
+  -- unique(reservationId) already covers Decision 1's "one review per reservation, permanently"
+
+ReviewImage
+  id          UUID PK
+  reviewId    UUID FK -> reviews.id, NOT NULL
+  fileId      UUID FK -> files.id, NOT NULL   -- FileOwnerType.Review, reused Files/MinIO pipeline (Decision 9)
+  sortOrder   Int, NOT NULL, >= 0
+  createdAt   DateTime default(now())
+  deletedAt   DateTime NULLABLE   -- added by this freeze: needed for individual-image delete (Decision 9)
+                                  -- and originally absent from the pre-freeze sketch
+
+  @@index([reviewId])
+
+RestaurantReply
+  id                UUID PK
+  reviewId          UUID FK -> reviews.id, NOT NULL, UNIQUE   -- zero-or-one (Decision 5)
+  repliedByUserId   UUID FK -> users.id, NOT NULL             -- corrected from the sketch's `repliedBy (employeeId)` — Decision 4
+  comment           String, NOT NULL
+  createdAt         DateTime default(now())
+  updatedAt         DateTime @updatedAt   -- schema symmetry only; reply is immutable (Decision 5)
+  -- no deletedAt: no independent reply-delete path exists; visibility is always inherited through
+  -- the parent Review's own deletedAt filter on every read path
+```
+
+`Restaurant.averageRating`: **no schema change** — column already exists (`Decimal(3,2)`, nullable, correctly typed); only a new domain method (`Restaurant.updateAverageRating`-style) and repository write path are needed, not a migration.
+
+### 9. Review images
+
+Reuses the existing Files/MinIO pipeline (`FileOwnerType.Review`, already present in `schema.prisma`'s `FileOwnerType` enum and the domain `FileOwnerType` union — confirmed unreferenced by any code before this freeze) — **no second upload subsystem, no new storage provider.** Pipeline mirrors `AddRestaurantGalleryImageUseCase` exactly: validate → upload to MinIO → create `FileRecord` (`ownerType: 'Review'`, `ownerId: reviewId`) → create `ReviewImage` row (`reviewId, fileId, sortOrder`) → compensate (best-effort object delete / `FileRecord` soft-delete) on any downstream failure → audit → return a signed read URL. Same MIME allowlist (`image/jpeg`, `image/png`, `image/webp`) and magic-byte verification (`detectImageMimeType`) as Restaurant Gallery; same size-cap policy shape (a named constant, not hardcoded inline). **Maximum 5 images per Review** (owner-approved cap — a named policy constant, e.g. `REVIEW_MAX_IMAGES_PER_REVIEW = 5`). Images are added via a dedicated endpoint **after** Review creation (`POST /reviews/:id/images`, multipart, one file per call), mirroring Gallery's own separate-endpoint-per-image precedent rather than inventing a combined JSON+multipart submit shape. **Individual image deletion is supported** (owner decision 16): `DELETE /reviews/:id/images/:imageId`, owning Customer only, soft delete (`ReviewImage.deletedAt`), mirroring this codebase's existing safe-deletion conventions — **this does not make the Review's own `rating`/`comment` editable**, and does not itself delete the Review. `sortOrder` is auto-incremented (`max(existing)+1`), identical to Gallery.
+
+### 10. Public visibility & pagination
+
+Restaurant review listings are **public read endpoints** (`noauth`) — `GET /restaurants/:id/reviews` and `GET /reviews/:id`. Mutating actions (Submit, Delete, Reply, image add/delete) remain authenticated and actor-scoped per their own rules above. Deleted Reviews are never visible via any read path, to any actor, ever. List endpoints use this codebase's **existing** `page`/`limit`/`total` offset-pagination convention (`ListNotificationsQueryDto`/`GET /users/me/favorites`'s own precedent) — no new Reviews-specific pagination model, no cursor pagination invented for this phase.
+
+### 11. Public identity / PII projection
+
+Public Customer identity on a Review is **`username` only** — reusing the Customer-identity primitive this platform already has (Customer Auth is phone+username-based, no email at all, per ADR-022). **Never** exposed on any Review-related response or event: real name (`firstName`/`lastName`), phone, email, `ReservationGuest` fields (moot — guest reservations are excluded, Decision 1), internal employee identifiers (no Employee attribution path exists at all for Reviews/Replies), session/auth/JWT material, or MinIO bucket/object-key internals (responses expose only a signed URL, exactly like Gallery/Avatar).
+
+### 12. REST API surface (minimum, v1)
+
+| Method | Route | Actor | Auth | Request | Response | 404 vs 403 |
+|---|---|---|---|---|---|---|
+| `POST` | `/api/v1/reviews` | Customer (self) | `JwtAuthGuard`+`SessionVersionGuard` | `{ reservationId, rating, comment? }` | 201 `ReviewResponseDto` | 404 reservation not found/not owned; 400 not Completed; 409 `ReviewAlreadyExistsException` |
+| `GET` | `/api/v1/restaurants/:id/reviews` | Public | `noauth` | `page, limit` | 200 `ReviewListResponseDto` (paginated) | 404 restaurant not found |
+| `GET` | `/api/v1/reviews/:id` | Public | `noauth` | — | 200 `ReviewResponseDto` | 404 unknown/deleted |
+| `GET` | `/api/v1/users/me/reviews` | Customer (self) | `JwtAuthGuard`+`SessionVersionGuard` | `page, limit` | 200 `ReviewListResponseDto` | — (always own) |
+| `DELETE` | `/api/v1/reviews/:id` | Customer (owner) or OrgOwner/Admin | `JwtAuthGuard`+`SessionVersionGuard` (actor-branching inside the use case, mirroring Cancel Reservation's dual-actor route shape) | — | 204, `@SkipResponseEnvelope` | 404 not found/not owned/cross-tenant (IDOR-safe) |
+| `POST` | `/api/v1/reviews/:id/reply` | OrgOwner/Admin | `JwtAuthGuard`+`SessionVersionGuard`+`OrganizationMemberGuard`+`@RequireOrgRole(Owner,Admin)` | `{ comment }` | 200/201 `ReviewResponseDto` (with reply embedded) | 404 cross-tenant; 409 already replied |
+| `POST` | `/api/v1/reviews/:id/images` | Customer (owner) | `JwtAuthGuard`+`SessionVersionGuard` | multipart `file` | 201 `ReviewImageResponseDto` | 404 not owned; 409 image cap exceeded (5) |
+| `DELETE` | `/api/v1/reviews/:id/images/:imageId` | Customer (owner) | `JwtAuthGuard`+`SessionVersionGuard` | — | 204, `@SkipResponseEnvelope` | 404 not owned/unknown |
+
+**No `PATCH /reviews/:id`** — Reviews are immutable after creation (Decision 2). No restaurant-side "review management" list beyond the public listing (nothing hides a review from its own restaurant's Owner/Admin — the public endpoint already serves that need). Response DTOs never expose internal identifiers beyond what §11 permits.
+
+### 13. Authorization / IDOR matrix
+
+| Action | Customer/User | Employee | Org Owner | Org Admin | System |
+|---|---|---|---|---|---|
+| Submit Review | Allowed (own Completed reservation) | Denied | Denied | Denied | Denied |
+| Read public restaurant reviews | Allowed (public) | Allowed | Allowed | Allowed | n/a |
+| Read own reviews | Allowed (ownership) | n/a | n/a | n/a | n/a |
+| Delete Review | Allowed (own) | Denied | Allowed | Allowed | Denied |
+| Update Review | Denied (no such action) | Denied | Denied | Denied | Denied |
+| Reply | Denied | Denied | Allowed | Allowed | Denied |
+| Delete/Edit Reply | Denied | Denied | Denied (immutable) | Denied (immutable) | Denied |
+| Add/Delete own Review Image | Allowed (own review) | Denied | Denied | Denied | Denied |
+
+Every non-owned/cross-tenant/unknown resource id collapses to **404** (IDOR-safe) across every row above — never a distinguishing 403 that would confirm existence to an unauthorized caller. Branch scope is **not relevant** to Reviews (Restaurant-scoped, not Branch-scoped — mirrors Restaurant Gallery's own "no Branch ownership" precedent).
+
+### 14. Domain events & audit mapping
+
+`ReviewUpdated` is **removed/deferred** (Reviews are immutable — Decision 2; no event class is ever needed). Retained:
+
+* `ReviewCreated` — `{ reviewId, restaurantId, reservationId, userId, rating }`. Audited `actorType: 'User'`, `actorId: userId`.
+* `ReviewDeleted` — `{ reviewId, restaurantId, reservationId, deletedBy }`. `deletedBy` is always a `User.id` (owning Customer or Owner/Admin — both attribute as `'User'`, since `AuditActorType` has no `OrganizationMember` variant and Owner/Admin actions have always logged as `'User'` platform-wide). Audited `actorType: 'User'`, `actorId: deletedBy`.
+* `RestaurantRepliedToReview` — `{ reviewId, restaurantId, repliedByUserId }`. Audited `actorType: 'User'`, `actorId: repliedByUserId`. No dual-actor-id ambiguity (unlike `TableMergedEvent`/`ReservationCancelledEvent`) since no Employee reply path exists.
+
+**No new `AuditActorType` value is introduced** — every Review/Reply action attributes as `'User'`, consistent with the existing enum (`User | Employee | System`) and the platform-wide convention that Organization Owner/Admin actions always log as `'User'`. `Restaurant.averageRating`'s transactional recompute is **not** independently audited — it remains derived persistence attached to the same audited Create/Delete action, exactly like other same-transaction side effects elsewhere in this codebase (e.g. `Table` status side effects of a Reservation transition).
+
+### 15. Phase 8 / Phase 9 exclusion (confirmed, no code change required)
+
+Reviews remain **excluded** from Phase 8 realtime/WebSocket broadcasting and from Phase 9 `NotificationDispatcher`/push/OneSignal. Verified: zero `Review` references exist in either allow-list mechanism today, and both are fail-closed/default-deny by construction (`mapDomainEventForRealtime` returns `null` for any unlisted event; `NotificationDispatcher` only acts on its own explicit allow-list) — **no code change is required to enforce this exclusion**, only this documented confirmation. Phase 9/OneSignal is not reopened by this freeze in any other respect.
+
+### 16. Explicitly out of scope
+
+No Review moderation/status workflow (no hide/report/approval-before-publication/profanity scanning). No BullMQ queue for Reviews (averageRating recompute is synchronous/transactional, Decision 6; no rating-rollup worker, no moderation worker, no notification worker). No likes/helpful votes, no threaded replies/chat, no Employee review inbox, no analytics dashboard, no Discovery/ranking redesign (Phase 15.5, separate), no recommendation engine, no email/SMS notifications, no payments/menus/offers work, no Phase 11+ work, no reopening of Merge/Split (ADR-026) or Phase 9/OneSignal.
+
+### 17. Contradictions reconciled
+
+* **"Restaurant owners may reply" vs. schema's `repliedBy (employeeId)`** — reconciled per Decision 4: Owner/Admin only, `repliedByUserId` replaces `repliedBy (employeeId)` in `DATABASE_SCHEMA.md`.
+* **`ReviewUpdated` event vs. no Update Review action** — reconciled per Decision 2/14: event removed, `DOMAIN_MODEL.md`'s action list (Submit/Delete/Reply, no Update) is now the sole authority.
+* **ADR-012's Review tenant-scoping prose vs. `DIRECT_TENANT_OWNED_MODELS`'s actual current shape** — reconciled per Decision 7 as **documentation reconciliation, not an ADR amendment**: ADR-012's own text already permits "carrying `organizationId` transitively," and `tenant-scoped-prisma.extension.ts`'s own maintainer comment explicitly anticipated extending this pattern "when that work begins" — it has now begun, applying the same shape already used for `Table`/`Branch`/`Reservation`/`ReservationWaitlistEntry`.
+* **`AUTHORIZATION_ARCHITECTURE.md`'s `ReviewPolicy` row ("Owner reply, delete...") ambiguity on who deletes** — reconciled per Decision 3: both the owning Customer and Org Owner/Admin may delete; the policy row and its accompanying inline note (`AUTHORIZATION_ARCHITECTURE.md`) now state this explicitly.
+
+### 18. CHANGE_POLICY / ADR result
+
+**No new ADR is created or required for this architecture.** Owner/Admin-only `RestaurantReply` (Decision 4) is a documentation-attribution correction against already-accepted product/authorization docs, not a new authorization *model* — it does not meet any of `CHANGE_POLICY.md`'s 10 ADR-required triggers (in particular, it does not "change the authentication or authorization model" in the sense trigger #4 means, since it uses the Restaurant's *existing* Owner/Admin org-role authority unchanged, the same authority that already gates Gallery/Settings/Working-Hours administration — no new guard composition, no new permission slug, no new actor type). The dual-actor Delete path (Customer ownership OR Owner/Admin org-role) similarly reuses two already-existing, already-accepted authorization mechanisms without composing a new guard or introducing RBAC. Tenancy (Decision 7) is documentation reconciliation only, per its own analysis above. No locked decision in `ARCHITECTURE_LOCK.md` is altered; no new external dependency is introduced; no concurrency/consistency guarantee for reservations or payments changes; ADR-013/ADR-023/ADR-026 are unmodified and unrelated.
+
+### 19. Test / verification plan (implementation phase — not run in this session)
+
+Unit: domain entities (`Review`, `ReviewImage`, `RestaurantReply`) and their invariants (rating bounds, immutability, soft-delete guards); use cases (Submit/Delete/Reply/AddImage/DeleteImage/ListByRestaurant/ListMine/GetById) with in-memory repositories, mirroring the exact structure already used for Reservations/Waitlist/Tables specs. Integration: Prisma repositories against a live Postgres (`prisma-review.integration-spec.ts` etc.), including the `UNIQUE(reservationId)`/`UNIQUE(reviewId)` concurrency races (two concurrent inserts, exactly one succeeds — same pattern as `register-concurrency.integration-spec.ts`) and the `averageRating` row-lock recompute under concurrent Review creates for one restaurant. E2E: full HTTP flows (Submit → public list shows it → averageRating updates → Reply → Delete → averageRating recomputes → resubmission for the same reservation is rejected). Docker verification: `prisma migrate dev` (new migration) against `tavla_test`, `prisma db seed` (unaffected — no seed changes per this freeze), full regression (`typecheck`, `lint --max-warnings 0`, unit, integration, e2e, strict-stack e2e) before any implementation is marked complete — matching the verification bar every prior phase (6/7/8/9) was held to.
+
+No architectural ambiguity remains for Phase 10 as of this freeze. Implementation begins only after separate explicit owner authorization.
+
+**PHASE 10 REVIEWS ARCHITECTURE FROZEN (2026-07-26).**
+
+**See "Phase 10 — Reviews" below for the implementation report - PHASE 10 IS NOW COMPLETE, LIVE VERIFIED, AND PRODUCTION VERIFIED (2026-07-27).**
+
+---
+
+## Phase 10 — Reviews
+
+Implemented exactly the frozen scope above: Submit/Delete Review, Reply, Review Images (real Files/MinIO pipeline), Restaurant review listing, Customer's own review listing, `Restaurant.averageRating` transactional recomputation. Nothing from Phase 11+ was touched.
+
+**Files created:** `modules/reviews/domain/entities/{review,review-image,restaurant-reply}.entity(+.spec).ts`, `modules/reviews/domain/events/review.events.ts`, `modules/reviews/domain/exceptions/*.ts` (11 files - invalid-review, invalid-review-image(-file), invalid-restaurant-reply, missing-review-image-file, reservation-not-completed, review-already-{exists,replied}, review-image-{file-too-large,limit-exceeded,not-found,storage-unavailable}, review-not-found, unsupported-review-image-file-type), `modules/reviews/domain/repositories/{review,review-image,restaurant-reply}.repository.ts`, `modules/reviews/application/dto/*.ts` (9 files), `modules/reviews/application/policies/review-image-upload.policy.ts`, `modules/reviews/application/services/{assert-actor-can-delete-review,review-result-assembler.service}.ts`, `modules/reviews/application/tokens/reviews.tokens.ts`, `modules/reviews/application/use-cases/{submit-review,delete-review,reply-to-review,add-review-image,delete-review-image,list-restaurant-reviews,list-my-reviews,get-review}.use-case(+.spec).ts`, `modules/reviews/infrastructure/persistence/{review,review-image,restaurant-reply}.prisma-mapper.ts` + `prisma-{review,review-image,restaurant-reply}.repository.ts`, `modules/reviews/presentation/controllers/{reviews.controller,review-response.mapper}.ts`, `modules/reviews/presentation/dto/{list-reviews.query,reply-to-review.request,submit-review.request,review.response}.dto.ts`, `test/reviews/prisma-review.integration-spec.ts`, `test/reviews/reviews.e2e-spec.ts`, `test/reviews/support/{in-memory-review,in-memory-review-image,in-memory-restaurant-reply}.repository.ts` + `review-test-fixtures.ts`, `prisma/migrations/20260726171931_phase_10_reviews/migration.sql`.
+
+**Files modified:** `prisma/schema.prisma` (`Review`/`ReviewImage`/`RestaurantReply` models, back-relations on `User`/`Restaurant`/`Reservation`), `app.module.ts` (registers `ReviewsModule`), `shared/domain/value-objects/identifiers.vo.ts` (`ReviewId`/`ReviewImageId`/`RestaurantReplyId`), `modules/restaurants/domain/repositories/restaurant.repository.ts` + `infrastructure/persistence/prisma-restaurant.repository.ts` (`recomputeAverageRating`, `lockForRatingRecompute` - see bug fix below), `modules/authentication/infrastructure/events/auditing-event-publisher.ts` (Review event routing), `test/restaurants/support/in-memory-restaurant.repository.ts`, `src/modules/realtime/application/room-authorization.service.spec.ts` (fake-repository parity with the new `RestaurantRepository` method).
+
+**Database impact:** one additive migration (`20260726171931_phase_10_reviews`) - `CREATE TABLE reviews` (`rating` `CHECK (rating BETWEEN 1 AND 5)`, `UNIQUE(reservation_id)`, `FK`s to `users`/`restaurants`/`reservations` all `ON DELETE RESTRICT`), `CREATE TABLE review_images` (`FK` to `reviews` `ON DELETE CASCADE`), `CREATE TABLE restaurant_replies` (`UNIQUE(review_id)`, `FK` to `reviews` `ON DELETE CASCADE`, `FK` to `users` `ON DELETE RESTRICT`), plus `restaurants.average_rating` (nullable numeric).
+
+**API:** `POST /api/v1/reviews`, `GET /api/v1/reviews/:id`, `DELETE /api/v1/reviews/:id`, `GET /api/v1/restaurants/:restaurantId/reviews`, `GET /api/v1/users/me/reviews`, `POST /api/v1/reviews/:id/reply`, `POST /api/v1/reviews/:id/images`, `DELETE /api/v1/reviews/:id/images/:imageId`. No `PATCH` anywhere - Reviews and Replies are immutable after creation by frozen design (owner decisions #1-3, #12), confirmed by a dedicated Swagger-contract e2e test and by live verification (a `PATCH /reviews/:id` probe returns 404, no such route).
+
+**Authorization:** Submit - pure ownership (`reservation.userId === principal.userId`, `Completed` status only), no RBAC. Delete - owning Customer or Organization Owner/Admin (`OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)` resolved inside the use case), never Employees. Reply - Organization Owner/Admin only, no Employee path, no new permission slug. Every cross-organization/unknown-id case collapses to 404 (IDOR-safe), verified live for Delete and Reply.
+
+**averageRating:** recomputed as `AVG(rating)` over active (non-deleted) Reviews inside the same transaction as the triggering create/delete, `null` (never `0`) at zero reviews. Live-verified after creation, after 3 concurrent creations, and after deletion, cross-checked directly in Postgres (not just the HTTP response) each time.
+
+**Domain events:** `ReviewCreatedEvent`/`ReviewDeletedEvent`/`RestaurantRepliedToReviewEvent` (no `ReviewUpdated` - nothing to update). None are on the Phase 8 realtime or Phase 9 notification allow-lists (both fail-closed by default, no code change needed). Audited via the existing `AuditingEventPublisher`, `actorType: 'User'` in every case (Owner/Admin actions log as `'User'`, matching every other platform-wide precedent - there is no `OrganizationMember` `AuditActorType` variant).
+
+**Testing:** Unit - `Review`/`ReviewImage`/`RestaurantReply` entities and all 8 use cases (fakes-only). Integration (real Postgres) - `prisma-review.integration-spec.ts`: round-trips, `UNIQUE` constraint races (reservation, reply), soft-delete exclusion, the `rating` `CHECK` constraint, transactional `averageRating` recompute across create/delete, concurrent-recompute-only serialization, and the new concurrent-insert-plus-recompute regression test (below). E2E (real HTTP, Docker Postgres/Redis/MinIO) - `reviews.e2e-spec.ts`, 14 cases: full Submit/Duplicate/Ineligible/IDOR/Delete/Reply/Images/pagination/Swagger-contract coverage against a real running app.
+
+**Verification results:** `tsc --noEmit`: 0 errors. `eslint --max-warnings 0` (Phase 10 + fix-touched files): 0 errors, 0 warnings. `nest build`: clean. `prisma format`/`validate`: clean; `migrate status`: up to date on both `tavla_dev` and `tavla_test`, zero drift, still 30 migrations (this session's bug fix needed no schema change). Unit: **162/162 suites, 1408/1408 tests**. Integration (dev): **41/41 suites, 258/258 tests**. Integration (strict, isolated `tavla-strict` stack): **41/41 suites, 258/258 tests** (one pre-existing, unrelated Phase 9/OneSignal notification-delivery flake reproduced once under full-suite load and cleared on two subsequent clean reruns - see "Bugs found and fixed" below; not touched, per this session's explicit Phase 9/OneSignal hard-stop). E2E (dev, `--runInBand`): **36/36 suites, 416/416 tests**. E2E (strict, `--runInBand` via the launcher): **36/36 suites, 416/416 tests**. None of these runs used `--forceExit`.
+
+**Docker / live verification:** both `tavla-backend-1` (dev) and `tavla-strict-backend-1` (strict) rebuilt fresh from this session's final source via `docker compose --env-file ../.env.development build backend` / the equivalent `-p tavla-strict` invocation, then force-recreated; both `healthy`, confirmed running the exact freshly-built image digests (`docker inspect` image ID match), with `postgres`/`redis`/`minio` all `healthy` for both stacks. The dev stack's `backend` service could not publish its own `3000:3000` host port this session (Windows reserves 3000 in a Hyper-V dynamic port-exclusion range, `netsh interface ipv4 show excludedportrange`) - orthogonal to backend correctness, since all live verification went through Nginx (`localhost:80`) as required, and the strict backend (port `13000`) was unaffected and directly smoke-tested.
+
+**Live HTTP verification** (through real Nginx, freshly rebuilt dev stack): a temporary script exercised the full frozen surface end-to-end - eligible Submit (201, correct public projection), duplicate (409), non-Completed reservation (400), cross-Customer IDOR (404), `GET /reviews/:id` (200/404), `GET /users/me/reviews` (own review present), the absence of any Review/Reply update endpoint (confirmed live, not just by contract test), 5-image upload cap (409 on the 6th) with real MinIO object existence confirmed via `statObject`, individual image delete (204) with the underlying MinIO object actually removed, unauthorized image delete denied (404), restaurant listing + `{items,page,limit,total}` pagination, unauthorized Employee/Customer reply denied (403), Owner/Admin reply (200), second reply rejected (409, proving one-shot immutability with no separate update/delete endpoint to test), cross-organization delete denied (404), Customer delete (204), Employee-cannot-delete (403), Owner administrative delete (204), and audit log rows with correct `actorType: 'User'` attribution for every action. **37/37 assertions passed** on the final run. Review update/reply update/reply delete are explicitly N/A - the frozen Phase 10 contract has no such endpoints (immutable by design, not an oversight); this was verified live (a `PATCH` probe returns 404) rather than assumed.
+
+**Concurrency verification:** 3 simultaneous real HTTP review submissions (distinct reservations, same restaurant) all succeeded and `Restaurant.averageRating`, cross-checked directly in Postgres, reflected all of them with no lost update. A same-reservation double-submit race (2 simultaneous HTTP requests) produced exactly one 201 and one 409, proving the one-review invariant under real concurrency, not just the pre-existing `UNIQUE` constraint's own unit-level guarantee.
+
+**Bug found and fixed during live concurrency verification (a real Phase 10 production defect, not a test artifact):** the live concurrency proof's first run showed `averageRating` reflecting only 3 of 4 active reviews after 3 concurrent HTTP submissions (`expected 3.5, got 3.33`) despite all 4 review rows being correctly present in Postgres - a genuine lost-update race in `recomputeAverageRating`. Root cause, isolated with a standalone reproduction against real Postgres (bypassing HTTP/Nest entirely): `UPDATE restaurants SET average_rating = (SELECT AVG(rating) FROM reviews WHERE ...) WHERE id = ...` plans the uncorrelated `AVG` subquery as an InitPlan, evaluated once against the statement's starting snapshot; a transaction that blocks on the row's write lock and then proceeds once unblocked does not get a fresh subquery re-evaluation, so it can silently overwrite a correct average with a stale one computed before sibling transactions committed (reproduced 5/8 trials wrong with no explicit lock). **Fix:** a new `RestaurantRepository.lockForRatingRecompute(restaurantId)` (`SELECT id FROM restaurants WHERE id = $1 FOR UPDATE`) is now called by both `SubmitReviewUseCase` and `DeleteReviewUseCase` **before** the Review insert/soft-delete (not after - locking after the insert deadlocks against the insert's own `FK`-check lock on the same row, also reproduced and then avoided by re-ordering, not by any timeout/retry). Proven with 15/15 clean trials after the fix (0/15 wrong, versus 5/8 wrong before it), a new permanent regression test (`prisma-review.integration-spec.ts`, "concurrent Review INSERT + averageRating recompute") mirroring the exact `SubmitReviewUseCase` transaction shape, and reconfirmed through the live HTTP concurrency proof above. No schema change was required. All test tiers (unit/integration ×2/E2E ×2) and the Docker rebuild were rerun after this fix; all green.
+
+**Reviews E2E hang - root-cause investigation and fix (test infrastructure, not production code):** an isolated run of `reviews.e2e-spec.ts` hung indefinitely with zero output. Live-process inspection (Jest PID, CPU sampling across an 8s window, open TCP connections, `pg_stat_activity`/`pg_locks`, Redis `CLIENT LIST`) showed the process was genuinely parked (0% CPU, no MinIO connection ever opened, all Postgres/Redis sessions idle, not lock-blocked) - not an I/O wait. Postgres's own error log pinpointed the actual crash: `afterAll` deleted `reservations` before `reservation_history`, violating that table's intentional `onDelete: Restrict` FK, and since nothing guarded the following `app.close()` call, the live NestJS app (HTTP server, BullMQ workers, DB/Redis pools) was never torn down, leaving the process alive with real open handles under `--detectOpenHandles` (which correctly refuses to force-exit). A second, independent bug compounded it: `registerAndLoginCustomer`'s generated username truncated to 30 characters in a way that could remove the random uniqueness suffix entirely for longer test-case names, causing deterministic collisions against undeleted rows from any prior crashed run. **Fixes (`test/reviews/reviews.e2e-spec.ts` only, no production code):** (1) `reservationHistory.deleteMany` now runs before `reservation.deleteMany` in `afterAll`; (2) the whole `afterAll` body is wrapped in `try { ... } finally { app.close() }` so the app always shuts down even if cleanup throws; (3) username generation reordered so the random suffix is applied first and the truncation only ever clips the readable suffix; (4) a third, related bug found while proving the fix - `createCompletedReservation`'s backdate window used bare `Date.now() ± offset` regardless of table, so two Completed reservations backdated for the same table within one test could land in overlapping windows and trip `reservations_no_overlapping_confirmed_excl` - fixed by staggering the backdate window per call. Isolated reruns: 14/14 passing, natural process exit, exit code 0, ~27-30s, twice in a row for determinism - **no `--forceExit` used in the final passing state, ever.** Full E2E suite (36/36, 416/416) then also passed clean.
+
+**Deviations from freeze:** none. Both bugs above are implementation defects being corrected against the already-frozen, already-approved behavior (`recomputeAverageRating` was always supposed to be race-safe; `afterAll` was always supposed to clean up completely) - no architectural decision changed, so no new ADR was created, per `CHANGE_POLICY.md`/`CLAUDE.md`'s "no new ADR unless an architectural decision actually changes."
+
+**Remaining technical debt:** none introduced by this phase. The one pre-existing Phase 9/OneSignal notification-delivery flake (unrelated to Reviews, not touched per this session's explicit scope boundary) remains exactly as flaky/non-deterministic as before this phase - not a Phase 10 regression.
+
+**Production readiness:** Phase 10's declared scope is production-ready - tested at every tier (strict and non-strict, unit/integration/e2e), the averageRating recompute proven race-safe against real concurrent Postgres transactions (both an isolated reproduction and live HTTP load), tenant/IDOR-safe (404 on every cross-organization/unknown-id path, live-verified), audited with correct actor attribution, Swagger-documented, and live-verified via freshly rebuilt Docker images plus a manual HTTP flow through Nginx with direct MinIO and PostgreSQL inspection. One real production defect (the `averageRating` lost-update race) and one real test-infrastructure defect (the E2E `afterAll` hang) were found and fixed during this same verification pass, not deferred.
+
+**PHASE 10 COMPLETE. PHASE 10 LIVE VERIFIED. PHASE 10 PRODUCTION VERIFIED.**
+
+---
+
+# Customer Restaurant Discovery & Public Read Surface — Implementation & Verification Report
+
+**Status: COMPLETE, LIVE VERIFIED (2026-07-28).** Owner-authorized cross-cutting correction: a Customer had no supported way to discover restaurants, view branches, or see the floor plan/table topology a reservation UX needs - every existing Restaurant/Branch/FloorPlan/Table read endpoint (Phases 4/5/6) was scoped `OrganizationMemberGuard`-only by explicit prior architecture decision, with Employee/Customer access "deferred to whichever future phase actually implements" it. This session builds exactly that deferred capability, reusing existing infrastructure - no duplicate SearchAvailability, no duplicate Reviews/Offers logic, no Menu invention (Menu remains unimplemented, no Prisma model exists, no phase has ever been assigned to it - out of scope here, `FR-08.1` in PRODUCT_REQUIREMENTS.md still points nowhere concrete), no Payments, no Phase 12+, no OneSignal/Phase 9 change.
+
+**Root cause (not a bug in the traditional sense):** confirmed via full controller audit - `RestaurantsController`/`BranchesController`/`TablesController`/`FloorPlansController`/`TableController` are 100% `OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)`, by original Phase 4.1 scope decision. `GET /reservations/availability` and `POST /reservations` were **already** Customer-accessible (Phase 7.1/7.4, any authenticated actor for themselves) - reused unchanged, no second availability algorithm. `GET /reservations` (mine) and `GET /reservations/:id` (mine) did not exist at all - a genuine gap, now closed.
+
+**New module: `DiscoveryModule`** (`apps/backend/src/modules/discovery/`) - public/unauthenticated (no guard), a minimal slice of ADR-018's already-reserved `modules/discovery/` name (search/nearby/ranking/comparison remain its own future Phase 15.5, not built here). `DiscoveryReaderPort` + `PrismaDiscoveryReader` (raw `PrismaService`, the third architecturally-justified tenant-scoping exception alongside `PrismaLoginOrganizationReader`/`PrismaRestaurantDirectoryReader` - see TENANCY.md) back five use cases (`ListDiscoverableRestaurants`, `GetDiscoverableRestaurant`, `ListDiscoverableBranches`, `GetDiscoverableBranch`, `GetDiscoverableFloorPlan`) exposed by `DiscoveryController`:
+
+* `GET /discovery/restaurants` - paginated, `Active`+non-deleted only, any organization (cross-tenant by product design)
+* `GET /discovery/restaurants/:restaurantId`
+* `GET /discovery/restaurants/:restaurantId/branches`
+* `GET /discovery/restaurants/:restaurantId/branches/:branchId`
+* `GET /discovery/restaurants/:restaurantId/branches/:branchId/floor-plan` - the branch's single active FloorPlan plus its full table topology (position/dimensions/shape/capacity/status/merge fields) in one bounded call
+
+Every response reuses the exact same `RestaurantResponseDto`/`BranchResponseDto`/`FloorPlanResponseDto`/`TableResponseDto` the management endpoints already return (none of those shapes ever carried `organizationId` or another internal field). Unknown/soft-deleted/non-`Active`/cross-restaurant targets all collapse to 404 - IDOR-safe, matching every other resource's existing convention.
+
+**`ReservationsController` additions** (existing module, no new module): `GET /reservations` (mine, paginated, newest-first) and `GET /reservations/:id` (mine) - ownership-only (`resource.userId === principal.userId`), no RBAC, mirroring `ListMyReviewsUseCase`/`/users/me/favorites` exactly. A guest (Phone/WalkIn) reservation has no owning User and is structurally excluded. Required one new `ReservationRepository.findManyByUserId` method (implemented in `PrismaReservationRepository` and the `InMemoryReservationRepository` test double).
+
+**Privacy boundary (mandatory, verified):** no endpoint added or changed exposes another Customer's reservation, `ReservationGuest` identity, or any operational/audit internals. `GET /reservations/availability` (pre-existing, unchanged) returns only an `isAvailable` boolean per table - never the reservation causing unavailability.
+
+**Files created:** `apps/backend/src/modules/discovery/{discovery.module.ts, application/{ports/discovery-reader.port.ts, use-cases/{list-discoverable-restaurants,get-discoverable-restaurant,list-discoverable-branches,get-discoverable-branch,get-discoverable-floor-plan}.use-case.ts}, infrastructure/persistence/prisma-discovery-reader.ts, presentation/{controllers/{discovery.controller.ts, discovery-response.mapper.ts}, dto/floor-plan-with-tables.response.dto.ts}}`; `apps/backend/src/modules/reservations/application/{dto/{reservation-list.result.ts, list-my-reservations.command.ts, get-my-reservation.command.ts}, use-cases/{list-my-reservations,get-my-reservation}.use-case.ts}`; `apps/backend/src/modules/reservations/presentation/dto/{reservation-list.response.dto.ts, list-reservations.query.dto.ts}`; test files under `test/discovery/` and `test/reservations/my-reservations.e2e-spec.ts`.
+
+**Files modified:** `apps/backend/src/app.module.ts` (registers `DiscoveryModule`), `.eslintrc.js` (adds `prisma-discovery-reader.ts` to the tenant-scoping ESLint exclusion), `apps/backend/src/modules/reservations/{domain/repositories/reservation.repository.ts, infrastructure/persistence/prisma-reservation.repository.ts, reservations.module.ts, presentation/controllers/reservations.controller.ts}`, `test/reservations/support/in-memory-reservation.repository.ts`. **No Prisma schema change, no migration** (`prisma migrate status`: "Database schema is up to date!").
+
+**Verification:** unit 169/169 suites, 1427/1427 tests (7 new suites); integration (dev) 42/42 suites, 262/262 tests; integration (strict) targeted suites green; E2E (dev) - full run showed 2 failing suites under 38-way Jest-worker/Postgres contention, both proven to pass 100% clean in isolation (`restaurants.e2e-spec.ts` 29/29, `realtime.e2e-spec.ts` 16/16) - not a regression; E2E (strict) targeted suites (discovery/reservations/reviews) 8/8 suites, 68/68 tests green. `tsc --noEmit` clean, ESLint zero warnings, `nest build` clean, `prisma format`/`validate`/`migrate status` clean with zero drift. Docker dev stack rebuilt fresh (`docker compose up -d --build`), all five containers healthy, new routes confirmed registered in logs. **Live manual HTTP verification through Nginx** (real Postgres, two real Organizations/Owners, two real Customers, no mocks): 25/25 assertions passed - cross-organization discovery listing, restaurant/branch/floor-plan/table-topology detail, IDOR-safe 404s, management-endpoint auth still enforced, cross-org management still 404s, Customer reservation creation/list/get, and the Customer-to-Customer privacy boundary (404, not leaked in the other Customer's list) all proven live, not just in Jest. Scratch data cleaned up after verification.
+
+**PHASE-INDEPENDENT CUSTOMER READ SURFACE COMPLETE. LIVE VERIFIED.**
+
 ---
 
 # Phase 11 — Offers
 
-Status: ⏳ Pending
+Status: ⏳ Pending — **Architecture frozen (2026-07-28)**, implementation not yet authorized. See "Phase 11 — Offers: Pre-implementation architecture decisions" below.
 
 - [ ] Promotions
 - [ ] Coupons
 - [ ] Events
+
+## Phase 11 — Offers: Pre-implementation architecture decisions (owner-approved 2026-07-28)
+
+Following the Phase 11 architecture review session, the owner resolved six decisions that were genuinely open (not already answered by frozen architecture). None required a new ADR — evaluated against `CHANGE_POLICY.md`'s ten mandatory-ADR triggers, none apply: this is an additive new module reusing already-locked tenancy, authorization, soft-delete, and event/audit conventions unchanged.
+
+1. **Offer model (D1):** a single generic `Offer` aggregate, not three separate aggregates. `DATABASE_SCHEMA.md`'s already-documented `Offer` table gains one additive field, `type` (`Promotion | Coupon | Event`), for display/filtering only — no behavioral branching by type beyond that. Happy Hour is explicitly **not** in Phase 11 scope (`docs/PROJECT_ROADMAP.md`'s "Happy Hour" bullet was stale relative to this document and has been reconciled) — no recurring/day-of-week/time-of-day schedule concept is introduced.
+2. **Coupon semantics (D2):** display-only in v1. A `type = Coupon` Offer carries the same fields as any other Offer (title/description/discountType/discountValue) with no redemption engine, no usage tracking, no per-customer limits, and no reservation/payment integration — there is no pricing concept anywhere in the domain model yet (Payments is Phase 13, unscheduled) for a coupon to discount against.
+3. **Edit/delete lifecycle (D3):** Offer content is editable only while `status = Draft`; `Published` and `Expired` are immutable. Soft-delete (`deletedAt`, ADR-010) is available to Owner/Admin from any state (`Draft`/`Published`/`Expired`) — never a physical delete.
+4. **Authorization (D4):** Owner/Admin only (`OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)`), matching Restaurant Settings/Working Hours/Gallery/Taxonomy's established precedent. No `offers:*` Employee permission slug is introduced — this was evaluated and explicitly declined, the same shape Phase 10 declined a `reviews:reply` slug.
+5. **Customer read surface (D5):** a restaurant-scoped public listing only (`Published`, currently active by `startsAt`/`endsAt`, not soft-deleted). No platform-wide `GET /offers` discovery endpoint — cross-restaurant Offer discovery remains deferred to ADR-018's still-unscheduled Discovery module (Phase 15.5), not reopened by Phase 11.
+6. **Notifications (D6):** `OfferPublished` does **not** extend the Phase 9 `NotificationDispatcher` allow-list in Phase 11 — no change to `NotificationDispatcher`, `NotificationProvider`, OneSignal, `NotificationQueue`, templates, or `marketingOptIn` consumption. **Phase 9 impact: none.** A future marketing-notification capability using the already-existing but currently-unconsumed `User.marketingOptIn` field (Phase 3.4) may be proposed as its own architecture session.
+
+**Also frozen this session (implementation details, not owner decisions — resolved by precedent, no approval needed):** `Published → Expired` is a BullMQ-scheduled, CAS-guarded transition (`WHERE status = 'Published'`), mirroring `LateArrivalQueue`'s idempotent-on-replay shape — not a lazy/computed status. Offer is excluded from the Phase 8 realtime allow-list (**Phase 8 realtime impact: none**) — not live-operational data, same rationale as Reviews. Offer carries `restaurantId` only (no `organizationId` column), resolved transitively via the already-tenant-scoped `RestaurantRepository`, identical to `RestaurantSettings`/`RestaurantGallery`/`Review` — not added to `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS`. No file/image field exists in v1. No Offer-specific rate limit — reuses the existing authenticated-route default tier. Ships gated by neither a feature flag (the `FeatureFlags` table remains schema-only, no Prisma model exists, its evaluation ADR remains open per `DECISIONS.md`'s Future Decisions) nor a subscription plan limit (Phase 12 does not exist yet) — consistent with how every prior module shipped.
+
+Frozen final `Offer` shape:
+
+```
+Offer
+  id            UUID
+  restaurantId  UUID (FK -> Restaurant; not tenant-direct)
+  type          enum(Promotion, Coupon, Event)
+  title         string
+  description   string
+  discountType  enum(Percentage, FixedAmount)
+  discountValue numeric
+  startsAt      timestamp
+  endsAt        timestamp
+  status        enum(Draft, Published, Expired)
+  createdAt / updatedAt / deletedAt
+```
+
+Frozen state machine: `(create) -> Draft -> Published -> Expired` (terminal); Draft is the only editable state; every state is soft-deletable by Owner/Admin.
+
+Frozen event set (`docs/EVENTS.md`): `OfferCreated`, `OfferUpdated`, `OfferPublished`, `OfferExpired` (`actorType: 'System'`, `actorId: null`), `OfferDeleted` — all other actions `actorType: 'User'`. No new `AuditActorType` value.
+
+**PHASE 11 ARCHITECTURE FROZEN. PHASE 11 IMPLEMENTATION NOT YET AUTHORIZED.**
 
 ---
 

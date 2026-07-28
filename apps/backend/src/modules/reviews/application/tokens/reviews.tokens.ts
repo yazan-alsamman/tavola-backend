@@ -1,0 +1,1 @@
+export const REVIEW_IMAGES_BUCKET = Symbol('REVIEW_IMAGES_BUCKET');

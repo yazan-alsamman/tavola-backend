@@ -3011,6 +3011,184 @@
       ]
     },
     {
+      "name": "Discovery",
+      "description": "Customer Restaurant Discovery & Public Read Surface (2026-07-28). Base path: `/discovery/restaurants`. Every route is public/unauthenticated - no guard, no organization scope - and intentionally crosses tenant boundaries (any organization's Active, non-deleted restaurants are discoverable). This is NOT ADR-018's future Phase 15.5 search/nearby/ranking/comparison engine - plain paginated listing/detail only, reusing the exact same Response DTOs the Owner/Admin management endpoints (Restaurants/Branches/Floor Plans/Tables) already return. Run the Restaurants/Branches/Floor Plans/Tables folders first so restaurantId/branchId are populated.",
+      "item": [
+        {
+          "name": "List Restaurants",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/discovery/restaurants?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "discovery",
+                "restaurants"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Paginated, ordered most-recently-created first. Only Active, non-soft-deleted restaurants, across every organization - discovery intentionally crosses tenant boundaries. Never leaks organizationId or any other tenant-internal field."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Restaurant By Id",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/discovery/restaurants/:restaurantId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "discovery",
+                "restaurants",
+                ":restaurantId"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "Unknown, soft-deleted, or non-Active (e.g. Suspended) restaurants 404."
+          },
+          "response": []
+        },
+        {
+          "name": "List Branches",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/discovery/restaurants/:restaurantId/branches?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "discovery",
+                "restaurants",
+                ":restaurantId",
+                "branches"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                }
+              ]
+            },
+            "description": "Paginated, ordered most-recently-created first."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Branch By Id",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/discovery/restaurants/:restaurantId/branches/:branchId",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "discovery",
+                "restaurants",
+                ":restaurantId",
+                "branches",
+                ":branchId"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                },
+                {
+                  "key": "branchId",
+                  "value": "{{branchId}}"
+                }
+              ]
+            },
+            "description": "A branch belonging to a different restaurant, or unknown/soft-deleted, 404s (IDOR-safe)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Active Floor Plan & Table Topology",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/discovery/restaurants/:restaurantId/branches/:branchId/floor-plan",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "discovery",
+                "restaurants",
+                ":restaurantId",
+                "branches",
+                ":branchId",
+                "floor-plan"
+              ],
+              "variable": [
+                {
+                  "key": "restaurantId",
+                  "value": "{{restaurantId}}"
+                },
+                {
+                  "key": "branchId",
+                  "value": "{{branchId}}"
+                }
+              ]
+            },
+            "description": "Returns the branch's single active FloorPlan together with every non-soft-deleted Table on it (position, dimensions, shape, capacity, status, merge-group fields) - the seating-chart data a Customer reservation UX renders. 404s if the branch has no active FloorPlan configured yet. Table-level time/party-size availability is a separate call (Reservations > Search Availability, ADR-013) - never duplicated here."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Employees",
       "description": "Employee invitation and management, nested under a Restaurant. Base path: `/restaurants/:restaurantId/employees`. Requires Owner/Admin organization role (not RBAC permissions).",
       "item": [
@@ -3403,6 +3581,59 @@
               }
             }
           ]
+        },
+        {
+          "name": "List My Reservations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reservations?page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reservations"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Customer Restaurant Discovery & Public Read Surface (2026-07-28). Ownership-only, no RBAC - always the caller's own reservations (from the JWT), paginated, newest-created first. A guest (Phone/WalkIn) reservation has no owning User and never appears here."
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Reservation By Id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reservations/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reservations",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{reservationId}}"
+                }
+              ]
+            },
+            "description": "Customer Restaurant Discovery & Public Read Surface (2026-07-28). Ownership-only - an unknown, another Customer's, or guest-owned reservation collapses to the same 404 (IDOR-safe, never a distinguishing 403)."
+          },
+          "response": []
         },
         {
           "name": "Approve Reservation",

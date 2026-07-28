@@ -65,6 +65,11 @@ import {
   WaitlistEntryPromotedEvent,
 } from '@modules/waitlist/domain/events/waitlist.events';
 import { NotificationCreatedEvent } from '@modules/notifications/domain/events/notification.events';
+import {
+  ReviewCreatedEvent,
+  ReviewDeletedEvent,
+  RestaurantRepliedToReviewEvent,
+} from '@modules/reviews/domain/events/review.events';
 import { LoggingEventPublisher } from './logging-event-publisher';
 
 /**
@@ -684,6 +689,47 @@ export class AuditingEventPublisher implements EventPublisherPort {
         action: 'notification.created',
         targetType: 'Notification',
         targetId: event.payload.notificationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof ReviewCreatedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.userId,
+        actorType: 'User',
+        action: 'review.created',
+        targetType: 'Review',
+        targetId: event.payload.reviewId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof ReviewDeletedEvent) {
+      return {
+        ...base,
+        // Phase 10: `deletedBy` is always a User.id - either the owning
+        // Customer or an Organization Owner/Admin (both attribute as
+        // 'User', since `AuditActorType` has no `OrganizationMember`
+        // variant and Owner/Admin actions have always logged as 'User'
+        // platform-wide). Employees never delete Reviews in Phase 10.
+        actorId: event.payload.deletedBy,
+        actorType: 'User',
+        action: 'review.deleted',
+        targetType: 'Review',
+        targetId: event.payload.reviewId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof RestaurantRepliedToReviewEvent) {
+      return {
+        ...base,
+        actorId: event.payload.repliedByUserId,
+        actorType: 'User',
+        action: 'review.replied',
+        targetType: 'Review',
+        targetId: event.payload.reviewId,
         ipAddress: null,
       };
     }

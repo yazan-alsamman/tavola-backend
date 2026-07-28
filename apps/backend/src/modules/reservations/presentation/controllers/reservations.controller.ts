@@ -34,6 +34,8 @@ import { PermissionsGuard } from '@modules/authorization/presentation/guards/per
 import { RequirePermission } from '@modules/authorization/presentation/decorators/require-permission.decorator';
 import { SearchAvailabilityUseCase } from '../../application/use-cases/search-availability.use-case';
 import { CreateReservationUseCase } from '../../application/use-cases/create-reservation.use-case';
+import { ListMyReservationsUseCase } from '../../application/use-cases/list-my-reservations.use-case';
+import { GetMyReservationUseCase } from '../../application/use-cases/get-my-reservation.use-case';
 import { ApproveReservationUseCase } from '../../application/use-cases/approve-reservation.use-case';
 import { RejectReservationUseCase } from '../../application/use-cases/reject-reservation.use-case';
 import { CancelReservationUseCase } from '../../application/use-cases/cancel-reservation.use-case';
@@ -45,7 +47,9 @@ import { SearchAvailabilityQueryDto } from '../dto/search-availability.query.dto
 import { CreateReservationRequestDto } from '../dto/create-reservation.request.dto';
 import { CancelReservationRequestDto } from '../dto/cancel-reservation.request.dto';
 import { RescheduleReservationRequestDto } from '../dto/reschedule-reservation.request.dto';
+import { ListReservationsQueryDto } from '../dto/list-reservations.query.dto';
 import { ReservationResponseDto } from '../dto/reservation.response.dto';
+import { ReservationListResponseDto } from '../dto/reservation-list.response.dto';
 import { TableAvailabilityResponseDto } from '../dto/table-availability.response.dto';
 import { toReservationResponse, toTableAvailabilityResponse } from './reservation-response.mapper';
 
@@ -67,6 +71,8 @@ export class ReservationsController {
   constructor(
     private readonly searchAvailabilityUseCase: SearchAvailabilityUseCase,
     private readonly createReservationUseCase: CreateReservationUseCase,
+    private readonly listMyReservationsUseCase: ListMyReservationsUseCase,
+    private readonly getMyReservationUseCase: GetMyReservationUseCase,
     private readonly approveReservationUseCase: ApproveReservationUseCase,
     private readonly rejectReservationUseCase: RejectReservationUseCase,
     private readonly cancelReservationUseCase: CancelReservationUseCase,
@@ -75,6 +81,44 @@ export class ReservationsController {
     private readonly markNoShowReservationUseCase: MarkNoShowReservationUseCase,
     private readonly markTableReadyReservationUseCase: MarkTableReadyReservationUseCase,
   ) {}
+
+  @Get()
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Your reservations retrieved successfully.')
+  @ApiOperation({
+    operationId: 'reservationsListMine',
+    summary: "List the authenticated Customer's own reservations",
+    description:
+      "Customer Restaurant Discovery & Public Read Surface. Ownership-only, no RBAC - always the caller's own reservations (from the JWT), paginated, newest-created first. A guest (Phone/WalkIn) reservation has no owning User and never appears here. Never exposes another Customer's reservation or any ReservationGuest data.",
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Your reservations retrieved',
+    type: ReservationListResponseDto,
+  })
+  @ApiErrorResponse(400, 'Invalid page/limit', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  async listMine(
+    @Query() query: ListReservationsQueryDto,
+    @CurrentActor() actor: AuthenticatedActor,
+  ): Promise<ReservationListResponseDto> {
+    const result = await this.listMyReservationsUseCase.execute({
+      actor,
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+    });
+    return {
+      items: result.items.map(toReservationResponse),
+      page: result.page,
+      limit: result.limit,
+      total: result.total,
+    };
+  }
 
   @Get('availability')
   @UseGuards(JwtAuthGuard, SessionVersionGuard)
@@ -108,6 +152,33 @@ export class ReservationsController {
       partySize: query.partySize,
     });
     return results.map(toTableAvailabilityResponse);
+  }
+
+  @Get(':id')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Reservation retrieved successfully.')
+  @ApiOperation({
+    operationId: 'reservationsGetMine',
+    summary: "Get one of the authenticated Customer's own reservations by id",
+    description:
+      "Customer Restaurant Discovery & Public Read Surface. Ownership-only - an unknown, another Customer's, or guest-owned reservation collapses to the same 404 (IDOR-safe, never a distinguishing 403).",
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Reservation retrieved', type: ReservationResponseDto })
+  @ApiErrorResponse(400, 'id is not a valid UUID', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(404, 'Reservation not found, or does not belong to the caller', ['NOT_FOUND'])
+  async getMine(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentActor() actor: AuthenticatedActor,
+  ): Promise<ReservationResponseDto> {
+    const result = await this.getMyReservationUseCase.execute({ actor, reservationId: id });
+    return toReservationResponse(result);
   }
 
   @Post()

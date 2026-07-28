@@ -1,11 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaContext } from '@infrastructure/prisma/prisma-context.service';
-import { ReservationId, TableId } from '@shared/domain/value-objects/identifiers.vo';
+import { ReservationId, TableId, UserId } from '@shared/domain/value-objects/identifiers.vo';
 import { Reservation } from '../../domain/entities/reservation.entity';
 import { ReservationStatus } from '../../domain/enums/reservation.enums';
 import { ReservationConflictException } from '../../domain/exceptions/reservation-conflict.exception';
-import { ReservationRepository } from '../../domain/repositories/reservation.repository';
+import {
+  ReservationListPage,
+  ReservationRepository,
+} from '../../domain/repositories/reservation.repository';
 import { ReservationPrismaMapper } from './reservation.prisma-mapper';
 
 /**
@@ -243,5 +246,22 @@ export class PrismaReservationRepository implements ReservationRepository {
       },
     });
     return count > 0;
+  }
+
+  async findManyByUserId(
+    userId: UserId,
+    page: number,
+    limit: number,
+  ): Promise<ReservationListPage> {
+    const [rows, total] = await Promise.all([
+      this.prismaContext.client.reservation.findMany({
+        where: { userId: userId.value },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prismaContext.client.reservation.count({ where: { userId: userId.value } }),
+    ]);
+    return { items: rows.map((row) => ReservationPrismaMapper.toDomain(row)), total };
   }
 }

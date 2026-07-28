@@ -564,7 +564,7 @@ Business use cases depend on policies — they never embed permission logic inli
 | `TablePolicy` | Table CRUD, merge/split, availability overrides |
 | `EmployeePolicy` | Invite, assign roles, branch assignments, deactivate |
 | `OfferPolicy` | Offer lifecycle, publication |
-| `ReviewPolicy` | Create review (post-completion), owner reply |
+| `ReviewPolicy` | Create review (post-completion, ownership); owning Customer or Restaurant Owner/Admin may delete; Restaurant Owner/Admin only may reply (zero-or-one, immutable); no Employee participation, no `reviews:reply` slug |
 | `SubscriptionPolicy` | Plan limits, feature gating |
 | `AnalyticsPolicy` | Report access by role and scope |
 | `ConversationPolicy` | Chat read/send, participant membership |
@@ -630,6 +630,8 @@ NotificationRepository
 PaymentRepository
 
 Repositories expose business-oriented operations rather than raw database access.
+
+**Customer Restaurant Discovery & Public Read Surface (2026-07-28):** `DiscoveryReaderPort` (`modules/discovery/application/ports`) is deliberately not a repository in the above sense - it is a minimal, read-only, cross-tenant *reader* returning the same customer-safe Result shapes (`RestaurantResult`/`BranchResult`/`FloorPlanResult`/`TableResult`) the Restaurant/Branch/Tables modules' own use cases already produce, following the `RestaurantDirectoryReaderPort` precedent (Phase 3.3, Favorites) rather than duplicating aggregate logic. See TENANCY.md for why it queries the raw, un-tenant-scoped Prisma client.
 
 ---
 
@@ -751,9 +753,20 @@ Events are immutable and published only after successful business operations.
 
 ## Reviews
 
-* Reviews may only be created after a completed reservation.
-* One reservation may produce only one review (enforced by a unique constraint on `Review.reservationId`).
-* Restaurant owners may reply once to a review.
+**Phase 10 architecture frozen (owner-approved) — see `TASKS.md`'s "Phase 10 — Reviews: Pre-implementation architecture decisions" for the full freeze report.**
+
+* Reviews may only be created after a completed reservation (`Reservation.status === Completed`) by the User who owns that reservation (`Reservation.userId === principal.userId`) — ownership-based authorization, identical mechanism to Reservations/Notifications (AUTHORIZATION_ARCHITECTURE.md §10).
+* A guest-only reservation (`Reservation.userId === null`, `reservationGuestId !== null` — Phone/WalkIn, Phase 7.4) is **not** review-eligible in Phase 10. There is no identity-linking mechanism from a `ReservationGuest` to a later-registered `User` in this phase.
+* One reservation may produce only one review (enforced by a unique constraint on `Review.reservationId`). This constraint is permanent, not conditional on `deletedAt` — **deleting a Review does not restore eligibility to submit another Review for that same reservation.**
+* A Review's `rating` is a mandatory integer from 1 to 5 inclusive (`CHECK` constraint). `comment` is optional. There is no rating-only-vs-comment-only distinction beyond rating being required and comment not.
+* Reviews are **immutable after creation** — no rating/comment edit capability exists. (`ReviewUpdated`, previously listed under Domain Events, is removed/deferred — see Events below.)
+* Review deletion is a **soft delete** (`deletedAt`), never physical. A deleted Review stops contributing to `Restaurant.averageRating` and is never returned by any read path, but its row (and its `reservationId` uniqueness claim) persists permanently.
+* A Review may be deleted by **either** the Customer who owns it, **or** an Organization Owner/Admin of the Restaurant it belongs to (administrative deletion). Employees may not delete Reviews in Phase 10.
+* Restaurant owners (Organization Owner/Admin — never a `Restaurant.ownerId`, per AUTHORIZATION_ARCHITECTURE.md §10) may reply once to a review — `RestaurantReply` is zero-or-one per `Review`, enforced by a unique constraint on `RestaurantReply.reviewId`. Employees do not reply to reviews in Phase 10; no `reviews:reply` (or similar) permission slug exists. A `RestaurantReply` is immutable once created — no edit, no delete, no repost after any hypothetical removal (none exists).
+* Review images reuse the existing Files/MinIO pipeline (`FileOwnerType.Review`) — no second upload subsystem. Maximum 5 images per Review, same MIME/size/security policy as Restaurant Gallery images. The reviewing Customer may delete an individual image from their own Review (soft delete, same convention as every other file-owning deletion in this codebase) — this does not make the Review's `rating`/`comment` editable, and does not itself delete the Review.
+* `Restaurant.averageRating` is maintained **transactionally**: recomputed as `AVG(rating)` over that restaurant's active (`deletedAt IS NULL`) Reviews, inside the same database transaction as the triggering Review create/delete, using a row-level lock on the `Restaurant` row to serialize concurrent recomputes for the same restaurant (no new advisory-lock namespace; ADR-013/ADR-023/ADR-026 are unaffected). `averageRating` is `null` when a restaurant has zero active reviews — never `0`.
+* `Review.restaurantId` is the tenant-resolution hop (`Review.restaurantId → Restaurant.organizationId`, TENANCY.md) — `Review` carries no `organizationId` column and is not in `DIRECT_TENANT_OWNED_MODELS`. `Review.userId` is the separate ownership-authorization column, spanning organizations exactly like `Reservation.userId`.
+* No Review moderation/status workflow, no realtime (Phase 8) broadcasting, and no notification (Phase 9/OneSignal) side effects exist for any Review event in Phase 10.
 
 ---
 
@@ -886,17 +899,24 @@ Events are immutable and published only after successful business operations.
 
 ## Reviews
 
-* Submit Review
-* Reply to Review
-* Delete Review
+* Submit Review (Customer, own Completed reservation)
+* Delete Review (owning Customer, or Restaurant Organization Owner/Admin)
+* Reply to Review (Restaurant Organization Owner/Admin only; zero-or-one, immutable)
+* Delete Review Image (owning Customer, own Review only)
+
+No Update Review action exists (Reviews are immutable after creation).
 
 ---
 
 ## Offers
 
-* Create Offer
-* Publish Offer
-* Expire Offer
+* Create Offer (Owner/Admin, `Draft`)
+* Update Offer (Owner/Admin, `Draft` only — immutable once `Published`/`Expired`)
+* Publish Offer (Owner/Admin, `Draft -> Published`)
+* Expire Offer (System, BullMQ-scheduled CAS, `Published -> Expired`)
+* Delete Offer (Owner/Admin, soft delete, any state)
+
+**Phase 11 freeze (2026-07-28):** single generic `Offer` aggregate with a `type` discriminator (`Promotion`/`Coupon`/`Event`) — see `DATABASE_SCHEMA.md`. No Employee actor exists for any Offer action (no `offers:*` permission slug, same declined-scope shape as Phase 10's `reviews:reply`). No Happy Hour / recurring-schedule concept in Phase 11.
 
 ---
 
@@ -997,6 +1017,8 @@ ReservationAlreadyCompletedException
 ReservationAlreadyCancelledException
 
 ReviewAlreadyExistsException
+
+ReviewAlreadyRepliedException
 
 Exceptions should express business failures, not infrastructure failures.
 

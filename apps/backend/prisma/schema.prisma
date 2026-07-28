@@ -232,6 +232,8 @@ model User {
   reservations                Reservation[]
   waitlistEntries             ReservationWaitlistEntry[]
   notifications               Notification[]
+  reviews                     Review[]
+  restaurantReplies           RestaurantReply[]
 
   @@unique([email])
   @@unique([phone])
@@ -438,6 +440,7 @@ model Restaurant {
   occasionCategories RestaurantOccasionCategory[]
   reservations       Reservation[]
   waitlistEntries    ReservationWaitlistEntry[]
+  reviews            Review[]
 
   @@index([organizationId])
   @@index([slug])
@@ -874,6 +877,7 @@ model Reservation {
   reservationGuest ReservationGuest?         @relation(fields: [reservationGuestId], references: [id], onDelete: Restrict)
   history          ReservationHistory[]
   waitlistEntry    ReservationWaitlistEntry?
+  review           Review?
 
   @@index([reservationDate])
   @@index([tableId])
@@ -1018,6 +1022,84 @@ model ReservationHistory {
 
   @@index([reservationId])
   @@map("reservation_history")
+}
+
+// ---------------------------------------------------------------------------
+// Reviews (Phase 10 — Reviews, architecture frozen 2026-07-26,
+// DATABASE_SCHEMA.md "Reviews" / "Review Images" / "Restaurant Replies").
+// `Review.restaurantId` is the sole tenant-resolution hop
+// (`Review.restaurantId -> Restaurant.organizationId`) - `Review` carries no
+// direct `organizationId` column and is NOT added to `withTenantScoping`'s
+// `DIRECT_TENANT_OWNED_MODELS` (same transitively-tenant-owned pattern as
+// `Reservation`/`ReservationWaitlistEntry`). `Review.userId` is a separate,
+// ownership-authorization concern spanning organizations exactly like
+// `Reservation.userId` - the two are independent axes (TENANCY.md). `rating
+// BETWEEN 1 AND 5` cannot be expressed in the Prisma schema language - added
+// via a raw SQL CHECK constraint in this phase's migration, mirroring
+// ADR-013's own exclusion-constraint precedent. Reviews are immutable after
+// creation (no edit endpoint, no `ReviewUpdated` event) and soft-deleted only
+// (ADR-010) - `reservationId`'s unique index is plain, not partial/
+// conditional on `deletedAt`: deleting a Review never frees its Reservation
+// for resubmission (owner-approved Phase 10 freeze). `ReviewImage.fileId` is
+// a plain UUID pointer with no Prisma relation to `File`, matching
+// `RestaurantGallery.fileId`'s existing precedent - the Files aggregate
+// remains the sole owner of file metadata/storage location.
+// `RestaurantReply.repliedByUserId` (never an `employeeId`) corrects the
+// pre-freeze schema sketch's documentation defect - "Restaurant Owner" is the
+// `OrganizationMember.Owner` role, a `User`-backed actor with no `Employee`
+// row (AUTHORIZATION_ARCHITECTURE.md §10); Employees do not reply to Reviews
+// in Phase 10 and no new permission slug was introduced.
+// ---------------------------------------------------------------------------
+
+model Review {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  restaurantId  String    @map("restaurant_id") @db.Uuid
+  reservationId String    @unique @map("reservation_id") @db.Uuid
+  rating        Int
+  comment       String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  restaurant  Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+
+  images ReviewImage[]
+  reply  RestaurantReply?
+
+  @@index([restaurantId])
+  @@index([userId])
+  @@map("reviews")
+}
+
+model ReviewImage {
+  id        String    @id @default(uuid()) @db.Uuid
+  reviewId  String    @map("review_id") @db.Uuid
+  fileId    String    @map("file_id") @db.Uuid
+  sortOrder Int       @map("sort_order")
+  createdAt DateTime  @default(now()) @map("created_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId])
+  @@map("review_images")
+}
+
+model RestaurantReply {
+  id              String   @id @default(uuid()) @db.Uuid
+  reviewId        String   @unique @map("review_id") @db.Uuid
+  repliedByUserId String   @map("replied_by_user_id") @db.Uuid
+  comment         String
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  review        Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  repliedByUser User   @relation(fields: [repliedByUserId], references: [id], onDelete: Restrict)
+
+  @@map("restaurant_replies")
 }
 
 // ---------------------------------------------------------------------------

@@ -22,6 +22,8 @@ import { WaitlistModule } from './modules/waitlist/waitlist.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PushIdentityModule } from './infrastructure/notifications/push-identity.module';
+import { ReviewsModule } from './modules/reviews/reviews.module';
+import { DiscoveryModule } from './modules/discovery/discovery.module';
 
 @Module({
   imports: [
@@ -48,6 +50,8 @@ import { PushIdentityModule } from './infrastructure/notifications/push-identity
     RealtimeModule,
     PushIdentityModule,
     NotificationsModule,
+    ReviewsModule,
+    DiscoveryModule,
   ],
 })
 export class AppModule {}

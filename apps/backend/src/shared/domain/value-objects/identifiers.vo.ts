@@ -149,3 +149,33 @@ export class NotificationId extends UuidId {
     return new NotificationId(value);
   }
 }
+
+export class ReviewId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'ReviewId');
+  }
+
+  static create(value: string): ReviewId {
+    return new ReviewId(value);
+  }
+}
+
+export class ReviewImageId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'ReviewImageId');
+  }
+
+  static create(value: string): ReviewImageId {
+    return new ReviewImageId(value);
+  }
+}
+
+export class RestaurantReplyId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'RestaurantReplyId');
+  }
+
+  static create(value: string): RestaurantReplyId {
+    return new RestaurantReplyId(value);
+  }
+}

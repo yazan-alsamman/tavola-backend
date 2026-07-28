@@ -66,4 +66,53 @@ export class PrismaRestaurantRepository implements RestaurantRepository {
       },
     });
   }
+
+  /**
+   * Phase 10 (Reviews, architecture frozen 2026-07-26). Raw SQL, not the
+   * generic Prisma Client query builder - a single atomic `UPDATE ... SET
+   * average_rating = (SELECT AVG(...) ...)` statement, so Postgres's own
+   * row-level write lock on the target row serializes concurrent recomputes
+   * for the SAME restaurant (the second writer blocks until the first
+   * commits, then its own subquery re-evaluates against the now-committed
+   * state) - no new advisory-lock namespace, no lost updates. Deliberately
+   * narrow (never the generic `save()` full-row upsert above), so a
+   * concurrent, unrelated Restaurant profile edit can never be clobbered by
+   * a stale in-memory entity.
+   *
+   * This raw SQL necessarily bypasses `withTenantScoping`'s Prisma Client
+   * Extension (extensions only intercept the Prisma Client's own query
+   * methods, never `$executeRaw`) even though `Restaurant` is a
+   * `DIRECT_TENANT_OWNED_MODEL` - safe here specifically because every
+   * caller has already resolved and authorized this exact `restaurantId` via
+   * a tenant-scoped `findById` earlier in the same use case; this statement
+   * only ever writes the one already-authorized row by primary key, never a
+   * caller-influenced filter that could widen to another tenant's data.
+   */
+  async existsPubliclyById(id: RestaurantId): Promise<boolean> {
+    const rows = await this.prismaContext.client.$queryRaw<{ exists: boolean }[]>`
+      SELECT EXISTS(
+        SELECT 1 FROM restaurants WHERE id = ${id.value}::uuid AND deleted_at IS NULL
+      ) AS "exists"
+    `;
+    return rows[0]?.exists ?? false;
+  }
+
+  async recomputeAverageRating(restaurantId: RestaurantId, at: Date): Promise<void> {
+    await this.prismaContext.client.$executeRaw`
+      UPDATE restaurants
+      SET average_rating = (
+        SELECT AVG(rating)::numeric(3,2)
+        FROM reviews
+        WHERE restaurant_id = ${restaurantId.value}::uuid AND deleted_at IS NULL
+      ),
+      updated_at = ${at}
+      WHERE id = ${restaurantId.value}::uuid
+    `;
+  }
+
+  async lockForRatingRecompute(restaurantId: RestaurantId): Promise<void> {
+    await this.prismaContext.client.$queryRaw`
+      SELECT id FROM restaurants WHERE id = ${restaurantId.value}::uuid FOR UPDATE
+    `;
+  }
 }

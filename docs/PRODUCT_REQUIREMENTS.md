@@ -118,6 +118,9 @@ Multi-tenant SaaS enabling restaurants to manage reservations, operations, custo
 | FR-07.5 | Price category (`priceLevel` 1–4) | `Restaurants.priceLevel` |
 | FR-07.6 | Restaurant comparison (side-by-side API for selected restaurants) | ADR-018 § Comparison API |
 | FR-07.7 | Favorites | Phase 3, `Favorites` |
+| FR-07.8 | Public restaurant browsing/detail, branch listing/detail, active floor plan and table topology (unauthenticated) | `DiscoveryModule`, `DiscoveryReaderPort`, 2026-07-28 |
+
+**2026-07-28 note:** FR-07.8 is the minimal Customer-facing browsing/detail capability (plain paginated listing, no filter/sort/geo-bounding-box) - FR-07.1/07.2/07.6 (search, nearby, comparison) remain ADR-018's own future Phase 2/Phase 15.5 Discovery scope, not reopened by this addition.
 
 ## FR-08 — Menus & Offers
 
@@ -126,6 +129,8 @@ Multi-tenant SaaS enabling restaurants to manage reservations, operations, custo
 | FR-08.1 | Menus, categories, items | Phase 4+, `Menus`, `MenuCategories`, `MenuItems` |
 | FR-08.2 | Promotions, coupons, time-bound offers | Phase 11, `Offers` |
 | FR-08.3 | Offer publication and expiration | `OfferPolicy` |
+
+**Phase 11 freeze (2026-07-28):** FR-08.2's "coupons" are display-only in v1 — no redemption engine, usage tracking, or payment integration (Payments is Phase 13, unscheduled). A single generic `Offer` aggregate (`type: Promotion | Coupon | Event`) satisfies FR-08.2, not three separate entities.
 
 ## FR-09 — Reviews & Ratings
 

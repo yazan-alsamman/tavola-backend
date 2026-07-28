@@ -303,20 +303,27 @@ These are scheduled (Reminder, Late-Arrival) or staff-triggered (Table Ready) si
 
 # Review Events
 
-* ReviewCreated
-* ReviewUpdated
-* ReviewDeleted
-* RestaurantRepliedToReview
+**Phase 10 architecture frozen (owner-approved) — see `TASKS.md`'s "Phase 10 — Reviews: Pre-implementation architecture decisions" for the full freeze.** None of these events are on the Phase 8 realtime broadcast allow-list or the Phase 9 `NotificationDispatcher` allow-list — both remain fail-closed/default-deny for every Review event; no code change was required to enforce this (the allow-lists are additive, not subtractive). `ReviewUpdated` is **removed** — Reviews are immutable after creation (no rating/comment edit endpoint exists), so no event class is ever needed for it.
+
+* `ReviewCreated` — `{ reviewId, restaurantId, reservationId, userId, rating }`. Always a Customer actor (Reviews have no Employee/System creation path in Phase 10). Audited `actorType: 'User'`, `actorId: userId`. Payload deliberately excludes `comment` (event/audit is for attribution and future allow-list wiring, not content replication).
+* `ReviewDeleted` — `{ reviewId, restaurantId, reservationId, deletedBy }`. `deletedBy` is a `User.id` in every case — either the owning Customer or an Organization Owner/Admin (both attribute as `actorType: 'User'` per the existing `AuditActorType` enum, which has no `OrganizationMember` variant; Owner/Admin actions have always logged as `'User'` platform-wide, e.g. `AddRestaurantGalleryImageUseCase`). Employees never delete Reviews in Phase 10, so no `Employee` attribution path exists for this event.
+* `RestaurantRepliedToReview` — `{ reviewId, restaurantId, repliedByUserId }`. Always an Organization Owner/Admin `User.id` — no Employee reply path exists in Phase 10, so there is no dual-actor-id ambiguity to resolve here (unlike `TableMergedEvent`/`ReservationCancelledEvent`, which do need `TenantContextService.getActorType()` to disambiguate a User-or-Employee actor). Audited `actorType: 'User'`, `actorId: repliedByUserId`.
+
+No Review event ever carries `ReservationGuest.phone`/`email`/`fullName` (moot in Phase 10 — guest reservations are not review-eligible at all), employee internal identifiers (no Employee attribution path exists), or storage/MinIO internals (bucket, object key). Public Customer identity in any Review-related response is `username` only — never real name/phone/email.
 
 ---
 
 # Offer Events
 
-* OfferCreated
-* OfferUpdated
-* OfferPublished
-* OfferExpired
-* OfferDeleted
+**Phase 11 architecture frozen (owner-approved 2026-07-28) — see `TASKS.md`'s "Phase 11 — Offers: Pre-implementation architecture decisions" for the full freeze.** None of these events are on the Phase 8 realtime broadcast allow-list or the Phase 9 `NotificationDispatcher` allow-list — both remain fail-closed/default-deny for every Offer event, exactly like Review events (Phase 10 precedent); no code change is required to enforce this (the allow-lists are additive, not subtractive). **Phase 8 realtime impact: none. Phase 9 notification impact: none.**
+
+* `OfferCreated` — `{ offerId, restaurantId, createdByUserId }`. Always an Organization Owner/Admin `User.id` — no Employee creation path exists. Audited `actorType: 'User'`, `actorId: createdByUserId`.
+* `OfferUpdated` — `{ offerId, restaurantId, updatedByUserId }`. Reachable only while `status = Draft` — `Published`/`Expired` Offers are immutable, no update event can fire after publication.
+* `OfferPublished` — `{ offerId, restaurantId, publishedByUserId }`. `Draft -> Published` only.
+* `OfferExpired` — `{ offerId, restaurantId }`. `Published -> Expired` only, via the BullMQ-scheduled, CAS-guarded expiration job (`WHERE status = 'Published'`) — no authenticated actor. Audited `actorType: 'System'`, `actorId: null`.
+* `OfferDeleted` — `{ offerId, restaurantId, deletedByUserId }`. Soft delete (`deletedAt`), reachable by Owner/Admin from any state (`Draft`/`Published`/`Expired`).
+
+No Offer event carries a coupon redemption code, discount financial outcome, or customer identity — Offers have no customer-facing recipient/actor in Phase 11 (display-only; see `DATABASE_SCHEMA.md`'s Phase 11 freeze note).
 
 ---
 

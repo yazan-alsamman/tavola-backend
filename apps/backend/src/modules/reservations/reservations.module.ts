@@ -8,6 +8,8 @@ import { TablesModule } from '@modules/tables/tables.module';
 import { WAITLIST_RECHECK_QUEUE_NAME } from '@shared/infrastructure/bullmq/waitlist-recheck-queue.constants';
 import { SearchAvailabilityUseCase } from './application/use-cases/search-availability.use-case';
 import { CreateReservationUseCase } from './application/use-cases/create-reservation.use-case';
+import { ListMyReservationsUseCase } from './application/use-cases/list-my-reservations.use-case';
+import { GetMyReservationUseCase } from './application/use-cases/get-my-reservation.use-case';
 import { ApproveReservationUseCase } from './application/use-cases/approve-reservation.use-case';
 import { RejectReservationUseCase } from './application/use-cases/reject-reservation.use-case';
 import { CancelReservationUseCase } from './application/use-cases/cancel-reservation.use-case';
@@ -128,6 +130,8 @@ import { ReservationsController } from './presentation/controllers/reservations.
   providers: [
     SearchAvailabilityUseCase,
     CreateReservationUseCase,
+    ListMyReservationsUseCase,
+    GetMyReservationUseCase,
     ApproveReservationUseCase,
     RejectReservationUseCase,
     CancelReservationUseCase,
