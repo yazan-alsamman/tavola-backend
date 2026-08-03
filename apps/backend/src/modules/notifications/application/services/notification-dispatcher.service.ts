@@ -1,13 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DomainEvent } from '@shared/domain/base/domain-event.base';
 import { ReservationId, UserId } from '@shared/domain/value-objects/identifiers.vo';
-import { ClockPort } from '@shared/application/ports/clock.port';
-import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
-import {
-  CLOCK,
-  ID_GENERATOR,
-  USER_REPOSITORY,
-} from '@modules/authentication/domain/tokens/authentication.tokens';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
+import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
+import { USER_REPOSITORY } from '@modules/authentication/domain/tokens/authentication.tokens';
 import { UserRepository } from '@modules/authentication/domain/repositories/authentication.repositories';
 import {
   ReservationApprovedEvent,
@@ -26,6 +22,13 @@ import {
   RESERVATION_WAITLIST_ENTRY_REPOSITORY,
   ReservationWaitlistEntryRepository,
 } from '@modules/waitlist/domain/repositories/reservation-waitlist-entry.repository';
+import { MessageSentEvent } from '@modules/messaging/domain/events/messaging.events';
+import { MessageSenderType } from '@modules/messaging/domain/enums/messaging.enums';
+import {
+  CONVERSATION_PARTICIPANT_REPOSITORY,
+  ConversationParticipantRepository,
+} from '@modules/messaging/domain/repositories/conversation-participant.repository';
+import { ConversationId } from '@shared/domain/value-objects/identifiers.vo';
 import { Notification } from '../../domain/entities/notification.entity';
 import { NotificationChannel } from '../../domain/enums/notification.enums';
 import { NotificationCreatedEvent } from '../../domain/events/notification.events';
@@ -55,8 +58,9 @@ interface NotificationIntent {
   readonly pushEligible: boolean;
   readonly reservationId: string | null;
   readonly entryId: string | null;
+  readonly conversationId: string | null;
   readonly restaurantId: string;
-  readonly branchId: string;
+  readonly branchId: string | null;
   readonly reservationStartTime: string | null;
 }
 
@@ -79,6 +83,7 @@ export function resolveNotificationIntent(event: DomainEvent): NotificationInten
       pushEligible: true,
       reservationId: p.reservationId,
       entryId: null,
+      conversationId: null,
       restaurantId: p.restaurantId,
       branchId: p.branchId,
       reservationStartTime: null,
@@ -92,6 +97,7 @@ export function resolveNotificationIntent(event: DomainEvent): NotificationInten
       pushEligible: true,
       reservationId: p.reservationId,
       entryId: null,
+      conversationId: null,
       restaurantId: p.restaurantId,
       branchId: p.branchId,
       reservationStartTime: p.reservationStartTime,
@@ -105,6 +111,7 @@ export function resolveNotificationIntent(event: DomainEvent): NotificationInten
       pushEligible: true,
       reservationId: p.reservationId,
       entryId: null,
+      conversationId: null,
       restaurantId: p.restaurantId,
       branchId: p.branchId,
       reservationStartTime: null,
@@ -118,6 +125,7 @@ export function resolveNotificationIntent(event: DomainEvent): NotificationInten
       pushEligible: true,
       reservationId: null,
       entryId: p.entryId,
+      conversationId: null,
       restaurantId: p.restaurantId,
       branchId: p.branchId,
       reservationStartTime: null,
@@ -131,6 +139,30 @@ export function resolveNotificationIntent(event: DomainEvent): NotificationInten
       pushEligible: false,
       reservationId: p.reservationId,
       entryId: null,
+      conversationId: null,
+      restaurantId: p.restaurantId,
+      branchId: p.branchId,
+      reservationStartTime: null,
+    };
+  }
+
+  // Phase 15.6 (Messaging, DECISIONS.md D6) - customer-only: only a
+  // Restaurant-side sender (Employee/OrganizationMember) notifies the
+  // Customer participant. A Customer-sent message never notifies anyone
+  // (staff visibility is realtime-only, D9); a System-sent message is
+  // likewise excluded. No Employee/OrganizationMember ever receives a
+  // Notification row for messaging.
+  if (event instanceof MessageSentEvent) {
+    const p = event.payload;
+    if (p.senderType === MessageSenderType.Customer || p.senderType === MessageSenderType.System) {
+      return null;
+    }
+    return {
+      eventType: event.eventName,
+      pushEligible: true,
+      reservationId: null,
+      entryId: null,
+      conversationId: p.conversationId,
       restaurantId: p.restaurantId,
       branchId: p.branchId,
       reservationStartTime: null,
@@ -173,6 +205,8 @@ export class NotificationDispatcher {
     private readonly templateRepository: NotificationTemplateRepository,
     @Inject(NOTIFICATION_DELIVERY_SCHEDULER)
     private readonly deliveryScheduler: NotificationDeliverySchedulerPort,
+    @Inject(CONVERSATION_PARTICIPANT_REPOSITORY)
+    private readonly conversationParticipantRepository: ConversationParticipantRepository,
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
   ) {}
@@ -275,10 +309,23 @@ export class NotificationDispatcher {
       const entry = await this.waitlistEntryRepository.findById(intent.entryId);
       return entry?.userId ?? null;
     }
+    if (intent.conversationId !== null) {
+      const participant = await this.conversationParticipantRepository.findCustomerParticipant(
+        ConversationId.create(intent.conversationId),
+      );
+      return participant?.userId ?? null;
+    }
     return null;
   }
 
   private buildData(intent: NotificationIntent): Record<string, unknown> {
+    if (intent.conversationId !== null) {
+      return {
+        conversationId: intent.conversationId,
+        restaurantId: intent.restaurantId,
+        branchId: intent.branchId,
+      };
+    }
     if (intent.entryId !== null) {
       return {
         entryId: intent.entryId,

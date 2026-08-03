@@ -45,7 +45,12 @@ describe('Load smoke (e2e)', () => {
     process.env.ARGON2_TIME_COST = '1';
     // A concurrent burst from one loopback IP must not be mistaken for abuse
     // by the very rate limiter this smoke test is also implicitly exercising.
-    process.env.RATE_LIMIT_LOGIN_MAX = '1000';
+    // Raised from 1000 (2026-07-29, Phase 15.5 verification session): the
+    // login rate limit key is shared (per-IP, real Redis) across the entire
+    // e2e run, not just this file - at 465 tests across 41 files, the rest
+    // of the suite's own real logins can already consume a large share of a
+    // too-tight budget before this smoke test's own burst runs.
+    process.env.RATE_LIMIT_LOGIN_MAX = '10000';
 
     const moduleRef = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true, load: [authConfig] })],

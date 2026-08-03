@@ -1,17 +1,13 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { ClockPort } from '@shared/application/ports/clock.port';
-import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
+import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
 import {
   AuditLogWriterPort,
   AUDIT_LOG_WRITER,
 } from '@shared/application/ports/audit-log-writer.port';
 import { UserId, FileId } from '@shared/domain/value-objects/identifiers.vo';
 import { UserRepository } from '@modules/authentication/domain/repositories/authentication.repositories';
-import {
-  CLOCK,
-  ID_GENERATOR,
-  USER_REPOSITORY,
-} from '@modules/authentication/domain/tokens/authentication.tokens';
+import { USER_REPOSITORY } from '@modules/authentication/domain/tokens/authentication.tokens';
 import { UserNotFoundException } from '@modules/authentication/application/exceptions/user-not-found.exception';
 import {
   FileRepository,

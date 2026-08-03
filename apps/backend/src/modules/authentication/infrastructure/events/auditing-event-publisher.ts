@@ -70,6 +70,21 @@ import {
   ReviewDeletedEvent,
   RestaurantRepliedToReviewEvent,
 } from '@modules/reviews/domain/events/review.events';
+import {
+  OfferCreatedEvent,
+  OfferUpdatedEvent,
+  OfferPublishedEvent,
+  OfferExpiredEvent,
+  OfferDeletedEvent,
+} from '@modules/offers/domain/events/offer.events';
+import {
+  SubscriptionAssignedEvent,
+  SubscriptionPlanChangedEvent,
+  SubscriptionSuspendedEvent,
+  SubscriptionReactivatedEvent,
+  SubscriptionCancelledEvent,
+  SubscriptionExpiredEvent,
+} from '@modules/subscriptions/domain/events/subscription.events';
 import { LoggingEventPublisher } from './logging-event-publisher';
 
 /**
@@ -730,6 +745,144 @@ export class AuditingEventPublisher implements EventPublisherPort {
         action: 'review.replied',
         targetType: 'Review',
         targetId: event.payload.reviewId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof OfferCreatedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.createdByUserId,
+        actorType: 'User',
+        action: 'offer.created',
+        targetType: 'Offer',
+        targetId: event.payload.offerId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof OfferUpdatedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.updatedByUserId,
+        actorType: 'User',
+        action: 'offer.updated',
+        targetType: 'Offer',
+        targetId: event.payload.offerId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof OfferPublishedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.publishedByUserId,
+        actorType: 'User',
+        action: 'offer.published',
+        targetType: 'Offer',
+        targetId: event.payload.offerId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof OfferExpiredEvent) {
+      return {
+        ...base,
+        actorId: null,
+        actorType: 'System',
+        action: 'offer.expired',
+        targetType: 'Offer',
+        targetId: event.payload.offerId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof OfferDeletedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.deletedByUserId,
+        actorType: 'User',
+        action: 'offer.deleted',
+        targetType: 'Offer',
+        targetId: event.payload.offerId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof SubscriptionAssignedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'User',
+        action: 'platform_admin.subscription.assigned',
+        targetType: 'Subscription',
+        targetId: event.payload.subscriptionId,
+        organizationId: event.payload.organizationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof SubscriptionPlanChangedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'User',
+        action: 'platform_admin.subscription.plan_changed',
+        targetType: 'Subscription',
+        targetId: event.payload.subscriptionId,
+        organizationId: event.payload.organizationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof SubscriptionSuspendedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'User',
+        action: 'platform_admin.subscription.suspended',
+        targetType: 'Subscription',
+        targetId: event.payload.subscriptionId,
+        organizationId: event.payload.organizationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof SubscriptionReactivatedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'User',
+        action: 'platform_admin.subscription.reactivated',
+        targetType: 'Subscription',
+        targetId: event.payload.subscriptionId,
+        organizationId: event.payload.organizationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof SubscriptionCancelledEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'User',
+        action: 'platform_admin.subscription.cancelled',
+        targetType: 'Subscription',
+        targetId: event.payload.subscriptionId,
+        organizationId: event.payload.organizationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof SubscriptionExpiredEvent) {
+      return {
+        ...base,
+        actorId: null,
+        actorType: 'System',
+        action: 'subscription.expired',
+        targetType: 'Subscription',
+        targetId: event.payload.subscriptionId,
+        organizationId: event.payload.organizationId,
         ipAddress: null,
       };
     }

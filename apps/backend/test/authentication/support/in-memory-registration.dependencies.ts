@@ -82,6 +82,16 @@ export class InMemoryUserRepository implements UserRepository {
     return this.users.get(id.value) ?? null;
   }
 
+  async findManyByIds(ids: UserId[]): Promise<User[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const uniqueIds = [...new Set(ids.map((id) => id.value))];
+    return uniqueIds
+      .map((id) => this.users.get(id))
+      .filter((user): user is User => user !== undefined);
+  }
+
   async findByEmail(email: Email): Promise<User | null> {
     for (const user of this.users.values()) {
       if (user.email?.value === email.value) {

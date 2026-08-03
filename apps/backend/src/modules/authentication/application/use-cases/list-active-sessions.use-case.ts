@@ -1,8 +1,8 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { UserId } from '@shared/domain/value-objects/identifiers.vo';
-import { ClockPort } from '@shared/application/ports/clock.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import { DeviceSessionRepository } from '../../domain/repositories/authentication.repositories';
-import { CLOCK, DEVICE_SESSION_REPOSITORY } from '../../domain/tokens/authentication.tokens';
+import { DEVICE_SESSION_REPOSITORY } from '../../domain/tokens/authentication.tokens';
 import {
   ActiveSessionItem,
   ListActiveSessionsCommand,

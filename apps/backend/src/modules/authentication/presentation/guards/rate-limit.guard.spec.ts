@@ -59,6 +59,16 @@ class TestController {
     return null;
   }
 
+  @RateLimit('customerRegisterComplete')
+  customerRegisterCompleteHandler() {
+    return null;
+  }
+
+  @RateLimit('customerPasswordResetComplete')
+  customerPasswordResetCompleteHandler() {
+    return null;
+  }
+
   unprotectedHandler() {
     return null;
   }
@@ -310,6 +320,41 @@ describe('RateLimitGuard', () => {
 
     const [key] = consume.mock.calls[0];
     expect(key).toMatch(/^auth:ratelimit:customerRegisterSend:[a-f0-9]{64}$/);
+  });
+
+  it('keys customerRegisterComplete by canonical E.164 phone, not the raw pair (L1)', async () => {
+    const { guard, consume } = createGuard(allowedDecision);
+    const contextWithTrunkZero = createContext(controller.customerRegisterCompleteHandler, {
+      countryCode: 'SY',
+      phoneNumber: '0912345678',
+      password: 'SecurePass123!',
+    });
+    const contextWithoutTrunkZero = createContext(controller.customerRegisterCompleteHandler, {
+      countryCode: 'sy',
+      phoneNumber: '912345678',
+      password: 'SecurePass123!',
+    });
+
+    await guard.canActivate(contextWithTrunkZero);
+    await guard.canActivate(contextWithoutTrunkZero);
+
+    const [firstKey] = consume.mock.calls[0];
+    const [secondKey] = consume.mock.calls[1];
+    expect(firstKey).toBe(secondKey);
+    expect(firstKey).toMatch(/^auth:ratelimit:customerRegisterComplete:[a-f0-9]{64}$/);
+  });
+
+  it('keys customerPasswordResetComplete by canonical E.164 phone (L1)', async () => {
+    const { guard, consume } = createGuard(allowedDecision);
+    const context = createContext(controller.customerPasswordResetCompleteHandler, {
+      countryCode: 'SY',
+      phoneNumber: '0912345678',
+      newPassword: 'BrandNewPass1!',
+    });
+    await guard.canActivate(context);
+
+    const [key] = consume.mock.calls[0];
+    expect(key).toMatch(/^auth:ratelimit:customerPasswordResetComplete:[a-f0-9]{64}$/);
   });
 
   it('keys customerRegisterVerify by canonical phone AND client IP together', async () => {

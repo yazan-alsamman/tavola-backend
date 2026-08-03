@@ -179,3 +179,133 @@ export class RestaurantReplyId extends UuidId {
     return new RestaurantReplyId(value);
   }
 }
+
+export class OfferId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'OfferId');
+  }
+
+  static create(value: string): OfferId {
+    return new OfferId(value);
+  }
+}
+
+export class SubscriptionId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'SubscriptionId');
+  }
+
+  static create(value: string): SubscriptionId {
+    return new SubscriptionId(value);
+  }
+}
+
+export class SubscriptionPlanId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'SubscriptionPlanId');
+  }
+
+  static create(value: string): SubscriptionPlanId {
+    return new SubscriptionPlanId(value);
+  }
+}
+
+export class ConversationId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'ConversationId');
+  }
+
+  static create(value: string): ConversationId {
+    return new ConversationId(value);
+  }
+}
+
+export class ConversationParticipantId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'ConversationParticipantId');
+  }
+
+  static create(value: string): ConversationParticipantId {
+    return new ConversationParticipantId(value);
+  }
+}
+
+export class MessageId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'MessageId');
+  }
+
+  static create(value: string): MessageId {
+    return new MessageId(value);
+  }
+}
+
+export class MenuId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'MenuId');
+  }
+
+  static create(value: string): MenuId {
+    return new MenuId(value);
+  }
+}
+
+export class MenuCategoryId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'MenuCategoryId');
+  }
+
+  static create(value: string): MenuCategoryId {
+    return new MenuCategoryId(value);
+  }
+}
+
+export class MenuItemId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'MenuItemId');
+  }
+
+  static create(value: string): MenuItemId {
+    return new MenuItemId(value);
+  }
+}
+
+export class MenuItemOptionGroupId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'MenuItemOptionGroupId');
+  }
+
+  static create(value: string): MenuItemOptionGroupId {
+    return new MenuItemOptionGroupId(value);
+  }
+}
+
+export class MenuItemOptionId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'MenuItemOptionId');
+  }
+
+  static create(value: string): MenuItemOptionId {
+    return new MenuItemOptionId(value);
+  }
+}
+
+export class MenuItemAddOnId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'MenuItemAddOnId');
+  }
+
+  static create(value: string): MenuItemAddOnId {
+    return new MenuItemAddOnId(value);
+  }
+}
+
+export class MenuItemAvailabilityId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'MenuItemAvailabilityId');
+  }
+
+  static create(value: string): MenuItemAvailabilityId {
+    return new MenuItemAvailabilityId(value);
+  }
+}

@@ -21,6 +21,8 @@ It is important to separate two problems that are easy to conflate:
 
 This document defines the mechanism for (1) only, since it directly affects Phase 1 infrastructure and Phase 9 (Notification System) design.
 
+**Phase 15.5 (Discovery Module, architecture frozen 2026-07-29, complete/live-verified/production-verified 2026-07-30) note:** Discovery/search text matching operates against whichever locale is currently stored in `Restaurant.name`/`description` - there is no translation table to match against. This is an accepted, documented v1 limitation, not a regression: Phase 15.5 does not block on, and does not create, the open business-content-translation ADR referenced above.
+
 ---
 
 # Locale Resolution

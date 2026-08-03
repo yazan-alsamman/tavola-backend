@@ -3,14 +3,17 @@ import { PhoneNumber } from '@shared/domain/value-objects/phone-number.vo';
 import { Username } from '@shared/domain/value-objects/username.vo';
 import { Password } from '@shared/domain/value-objects/password.vo';
 import { UserId } from '@shared/domain/value-objects/identifiers.vo';
-import { ClockPort } from '@shared/application/ports/clock.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import {
   SYSTEM_CONFIG_KEYS,
   SystemConfigurationPort,
 } from '@shared/application/ports/system-configuration.port';
-import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
-import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
-import { UnitOfWorkPort } from '@shared/application/ports/unit-of-work.port';
+import {
+  EventPublisherPort,
+  EVENT_PUBLISHER,
+} from '@shared/application/ports/event-publisher.port';
+import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
+import { UnitOfWorkPort, UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
 import {
   PendingCustomerRegistrationRepository,
   UserRepository,
@@ -28,13 +31,9 @@ import {
   CompleteCustomerRegistrationResult,
 } from '../dto/complete-customer-registration.command';
 import {
-  CLOCK,
-  EVENT_PUBLISHER,
-  ID_GENERATOR,
   PASSWORD_HASHER,
   PENDING_CUSTOMER_REGISTRATION_REPOSITORY,
   SYSTEM_CONFIGURATION,
-  UNIT_OF_WORK,
   USER_REPOSITORY,
 } from '../../domain/tokens/authentication.tokens';
 

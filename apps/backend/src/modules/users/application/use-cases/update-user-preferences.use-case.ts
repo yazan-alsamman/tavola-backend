@@ -1,15 +1,12 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { ClockPort } from '@shared/application/ports/clock.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import {
   AuditLogWriterPort,
   AUDIT_LOG_WRITER,
 } from '@shared/application/ports/audit-log-writer.port';
 import { UserId } from '@shared/domain/value-objects/identifiers.vo';
 import { UserRepository } from '@modules/authentication/domain/repositories/authentication.repositories';
-import {
-  CLOCK,
-  USER_REPOSITORY,
-} from '@modules/authentication/domain/tokens/authentication.tokens';
+import { USER_REPOSITORY } from '@modules/authentication/domain/tokens/authentication.tokens';
 import { UserNotFoundException } from '@modules/authentication/application/exceptions/user-not-found.exception';
 import { UpdateUserPreferencesCommand } from '../dto/update-user-preferences.command';
 import { UserPreferencesResult } from '../dto/user-preferences.result';

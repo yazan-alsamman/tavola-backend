@@ -3,14 +3,17 @@ import { Email } from '@shared/domain/value-objects/email.vo';
 import { Password } from '@shared/domain/value-objects/password.vo';
 import { OrganizationSlug } from '@shared/domain/value-objects/organization-slug.vo';
 import { OrganizationId, UserId } from '@shared/domain/value-objects/identifiers.vo';
-import { ClockPort } from '@shared/application/ports/clock.port';
-import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
-import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
+import {
+  EventPublisherPort,
+  EVENT_PUBLISHER,
+} from '@shared/application/ports/event-publisher.port';
+import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
 import {
   SYSTEM_CONFIG_KEYS,
   SystemConfigurationPort,
 } from '@shared/application/ports/system-configuration.port';
-import { UnitOfWorkPort } from '@shared/application/ports/unit-of-work.port';
+import { UnitOfWorkPort, UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
 import {
   TenantContextPort,
   TENANT_CONTEXT_PORT,
@@ -36,6 +39,21 @@ import {
 import { OrganizationRegistrationPolicy } from '@modules/organizations/domain/services/organization-registration-policy';
 import { OrganizationMembershipPolicy } from '@modules/organizations/domain/services/organization-membership-policy';
 import { OrganizationSlugAlreadyExistsException } from '@modules/organizations/domain/exceptions/organization-slug-already-exists.exception';
+import { Subscription } from '@modules/subscriptions/domain/entities/subscription.entity';
+import { SubscriptionUsage } from '@modules/subscriptions/domain/entities/subscription-usage.entity';
+import {
+  SubscriptionRepository,
+  SUBSCRIPTION_REPOSITORY,
+} from '@modules/subscriptions/domain/repositories/subscription.repository';
+import {
+  SubscriptionPlanRepository,
+  SUBSCRIPTION_PLAN_REPOSITORY,
+} from '@modules/subscriptions/domain/repositories/subscription-plan.repository';
+import {
+  SubscriptionUsageRepository,
+  SUBSCRIPTION_USAGE_REPOSITORY,
+} from '@modules/subscriptions/domain/repositories/subscription-usage.repository';
+import { SubscriptionPlanNotFoundException } from '@modules/subscriptions/domain/exceptions/subscription-plan-not-found.exception';
 import {
   ProvisionRestaurantOwnerCommand,
   ProvisionRestaurantOwnerResult,
@@ -44,15 +62,14 @@ import { RegistrationConsentRequiredException } from '../exceptions/registration
 import { InvalidRegistrationInputException } from '../exceptions/invalid-registration-input.exception';
 import { resolveOrganizationSlug } from '../utils/organization-slug.util';
 import {
-  CLOCK,
-  EVENT_PUBLISHER,
-  ID_GENERATOR,
   PASSWORD_HASHER,
   SYSTEM_CONFIGURATION,
-  UNIT_OF_WORK,
   USER_CONSENT_REPOSITORY,
   USER_REPOSITORY,
 } from '../../domain/tokens/authentication.tokens';
+
+/** ADR-027 §11/D7 - the seeded `SubscriptionPlan.slug` provisioned automatically for every new Organization, unless overridden by `SystemConfiguration.defaultSubscriptionPlanSlug`. */
+const DEFAULT_SUBSCRIPTION_PLAN_SLUG = 'default';
 
 /**
  * ADR-022 §"Restaurant Owner Provisioning Lifecycle" / Decision #1/#3/#15.
@@ -65,6 +82,15 @@ import {
  * Password delivery to the Owner is explicitly out of backend scope
  * (Decision #15) - this use case only hashes and persists the password the
  * Platform Admin supplied.
+ *
+ * Phase 12 (Subscriptions, ADR-027 §11, 2026-07-28): this is the sole
+ * Organization-creation code path in the codebase (the historical public
+ * `RegisterOrganizationOwnerUseCase` was retired by ADR-022), so it is where
+ * the default Subscription/SubscriptionUsage are provisioned - in the same
+ * transaction as User/Organization/OrganizationMember/UserConsent, so no
+ * Organization can ever exist without exactly one Subscription (D7). No
+ * Restaurant exists yet at Organization-creation time, so no RestaurantUsage
+ * row is created here - that happens in `CreateRestaurantUseCase`.
  */
 @Injectable()
 export class ProvisionRestaurantOwnerUseCase {
@@ -75,6 +101,12 @@ export class ProvisionRestaurantOwnerUseCase {
     @Inject(ORGANIZATION_MEMBER_REPOSITORY)
     private readonly organizationMemberRepository: OrganizationMemberRepository,
     @Inject(USER_CONSENT_REPOSITORY) private readonly userConsentRepository: UserConsentRepository,
+    @Inject(SUBSCRIPTION_REPOSITORY)
+    private readonly subscriptionRepository: SubscriptionRepository,
+    @Inject(SUBSCRIPTION_PLAN_REPOSITORY)
+    private readonly subscriptionPlanRepository: SubscriptionPlanRepository,
+    @Inject(SUBSCRIPTION_USAGE_REPOSITORY)
+    private readonly subscriptionUsageRepository: SubscriptionUsageRepository,
     @Inject(PASSWORD_HASHER) private readonly passwordHasher: PasswordHasher,
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
@@ -158,10 +190,40 @@ export class ProvisionRestaurantOwnerUseCase {
 
     const consents = this.buildConsents(userId.value, command, termsVersion, privacyVersion, now);
 
+    // ADR-027 §11/D7 - resolved before the transaction (SubscriptionPlan is
+    // platform-global, not tenant-scoped, so this lookup does not need
+    // TenantContext bound). Fails loud (SubscriptionPlanNotFoundException)
+    // rather than silently creating an Organization with no Subscription -
+    // the seed script guarantees this plan exists in every real environment.
+    const defaultPlanSlug = await this.systemConfiguration.getString(
+      SYSTEM_CONFIG_KEYS.defaultSubscriptionPlanSlug,
+      DEFAULT_SUBSCRIPTION_PLAN_SLUG,
+    );
+    const defaultPlan = await this.subscriptionPlanRepository.findBySlug(defaultPlanSlug);
+    if (defaultPlan === null) {
+      throw new SubscriptionPlanNotFoundException();
+    }
+
+    const subscription = Subscription.create({
+      id: this.idGenerator.generate(),
+      organizationId: organizationId.value,
+      subscriptionPlanId: defaultPlan.planId.value,
+      startsAt: now,
+      now,
+    });
+    const subscriptionUsage = SubscriptionUsage.create({
+      id: this.idGenerator.generate(),
+      organizationId: organizationId.value,
+      now,
+    });
+
     // Same tenant-bootstrap reasoning as RegisterOrganizationOwnerUseCase:
     // this is the operation that CREATES the Organization, so no JWT/
     // interceptor-bound TenantContext can exist yet - organizationId here is
-    // this use case's own server-generated id, never client input.
+    // this use case's own server-generated id, never client input. The
+    // Subscription/SubscriptionUsage writes run inside the same transaction
+    // as User/Organization/OrganizationMember/UserConsent (D7) - an
+    // Organization can never exist without exactly one Subscription.
     await this.tenantContext.runAsync(
       {
         organizationId: organizationId.value,
@@ -174,6 +236,8 @@ export class ProvisionRestaurantOwnerUseCase {
           await this.organizationRepository.save(organization);
           await this.organizationMemberRepository.save(ownerMembership);
           await this.userConsentRepository.saveMany(consents);
+          await this.subscriptionRepository.create(subscription);
+          await this.subscriptionUsageRepository.create(subscriptionUsage);
         }),
     );
 

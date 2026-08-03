@@ -29,6 +29,18 @@ export class PrismaReviewImageRepository implements ReviewImageRepository {
     return rows.map(ReviewImagePrismaMapper.toDomain);
   }
 
+  async findManyByReviewIds(reviewIds: ReviewId[]): Promise<ReviewImage[]> {
+    if (reviewIds.length === 0) {
+      return [];
+    }
+    const uniqueIds = [...new Set(reviewIds.map((id) => id.value))];
+    const rows = await this.prismaContext.client.reviewImage.findMany({
+      where: { reviewId: { in: uniqueIds }, deletedAt: null },
+      orderBy: { sortOrder: 'asc' },
+    });
+    return rows.map(ReviewImagePrismaMapper.toDomain);
+  }
+
   async countByReviewId(reviewId: ReviewId): Promise<number> {
     return this.prismaContext.client.reviewImage.count({
       where: { reviewId: reviewId.value, deletedAt: null },

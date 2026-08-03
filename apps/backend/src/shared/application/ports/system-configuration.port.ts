@@ -20,4 +20,10 @@ export const SYSTEM_CONFIG_KEYS = {
   otpExpiryMinutes: 'otpExpiryMinutes',
   otpMaxIncorrectAttempts: 'otpMaxIncorrectAttempts',
   otpResendCooldownSeconds: 'otpResendCooldownSeconds',
+  // Phase 12 (Subscriptions, ADR-027 §38) — the one narrow scalar
+  // SystemConfiguration entry this phase needs: which seeded SubscriptionPlan
+  // slug is "the default" for automatic provisioning at Organization
+  // creation (D7). SubscriptionPlan itself remains the authoritative source
+  // of plan data (limits, entitlements) — this key never duplicates that.
+  defaultSubscriptionPlanSlug: 'defaultSubscriptionPlanSlug',
 } as const;

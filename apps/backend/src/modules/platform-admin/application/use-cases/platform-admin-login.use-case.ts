@@ -4,7 +4,7 @@ import { PlatformAdminAuthConfig } from '@config/platform-admin-auth.config';
 import { Email } from '@shared/domain/value-objects/email.vo';
 import { Password } from '@shared/domain/value-objects/password.vo';
 import { PasswordHash } from '@shared/domain/value-objects/password-hash.vo';
-import { ClockPort } from '@shared/application/ports/clock.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import {
   AuditLogWriterPort,
   AUDIT_LOG_WRITER,
@@ -18,11 +18,9 @@ import {
   USER_REPOSITORY,
   LOGIN_ATTEMPT_REPOSITORY,
   PASSWORD_HASHER,
-  ID_GENERATOR,
   SYSTEM_CONFIGURATION,
-  CLOCK,
 } from '@modules/authentication/domain/tokens/authentication.tokens';
-import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
+import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
 import {
   SYSTEM_CONFIG_KEYS,
   SystemConfigurationPort,

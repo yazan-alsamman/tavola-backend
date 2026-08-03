@@ -186,6 +186,14 @@ Route shape: `JwtAuthGuard` + `SessionVersionGuard` only; actor-type branching a
 | `employees:*` | `employees:manage` | Manager |
 | `reports:*` | `reports:view` | Manager, Owner |
 | `offers:*` | `offers:manage` | Manager |
+| `conversations:*` | `conversations:manage` | Manager, Receptionist |
+| `menu:*` (Phase 18, architecture frozen 2026-08-02, ADR-031 — not implemented) | `menu:manage` | Manager |
+
+**Phase 14 — Analytics (implemented and live-verified 2026-07-28, ADR-028):** `reports:view` gets its first real consumer. No new slug — the seeded-but-previously-unused `reports:view` (`prisma/seed.ts`, already granted to `manager`) guards every Analytics route. Route shape follows ADR-026's precedent exactly: `JwtAuthGuard` + `SessionVersionGuard` only at the route; the use case branches OrganizationMember Owner/Admin **or** Employee with `reports:view` (+ branch assignment for Branch-scoped queries) — no NestJS OR-composed guard is introduced.
+
+**Phase 15.6 — Messaging (architecture designed 2026-07-30, ADR-020 corrected by ADR-030; see DECISIONS.md D15):** `conversations:manage` is a new, dedicated slug — no existing permission fits (unlike Analytics' reuse of `reports:view`). Same narrow dual-actor shape as ADR-026/ADR-028: `JwtAuthGuard` + `SessionVersionGuard` only at the route; `assertActorCanManageConversation`/`resolveMessagingActorId` (mirroring `assertActorCanManageTables`/`resolveTableManagementActorId`) branch inside each staff-facing use case between **OrganizationMember** Owner/Admin (org-scoped) **or** **Employee** holding `conversations:manage` **and** assigned to the conversation's Branch (branch-scoped). The Customer (`User`) side of every shared endpoint is single-actor: ownership check only (`conversation`'s `Customer` participant `userId` match), no permission slug involved. Cross-tenant/cross-branch resolution is IDOR-safe (D14): unresolvable → 404, resolvable-but-unauthorized → 403.
+
+**Phase 18 — Menu Management (architecture frozen 2026-08-02, ADR-031 — not implemented, no code exists):** `menu:manage` is a new, dedicated slug, single-actor (no dual-actor OR-branching needed — unlike Merge/Split, Analytics, or Messaging, Menu management has no ownership-based Customer write path to disambiguate against). `OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)` **or** `PermissionsGuard` + `@RequirePermission('menu:manage')` for an Employee — the same two-guard-shape-not-composed pattern `RestaurantsController`'s gallery/settings endpoints already use, resolved per-route rather than via a single OR-composed guard. Default role assignment (least-privilege, mirroring `tables:manage`'s existing Manager-only grant): **Manager** receives it; **Receptionist**/**Cashier** do not — Menu content changes are a back-of-house/managerial responsibility, not a front-of-house one. Customer read access to the public Menu endpoints (`List Restaurant Menu`, `Get Category`, `Get Item Details`) carries **no guard at all** — genuinely public/unauthenticated, matching the existing Discovery/public-Offer-listing/`TaxonomyCategoriesController` precedent. Cross-organization management access remains IDOR-safe (unknown/foreign/soft-deleted Menu/Category/Item → 404 via the `restaurantId -> Restaurant.organizationId` tenancy chain).
 
 Namespace depth is conventional (colon-separated); authorization checks a single slug unless a policy aggregates multiple.
 
@@ -306,7 +314,7 @@ Decorators set metadata only; guards enforce.
 | **Organization Admin** | Members, restaurants; not ownership transfer alone | Org role matrix |
 | **Restaurant Manager** (Employee) | Restaurant ops per role permissions + branch scope | RBAC + branch assignments |
 | **Receptionist** | Reservations, limited table read | RBAC subset |
-| **Cashier** | Payments/offers (future), read reservations | RBAC subset |
+| **Cashier** | Reservations (`reservations:create` only), read reservations — no payment/checkout functionality (TAVLA does not process payments) | RBAC subset |
 | **Customer** | Own profile, own reservations, own reviews, own notifications (Phase 9, implemented 2026-07-25) | `userId` match on resource |
 | **Reservation guest** | No account — staff creates on behalf | Staff permission, not customer JWT |
 
@@ -455,12 +463,14 @@ A Review/foreign-organization Restaurant, or an unknown Review id, collapses to 
 
 **Customer Restaurant Discovery & Public Read Surface (owner-authorized, implemented 2026-07-28):** `GET /discovery/restaurants[/:restaurantId[/branches[/:branchId[/floor-plan]]]]` carries **no guard at all** - genuinely public/unauthenticated, matching ADR-018 §4 ("Search/nearby endpoints are public with rate limiting") and the pre-existing `TaxonomyCategoriesController`/public-Review-listing precedent. This is a parallel read path, not a change to the Owner/Admin management routes at the same resource names (`/restaurants`, `/restaurants/:id/branches`, `/tables`), which remain exactly as `OrganizationMemberGuard`-gated as before. Separately, `GET /reservations` and `GET /reservations/:id` (Customer's own reservations) extend `ReservationsController`'s existing ownership-only shape (`JwtAuthGuard`/`SessionVersionGuard` only, no RBAC) - `resource.userId === principal.userId`, IDOR-safe 404 for any other actor's reservation, exactly like Reviews' `listMine`/`/users/me/favorites`. No new permission slug, no new guard, no change to `PermissionResolver`.
 
-**Phase 11 — Offers (architecture frozen, owner-approved 2026-07-28):** `OfferPolicy` is single-actor, no dual-guard shape. Every management action (Create, Update, Publish, Delete) requires `OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)` through the `Offer.restaurantId -> Restaurant.organizationId` ownership chain — the same org-role gate Restaurant Settings/Working Hours/Gallery/Taxonomy already use. **No Employee authorization path exists for any Offer action, and no `offers:*` permission slug is introduced** — evaluated and explicitly declined, the same shape Phase 10 declined for `reviews:reply`. System is authorized only for the automatic `Published -> Expired` transition (no principal, `actorType: 'System'`). Customer/User has read-only access to the restaurant-scoped public Offer listing (`Published`, currently active, not soft-deleted) — no write path of any kind. An unknown/foreign-organization/soft-deleted Offer collapses to **404** for every management action, matching the established IDOR-safe convention.
+**Phase 11 — Offers (architecture frozen, owner-approved, implemented and live-verified 2026-07-28):** `OfferPolicy` is single-actor, no dual-guard shape. Every management action (Create, Update, Publish, Delete) requires `OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)` through the `Offer.restaurantId -> Restaurant.organizationId` ownership chain — the same org-role gate Restaurant Settings/Working Hours/Gallery/Taxonomy already use. **No Employee authorization path exists for any Offer action, and no `offers:*` permission slug is introduced** — evaluated and explicitly declined, the same shape Phase 10 declined for `reviews:reply`. System is authorized only for the automatic `Published -> Expired` transition (no principal, `actorType: 'System'`). Customer/User has read-only access to the restaurant-scoped public Offer listing (`Published`, currently active, not soft-deleted) — no write path of any kind. An unknown/foreign-organization/soft-deleted Offer collapses to **404** for every management action, matching the established IDOR-safe convention.
 
 | `SubscriptionPolicy` | Plan limits, downgrade rules, feature gating |
 | `AnalyticsPolicy` | Role-based report access, PII masking |
 | `OrganizationPolicy` | Owner transfer, member invite/remove, sole Owner invariant |
 | `FilePolicy` | Public vs private bucket, owner upload |
+
+**Phase 14 — Analytics dual-actor note (implemented and live-verified 2026-07-28, ADR-028):** `AnalyticsPolicy` evaluates: (a) OrganizationMember Owner/Admin of the organization that transitively owns the queried Restaurant/Branch, **or** (b) Employee with `reports:view` and, for any Branch-scoped or timezone-bucketed query (Peak Hours, service-day trend, booking-created trend), branch assignment for the target `branchId`. PII masking means the response is aggregate-only by construction — no `ReservationGuest` field, no raw customer/guest list is ever assembled, so there is no separate masking step to apply. Same use-case-level branching shape as ADR-026's Merge/Split and Phase 7.3's Cancel/Reschedule; no new guard-composition mechanism.
 
 **Example (conceptual):**
 
@@ -511,14 +521,21 @@ Flags never bypass authentication. Disabled feature → `403` with `FEATURE_DISA
 
 # 22. Subscription-based Authorization
 
-`SubscriptionValidator` (DOMAIN_MODEL.md) enforces plan limits **before** resource creation.
+`SubscriptionValidator` (DOMAIN_MODEL.md) enforces plan limits **before** resource creation. Entitlement/access contract only (ADR-027) — no billing/payment concept is involved.
 
-Authorization flow:
+Authorization flow (Restaurant creation example):
 
 1. RBAC: does actor hold `restaurants:create`?
 2. Subscription policy: is `organization.usage.restaurants < plan.maxRestaurants`?
 
-Limit exceeded → `OrganizationLimitExceededException` (403).
+Authorization flow (Branch/Employee creation — **per-Restaurant** limits, ADR-027):
+
+1. RBAC: does actor hold `branches:manage` / `employees:manage`?
+2. Subscription policy: is `restaurant.usage.branches < plan.maxBranchesPerRestaurant`? (or `restaurant.usage.employees < plan.maxEmployeesPerRestaurant`) — checked against **the target Restaurant's own `RestaurantUsage` row**, never an Organization-wide sum, since these two limits apply individually to each Restaurant under the Organization, not to the Organization's aggregate total.
+
+Limit exceeded → `OrganizationLimitExceededException` (403) in both cases — the exception name is retained even for the per-Restaurant checks, since the *plan* that defines the limit is still sourced from the Organization's one Subscription.
+
+No `maxMonthlyReservations`/reservation-volume check exists anywhere in this flow (ADR-027, owner product decision) — `CreateReservationUseCase` has no subscription-entitlement dependency.
 
 Usage counters are incremental (domain events), not live `COUNT(*)`.
 

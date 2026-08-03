@@ -103,30 +103,12 @@ export class PrismaTableRepository implements TableRepository {
     // Batches every merge-group membership lookup this loop needs into ONE
     // query (instead of one `findManyByMergeGroupId` round-trip per merged
     // candidate) - this method is on the hot path for both availability
-    // search and waitlist promotion.
-    const mergeGroupIds = [
-      ...new Set(
-        candidates
-          .filter((table) => table.mergeGroupId !== null)
-          .map((table) => table.mergeGroupId as string),
-      ),
-    ];
-    const membersByGroup = new Map<string, Table[]>();
-    if (mergeGroupIds.length > 0) {
-      const memberRows = await this.prismaContext.client.table.findMany({
-        where: { mergeGroupId: { in: mergeGroupIds }, deletedAt: null },
-      });
-      for (const row of memberRows) {
-        const member = TablePrismaMapper.toDomain(row);
-        const key = member.mergeGroupId as string;
-        const members = membersByGroup.get(key);
-        if (members) {
-          members.push(member);
-        } else {
-          membersByGroup.set(key, [member]);
-        }
-      }
-    }
+    // search and waitlist promotion. Reuses `findManyByMergeGroupIds`
+    // (Phase 15 Optimization) rather than duplicating the same query.
+    const mergeGroupIds = candidates
+      .filter((table) => table.mergeGroupId !== null)
+      .map((table) => table.mergeGroupId as string);
+    const membersByGroup = await this.findManyByMergeGroupIds(mergeGroupIds);
 
     const eligible: Table[] = [];
     for (const table of candidates) {
@@ -203,6 +185,28 @@ export class PrismaTableRepository implements TableRepository {
       where: { mergeGroupId, deletedAt: null },
     });
     return rows.map(TablePrismaMapper.toDomain);
+  }
+
+  async findManyByMergeGroupIds(mergeGroupIds: string[]): Promise<Map<string, Table[]>> {
+    if (mergeGroupIds.length === 0) {
+      return new Map();
+    }
+    const uniqueIds = [...new Set(mergeGroupIds)];
+    const rows = await this.prismaContext.client.table.findMany({
+      where: { mergeGroupId: { in: uniqueIds }, deletedAt: null },
+    });
+    const membersByGroup = new Map<string, Table[]>();
+    for (const row of rows) {
+      const member = TablePrismaMapper.toDomain(row);
+      const key = member.mergeGroupId as string;
+      const existing = membersByGroup.get(key);
+      if (existing) {
+        existing.push(member);
+      } else {
+        membersByGroup.set(key, [member]);
+      }
+    }
+    return membersByGroup;
   }
 
   async acquireTopologyLocks(tableIds: string[]): Promise<void> {

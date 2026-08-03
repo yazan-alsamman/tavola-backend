@@ -682,4 +682,177 @@ describe('Review/ReviewImage/RestaurantReply round-trip via Prisma repositories 
     // AVG(5,4,3,2,1) = 3.00 - must reflect every concurrently-inserted row.
     expect(restaurantRow.averageRating?.toNumber()).toBe(3);
   });
+
+  // Deliberately does NOT use `seedCompletedReservation()`/`nextReservationWindow()`
+  // - that helper's shared, file-scoped `reservationHourOffset` counter
+  // cycles every 20 calls (mod 20) and this file already sits close to that
+  // ceiling, so consuming two more slots risks a wraparound collision with
+  // an earlier test's still-`Completed` reservation on the same table
+  // (ADR-013's exclusion constraint - confirmed by reproduction while
+  // developing this test). Using a reservation date far outside that
+  // helper's fixed 2026-07-20 cycle keeps this test fully isolated from it.
+  it('Phase 15 (Optimization): findManyByReviewIds batches images/replies for multiple Reviews in one call each, excludes soft-deleted, preserves per-review sortOrder', async () => {
+    if (!dbAvailable) return;
+    const user = await seedUser();
+    const ownerUser = await seedUser();
+    const reservationA = await rawPrisma.reservation.create({
+      data: {
+        userId: user.id,
+        restaurantId: restaurant.id,
+        branchId: branch.id,
+        tableId: table.id,
+        reservationDate: new Date(Date.UTC(2026, 7, 15, 0, 0, 0)),
+        reservationStartTime: new Date(Date.UTC(2026, 7, 15, 10, 0, 0)),
+        reservationEndTime: new Date(Date.UTC(2026, 7, 15, 12, 0, 0)),
+        guests: 2,
+        status: 'Completed',
+        source: 'Online',
+        createdBy: user.id,
+        completedAt: new Date(),
+      },
+    });
+    const reservationB = await rawPrisma.reservation.create({
+      data: {
+        userId: user.id,
+        restaurantId: restaurant.id,
+        branchId: branch.id,
+        tableId: table.id,
+        reservationDate: new Date(Date.UTC(2026, 7, 15, 0, 0, 0)),
+        reservationStartTime: new Date(Date.UTC(2026, 7, 15, 14, 0, 0)),
+        reservationEndTime: new Date(Date.UTC(2026, 7, 15, 16, 0, 0)),
+        guests: 2,
+        status: 'Completed',
+        source: 'Online',
+        createdBy: user.id,
+        completedAt: new Date(),
+      },
+    });
+    const reviewA = Review.create({
+      id: randomUUID(),
+      userId: user.id,
+      restaurantId: restaurant.id,
+      reservationId: reservationA.id,
+      rating: 4,
+      comment: null,
+      now: new Date(),
+    });
+    const reviewB = Review.create({
+      id: randomUUID(),
+      userId: user.id,
+      restaurantId: restaurant.id,
+      reservationId: reservationB.id,
+      rating: 5,
+      comment: null,
+      now: new Date(),
+    });
+    await reviewRepository.create(reviewA);
+    await reviewRepository.create(reviewB);
+
+    const fileA1 = await rawPrisma.file.create({
+      data: {
+        ownerId: reviewA.reviewId.value,
+        ownerType: 'Review',
+        bucket: 'tavla-public',
+        objectKey: `reviews/${reviewA.reviewId.value}/images/1.jpg`,
+        mimeType: 'image/jpeg',
+        sizeBytes: 100,
+        accessPolicy: 'Public',
+      },
+    });
+    const fileA2 = await rawPrisma.file.create({
+      data: {
+        ownerId: reviewA.reviewId.value,
+        ownerType: 'Review',
+        bucket: 'tavla-public',
+        objectKey: `reviews/${reviewA.reviewId.value}/images/2.jpg`,
+        mimeType: 'image/jpeg',
+        sizeBytes: 100,
+        accessPolicy: 'Public',
+      },
+    });
+    const fileB1 = await rawPrisma.file.create({
+      data: {
+        ownerId: reviewB.reviewId.value,
+        ownerType: 'Review',
+        bucket: 'tavla-public',
+        objectKey: `reviews/${reviewB.reviewId.value}/images/1.jpg`,
+        mimeType: 'image/jpeg',
+        sizeBytes: 100,
+        accessPolicy: 'Public',
+      },
+    });
+
+    const imageA1 = ReviewImage.create({
+      id: randomUUID(),
+      reviewId: reviewA.reviewId.value,
+      fileId: fileA1.id,
+      sortOrder: 1,
+      createdAt: new Date(),
+      deletedAt: null,
+    });
+    const imageA2 = ReviewImage.create({
+      id: randomUUID(),
+      reviewId: reviewA.reviewId.value,
+      fileId: fileA2.id,
+      sortOrder: 0,
+      createdAt: new Date(),
+      deletedAt: null,
+    });
+    const imageADeleted = ReviewImage.create({
+      id: randomUUID(),
+      reviewId: reviewA.reviewId.value,
+      fileId: fileA1.id,
+      sortOrder: 2,
+      createdAt: new Date(),
+      deletedAt: null,
+    });
+    const imageB1 = ReviewImage.create({
+      id: randomUUID(),
+      reviewId: reviewB.reviewId.value,
+      fileId: fileB1.id,
+      sortOrder: 0,
+      createdAt: new Date(),
+      deletedAt: null,
+    });
+    await reviewImageRepository.create(imageA1);
+    await reviewImageRepository.create(imageA2);
+    await reviewImageRepository.create(imageADeleted);
+    await reviewImageRepository.create(imageB1);
+    await reviewImageRepository.softDelete(imageADeleted.reviewImageId, new Date());
+
+    const replyA = RestaurantReply.create({
+      id: randomUUID(),
+      reviewId: reviewA.reviewId.value,
+      repliedByUserId: ownerUser.id,
+      comment: 'Thanks for the review!',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await restaurantReplyRepository.create(replyA);
+    // reviewB deliberately has no reply.
+
+    const batchedImages = await reviewImageRepository.findManyByReviewIds([
+      reviewA.reviewId,
+      reviewB.reviewId,
+    ]);
+    const batchedReplies = await restaurantReplyRepository.findManyByReviewIds([
+      reviewA.reviewId,
+      reviewB.reviewId,
+    ]);
+
+    const imagesForA = batchedImages.filter((i) => i.reviewId.value === reviewA.reviewId.value);
+    const imagesForB = batchedImages.filter((i) => i.reviewId.value === reviewB.reviewId.value);
+    expect(imagesForA.map((i) => i.sortOrder)).toEqual([0, 1]);
+    expect(imagesForB.map((i) => i.sortOrder)).toEqual([0]);
+    expect(
+      batchedImages.some((i) => i.reviewImageId.value === imageADeleted.reviewImageId.value),
+    ).toBe(false);
+
+    expect(batchedReplies).toHaveLength(1);
+    expect(batchedReplies[0].reviewId.value).toBe(reviewA.reviewId.value);
+
+    // Empty input returns [] without issuing a query.
+    expect(await reviewImageRepository.findManyByReviewIds([])).toEqual([]);
+    expect(await restaurantReplyRepository.findManyByReviewIds([])).toEqual([]);
+  });
 });

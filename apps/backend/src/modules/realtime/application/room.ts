@@ -1,16 +1,19 @@
 /**
- * Phase 8 §9 — exactly these four room types; the frozen freeze note is
- * explicit that no future room type (`waitlist:{id}`, `notification:{id}`,
- * `conversation:{id}`, ...) belongs in this list without a new architecture
- * freeze. Client `room.subscribe`/`room.unsubscribe` payloads name one of
- * these four strings - anything else is rejected before any authorization
- * logic runs (`UnknownRoomTypeException`).
+ * Phase 8 §9 — the original frozen four; Phase 15.6 (Messaging, DECISIONS.md
+ * D9) adds `Conversation` as a fifth, the specific addition this freeze note
+ * had anticipated and gated behind "a new architecture freeze." No other
+ * future room type (`waitlist:{id}`, `notification:{id}`, ...) belongs in
+ * this list without its own equivalent freeze. Client
+ * `room.subscribe`/`room.unsubscribe` payloads name one of these five
+ * strings - anything else is rejected before any authorization logic runs
+ * (`UnknownRoomTypeException`).
  */
 export enum RoomType {
   Organization = 'organization',
   Restaurant = 'restaurant',
   Branch = 'branch',
   Reservation = 'reservation',
+  Conversation = 'conversation',
 }
 
 export function isRoomType(value: unknown): value is RoomType {
@@ -18,7 +21,8 @@ export function isRoomType(value: unknown): value is RoomType {
     value === RoomType.Organization ||
     value === RoomType.Restaurant ||
     value === RoomType.Branch ||
-    value === RoomType.Reservation
+    value === RoomType.Reservation ||
+    value === RoomType.Conversation
   );
 }
 

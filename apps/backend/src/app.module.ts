@@ -23,7 +23,12 @@ import { RealtimeModule } from './modules/realtime/realtime.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PushIdentityModule } from './infrastructure/notifications/push-identity.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
+import { OffersModule } from './modules/offers/offers.module';
 import { DiscoveryModule } from './modules/discovery/discovery.module';
+import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { MessagingModule } from './modules/messaging/messaging.module';
+import { MenusModule } from './modules/menus/menus.module';
 
 @Module({
   imports: [
@@ -51,7 +56,12 @@ import { DiscoveryModule } from './modules/discovery/discovery.module';
     PushIdentityModule,
     NotificationsModule,
     ReviewsModule,
+    OffersModule,
     DiscoveryModule,
+    SubscriptionsModule,
+    AnalyticsModule,
+    MessagingModule,
+    MenusModule,
   ],
 })
 export class AppModule {}

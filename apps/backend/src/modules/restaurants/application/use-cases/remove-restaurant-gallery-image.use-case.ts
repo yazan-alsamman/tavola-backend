@@ -1,12 +1,11 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { ClockPort } from '@shared/application/ports/clock.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import {
   AuditLogWriterPort,
   AUDIT_LOG_WRITER,
 } from '@shared/application/ports/audit-log-writer.port';
-import { UnitOfWorkPort } from '@shared/application/ports/unit-of-work.port';
+import { UnitOfWorkPort, UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
 import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
-import { CLOCK, UNIT_OF_WORK } from '@modules/authentication/domain/tokens/authentication.tokens';
 import {
   FileRepository,
   FILE_REPOSITORY,

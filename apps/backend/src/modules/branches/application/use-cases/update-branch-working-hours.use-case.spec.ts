@@ -11,11 +11,14 @@ import {
   CollectingAuditLogWriter,
   CollectingEventPublisher,
   FixedClock,
+  ImmediateUnitOfWork,
   UuidGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
 import { InMemoryBranchWorkingHoursRepository } from '../../../../../test/branches/support/in-memory-branch-working-hours.repository';
+import { RestaurantUsage } from '@modules/restaurants/domain/entities/restaurant-usage.entity';
+import { createPermissiveSubscriptionFixture } from '../../../../../test/subscriptions/support/permissive-subscription-fixture';
 
 describe('UpdateBranchWorkingHoursUseCase', () => {
   const fixedNow = new Date('2026-07-16T12:00:00.000Z');
@@ -59,12 +62,33 @@ describe('UpdateBranchWorkingHoursUseCase', () => {
     branchRepository: InMemoryBranchRepository,
     restaurantRepository: InMemoryRestaurantRepository,
   ): Promise<string> {
+    const { subscriptionRepository, subscriptionPlanRepository, restaurantUsageRepository } =
+      createPermissiveSubscriptionFixture(
+        organizationId,
+        {
+          planId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          subscriptionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          usageId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        },
+        fixedNow,
+      );
+    await restaurantUsageRepository.create(
+      RestaurantUsage.create({
+        id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        restaurantId,
+        now: fixedNow,
+      }),
+    );
     const createUseCase = new CreateBranchUseCase(
       branchRepository,
       restaurantRepository,
+      restaurantUsageRepository,
+      subscriptionRepository,
+      subscriptionPlanRepository,
       new FixedClock(fixedNow),
       new UuidGenerator(),
       new CollectingEventPublisher(),
+      new ImmediateUnitOfWork(),
     );
     const result = await createUseCase.execute({
       actor: baseActor(),

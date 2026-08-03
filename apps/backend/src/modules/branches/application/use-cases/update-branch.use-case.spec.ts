@@ -10,10 +10,13 @@ import { AccessTokenActorType } from '@modules/authentication/domain/services/ac
 import {
   CollectingEventPublisher,
   FixedClock,
+  ImmediateUnitOfWork,
   SequentialIdGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
+import { RestaurantUsage } from '@modules/restaurants/domain/entities/restaurant-usage.entity';
+import { createPermissiveSubscriptionFixture } from '../../../../../test/subscriptions/support/permissive-subscription-fixture';
 
 describe('UpdateBranchUseCase', () => {
   const fixedNow = new Date('2026-07-16T12:00:00.000Z');
@@ -63,15 +66,36 @@ describe('UpdateBranchUseCase', () => {
     await seedRestaurant(restaurantRepository, restaurantId);
     await seedRestaurant(restaurantRepository, otherRestaurantId);
 
+    const { subscriptionRepository, subscriptionPlanRepository, restaurantUsageRepository } =
+      createPermissiveSubscriptionFixture(
+        organizationId,
+        {
+          planId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          subscriptionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          usageId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        },
+        fixedNow,
+      );
+    await restaurantUsageRepository.create(
+      RestaurantUsage.create({
+        id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        restaurantId,
+        now: fixedNow,
+      }),
+    );
     const createUseCase = new CreateBranchUseCase(
       branchRepository,
       restaurantRepository,
+      restaurantUsageRepository,
+      subscriptionRepository,
+      subscriptionPlanRepository,
       new FixedClock(fixedNow),
       new SequentialIdGenerator([
         '11111111-1111-4111-8111-111111111111',
         '22222222-2222-4222-8222-222222222222',
       ]),
       new CollectingEventPublisher(),
+      new ImmediateUnitOfWork(),
     );
     const created = await createUseCase.execute({
       actor: baseActor(),

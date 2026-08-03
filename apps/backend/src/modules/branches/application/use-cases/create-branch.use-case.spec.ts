@@ -9,10 +9,13 @@ import { BranchId, RestaurantId } from '@shared/domain/value-objects/identifiers
 import {
   CollectingEventPublisher,
   FixedClock,
+  ImmediateUnitOfWork,
   SequentialIdGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
+import { RestaurantUsage } from '@modules/restaurants/domain/entities/restaurant-usage.entity';
+import { createPermissiveSubscriptionFixture } from '../../../../../test/subscriptions/support/permissive-subscription-fixture';
 
 describe('CreateBranchUseCase', () => {
   const fixedNow = new Date('2026-07-16T12:00:00.000Z');
@@ -62,12 +65,33 @@ describe('CreateBranchUseCase', () => {
     const branchRepository = new InMemoryBranchRepository();
     const restaurantRepository = new InMemoryRestaurantRepository();
     const eventPublisher = new CollectingEventPublisher();
+    const { subscriptionRepository, subscriptionPlanRepository, restaurantUsageRepository } =
+      createPermissiveSubscriptionFixture(
+        organizationId,
+        {
+          planId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          subscriptionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          usageId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        },
+        fixedNow,
+      );
+    void restaurantUsageRepository.create(
+      RestaurantUsage.create({
+        id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        restaurantId,
+        now: fixedNow,
+      }),
+    );
     const useCase = new CreateBranchUseCase(
       branchRepository,
       restaurantRepository,
+      restaurantUsageRepository,
+      subscriptionRepository,
+      subscriptionPlanRepository,
       new FixedClock(fixedNow),
       new SequentialIdGenerator([branchId, eventId]),
       eventPublisher,
+      new ImmediateUnitOfWork(),
     );
     return { useCase, branchRepository, restaurantRepository, eventPublisher };
   }

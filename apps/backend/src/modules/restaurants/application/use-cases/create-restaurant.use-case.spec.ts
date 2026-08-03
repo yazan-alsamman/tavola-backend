@@ -12,11 +12,13 @@ import {
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
+import { createPermissiveSubscriptionFixture } from '../../../../../test/subscriptions/support/permissive-subscription-fixture';
 
 describe('CreateRestaurantUseCase', () => {
   const fixedNow = new Date('2026-07-16T12:00:00.000Z');
   const restaurantId = '11111111-1111-4111-8111-111111111111';
   const settingsId = '55555555-5555-4555-8555-555555555555';
+  const usageId = '66666666-6666-4666-8666-666666666666';
   const eventId = '22222222-2222-4222-8222-222222222222';
   const organizationId = '33333333-3333-4333-8333-333333333333';
 
@@ -37,15 +39,39 @@ describe('CreateRestaurantUseCase', () => {
     const restaurantRepository = new InMemoryRestaurantRepository();
     const restaurantSettingsRepository = new InMemoryRestaurantSettingsRepository();
     const eventPublisher = new CollectingEventPublisher();
+    const {
+      subscriptionRepository,
+      subscriptionPlanRepository,
+      subscriptionUsageRepository,
+      restaurantUsageRepository,
+    } = createPermissiveSubscriptionFixture(
+      organizationId,
+      {
+        planId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        subscriptionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        usageId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      },
+      fixedNow,
+    );
     const useCase = new CreateRestaurantUseCase(
       restaurantRepository,
       restaurantSettingsRepository,
+      restaurantUsageRepository,
+      subscriptionRepository,
+      subscriptionPlanRepository,
+      subscriptionUsageRepository,
       new FixedClock(fixedNow),
-      new SequentialIdGenerator([restaurantId, settingsId, eventId]),
+      new SequentialIdGenerator([restaurantId, settingsId, usageId, eventId]),
       eventPublisher,
       new ImmediateUnitOfWork(),
     );
-    return { useCase, restaurantRepository, restaurantSettingsRepository, eventPublisher };
+    return {
+      useCase,
+      restaurantRepository,
+      restaurantSettingsRepository,
+      eventPublisher,
+      subscriptionUsageRepository,
+    };
   }
 
   it('creates a restaurant scoped to the actor organization, deriving the slug from the name', async () => {
@@ -118,9 +144,22 @@ describe('CreateRestaurantUseCase', () => {
       priceLevel: null,
     });
 
+    const secondFixture = createPermissiveSubscriptionFixture(
+      organizationId,
+      {
+        planId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        subscriptionId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        usageId: 'ffffffff-ffff-4fff-8fff-fffffffffffe',
+      },
+      fixedNow,
+    );
     const second = new CreateRestaurantUseCase(
       restaurantRepository,
       new InMemoryRestaurantSettingsRepository(),
+      secondFixture.restaurantUsageRepository,
+      secondFixture.subscriptionRepository,
+      secondFixture.subscriptionPlanRepository,
+      secondFixture.subscriptionUsageRepository,
       new FixedClock(fixedNow),
       new SequentialIdGenerator(['44444444-4444-4444-8444-444444444444']),
       new CollectingEventPublisher(),

@@ -3,6 +3,7 @@ import { AuthenticationModule } from '@modules/authentication/authentication.mod
 import { AuthorizationModule } from '@modules/authorization/authorization.module';
 import { RestaurantsModule } from '@modules/restaurants/restaurants.module';
 import { BranchesModule } from '@modules/branches/branches.module';
+import { SubscriptionsModule } from '@modules/subscriptions/subscriptions.module';
 import { InviteEmployeeUseCase } from './application/use-cases/invite-employee.use-case';
 import { AssignEmployeeRoleUseCase } from './application/use-cases/assign-employee-role.use-case';
 import { AssignEmployeeToBranchUseCase } from './application/use-cases/assign-employee-branch.use-case';
@@ -26,9 +27,22 @@ import { EmployeesController } from './presentation/controllers/employees.contro
  * `Restaurant Manager` role's `employees:manage` permission (TASKS.md Phase
  * 7.0 decision note item 2). No migration: all backing tables already exist
  * from Phase 2.1.
+ *
+ * Phase 12 (Subscriptions, ADR-027 §8/D14, 2026-07-28): `SubscriptionsModule`
+ * supplies `SUBSCRIPTION_REPOSITORY`/`SUBSCRIPTION_PLAN_REPOSITORY` so
+ * `InviteEmployeeUseCase` can enforce `maxEmployeesPerRestaurant`
+ * (per-Restaurant, via `RESTAURANT_USAGE_REPOSITORY` already available
+ * through `RestaurantsModule` above) and `RemoveEmployeeUseCase` can
+ * decrement it.
  */
 @Module({
-  imports: [AuthenticationModule, AuthorizationModule, RestaurantsModule, BranchesModule],
+  imports: [
+    AuthenticationModule,
+    AuthorizationModule,
+    RestaurantsModule,
+    BranchesModule,
+    SubscriptionsModule,
+  ],
   controllers: [EmployeesController],
   providers: [
     InviteEmployeeUseCase,

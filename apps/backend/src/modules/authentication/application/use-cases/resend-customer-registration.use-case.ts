@@ -1,12 +1,15 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PhoneNumber } from '@shared/domain/value-objects/phone-number.vo';
-import { ClockPort } from '@shared/application/ports/clock.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import {
   SYSTEM_CONFIG_KEYS,
   SystemConfigurationPort,
 } from '@shared/application/ports/system-configuration.port';
-import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
-import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
+import {
+  EventPublisherPort,
+  EVENT_PUBLISHER,
+} from '@shared/application/ports/event-publisher.port';
+import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
 import { PendingCustomerRegistrationRepository } from '../../domain/repositories/authentication.repositories';
 import { OtpService } from '../../domain/services/otp.port';
 import { PendingRegistrationNotFoundException } from '../../domain/exceptions/pending-registration-not-found.exception';
@@ -20,9 +23,6 @@ import {
   VERIFICATION_MESSAGING,
 } from '../ports/verification-messaging.port';
 import {
-  CLOCK,
-  EVENT_PUBLISHER,
-  ID_GENERATOR,
   OTP_SERVICE,
   PENDING_CUSTOMER_REGISTRATION_REPOSITORY,
   SYSTEM_CONFIGURATION,

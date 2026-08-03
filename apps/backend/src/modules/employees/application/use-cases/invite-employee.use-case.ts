@@ -1,18 +1,33 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { ClockPort } from '@shared/application/ports/clock.port';
-import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
-import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
-import { RestaurantId, RoleId } from '@shared/domain/value-objects/identifiers.vo';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
+import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
 import {
-  CLOCK,
-  ID_GENERATOR,
+  EventPublisherPort,
   EVENT_PUBLISHER,
-} from '@modules/authentication/domain/tokens/authentication.tokens';
+} from '@shared/application/ports/event-publisher.port';
+import { UnitOfWorkPort, UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
+import { RestaurantId, RoleId } from '@shared/domain/value-objects/identifiers.vo';
 import {
   RestaurantRepository,
   RESTAURANT_REPOSITORY,
 } from '@modules/restaurants/domain/repositories/restaurant.repository';
 import { RestaurantNotFoundException } from '@modules/restaurants/domain/exceptions/restaurant-not-found.exception';
+import {
+  RestaurantUsageRepository,
+  RESTAURANT_USAGE_REPOSITORY,
+} from '@modules/restaurants/domain/repositories/restaurant-usage.repository';
+import {
+  SubscriptionRepository,
+  SUBSCRIPTION_REPOSITORY,
+} from '@modules/subscriptions/domain/repositories/subscription.repository';
+import {
+  SubscriptionPlanRepository,
+  SUBSCRIPTION_PLAN_REPOSITORY,
+} from '@modules/subscriptions/domain/repositories/subscription-plan.repository';
+import { SubscriptionPolicy } from '@modules/subscriptions/domain/services/subscription-policy';
+import { SubscriptionNotFoundException } from '@modules/subscriptions/domain/exceptions/subscription-not-found.exception';
+import { SubscriptionPlanNotFoundException } from '@modules/subscriptions/domain/exceptions/subscription-plan-not-found.exception';
+import { OrganizationLimitExceededException } from '@modules/subscriptions/domain/exceptions/organization-limit-exceeded.exception';
 import { Employee } from '@modules/authorization/domain/entities/employee.entity';
 import { EmployeeStatus } from '@modules/authorization/domain/enums/authorization.enums';
 import { EmployeeInvitedEvent } from '@modules/authorization/domain/events/authorization.events';
@@ -39,15 +54,28 @@ import { EmployeeResult } from '../dto/employee.result';
  * (DATABASE_SCHEMA.md), since the same person may legitimately be invited by
  * more than one restaurant.
  */
+/**
+ * Phase 12 (Subscriptions, ADR-027 §8/D14): `maxEmployeesPerRestaurant` is
+ * per-Restaurant (D5/D16) - enforced via `RestaurantUsageRepository`'s
+ * atomic conditional increment (D15) keyed to THIS restaurant's own row,
+ * inside the same transaction as the Employee insert.
+ */
 @Injectable()
 export class InviteEmployeeUseCase {
   constructor(
     @Inject(EMPLOYEE_REPOSITORY) private readonly employeeRepository: EmployeeRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepository: RoleRepository,
     @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
+    @Inject(RESTAURANT_USAGE_REPOSITORY)
+    private readonly restaurantUsageRepository: RestaurantUsageRepository,
+    @Inject(SUBSCRIPTION_REPOSITORY)
+    private readonly subscriptionRepository: SubscriptionRepository,
+    @Inject(SUBSCRIPTION_PLAN_REPOSITORY)
+    private readonly subscriptionPlanRepository: SubscriptionPlanRepository,
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
+    @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
   ) {}
 
   async execute(command: InviteEmployeeCommand): Promise<EmployeeResult> {
@@ -73,6 +101,16 @@ export class InviteEmployeeUseCase {
       throw new EmployeeEmailAlreadyExistsException(email);
     }
 
+    const subscription = await this.subscriptionRepository.findByOrganizationId();
+    if (subscription === null) {
+      throw new SubscriptionNotFoundException();
+    }
+    SubscriptionPolicy.assertPermitsResourceCreation(subscription);
+    const plan = await this.subscriptionPlanRepository.findById(subscription.subscriptionPlanId);
+    if (plan === null) {
+      throw new SubscriptionPlanNotFoundException();
+    }
+
     const now = this.clock.now();
     const employee = Employee.create({
       id: this.idGenerator.generate(),
@@ -91,7 +129,16 @@ export class InviteEmployeeUseCase {
       deletedAt: null,
     });
 
-    await this.employeeRepository.save(employee);
+    await this.unitOfWork.execute(async () => {
+      const withinLimit = await this.restaurantUsageRepository.incrementEmployeeCountIfUnderLimit(
+        restaurantId,
+        plan.maxEmployeesPerRestaurant,
+      );
+      if (!withinLimit) {
+        throw new OrganizationLimitExceededException('maxEmployeesPerRestaurant');
+      }
+      await this.employeeRepository.save(employee);
+    });
 
     await this.eventPublisher.publish(
       new EmployeeInvitedEvent(

@@ -12,11 +12,14 @@ import { EmployeeId } from '@shared/domain/value-objects/identifiers.vo';
 import {
   CollectingEventPublisher,
   FixedClock,
+  ImmediateUnitOfWork,
   SequentialIdGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryEmployeeRepository } from '../../../../../test/authorization/support/in-memory-employee.repository';
 import { InMemoryRoleRepository } from '../../../../../test/authorization/support/in-memory-role.repository';
+import { RestaurantUsage } from '@modules/restaurants/domain/entities/restaurant-usage.entity';
+import { createPermissiveSubscriptionFixture } from '../../../../../test/subscriptions/support/permissive-subscription-fixture';
 
 describe('InviteEmployeeUseCase', () => {
   const fixedNow = new Date('2026-07-20T12:00:00.000Z');
@@ -74,14 +77,36 @@ describe('InviteEmployeeUseCase', () => {
       }),
     );
 
+    const { subscriptionRepository, subscriptionPlanRepository, restaurantUsageRepository } =
+      createPermissiveSubscriptionFixture(
+        organizationId,
+        {
+          planId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          subscriptionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          usageId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        },
+        fixedNow,
+      );
+    await restaurantUsageRepository.create(
+      RestaurantUsage.create({
+        id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        restaurantId,
+        now: fixedNow,
+      }),
+    );
+
     const eventPublisher = new CollectingEventPublisher();
     const useCase = new InviteEmployeeUseCase(
       employeeRepository,
       roleRepository,
       restaurantRepository,
+      restaurantUsageRepository,
+      subscriptionRepository,
+      subscriptionPlanRepository,
       new FixedClock(fixedNow),
       new SequentialIdGenerator([newEmployeeId, '77777777-7777-4777-8777-777777777777']),
       eventPublisher,
+      new ImmediateUnitOfWork(),
     );
 
     return { useCase, employeeRepository, eventPublisher };

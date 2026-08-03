@@ -8,6 +8,7 @@ import {
   ImmediateUnitOfWork,
   SequentialIdGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
+import { createPermissiveSubscriptionFixture } from '../../../../../test/subscriptions/support/permissive-subscription-fixture';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
 
@@ -29,13 +30,32 @@ describe('GetRestaurantUseCase', () => {
   }
 
   async function seedRestaurant(repository: InMemoryRestaurantRepository) {
+    const {
+      subscriptionRepository,
+      subscriptionPlanRepository,
+      subscriptionUsageRepository,
+      restaurantUsageRepository,
+    } = createPermissiveSubscriptionFixture(
+      '33333333-3333-4333-8333-333333333333',
+      {
+        planId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        subscriptionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        usageId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      },
+      fixedNow,
+    );
     const createUseCase = new CreateRestaurantUseCase(
       repository,
       new InMemoryRestaurantSettingsRepository(),
+      restaurantUsageRepository,
+      subscriptionRepository,
+      subscriptionPlanRepository,
+      subscriptionUsageRepository,
       new FixedClock(fixedNow),
       new SequentialIdGenerator([
         restaurantId,
         '22222222-2222-4222-8222-222222222222',
+        '88888888-8888-4888-8888-888888888888',
         '99999999-9999-4999-8999-999999999999',
       ]),
       new CollectingEventPublisher(),

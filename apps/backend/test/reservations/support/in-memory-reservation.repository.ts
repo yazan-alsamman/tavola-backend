@@ -184,6 +184,22 @@ export class InMemoryReservationRepository implements ReservationRepository {
     );
   }
 
+  async findBlockedTableIds(tableIds: TableId[], now: Date): Promise<TableId[]> {
+    const requested = new Set(tableIds.map((id) => id.value));
+    const blocked = new Set(
+      [...this.rows.values()]
+        .filter(
+          (row) =>
+            requested.has(row.tableId.value) &&
+            (row.status === ReservationStatus.Pending ||
+              row.status === ReservationStatus.Approved) &&
+            row.reservationEndTime.getTime() > now.getTime(),
+        )
+        .map((row) => row.tableId.value),
+    );
+    return tableIds.filter((id) => blocked.has(id.value));
+  }
+
   async findManyByUserId(
     userId: UserId,
     page: number,

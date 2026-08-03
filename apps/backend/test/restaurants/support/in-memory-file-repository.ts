@@ -13,6 +13,16 @@ export class InMemoryFileRepository implements FileRepository {
     return this.files.get(id.value) ?? null;
   }
 
+  async findManyByIds(ids: FileId[]): Promise<FileRecord[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const uniqueIds = [...new Set(ids.map((id) => id.value))];
+    return uniqueIds
+      .map((id) => this.files.get(id))
+      .filter((file): file is FileRecord => file !== undefined);
+  }
+
   async softDelete(id: FileId, at: Date): Promise<void> {
     const existing = this.files.get(id.value);
     if (existing) {

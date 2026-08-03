@@ -674,7 +674,18 @@ describe('/api/v1/reviews (e2e, Phase 10)', () => {
       app! as unknown as Parameters<typeof SwaggerModule.createDocument>[0],
       new DocumentBuilder().build(),
     );
-    const reviewPaths = Object.keys(document.paths).filter((path) => path.includes('review'));
+    // Matches only the Review module's own route shapes, not any path that
+    // merely contains the substring "review" - Phase 14 (Analytics, ADR-028)
+    // added `/api/v1/restaurants/{restaurantId}/analytics/reviews-summary`,
+    // a distinct Analytics-module route with no relation to this module,
+    // which a blanket `.includes('review')` filter would incorrectly catch.
+    const reviewPaths = Object.keys(document.paths).filter(
+      (path) =>
+        path === '/api/v1/reviews' ||
+        path.startsWith('/api/v1/reviews/') ||
+        path === '/api/v1/restaurants/{restaurantId}/reviews' ||
+        path === '/api/v1/users/me/reviews',
+    );
     expect(reviewPaths.sort()).toEqual(
       [
         '/api/v1/reviews',

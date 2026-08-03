@@ -315,7 +315,7 @@ No Review event ever carries `ReservationGuest.phone`/`email`/`fullName` (moot i
 
 # Offer Events
 
-**Phase 11 architecture frozen (owner-approved 2026-07-28) — see `TASKS.md`'s "Phase 11 — Offers: Pre-implementation architecture decisions" for the full freeze.** None of these events are on the Phase 8 realtime broadcast allow-list or the Phase 9 `NotificationDispatcher` allow-list — both remain fail-closed/default-deny for every Offer event, exactly like Review events (Phase 10 precedent); no code change is required to enforce this (the allow-lists are additive, not subtractive). **Phase 8 realtime impact: none. Phase 9 notification impact: none.**
+**Phase 11 architecture frozen (owner-approved 2026-07-28), implemented and live-verified the same day — see `TASKS.md`'s "Phase 11 — Offers: Pre-implementation architecture decisions" and "Phase 11 — Offers: Implementation & Verification Report" for the full detail.** None of these events are on the Phase 8 realtime broadcast allow-list or the Phase 9 `NotificationDispatcher` allow-list — both remain fail-closed/default-deny for every Offer event, exactly like Review events (Phase 10 precedent); no code change is required to enforce this (the allow-lists are additive, not subtractive). **Phase 8 realtime impact: none. Phase 9 notification impact: none.**
 
 * `OfferCreated` — `{ offerId, restaurantId, createdByUserId }`. Always an Organization Owner/Admin `User.id` — no Employee creation path exists. Audited `actorType: 'User'`, `actorId: createdByUserId`.
 * `OfferUpdated` — `{ offerId, restaurantId, updatedByUserId }`. Reachable only while `status = Draft` — `Published`/`Expired` Offers are immutable, no update event can fire after publication.
@@ -324,6 +324,42 @@ No Review event ever carries `ReservationGuest.phone`/`email`/`fullName` (moot i
 * `OfferDeleted` — `{ offerId, restaurantId, deletedByUserId }`. Soft delete (`deletedAt`), reachable by Owner/Admin from any state (`Draft`/`Published`/`Expired`).
 
 No Offer event carries a coupon redemption code, discount financial outcome, or customer identity — Offers have no customer-facing recipient/actor in Phase 11 (display-only; see `DATABASE_SCHEMA.md`'s Phase 11 freeze note).
+
+---
+
+# Menu Events
+
+**Phase 18 architecture frozen (owner-approved 2026-08-02, ADR-031), ownership/availability/isFeatured corrected 2026-08-03 (ADR-032) — implemented 2026-08-03.** None of these events are on the Phase 8 realtime broadcast allow-list or the Phase 9 `NotificationDispatcher` allow-list — both remain fail-closed/default-deny, exactly like Review/Offer events; no code change was required to enforce this (the allow-lists are additive, not subtractive). **Phase 8 realtime impact: none. Phase 9 notification impact: none.** All twenty-seven events below are dual-actor, using `TenantContextService.getActorType()` to disambiguate exactly like `TableMergedEvent`/`ReservationCancelledEvent` (see Review Events above): Organization Owner/Admin → `actorType: 'User'`, `actorId` = `OrganizationMember.userId`; Employee holding `menu:manage` → `actorType: 'Employee'`, `actorId` = `Employee.id`. No `System`/BullMQ-driven Menu event exists (unlike `OfferExpired`) — every Menu mutation is a direct, synchronous, authenticated write.
+
+* `MenuCreated` — `{ menuId, restaurantId, actorId }`. Menu creation for a Restaurant — **a Restaurant may own more than one Menu (ADR-032 supersedes the original `@@unique([restaurantId])` singleton constraint)**; the first Menu created for a Restaurant is auto-marked `isDefault` (no separate `MenuSetAsDefault` event fires for that implicit first-creation case).
+* `MenuUpdated` — `{ menuId, restaurantId, actorId }`. `name`/`displayOrder` change — `active`/`isDefault` toggles use the dedicated events below, not this one. (`name` added at implementation time, 2026-08-03 — see `DATABASE_SCHEMA.md`'s Menu note.)
+* `MenuActivated` — `{ menuId, restaurantId, actorId }`. `active: false -> true`.
+* `MenuDeactivated` — `{ menuId, restaurantId, actorId }`. `active: true -> false`.
+* `MenuSetAsDefault` — `{ menuId, restaurantId, actorId }`. **Added by ADR-032.** Marks this Menu as the Restaurant's Default Menu; atomically unmarks whichever Menu previously held `isDefault = true` in the same transaction — no separate "unset" event fires for the previous holder, mirroring how `Table`'s `isMergePrimary` reassignment (ADR-026) is a single event, not two.
+* `MenuDeleted` — `{ menuId, restaurantId, actorId }`. Soft delete. **Added at implementation time (2026-08-03)** — not originally enumerated despite `Menu` being soft-deletable; the same CRUD-symmetry gap ADR-031 itself already flagged and filled for OptionGroup/Option/AddOn (see `DOMAIN_MODEL.md`'s Menu Management note), filled here for the same reason.
+* `CategoryCreated` — `{ categoryId, menuId, restaurantId, actorId }`.
+* `CategoryUpdated` — `{ categoryId, restaurantId, actorId }`. Covers name/description/image edits.
+* `CategoryDeleted` — `{ categoryId, restaurantId, actorId }`. Soft delete (`deletedAt`).
+* `CategoriesReordered` — `{ menuId, restaurantId, orderedCategoryIds, actorId }`. Whole-set bulk `displayOrder` replacement; the request is rejected before any event fires if `orderedCategoryIds` does not exactly match the Menu's current non-deleted Category set (no partial or foreign-ID reorders).
+* `MenuItemCreated` — `{ menuItemId, categoryId, restaurantId, actorId }`.
+* `MenuItemUpdated` — `{ menuItemId, restaurantId, actorId }`. Covers name/description/price/currency/preparationTime/spicyLevel/calories/allergens/dietaryLabels edits.
+* `MenuItemDeleted` — `{ menuItemId, restaurantId, actorId }`. Soft delete.
+* `MenuItemAvailabilityChanged` — `{ menuItemId, restaurantId, availabilityMode, actorId }`. Fires whenever `availabilityMode` changes as part of Update Item (no separate endpoint exists). Payload carries only the mode, not the schedule content — see `MenuItemAvailabilityWindowsReplaced` below for the actual `MenuItemAvailability` row changes (**corrected by ADR-032**: `scheduleJson` no longer exists).
+* `MenuItemAvailabilityWindowsReplaced` — `{ menuItemId, restaurantId, windowCount, actorId }`. **Added by ADR-032.** Whole-set bulk replacement of a Menu Item's `MenuItemAvailability` rows, same contract as `CategoriesReordered`/`MenuItemsReordered`. Payload omits the actual day/time values — schedule content is operational configuration, not audit-relevant, matching the same reasoning `scheduleJson` was previously omitted under.
+* `MenuItemFeatured` — `{ menuItemId, restaurantId, actorId }`. **Added by ADR-032.** `isFeatured: false -> true`.
+* `MenuItemUnfeatured` — `{ menuItemId, restaurantId, actorId }`. **Added by ADR-032.** `isFeatured: true -> false`.
+* `MenuItemsReordered` — `{ categoryId, restaurantId, orderedMenuItemIds, actorId }`. Same whole-set bulk-replacement contract as `CategoriesReordered`, scoped to one Category's Items.
+* `OptionGroupCreated` — `{ optionGroupId, menuItemId, restaurantId, actorId }`.
+* `OptionGroupUpdated` — `{ optionGroupId, restaurantId, actorId }`. Covers name/required/minSelections/maxSelections edits.
+* `OptionGroupDeleted` — `{ optionGroupId, restaurantId, actorId }`. Soft delete.
+* `OptionCreated` — `{ optionId, optionGroupId, restaurantId, actorId }`.
+* `OptionUpdated` — `{ optionId, restaurantId, actorId }`. Covers name/priceModifier/active edits.
+* `OptionDeleted` — `{ optionId, restaurantId, actorId }`. Soft delete.
+* `AddOnCreated` — `{ addOnId, menuItemId, restaurantId, actorId }`.
+* `AddOnUpdated` — `{ addOnId, restaurantId, actorId }`. Covers name/price/active edits.
+* `AddOnDeleted` — `{ addOnId, restaurantId, actorId }`. Soft delete.
+
+No Menu event carries customer identity — every actor is Owner/Admin/Employee; Menu read access by Customers is unauthenticated-or-lightly-authenticated public browsing with no write path, so no Customer-attributed event exists in this catalog.
 
 ---
 
@@ -346,6 +382,7 @@ Explicit, not inferred from event names — no event outside this list produces 
 | `ReservationNoShow` | B — In-App only | Not a "good news, check your phone now" event from the Customer's own perspective |
 | `GuestLateArrivalNotified` | D — no Phase 9 notification | Staff-facing operational signal, not Customer-facing (owner-confirmed) |
 | `ReservationExpired` | D — no Phase 9 notification | Low-salience event; no requirement supports notifying about it (owner-confirmed) |
+| `MessageSent` | A — Push + In-App (Customer-only) | Phase 15.6 (Messaging) Owner Decision D6, added after this table's initial Phase 9 freeze — see `TASKS.md`'s Phase 15.6 Implementation & Verification Report. A Customer-sent or System-sent message never notifies anyone; only a Restaurant-side (`OrganizationMember`/`Employee`) sender's message notifies the conversation's Customer participant, resolved via `ConversationParticipantRepository.findCustomerParticipant`. |
 
 `WaitlistEntryNotified` is not separately listed — it fires as a consequence of the `WaitlistEntryPromoted`-triggered notification's push outcome (only on `Accepted`), never a second independent trigger.
 
@@ -358,47 +395,43 @@ The only Notification-specific **domain event** Phase 9 v1 defines is `Notificat
 
 # Subscription Events
 
-* SubscriptionCreated
-* SubscriptionRenewed
-* SubscriptionCancelled
-* SubscriptionExpired
-* SubscriptionUpgraded
-* SubscriptionDowngraded
+**Architecture frozen 2026-07-28 (ADR-027) — entitlement/access contract, not billing.** No `SubscriptionRenewed`/`SubscriptionUpgraded`/`SubscriptionDowngraded` — a plan change is one event regardless of whether the new plan is "bigger" or "smaller" (that distinction is a UI-level interpretation, not a domain fact); there is no renewal to signal since there is no billing cycle.
+
+* SubscriptionAssigned — `{ subscriptionId, organizationId, planId }`. PlatformAdmin-initiated (initial assignment) or system-initiated (default plan at Organization creation, `actorType: 'System'`). Also used to resume a `Cancelled` subscription (assigning a plan, same or different, is the only path back to `Active` from `Cancelled`).
+* SubscriptionPlanChanged — `{ subscriptionId, organizationId, oldPlanId, newPlanId }`. PlatformAdmin-initiated only; immediate, no `effectiveAt` scheduling.
+* SubscriptionSuspended — `{ subscriptionId, organizationId }`. PlatformAdmin-initiated administrative pause.
+* SubscriptionReactivated — `{ subscriptionId, organizationId }`. PlatformAdmin-initiated; resumes a `Suspended` subscription (only path back to `Active` from `Suspended` — distinct from `SubscriptionAssigned`'s role for `Cancelled`).
+* SubscriptionCancelled — `{ subscriptionId, organizationId }`. PlatformAdmin-initiated terminal state; not automatically reactivated.
+* SubscriptionExpired — `{ subscriptionId, organizationId }`. System-initiated (BullMQ-scheduled, CAS-guarded on `endsAt`, mirroring the Offer expiration precedent — Phase 11), `actorType: 'System'`.
+
+No `PlanCreated`/`PlanUpdated` events — `SubscriptionPlan` rows are seed-managed (ADR-027), not dynamically created/edited through a runtime API in Phase 12.
 
 ---
 
-# Payment Events
+# Payment / Invoice Events — Removed
 
-* PaymentInitiated
-* PaymentAuthorized
-* PaymentCaptured
-* PaymentSucceeded
-* PaymentFailed
-* PaymentRefunded
+TAVLA does not process payments in-app (Owner Decision, 2026-07-28). No `Payment*`/`Invoice*` events exist or are planned. See `TASKS.md`/`PROJECT_ROADMAP.md` Phase 13 and `DECISIONS.md` ADR-021 Disposition.
 
 ---
 
-# Invoice Events (ADR-021)
+# Messaging Events (ADR-020, tenancy per ADR-030, Phase 15.6 decision note D9 in `DECISIONS.md`)
 
-* InvoiceGenerated
-* InvoiceIssued
-* InvoicePaid
-* InvoiceVoided
+WebSocket channel: `conversation:{conversationId}` — authorized participants only (`RoomAuthorizationService.authorizeConversation`; Customer must be the conversation's `Customer` participant, Restaurant-side actor must pass the D15 Dual Actor check). Added to `RoomType` as the fifth room type — the "no Phase 8 rooms" carve-out below is now resolved for `conversation:{id}` specifically.
 
----
+| Event | Trigger | Payload (`data`) |
+|---|---|---|
+| `ConversationStarted` | `StartConversation` use case commits | `{ conversationId, restaurantId, branchId, customerUserId, reservationId? }` |
+| `MessageSent` | `SendMessage` use case commits | `{ conversationId, restaurantId, branchId?, messageId, senderType, senderUserId?, senderEmployeeId?, body, messageType, attachmentFileId? }` |
+| `MessageRead` | `MarkConversationRead` use case commits | `{ conversationId, participantId, lastReadAt }` |
+| `ConversationClosed` | `CloseConversation` use case commits | `{ conversationId, status, closedBy: 'Restaurant' \| 'Customer' }` |
 
-# Messaging Events (ADR-020)
-
-* ConversationStarted
-* MessageSent
-* MessageRead
-* ConversationClosed
-
-WebSocket channel: `conversation:{conversationId}` — authorized participants only.
+All four follow the canonical realtime envelope (`{ eventId, eventType, occurredAt, aggregateType: 'Conversation', aggregateId, correlationId?, data }`) over the single `domain.event` Socket.IO event name, mapped via `realtime-event-mapping.ts` — no `staffRooms` fan-out beyond `conversation:{conversationId}` itself (staff join the same room once authorized).
 
 ---
 
-# File Events
+# File Events (Future — Not Yet Implemented)
+
+**Post-Audit Remediation correction (2026-08-02, M6): these three names were listed here with no payload contract and zero producers anywhere in the codebase — `src/modules/files` has no use-case layer of its own; `FileRecord` rows are created/deleted only as a side effect of other modules' use-cases (e.g. `AddReviewImageUseCase`, `SendMessageUseCase`'s attachment path, avatar/gallery upload).** Implementing these for real requires a product decision this remediation pass is not authorized to make on its own: the payload shape, whether "restore" is even a supported operation on `FileRecord` today, and which of the several upload call sites should publish. Left as a documented future item rather than wired in with an invented contract — do not treat as implemented.
 
 * FileUploaded
 * FileDeleted
@@ -407,6 +440,8 @@ WebSocket channel: `conversation:{conversationId}` — authorized participants o
 ---
 
 # Analytics Events
+
+**Deferred — not authorized for Phase 14 v1 (ADR-028, architecture frozen 2026-07-28).** Phase 14 Analytics reads persisted state directly (`Controller → Query Use Case → AnalyticsQueryPort → PostgreSQL`); it does not publish or consume domain events. The names below are unimplemented future placeholders only — their presence in this document does not authorize building them, and none has a producer or consumer anywhere in the codebase. `OccupancyCalculated` specifically implies a capability (historical occupancy) that ADR-028 explicitly excluded from v1 because no historical capacity/topology snapshot exists to compute it from.
 
 * ReservationStatisticsGenerated
 * DailyReportGenerated
@@ -427,9 +462,7 @@ Employee removed
 
 Restaurant settings updated
 
-Subscription upgraded
-
-Payment completed
+Subscription plan changed
 
 ---
 
@@ -480,7 +513,9 @@ Per ADR-015 and the Phase 8 freeze, broadcasts are scoped to Socket.IO rooms so 
 * `branch:{branchId}` — table/floor-plan/reservation/waitlist/ops signals for a branch; Employee per existing branch-assignment semantics, or OrganizationMember via Branch→Restaurant→org.
 * `reservation:{reservationId}` — updates for one reservation; Customer only when `reservation.userId === authenticated User.id` (guest-backed Phone/WalkIn/WaitlistConversion with `userId === null` → Customer DENY); Employee when the reservation's branch is in staff scope; OrganizationMember when the reservation's restaurant is in their org.
 
-No Phase 8 rooms: `waitlist:{id}`, `notification:{id}`, `conversation:{id}` (ADR-020 / Phase 15.6).
+No Phase 8 rooms: `waitlist:{id}`, `notification:{id}`.
+
+**`conversation:{conversationId}` (Phase 15.6, DECISIONS.md D9)** — the room type this note previously deferred is now added, as a fifth `RoomType`, via the Phase 15.6 architecture decision note in `DECISIONS.md` (the "new architecture freeze" this section's original wording anticipated). Authorization: Customer only when they are the conversation's `Customer` participant; Employee/OrganizationMember only when they pass the Dual Actor check (D15) for the conversation's `restaurantId`/`branchId`.
 
 Clients request typed subscriptions (`room.subscribe` / `room.unsubscribe` with `{ roomType, resourceId }`). The server constructs the canonical room name **after** authorization — room names are never guessable substitutes for authorization checks, and clients never join by supplying a raw room string as authorization input. Passive subscription is scope/ownership-based (no `realtime:*` / `websocket:*` / `reservations:read` permission slugs).
 
@@ -498,7 +533,7 @@ ReservationQueue
 
 ReminderQueue
 
-AnalyticsQueue
+AnalyticsQueue — **deferred, not authorized for Phase 14 v1 (ADR-028).** No BullMQ worker or job exists for it; Phase 14 v1 is synchronous direct-read only. Listed as a future placeholder in case a later phase separately proves, with measured performance evidence, that an async rollup is needed.
 
 CleanupQueue
 

@@ -12,6 +12,9 @@ import {
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
+import { RestaurantUsage } from '@modules/restaurants/domain/entities/restaurant-usage.entity';
+import { createPermissiveSubscriptionFixture } from '../../../../../test/subscriptions/support/permissive-subscription-fixture';
+import { ImmediateUnitOfWork } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 
 describe('ListBranchesUseCase', () => {
   const fixedNow = new Date('2026-07-16T12:00:00.000Z');
@@ -61,12 +64,29 @@ describe('ListBranchesUseCase', () => {
     forRestaurantId: string,
     count: number,
   ): Promise<void> {
+    const { subscriptionRepository, subscriptionPlanRepository, restaurantUsageRepository } =
+      createPermissiveSubscriptionFixture(
+        organizationId,
+        {
+          planId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          subscriptionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          usageId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        },
+        fixedNow,
+      );
+    await restaurantUsageRepository.create(
+      RestaurantUsage.create({ id: randomUUID(), restaurantId: forRestaurantId, now: fixedNow }),
+    );
     const createUseCase = new CreateBranchUseCase(
       branchRepository,
       restaurantRepository,
+      restaurantUsageRepository,
+      subscriptionRepository,
+      subscriptionPlanRepository,
       new FixedClock(fixedNow),
       new SequentialIdGenerator(Array.from({ length: count * 2 }, () => randomUUID())),
       new CollectingEventPublisher(),
+      new ImmediateUnitOfWork(),
     );
     for (let i = 0; i < count; i += 1) {
       await createUseCase.execute({

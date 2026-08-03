@@ -1,19 +1,16 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { ClockPort } from '@shared/application/ports/clock.port';
-import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
-import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
-import { UnitOfWorkPort } from '@shared/application/ports/unit-of-work.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
+import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
+import {
+  EventPublisherPort,
+  EVENT_PUBLISHER,
+} from '@shared/application/ports/event-publisher.port';
+import { UnitOfWorkPort, UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
 import {
   AuditLogWriterPort,
   AUDIT_LOG_WRITER,
 } from '@shared/application/ports/audit-log-writer.port';
 import { ReservationId } from '@shared/domain/value-objects/identifiers.vo';
-import {
-  CLOCK,
-  ID_GENERATOR,
-  EVENT_PUBLISHER,
-  UNIT_OF_WORK,
-} from '@modules/authentication/domain/tokens/authentication.tokens';
 import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
 import {
   ReservationRepository,

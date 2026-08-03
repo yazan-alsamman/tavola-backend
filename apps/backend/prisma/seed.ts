@@ -108,6 +108,22 @@ const NOTIFICATION_TEMPLATES: Array<{
     title: 'Marked as no-show',
     body: 'Your reservation was marked as a no-show.',
   },
+  {
+    // Phase 15.6 (Messaging, DECISIONS.md D6) - customer-only: only a staff
+    // reply (Employee/OrganizationMember sender) ever reaches
+    // NotificationDispatcher for this eventType; a Customer-sent message
+    // never does (see resolveNotificationIntent's own MessageSent branch).
+    eventType: 'MessageSent',
+    channel: NotificationChannel.InApp,
+    title: 'New message',
+    body: 'You have a new message from the restaurant.',
+  },
+  {
+    eventType: 'MessageSent',
+    channel: NotificationChannel.Push,
+    title: 'New message',
+    body: 'You have a new message from the restaurant. Tap to view.',
+  },
 ];
 
 const SYSTEM_CONFIGURATION: Array<{
@@ -223,6 +239,14 @@ const PERMISSIONS: Array<{ slug: string; description: string }> = [
     slug: 'offers:manage',
     description: 'Create and publish restaurant offers',
   },
+  {
+    slug: 'conversations:manage',
+    description: 'Read and reply to customer-restaurant conversations within assigned branch scope',
+  },
+  {
+    slug: 'menu:manage',
+    description: 'Create and manage menus, categories, items, options, and add-ons',
+  },
 ];
 
 const ROLES: Array<{
@@ -252,6 +276,8 @@ const ROLES: Array<{
       'employees:manage',
       'reports:view',
       'offers:manage',
+      'conversations:manage',
+      'menu:manage',
     ],
   },
   {
@@ -268,12 +294,13 @@ const ROLES: Array<{
       'reservations:noshow',
       'reservations:tableready',
       'reservations:waitlist',
+      'conversations:manage',
     ],
   },
   {
     name: 'Cashier',
     slug: 'cashier',
-    description: 'Payment and checkout operations within branch scope',
+    description: 'Reservation operations within branch scope',
     scope: RoleScope.Restaurant,
     permissionSlugs: ['reservations:create'],
   },
@@ -427,6 +454,38 @@ async function seedNotificationTemplates(): Promise<void> {
   }
 }
 
+/**
+ * Phase 12 (Subscriptions, architecture frozen 2026-07-28, ADR-027 §11/D2/D3).
+ * Generic architecture - no commercial tier name is frozen (D3); `default`
+ * is a seed-managed provisioning slug, not a product/marketing name.
+ * Referenced by `SYSTEM_CONFIG_KEYS.defaultSubscriptionPlanSlug`'s fallback
+ * (`ProvisionRestaurantOwnerUseCase`) for automatic provisioning at
+ * Organization creation (D7). Limits are a starting default only, not a
+ * frozen commercial commitment - adjust via a new seeded plan + explicit
+ * subscription migration (ADR-027 §10 Plan Immutability), never by editing
+ * this row's numbers once any Subscription references it.
+ */
+const DEFAULT_SUBSCRIPTION_PLAN = {
+  name: 'Default Plan',
+  slug: 'default',
+  maxRestaurants: 10,
+  maxBranchesPerRestaurant: 10,
+  maxEmployeesPerRestaurant: 50,
+};
+
+async function seedSubscriptionPlans(): Promise<void> {
+  await prisma.subscriptionPlan.upsert({
+    where: { slug: DEFAULT_SUBSCRIPTION_PLAN.slug },
+    create: DEFAULT_SUBSCRIPTION_PLAN,
+    update: {
+      name: DEFAULT_SUBSCRIPTION_PLAN.name,
+      maxRestaurants: DEFAULT_SUBSCRIPTION_PLAN.maxRestaurants,
+      maxBranchesPerRestaurant: DEFAULT_SUBSCRIPTION_PLAN.maxBranchesPerRestaurant,
+      maxEmployeesPerRestaurant: DEFAULT_SUBSCRIPTION_PLAN.maxEmployeesPerRestaurant,
+    },
+  });
+}
+
 async function main(): Promise<void> {
   await seedSystemConfiguration();
   const permissionIds = await seedPermissions();
@@ -434,6 +493,7 @@ async function main(): Promise<void> {
   await seedCuisineCategories();
   await seedOccasionCategories();
   await seedNotificationTemplates();
+  await seedSubscriptionPlans();
 }
 
 main()

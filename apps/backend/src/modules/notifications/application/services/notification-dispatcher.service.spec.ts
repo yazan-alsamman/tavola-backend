@@ -11,6 +11,9 @@ import {
 } from '@modules/reservations/domain/events/reservation.events';
 import { ReservationSource } from '@modules/reservations/domain/enums/reservation.enums';
 import { WaitlistEntryPromotedEvent } from '@modules/waitlist/domain/events/waitlist.events';
+import { MessageSentEvent } from '@modules/messaging/domain/events/messaging.events';
+import { MessageSenderType, MessageType } from '@modules/messaging/domain/enums/messaging.enums';
+import { ConversationParticipant } from '@modules/messaging/domain/entities/conversation-participant.entity';
 import { Reservation } from '@modules/reservations/domain/entities/reservation.entity';
 import { User } from '@modules/authentication/domain/entities/user.entity';
 import { UserStatus } from '@modules/authentication/domain/enums/authentication.enums';
@@ -28,6 +31,7 @@ const branchId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const tableId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const userId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const entryId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+const conversationId = '12121212-1212-4121-8121-121212121212';
 
 describe('resolveNotificationIntent (Phase 9 frozen event -> notification allow-list)', () => {
   const pushEligibleCases: Array<
@@ -146,6 +150,82 @@ describe('resolveNotificationIntent (Phase 9 frozen event -> notification allow-
     expect(intent).toBeNull();
   });
 
+  it('MessageSent from an Employee resolves to a Push+In-App intent keyed by conversationId (D6)', () => {
+    const intent = resolveNotificationIntent(
+      new MessageSentEvent('e1', {
+        conversationId,
+        restaurantId,
+        branchId,
+        messageId: 'message-1',
+        senderType: MessageSenderType.Employee,
+        senderUserId: null,
+        senderEmployeeId: 'employee-1',
+        body: 'Your table is ready',
+        messageType: MessageType.Text,
+        attachmentFileId: null,
+      }),
+    );
+    expect(intent).not.toBeNull();
+    expect(intent?.eventType).toBe('MessageSent');
+    expect(intent?.pushEligible).toBe(true);
+    expect(intent?.conversationId).toBe(conversationId);
+  });
+
+  it('MessageSent from an OrganizationMember resolves to a notification intent too (D6)', () => {
+    const intent = resolveNotificationIntent(
+      new MessageSentEvent('e1', {
+        conversationId,
+        restaurantId,
+        branchId,
+        messageId: 'message-1',
+        senderType: MessageSenderType.OrganizationMember,
+        senderUserId: 'org-member-1',
+        senderEmployeeId: null,
+        body: 'Thanks for booking!',
+        messageType: MessageType.Text,
+        attachmentFileId: null,
+      }),
+    );
+    expect(intent).not.toBeNull();
+    expect(intent?.conversationId).toBe(conversationId);
+  });
+
+  it('MessageSent from a Customer produces no notification (D6 - customer-only recipient, never a customer sender)', () => {
+    const intent = resolveNotificationIntent(
+      new MessageSentEvent('e1', {
+        conversationId,
+        restaurantId,
+        branchId,
+        messageId: 'message-1',
+        senderType: MessageSenderType.Customer,
+        senderUserId: 'customer-1',
+        senderEmployeeId: null,
+        body: 'Is my table ready?',
+        messageType: MessageType.Text,
+        attachmentFileId: null,
+      }),
+    );
+    expect(intent).toBeNull();
+  });
+
+  it('MessageSent from System produces no notification', () => {
+    const intent = resolveNotificationIntent(
+      new MessageSentEvent('e1', {
+        conversationId,
+        restaurantId,
+        branchId,
+        messageId: 'message-1',
+        senderType: MessageSenderType.System,
+        senderUserId: null,
+        senderEmployeeId: null,
+        body: 'Conversation started',
+        messageType: MessageType.System,
+        attachmentFileId: null,
+      }),
+    );
+    expect(intent).toBeNull();
+  });
+
   it('an unrelated event (ReservationCreated) produces no notification (default-deny)', () => {
     const intent = resolveNotificationIntent(
       new ReservationCreatedEvent('e1', {
@@ -241,6 +321,7 @@ describe('NotificationDispatcher', () => {
     reservationUserId?: string | null;
     notificationOptIn?: boolean;
     template?: NotificationTemplate | null;
+    conversationCustomerUserId?: string | null;
   }) {
     const reservationOwnerId =
       overrides.reservationUserId !== undefined ? overrides.reservationUserId : userId;
@@ -263,6 +344,22 @@ describe('NotificationDispatcher', () => {
         .mockResolvedValue(overrides.template === undefined ? null : overrides.template),
     };
     const deliveryScheduler = { enqueueDelivery: jest.fn().mockResolvedValue(undefined) };
+    const conversationCustomerUserId =
+      overrides.conversationCustomerUserId !== undefined
+        ? overrides.conversationCustomerUserId
+        : userId;
+    const conversationParticipantRepository = {
+      findCustomerParticipant: jest.fn().mockResolvedValue(
+        conversationCustomerUserId === null
+          ? null
+          : ConversationParticipant.createCustomer({
+              id: '13131313-1313-4131-8131-131313131313',
+              conversationId,
+              userId: conversationCustomerUserId,
+              now,
+            }),
+      ),
+    };
     const clock = { now: () => now };
     let counter = 0;
     const idGenerator = { generate: () => `generated-id-${++counter}` };
@@ -274,11 +371,18 @@ describe('NotificationDispatcher', () => {
       notificationRepository as never,
       templateRepository as never,
       deliveryScheduler as never,
+      conversationParticipantRepository as never,
       clock as never,
       idGenerator as never,
     );
 
-    return { dispatcher, notificationRepository, deliveryScheduler, userRepository };
+    return {
+      dispatcher,
+      notificationRepository,
+      deliveryScheduler,
+      userRepository,
+      conversationParticipantRepository,
+    };
   }
 
   it('creates a durable Notification and enqueues Push when notificationOptIn is true', async () => {
@@ -355,5 +459,45 @@ describe('NotificationDispatcher', () => {
 
     await expect(dispatcher.dispatch(approvedEvent())).resolves.not.toBeNull();
     expect(notificationRepository.save).toHaveBeenCalledTimes(1);
+  });
+
+  function staffReplyEvent() {
+    return new MessageSentEvent('e1', {
+      conversationId,
+      restaurantId,
+      branchId,
+      messageId: 'message-1',
+      senderType: MessageSenderType.Employee,
+      senderUserId: null,
+      senderEmployeeId: 'employee-1',
+      body: 'Your table is ready',
+      messageType: MessageType.Text,
+      attachmentFileId: null,
+    });
+  }
+
+  it('MessageSent (D6): resolves the recipient via findCustomerParticipant, not the Reservation/Waitlist repositories', async () => {
+    const { dispatcher, notificationRepository, conversationParticipantRepository } =
+      buildDispatcher({
+        conversationCustomerUserId: userId,
+      });
+
+    const result = await dispatcher.dispatch(staffReplyEvent());
+
+    expect(result).not.toBeNull();
+    expect(result?.payload.userId).toBe(userId);
+    expect(conversationParticipantRepository.findCustomerParticipant).toHaveBeenCalledTimes(1);
+    expect(notificationRepository.save).toHaveBeenCalledTimes(1);
+  });
+
+  it('MessageSent (D6): produces no Notification when the Customer participant cannot be resolved (safe no-op)', async () => {
+    const { dispatcher, notificationRepository } = buildDispatcher({
+      conversationCustomerUserId: null,
+    });
+
+    const result = await dispatcher.dispatch(staffReplyEvent());
+
+    expect(result).toBeNull();
+    expect(notificationRepository.save).not.toHaveBeenCalled();
   });
 });

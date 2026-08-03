@@ -10,6 +10,8 @@ import lightotpConfig from './lightotp.config';
 import platformAdminAuthConfig from './platform-admin-auth.config';
 import realtimeConfig from './realtime.config';
 import onesignalConfig from './onesignal.config';
+import discoveryConfig from './discovery.config';
+import messagingConfig from './messaging.config';
 import { envValidationSchema } from './env.validation';
 
 const nodeEnv = process.env.NODE_ENV ?? 'development';
@@ -36,6 +38,8 @@ const nodeEnv = process.env.NODE_ENV ?? 'development';
         platformAdminAuthConfig,
         realtimeConfig,
         onesignalConfig,
+        discoveryConfig,
+        messagingConfig,
       ],
       validationSchema: envValidationSchema,
       validationOptions: {

@@ -44,6 +44,7 @@ Configuration differences between environments are expressed exclusively through
 
 * `REDIS_URL` (inside Docker Compose, host is the `redis` service name; embeds the password, e.g. `redis://:password@redis:6379`)
 * `REDIS_PASSWORD` — consumed by the `redis` container's `--requirepass` startup flag; must stay in sync with the password embedded in `REDIS_URL`
+* `REDIS_MAXMEMORY` — consumed by the `redis` container's `--maxmemory` startup flag (e.g. `256mb`, `512mb`); caps host memory usage since `redis.conf` keeps `maxmemory-policy noeviction` (queue/session data must never be silently evicted, so once the cap is hit writes fail loudly instead)
 * `REDIS_CACHE_DB_INDEX` — logical database index used for caching (see ARCHITECTURE.md Database Strategy)
 * `REDIS_QUEUE_DB_INDEX` — logical database index used by BullMQ
 * `REDIS_SOCKET_ADAPTER_DB_INDEX` — logical database index used by the Socket.IO Redis Adapter (ADR-015), kept separate from cache/queue traffic for observability

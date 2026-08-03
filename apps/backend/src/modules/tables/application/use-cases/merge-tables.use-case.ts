@@ -1,15 +1,12 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { ClockPort } from '@shared/application/ports/clock.port';
-import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
-import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
-import { UnitOfWorkPort } from '@shared/application/ports/unit-of-work.port';
-import { TableId } from '@shared/domain/value-objects/identifiers.vo';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
+import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
 import {
-  CLOCK,
-  ID_GENERATOR,
+  EventPublisherPort,
   EVENT_PUBLISHER,
-  UNIT_OF_WORK,
-} from '@modules/authentication/domain/tokens/authentication.tokens';
+} from '@shared/application/ports/event-publisher.port';
+import { UnitOfWorkPort, UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
+import { TableId } from '@shared/domain/value-objects/identifiers.vo';
 import {
   RestaurantRepository,
   RESTAURANT_REPOSITORY,
@@ -131,13 +128,23 @@ export class MergeTablesUseCase {
       }
       TableMergeService.assertMergeable(reloaded);
 
-      for (const table of reloaded) {
-        const blocked = await this.reservationRepository.hasBlockingReservation(table.tableId, now);
-        if (blocked) {
-          throw new TableMergeConflictException(
-            `Table "${table.tableId.value}" has a Pending/Approved reservation that has not ended yet - cannot merge.`,
-          );
-        }
+      // Post-Audit Remediation (2026-08-02, L5): a single batched query
+      // instead of one `hasBlockingReservation` call per table - the
+      // topology locks above are already held, so this keeps lock hold
+      // time constant regardless of merge-group size instead of linear.
+      const blockedTableIds = new Set(
+        (
+          await this.reservationRepository.findBlockedTableIds(
+            reloaded.map((table) => table.tableId),
+            now,
+          )
+        ).map((id) => id.value),
+      );
+      const firstBlockedTable = reloaded.find((table) => blockedTableIds.has(table.tableId.value));
+      if (firstBlockedTable !== undefined) {
+        throw new TableMergeConflictException(
+          `Table "${firstBlockedTable.tableId.value}" has a Pending/Approved reservation that has not ended yet - cannot merge.`,
+        );
       }
 
       const selectedPrimaryId = TableMergeService.selectPrimary(reloaded, command.primaryTableId)

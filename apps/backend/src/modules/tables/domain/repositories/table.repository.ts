@@ -77,6 +77,17 @@ export interface TableRepository {
    */
   findManyByMergeGroupId(mergeGroupId: string): Promise<Table[]>;
   /**
+   * Phase 15 (Optimization) batch accessor - every non-soft-deleted member
+   * (primary and secondaries alike) of each active merge group in
+   * `mergeGroupIds`, in one query, keyed by `mergeGroupId` in the returned
+   * `Map`. An unknown/inactive `mergeGroupId` is simply absent as a key
+   * (never mapped to `[]`). Empty input returns an empty `Map` without a
+   * database round-trip. Introduced to let `SearchAvailabilityUseCase`
+   * resolve every merge group its candidate tables reference in a single
+   * call instead of one `findManyByMergeGroupId` round-trip per table.
+   */
+  findManyByMergeGroupIds(mergeGroupIds: string[]): Promise<Map<string, Table[]>>;
+  /**
    * Phase 6 (Merge/Split Tables, ADR-026 decision #7) - acquires one
    * transaction-scoped PostgreSQL advisory lock per id in `tableIds`, via
    * `TableTopologyLockService.deriveLockKeysInOrder` (sorted ascending, a

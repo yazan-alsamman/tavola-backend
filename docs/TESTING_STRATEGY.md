@@ -36,13 +36,12 @@ Required for critical workflows, per CODING_STANDARDS.md and NON_FUNCTIONAL_REQU
 
 * Authentication (register → verify → login → refresh → logout)
 * Reservation Engine (search availability → create → approve → complete; and the conflict path: two concurrent creation attempts for the same table/slot, asserting exactly one succeeds)
-* Payments (once implemented, per the pending Payment Provider ADR)
 * Notifications (event → template resolution → provider dispatch, using the fake provider)
 * Realtime Gateway (a REST action triggers the correct WebSocket broadcast to an authorized, connected client, and is *not* received by an unauthorized client)
 
 ## Load Tests
 
-Scope: not run in the standard CI pipeline; run against a staging environment ahead of Phase 15 (Optimization) and before major releases. Validates the response-time and throughput targets in NON_FUNCTIONAL_REQUIREMENTS.md (e.g., reservation lookup < 100ms, hundreds of reservation requests/second). Tooling choice (k6, Artillery, Gatling) is an open decision, tracked in DECISIONS.md's Future Decisions under "Monitoring stack" adjacent work.
+Scope: not run in the standard CI pipeline; run against a staging environment ahead of major releases. Validates the response-time and throughput targets in NON_FUNCTIONAL_REQUIREMENTS.md (Public/Authenticated API and Heavy Operations latency budgets). Tooling: **k6** (ADR-029, architecture frozen 2026-07-30 — Artillery/Gatling rejected). Scripts are not part of this Jest suite; they run as an external tool per ADR-029. Implemented under Phase 15 (Optimization) covering Discovery, Reservation availability, Reservation creation, and Analytics (`apps/backend/scripts/k6/`), run against the rebuilt production image with raw summary-export artifacts preserved — see `TASKS.md`'s Phase 15 reports.
 
 ---
 
@@ -51,7 +50,7 @@ Scope: not run in the standard CI pipeline; run against a staging environment ah
 Per NON_FUNCTIONAL_REQUIREMENTS.md:
 
 * Minimum overall coverage: **90%**
-* Critical modules (Reservation Engine, Authentication, Payments, Notifications, Realtime Gateway): **95%**, and these five modules specifically require integration *and* E2E tests, not unit tests alone.
+* Critical modules (Reservation Engine, Authentication, Notifications, Realtime Gateway): **95%**, and these four modules specifically require integration *and* E2E tests, not unit tests alone.
 
 Coverage is measured on the Domain and Application layers primarily — Infrastructure adapters (thin wrappers around Prisma/Redis/MinIO/OneSignal calls) are exercised through integration tests rather than chased for line coverage in isolation.
 
@@ -68,10 +67,12 @@ Coverage is measured on the Domain and Application layers primarily — Infrastr
 
 # External Provider Policy
 
-Real third-party providers (OneSignal, payment gateways, MinIO in its hosted form, and — as of ADR-022, currently LightOTP per ADR-024 — the Customer OTP delivery provider) are **never called from any automated test**, including E2E tests. No real WhatsApp message is ever sent by a test. Fake implementations are required, both satisfying the same interface as the real Infrastructure adapter (`NotificationProvider`, `PaymentGateway`, `FileStorageService`, and `VerificationMessagingPort` once implemented):
+Real third-party providers (OneSignal, MinIO in its hosted form, and — as of ADR-022, currently LightOTP per ADR-024 — the Customer OTP delivery provider) are **never called from any automated test**, including E2E tests. No real WhatsApp message is ever sent by a test. Fake implementations are required, both satisfying the same interface as the real Infrastructure adapter (`NotificationProvider`, `FileStorageService`, and `VerificationMessagingPort` once implemented):
 
 * **In-memory fake**, used by unit and most integration tests — records calls made to it for assertions, returns configurable canned responses.
-* **Local sandboxed equivalent**, used by E2E tests where a closer-to-real integration matters — e.g., MinIO's own Docker image running locally (already part of the Docker Compose stack per ARCHITECTURE.md) rather than a fake for file storage, since MinIO is self-hosted and safe to run in CI; OneSignal and payment providers remain fully faked in all test tiers since they are external SaaS services with no safe local equivalent.
+* **Local sandboxed equivalent**, used by E2E tests where a closer-to-real integration matters — e.g., MinIO's own Docker image running locally (already part of the Docker Compose stack per ARCHITECTURE.md) rather than a fake for file storage, since MinIO is self-hosted and safe to run in CI; OneSignal remains fully faked in all test tiers since it is an external SaaS service with no safe local equivalent.
+
+TAVLA does not process payments and has no payment provider integration (Owner Decision, 2026-07-28 — see `TASKS.md` Phase 13); no payment-related test infrastructure is planned.
 
 CI must never hold or require real third-party API keys. If a provider's SDK requires a key to instantiate even in a disabled/sandbox mode, a dummy value is used and documented in ENVIRONMENT_SETUP.md's test environment section.
 

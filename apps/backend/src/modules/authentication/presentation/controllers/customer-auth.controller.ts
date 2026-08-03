@@ -143,6 +143,8 @@ export class CustomerAuthController {
   }
 
   @Post('register/complete')
+  @UseGuards(RateLimitGuard)
+  @RateLimit('customerRegisterComplete')
   @HttpCode(HttpStatus.CREATED)
   @ResponseMessage('Registration completed successfully.')
   @ApiOperation({
@@ -288,6 +290,8 @@ export class CustomerAuthController {
   }
 
   @Post('password-reset/complete')
+  @UseGuards(RateLimitGuard)
+  @RateLimit('customerPasswordResetComplete')
   @HttpCode(HttpStatus.OK)
   @ResponseMessage('Password reset successfully.')
   @ApiOperation({

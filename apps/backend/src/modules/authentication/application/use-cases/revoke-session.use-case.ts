@@ -1,20 +1,17 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { SessionId, UserId } from '@shared/domain/value-objects/identifiers.vo';
-import { ClockPort } from '@shared/application/ports/clock.port';
-import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
-import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
-import { UnitOfWorkPort } from '@shared/application/ports/unit-of-work.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
+import {
+  EventPublisherPort,
+  EVENT_PUBLISHER,
+} from '@shared/application/ports/event-publisher.port';
+import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
+import { UnitOfWorkPort, UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
 import { SessionRevokeReason } from '../../domain/enums/authentication.enums';
 import { SessionRevokedEvent } from '../../domain/events/authentication.events';
 import { DeviceSessionRepository } from '../../domain/repositories/authentication.repositories';
 import { SessionAccessDeniedException } from '../exceptions/session-access-denied.exception';
-import {
-  CLOCK,
-  DEVICE_SESSION_REPOSITORY,
-  EVENT_PUBLISHER,
-  ID_GENERATOR,
-  UNIT_OF_WORK,
-} from '../../domain/tokens/authentication.tokens';
+import { DEVICE_SESSION_REPOSITORY } from '../../domain/tokens/authentication.tokens';
 import { RevokeSessionCommand, RevokeSessionResult } from '../dto/revoke-session.dto';
 
 @Injectable()

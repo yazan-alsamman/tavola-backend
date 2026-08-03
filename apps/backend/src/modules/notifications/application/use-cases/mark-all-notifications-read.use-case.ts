@@ -1,7 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { ClockPort } from '@shared/application/ports/clock.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import { UserId } from '@shared/domain/value-objects/identifiers.vo';
-import { CLOCK } from '@modules/authentication/domain/tokens/authentication.tokens';
 import { AuthenticatedActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
 import {
   NOTIFICATION_REPOSITORY,

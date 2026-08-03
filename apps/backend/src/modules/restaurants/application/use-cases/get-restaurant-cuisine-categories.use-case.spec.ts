@@ -15,6 +15,7 @@ import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/su
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
 import { InMemoryRestaurantCuisineCategoryRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-cuisine-category.repository';
 import { InMemoryCuisineCategoryRepository } from '../../../../../test/restaurants/support/in-memory-cuisine-category.repository';
+import { createPermissiveSubscriptionFixture } from '../../../../../test/subscriptions/support/permissive-subscription-fixture';
 
 describe('GetRestaurantCuisineCategoriesUseCase', () => {
   const fixedNow = new Date('2026-07-16T12:00:00.000Z');
@@ -36,9 +37,27 @@ describe('GetRestaurantCuisineCategoriesUseCase', () => {
     restaurantRepository: InMemoryRestaurantRepository,
     restaurantSettingsRepository: InMemoryRestaurantSettingsRepository,
   ): Promise<string> {
+    const {
+      subscriptionRepository,
+      subscriptionPlanRepository,
+      subscriptionUsageRepository,
+      restaurantUsageRepository,
+    } = createPermissiveSubscriptionFixture(
+      '33333333-3333-4333-8333-333333333333',
+      {
+        planId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        subscriptionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        usageId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      },
+      fixedNow,
+    );
     const createUseCase = new CreateRestaurantUseCase(
       restaurantRepository,
       restaurantSettingsRepository,
+      restaurantUsageRepository,
+      subscriptionRepository,
+      subscriptionPlanRepository,
+      subscriptionUsageRepository,
       new FixedClock(fixedNow),
       new UuidGenerator(),
       new CollectingEventPublisher(),

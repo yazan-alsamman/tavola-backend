@@ -100,6 +100,10 @@ const IDENTIFIER_STRATEGIES: Record<RateLimitPolicyName, IdentifierStrategy> = {
   customerRegisterVerify: (request) => `${normalizedPhoneKey(request)}:${resolveClientIp(request)}`,
   customerPasswordResetVerify: (request) =>
     `${normalizedPhoneKey(request)}:${resolveClientIp(request)}`,
+  // Post-Audit Remediation (2026-08-02, L1): per-phone, same rationale as
+  // the sibling "Send" policies above.
+  customerRegisterComplete: (request) => normalizedPhoneKey(request),
+  customerPasswordResetComplete: (request) => normalizedPhoneKey(request),
 };
 
 function normalizedPhoneKey(request: Request): string {

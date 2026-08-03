@@ -1,13 +1,11 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { ClockPort } from '@shared/application/ports/clock.port';
-import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
-import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
-import { EmployeeId, RestaurantId, RoleId } from '@shared/domain/value-objects/identifiers.vo';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
+import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
 import {
-  CLOCK,
-  ID_GENERATOR,
+  EventPublisherPort,
   EVENT_PUBLISHER,
-} from '@modules/authentication/domain/tokens/authentication.tokens';
+} from '@shared/application/ports/event-publisher.port';
+import { EmployeeId, RestaurantId, RoleId } from '@shared/domain/value-objects/identifiers.vo';
 import { RoleAssignedEvent } from '@modules/authorization/domain/events/authorization.events';
 import { EmployeeNotFoundException } from '@modules/authorization/domain/exceptions/employee-not-found.exception';
 import { RoleNotFoundException } from '@modules/authorization/domain/exceptions/role-not-found.exception';

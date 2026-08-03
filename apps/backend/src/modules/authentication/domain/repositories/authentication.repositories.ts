@@ -42,6 +42,8 @@ export type UpdatePasswordIfCurrentHashMatchesOutcome =
 
 export interface UserRepository {
   findById(id: UserId): Promise<User | null>;
+  /** Phase 15 (Optimization) batch accessor - order not guaranteed, duplicate/unknown IDs silently omitted. Empty input returns `[]` without a database round-trip. */
+  findManyByIds(ids: UserId[]): Promise<User[]>;
   findByEmail(email: Email): Promise<User | null>;
   existsByEmail(email: Email): Promise<boolean>;
   /** ADR-022 (Phase 2.23): Customer login/lookup by canonical E.164 phone. */

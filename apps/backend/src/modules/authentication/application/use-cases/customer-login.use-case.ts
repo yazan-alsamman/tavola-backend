@@ -2,14 +2,17 @@ import { Injectable, Inject } from '@nestjs/common';
 import { PhoneNumber } from '@shared/domain/value-objects/phone-number.vo';
 import { Password } from '@shared/domain/value-objects/password.vo';
 import { PasswordHash } from '@shared/domain/value-objects/password-hash.vo';
-import { ClockPort } from '@shared/application/ports/clock.port';
-import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
-import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
+import {
+  EventPublisherPort,
+  EVENT_PUBLISHER,
+} from '@shared/application/ports/event-publisher.port';
+import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
 import {
   SYSTEM_CONFIG_KEYS,
   SystemConfigurationPort,
 } from '@shared/application/ports/system-configuration.port';
-import { UnitOfWorkPort } from '@shared/application/ports/unit-of-work.port';
+import { UnitOfWorkPort, UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
 import {
   AuditLogWriterPort,
   AUDIT_LOG_WRITER,
@@ -31,9 +34,6 @@ import { SessionPolicy } from '../../domain/services/authentication-policies';
 import { TokenService } from '../../domain/services/token-service.port';
 import { AccessTokenClaimsBuilder } from '../services/access-token-claims-builder';
 import {
-  CLOCK,
-  EVENT_PUBLISHER,
-  ID_GENERATOR,
   LOGIN_ATTEMPT_REPOSITORY,
   OPAQUE_TOKEN_SERVICE,
   PASSWORD_HASHER,
@@ -41,7 +41,6 @@ import {
   DEVICE_SESSION_REPOSITORY,
   TOKEN_FAMILY_REPOSITORY,
   TOKEN_SERVICE,
-  UNIT_OF_WORK,
   USER_REPOSITORY,
 } from '../../domain/tokens/authentication.tokens';
 import { AuthTokenTtlPort, AUTH_TOKEN_TTL } from '../ports/auth-token-ttl.port';

@@ -17,6 +17,9 @@ import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/su
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
 import { InMemoryFloorPlanRepository } from '../../../../../test/tables/support/in-memory-floor-plan.repository';
 import { InMemoryTableRepository } from '../../../../../test/tables/support/in-memory-table.repository';
+import { InMemoryRestaurantUsageRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-usage.repository';
+import { RestaurantUsage } from '@modules/restaurants/domain/entities/restaurant-usage.entity';
+import { createPermissiveSubscriptionFixture } from '../../../../../test/subscriptions/support/permissive-subscription-fixture';
 import { FloorPlan } from '@modules/tables/domain/entities/floor-plan.entity';
 import { Table } from '@modules/tables/domain/entities/table.entity';
 import { TableShape, TableStatus } from '@modules/tables/domain/enums/table.enums';
@@ -70,15 +73,36 @@ describe('DeleteBranchUseCase', () => {
     await seedRestaurant(restaurantRepository, restaurantId);
     await seedRestaurant(restaurantRepository, otherRestaurantId);
 
+    const { subscriptionRepository, subscriptionPlanRepository, restaurantUsageRepository } =
+      createPermissiveSubscriptionFixture(
+        organizationId,
+        {
+          planId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          subscriptionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          usageId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        },
+        fixedNow,
+      );
+    await restaurantUsageRepository.create(
+      RestaurantUsage.create({
+        id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        restaurantId,
+        now: fixedNow,
+      }),
+    );
     const createUseCase = new CreateBranchUseCase(
       branchRepository,
       restaurantRepository,
+      restaurantUsageRepository,
+      subscriptionRepository,
+      subscriptionPlanRepository,
       new FixedClock(fixedNow),
       new SequentialIdGenerator([
         '11111111-1111-4111-8111-111111111111',
         '22222222-2222-4222-8222-222222222222',
       ]),
       new CollectingEventPublisher(),
+      new ImmediateUnitOfWork(),
     );
     const created = await createUseCase.execute({
       actor: baseActor(),
@@ -102,6 +126,7 @@ describe('DeleteBranchUseCase', () => {
       restaurantRepository,
       floorPlanRepository,
       tableRepository,
+      restaurantUsageRepository,
       new FixedClock(new Date('2026-07-17T09:00:00.000Z')),
       new SequentialIdGenerator(['44444444-4444-4444-8444-444444444445']),
       eventPublisher,
@@ -220,6 +245,7 @@ describe('DeleteBranchUseCase', () => {
       restaurantRepository,
       new InMemoryFloorPlanRepository(),
       new InMemoryTableRepository(),
+      new InMemoryRestaurantUsageRepository(),
       new FixedClock(fixedNow),
       new SequentialIdGenerator(['55555555-5555-4555-8555-555555555556']),
       new CollectingEventPublisher(),

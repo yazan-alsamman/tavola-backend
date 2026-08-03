@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from 'nestjs-pino';
+import helmet from 'helmet';
 import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { createGlobalValidationPipe } from './common/pipes/validation-pipe.factory';
@@ -24,6 +25,7 @@ async function bootstrap(): Promise<void> {
 
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.disable('x-powered-by');
+  expressApp.use(helmet({ contentSecurityPolicy: appConfig.swaggerEnabled ? false : undefined }));
   expressApp.use(json({ limit: appConfig.requestBodyLimit }));
   expressApp.use(urlencoded({ extended: true, limit: appConfig.requestBodyLimit }));
 

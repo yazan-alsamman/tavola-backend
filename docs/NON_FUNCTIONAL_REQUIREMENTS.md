@@ -163,8 +163,6 @@ Reservation approval
 
 Reservation cancellation
 
-Payment processing
-
 Subscription changes
 
 All require transactional integrity.
@@ -230,8 +228,6 @@ Never cache:
 Authentication secrets
 
 Permission checks as a long-lived, independently-invalidated cache layer (e.g., a Redis permission cache that could go stale after a role change) — see the Authorization section above for how permission checks are instead kept fast without this risk (short-lived JWT claims, refreshed on change).
-
-Payment states
 
 Reservation transaction state
 
@@ -309,8 +305,6 @@ OTP codes
 
 Private keys
 
-Payment secrets
-
 Personal identification numbers
 
 ---
@@ -347,8 +341,6 @@ Role changes
 Restaurant updates
 
 Subscription changes
-
-Payment events
 
 Audit logs must include:
 
@@ -572,8 +564,6 @@ Reservation Engine
 
 Authentication
 
-Payments
-
 Notifications
 
 Realtime Gateway
@@ -679,8 +669,6 @@ Loyalty Programs
 Gift Cards
 
 QR Ordering
-
-Online Payments
 
 Delivery
 

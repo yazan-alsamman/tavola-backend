@@ -15,6 +15,8 @@ function buildConfigService(overrides?: Partial<AuthConfig['rateLimits']>): Conf
       customerRegisterVerify: { max: 10, windowSeconds: 900 },
       customerPasswordResetSend: { max: 5, windowSeconds: 3600 },
       customerPasswordResetVerify: { max: 10, windowSeconds: 900 },
+      customerRegisterComplete: { max: 5, windowSeconds: 3600 },
+      customerPasswordResetComplete: { max: 5, windowSeconds: 3600 },
       ...overrides,
     },
   };
@@ -31,6 +33,14 @@ describe('NestAuthRateLimitPolicy', () => {
     expect(adapter.getPolicy('resetPassword')).toEqual({ max: 10, windowSeconds: 900 });
     expect(adapter.getPolicy('register')).toEqual({ max: 5, windowSeconds: 3600 });
     expect(adapter.getPolicy('changePassword')).toEqual({ max: 10, windowSeconds: 900 });
+    expect(adapter.getPolicy('customerRegisterComplete')).toEqual({
+      max: 5,
+      windowSeconds: 3600,
+    });
+    expect(adapter.getPolicy('customerPasswordResetComplete')).toEqual({
+      max: 5,
+      windowSeconds: 3600,
+    });
   });
 
   it('throws at construction time when auth configuration is not loaded', () => {

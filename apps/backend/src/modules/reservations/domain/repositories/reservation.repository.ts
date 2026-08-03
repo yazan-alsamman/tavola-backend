@@ -199,6 +199,19 @@ export interface ReservationRepository {
   hasBlockingReservation(tableId: TableId, now: Date): Promise<boolean>;
 
   /**
+   * Post-Audit Remediation (2026-08-02, L5) - batched sibling of
+   * `hasBlockingReservation` for `MergeTablesUseCase`, which previously
+   * called the single-table method once per member inside the same
+   * topology-locked transaction (an N+1 pattern that extended lock hold
+   * time linearly with merge-group size). Returns the subset of `tableIds`
+   * that have a blocking `Pending`/`Approved` reservation - same blocking
+   * definition as `hasBlockingReservation`, one round trip regardless of
+   * how many table ids are passed. Must be called under the same
+   * "after `acquireTopologyLocks`, inside the transaction" placement rule.
+   */
+  findBlockedTableIds(tableIds: TableId[], now: Date): Promise<TableId[]>;
+
+  /**
    * Customer Restaurant Discovery & Public Read Surface: every Reservation
    * owned by this Customer (`Reservation.userId` match), newest-created
    * first, paginated - the sole authority for `GET /reservations` (mine).

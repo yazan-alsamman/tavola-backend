@@ -1,7 +1,8 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { PrismaModule } from '@infrastructure/prisma/prisma.module';
 import { AuthorizationModule } from '@modules/authorization/authorization.module';
 import { OrganizationsModule } from '@modules/organizations/organizations.module';
+import { SubscriptionsModule } from '@modules/subscriptions/subscriptions.module';
 import { LoginUseCase } from './application/use-cases/login.use-case';
 import { RefreshSessionUseCase } from './application/use-cases/refresh-session.use-case';
 import { LogoutCurrentSessionUseCase } from './application/use-cases/logout-current-session.use-case';
@@ -57,9 +58,7 @@ import { LOGIN_ORGANIZATION_READER } from './application/ports/login-organizatio
 import { VERIFICATION_MESSAGING } from './application/ports/verification-messaging.port';
 import {
   AUTH_REFRESH_POLICY,
-  CLOCK,
   DEVICE_SESSION_REPOSITORY,
-  ID_GENERATOR,
   LOGIN_ATTEMPT_REPOSITORY,
   OPAQUE_TOKEN_SERVICE,
   OTP_SERVICE,
@@ -72,10 +71,12 @@ import {
   SYSTEM_CONFIGURATION,
   TOKEN_FAMILY_REPOSITORY,
   TOKEN_SERVICE,
-  UNIT_OF_WORK,
   USER_CONSENT_REPOSITORY,
   USER_REPOSITORY,
 } from './domain/tokens/authentication.tokens';
+import { CLOCK } from '@shared/application/ports/clock.port';
+import { ID_GENERATOR } from '@shared/application/ports/id-generator.port';
+import { UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
 
 /**
  * ADR-022 (Phase 2.23 closure): `EmailVerificationRepository`/
@@ -93,9 +94,23 @@ import {
  * `imports`, which also avoids a circular dependency this module would
  * otherwise have on `RealtimeModule` (which itself needs Reservations/
  * Branches/Restaurants repositories that transitively import this module).
+ *
+ * Phase 12 (Subscriptions, ADR-027, 2026-07-28): `ProvisionRestaurantOwnerUseCase`
+ * needs `SUBSCRIPTION_REPOSITORY`/`SUBSCRIPTION_USAGE_REPOSITORY` to
+ * provision an Organization's default Subscription/SubscriptionUsage in the
+ * same creation transaction (D7/ADR-027 §11) - `SubscriptionsModule` itself
+ * needs `CLOCK`/`ID_GENERATOR`/`UNIT_OF_WORK` from this module, making this
+ * a genuine circular pair, resolved with `forwardRef` on both sides, the
+ * same established pattern already used for `BranchesModule`↔`TablesModule`
+ * and `TablesModule`↔`ReservationsModule`.
  */
 @Module({
-  imports: [PrismaModule, AuthorizationModule, OrganizationsModule],
+  imports: [
+    PrismaModule,
+    AuthorizationModule,
+    OrganizationsModule,
+    forwardRef(() => SubscriptionsModule),
+  ],
   controllers: [AuthController, CustomerAuthController],
   providers: [
     LoginUseCase,

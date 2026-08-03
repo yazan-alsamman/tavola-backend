@@ -1,14 +1,11 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { ClockPort } from '@shared/application/ports/clock.port';
-import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
-import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
-import { UnitOfWorkPort } from '@shared/application/ports/unit-of-work.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
+import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
 import {
-  CLOCK,
-  ID_GENERATOR,
+  EventPublisherPort,
   EVENT_PUBLISHER,
-  UNIT_OF_WORK,
-} from '@modules/authentication/domain/tokens/authentication.tokens';
+} from '@shared/application/ports/event-publisher.port';
+import { UnitOfWorkPort, UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
 import { WaitlistEntryNotFoundException } from '../../domain/exceptions/waitlist-entry-not-found.exception';
 import { InvalidWaitlistStatusTransitionException } from '../../domain/exceptions/invalid-waitlist-status-transition.exception';
 import { WaitlistEntryCancelledEvent } from '../../domain/events/waitlist.events';

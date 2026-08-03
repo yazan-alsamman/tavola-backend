@@ -10,6 +10,7 @@ import {
   ImmediateUnitOfWork,
   UuidGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
+import { createPermissiveSubscriptionFixture } from '../../../../../test/subscriptions/support/permissive-subscription-fixture';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
 import { InMemoryWorkingHoursRepository } from '../../../../../test/restaurants/support/in-memory-working-hours.repository';
@@ -34,9 +35,27 @@ describe('GetWorkingHoursUseCase', () => {
     restaurantRepository: InMemoryRestaurantRepository,
     restaurantSettingsRepository: InMemoryRestaurantSettingsRepository,
   ): Promise<string> {
+    const {
+      subscriptionRepository,
+      subscriptionPlanRepository,
+      subscriptionUsageRepository,
+      restaurantUsageRepository,
+    } = createPermissiveSubscriptionFixture(
+      '33333333-3333-4333-8333-333333333333',
+      {
+        planId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        subscriptionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        usageId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      },
+      fixedNow,
+    );
     const createUseCase = new CreateRestaurantUseCase(
       restaurantRepository,
       restaurantSettingsRepository,
+      restaurantUsageRepository,
+      subscriptionRepository,
+      subscriptionPlanRepository,
+      subscriptionUsageRepository,
       new FixedClock(fixedNow),
       new UuidGenerator(),
       new CollectingEventPublisher(),

@@ -84,5 +84,30 @@ export async function seedOwnerAndOrganization(
     },
   });
 
+  // Phase 12 (Subscriptions, ADR-027 §11, D7/D26): every Organization must
+  // have exactly one Subscription. This fixture bypasses
+  // `ProvisionRestaurantOwnerUseCase` (the real code path that provisions
+  // one), so it mirrors that provisioning step here directly - the same
+  // "default" seeded plan (`prisma/seed.ts`), Active, indefinite. Without
+  // this, every e2e suite using this fixture and then creating a
+  // Restaurant/Branch/Employee through the real API would fail with
+  // SubscriptionNotFoundException.
+  const defaultPlan = await prisma.subscriptionPlan.findUnique({ where: { slug: 'default' } });
+  if (defaultPlan) {
+    await prisma.subscription.create({
+      data: {
+        id: randomUUID(),
+        organizationId,
+        subscriptionPlanId: defaultPlan.id,
+        status: 'Active',
+        startsAt: now,
+        endsAt: null,
+      },
+    });
+    await prisma.subscriptionUsage.create({
+      data: { id: randomUUID(), organizationId, restaurantCount: 0, updatedAt: now },
+    });
+  }
+
   return { userId, organizationId };
 }

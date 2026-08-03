@@ -15,13 +15,25 @@ import {
 } from '@modules/restaurants/domain/repositories/restaurant.repository';
 import {
   BranchId,
+  ConversationId,
   OrganizationId,
   ReservationId,
   RestaurantId,
+  UserId,
 } from '@shared/domain/value-objects/identifiers.vo';
 import { InvalidUuidException } from '@shared/domain/value-objects/uuid-id.vo';
 import { TenantContextService } from '@infrastructure/tenancy/tenant-context.service';
 import { resolveCorrelationId } from '@infrastructure/logging/correlation-id.util';
+import {
+  ConversationRepository,
+  CONVERSATION_REPOSITORY,
+} from '@modules/messaging/domain/repositories/conversation.repository';
+import {
+  ConversationParticipantRepository,
+  CONVERSATION_PARTICIPANT_REPOSITORY,
+} from '@modules/messaging/domain/repositories/conversation-participant.repository';
+import { ConversationPolicy } from '@modules/messaging/domain/services/conversation-policy';
+import { assertActorCanManageConversation } from '@modules/messaging/application/services/assert-actor-can-manage-conversation';
 import { RoomType, buildCanonicalRoom } from './room';
 
 /**
@@ -38,6 +50,10 @@ export class RoomAuthorizationService {
     @Inject(RESERVATION_REPOSITORY) private readonly reservationRepository: ReservationRepository,
     @Inject(BRANCH_REPOSITORY) private readonly branchRepository: BranchRepository,
     @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
+    @Inject(CONVERSATION_REPOSITORY)
+    private readonly conversationRepository: ConversationRepository,
+    @Inject(CONVERSATION_PARTICIPANT_REPOSITORY)
+    private readonly conversationParticipantRepository: ConversationParticipantRepository,
     private readonly tenantContextService: TenantContextService,
   ) {}
 
@@ -56,6 +72,8 @@ export class RoomAuthorizationService {
           return await this.authorizeBranch(actor, resourceId);
         case RoomType.Reservation:
           return await this.authorizeReservation(actor, resourceId);
+        case RoomType.Conversation:
+          return await this.authorizeConversation(actor, resourceId);
       }
     } catch (error) {
       if (error instanceof InvalidUuidException) {
@@ -193,5 +211,66 @@ export class RoomAuthorizationService {
     return restaurant !== null
       ? buildCanonicalRoom(RoomType.Reservation, reservationId.value)
       : null;
+  }
+
+  /**
+   * Phase 15.6 (Messaging, DECISIONS.md D9) — a `User` actor must be the
+   * conversation's `Customer` participant (`ConversationPolicy`); an
+   * `Employee`/`OrganizationMember` actor must pass the same Dual Actor
+   * check (D15) `SendMessage`/`GetConversation` already use
+   * (`assertActorCanManageConversation`), wrapped here since this method's
+   * contract returns `null` on denial rather than throwing - never a
+   * distinguishing error, exactly like every other room type above.
+   */
+  private async authorizeConversation(
+    actor: AuthenticatedActor,
+    resourceId: string,
+  ): Promise<string | null> {
+    const conversationId = ConversationId.create(resourceId);
+    const conversation = await this.conversationRepository.findById(conversationId);
+    if (conversation === null) {
+      return null;
+    }
+
+    if (actor.actorType === AccessTokenActorType.User) {
+      const userId = UserId.create(actor.userId);
+      const participant = await this.conversationParticipantRepository.findByConversationAndUser(
+        conversationId,
+        userId,
+      );
+      return ConversationPolicy.isCustomerParticipant(participant, userId)
+        ? buildCanonicalRoom(RoomType.Conversation, conversationId.value)
+        : null;
+    }
+
+    try {
+      if (actor.actorType === AccessTokenActorType.Employee) {
+        if (actor.restaurantId !== conversation.restaurantId.value) {
+          return null;
+        }
+        assertActorCanManageConversation(actor, actor.organizationId, conversation.branchId);
+      } else {
+        const restaurant = await this.tenantContextService.runAsync(
+          {
+            organizationId: actor.organizationId,
+            userId: actor.userId,
+            actorType: actor.actorType,
+            correlationId: resolveCorrelationId(undefined),
+          },
+          () => this.restaurantRepository.findById(conversation.restaurantId),
+        );
+        if (restaurant === null) {
+          return null;
+        }
+        assertActorCanManageConversation(
+          actor,
+          restaurant.organizationId.value,
+          conversation.branchId,
+        );
+      }
+      return buildCanonicalRoom(RoomType.Conversation, conversationId.value);
+    } catch {
+      return null;
+    }
   }
 }

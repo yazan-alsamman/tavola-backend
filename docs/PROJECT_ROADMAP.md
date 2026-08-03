@@ -66,15 +66,15 @@ Phase numbers below match TASKS.md exactly.
 | 8     | WebSocket                | ✅ Completed | 100%     |
 | 9     | Notification System      | 🟢 Complete, live + strict-E2E verified (not production-verified) | ~95% |
 | 10    | Reviews                  | ⏳ Pending    | 0%       |
-| 11    | Offers                   | ⏳ Pending    | 0%       |
-| 12    | Subscription System      | ⏳ Pending    | 0%       |
-| 13    | Payments                 | ⏳ Pending    | 0%       |
+| 11    | Offers                   | ✅ Completed | 100%     |
+| 12    | Subscription System      | 🟡 Architecture frozen (ADR-027, 2026-07-28), not implemented | 0%       |
+| 13    | Payments                 | ❌ Removed from product scope (Owner Decision, 2026-07-28) — not implemented, not planned | N/A |
 | 14    | Analytics                | ⏳ Pending    | 0%       |
-| 15    | Optimization             | ⏳ Pending    | 0%       |
+| 15    | Optimization             | ✅ Complete   | 100%     |
 | 16    | Testing                  | ⏳ Pending    | 0%       |
 | 17    | Deployment               | ⏳ Pending    | 0%       |
 
-Phase 6 is now COMPLETE: Merge Tables / Split Tables (architecture-frozen ADR-026, 2026-07-25) are implemented and live-verified (2026-07-26) — see TASKS.md's "Phase 6 — Merge/Split Implementation & Verification Report". Phase 8 is implemented, live-verified, and E2E verification-closed (2026-07-25) — see TASKS.md's Phase 8 Implementation & Verification Report and its Verification Closure Addendum. Phase 11 (Offers) architecture is now frozen (2026-07-28) — see TASKS.md's "Phase 11 — Offers: Pre-implementation architecture decisions"; implementation not yet authorized. A phase-independent Customer Restaurant Discovery & Public Read Surface (public restaurant/branch/floor-plan/table-topology browsing, plus Customer own-reservation read endpoints) was implemented and live-verified the same day — see TASKS.md's "Customer Restaurant Discovery & Public Read Surface — Implementation & Verification Report".
+Phase 6 is now COMPLETE: Merge Tables / Split Tables (architecture-frozen ADR-026, 2026-07-25) are implemented and live-verified (2026-07-26) — see TASKS.md's "Phase 6 — Merge/Split Implementation & Verification Report". Phase 8 is implemented, live-verified, and E2E verification-closed (2026-07-25) — see TASKS.md's Phase 8 Implementation & Verification Report and its Verification Closure Addendum. Phase 11 (Offers) is now COMPLETE and LIVE VERIFIED (2026-07-28 — architecture frozen and implemented the same day) — see TASKS.md's "Phase 11 — Offers: Pre-implementation architecture decisions" and "Phase 11 — Offers: Implementation & Verification Report". A phase-independent Customer Restaurant Discovery & Public Read Surface (public restaurant/branch/floor-plan/table-topology browsing, plus Customer own-reservation read endpoints) was implemented and live-verified the same day — see TASKS.md's "Customer Restaurant Discovery & Public Read Surface — Implementation & Verification Report".
 
 ---
 
@@ -428,13 +428,13 @@ Status: ✅ **COMPLETE, LIVE VERIFIED, AND PRODUCTION VERIFIED (2026-07-27).** F
 
 # Phase 11 — Offers
 
-Status: ⏳ Pending — **architecture frozen (2026-07-28)**, implementation not yet authorized. Single generic `Offer` aggregate with a `type` discriminator (`Promotion | Coupon | Event`) — not three separate aggregates. Coupons are display-only in v1 (no redemption engine). Owner/Admin-only management, no new Employee permission slug. Restaurant-scoped public read only, no platform-wide discovery endpoint. Excluded from Phase 8 realtime and Phase 9 notifications in v1 (Phase 9 impact: none; Phase 8 impact: none). See `TASKS.md`'s "Phase 11 — Offers: Pre-implementation architecture decisions" for the full freeze.
+Status: ✅ **COMPLETE, LIVE VERIFIED** (2026-07-28 — architecture frozen and implemented the same day). Single generic `Offer` aggregate with a `type` discriminator (`Promotion | Coupon | Event`) — not three separate aggregates. Coupons are display-only in v1 (no redemption engine). Owner/Admin-only management, no new Employee permission slug. Restaurant-scoped public read only (`GET /api/v1/discovery/restaurants/:restaurantId/offers`), no platform-wide discovery endpoint. Excluded from Phase 8 realtime and Phase 9 notifications in v1 (Phase 9 impact: none; Phase 8 impact: none). Automatic BullMQ expiration live-verified against real Redis. See `TASKS.md`'s "Phase 11 — Offers: Pre-implementation architecture decisions" and "Phase 11 — Offers: Implementation & Verification Report" for the full detail.
 
 ## Features
 
-* Coupons
-* Promotions
-* Events
+* Coupons ✅
+* Promotions ✅
+* Events ✅
 
 **Happy Hour is explicitly out of scope for Phase 11** (this bullet previously appeared here but not in `TASKS.md`'s authoritative checklist — reconciled 2026-07-28; no recurring/day-of-week/time-of-day schedule concept exists in the frozen `Offer` model).
 
@@ -442,46 +442,89 @@ Status: ⏳ Pending — **architecture frozen (2026-07-28)**, implementation not
 
 # Phase 12 — Subscription System
 
+**COMPLETE. LIVE VERIFIED (2026-07-28).** Architecture frozen 2026-07-28 (ADR-027) — entitlement/access contract, not billing — implemented and live-verified the same day. See `TASKS.md`'s "Phase 12 — Subscription System" sections (architecture decisions + implementation) and `DECISIONS.md` ADR-027 for the full design and implementation-time reconciliations.
+
 ## Features
 
-* Plans
-* Organization-level limits (ADR-011)
-* Usage Tracking
+* Plans (persisted, seeded, platform-global reference data — no dynamic PlatformAdmin authoring in this phase)
+* Organization-level plan ownership (ADR-011), with `maxBranchesPerRestaurant`/`maxEmployeesPerRestaurant` enforced per-Restaurant, not as an Organization-wide total (ADR-027)
+* Usage Tracking (`SubscriptionUsage` Organization-scoped, new `RestaurantUsage` Restaurant-scoped)
+
+**Explicitly excluded:** no reservation-volume limit (`maxMonthlyReservations`) — a restaurant must never lose booking capability by successfully doing business; no billing/payment/checkout of any kind (see Phase 13).
 
 ---
 
 # Phase 13 — Payments
 
-## Features
-
-* Payment interfaces
-* Payment provider abstraction
-* Transaction history
-
-Requires a dedicated Payment Provider ADR before implementation (see DECISIONS.md Future Decisions).
+**REMOVED FROM PRODUCT SCOPE (Owner Decision, 2026-07-28).** Payments were removed from TAVLA product scope before Phase 13 implementation began. TAVLA does not process customer or reservation payments inside the platform — no checkout, deposits, pre-authorization, payment gateway integration, transaction ledger, or invoicing (ADR-021, withdrawn — see `DECISIONS.md`). Restaurants may handle financial settlement independently, outside TAVLA. See `TASKS.md` Phase 13 for the full disposition. This phase number is retained as a historical tombstone; it is not reassigned.
 
 ---
 
 # Phase 14 — Analytics
 
+**COMPLETE. LIVE VERIFIED (2026-07-28).** Architecture frozen 2026-07-28 (ADR-028) — operational restaurant analytics only, direct PostgreSQL reads, no new persistence — implemented and live-verified the same day. See `TASKS.md`'s Phase 14 section for the full metric/route register and Implementation & Verification Report, and `DECISIONS.md` ADR-028 for the architecture decision.
+
 ## Features
 
-* Occupancy
-* Reservation trends
-* Peak hours
-* Customer insights
-* Revenue-ready reports
+* Reservation reports (status counts, source breakdown, service-day trend, booking-created trend, completion/no-show/cancellation rate, average party size)
+* Peak hours (reservation starts per 60-minute Branch-local hour bucket)
+* Customer insights (unique/returning registered customers, guest-backed reservation count, average party size)
+* Waitlist analytics (entry/outcome counts, closed-entry conversion rate)
+* Review summary (active review count, average rating)
+
+**Explicitly excluded from v1** (see ADR-028): occupancy percentage (exact or approximate), revenue/GMV/payment analytics, exports/scheduled reports, comparison periods, PlatformAdmin BI, ActivityFeed, WebSocket/realtime analytics, analytics notifications. "Revenue-ready reports" in prior roadmap drafts was stale wording predating the Payments removal (ADR-021 Disposition) — TAVLA does not process payments and Phase 14 has zero currency-denominated metrics.
 
 ---
 
 # Phase 15 — Optimization
 
+Status: ✅ **COMPLETE, LIVE VERIFIED, PRODUCTION VERIFIED** (2026-07-30). See `TASKS.md`'s "Phase 15 — Optimization: Pre-Implementation Audit Report", "Architecture Freeze Report", and "Implementation & Verification Report" for the full evidence trail.
+
 ## Goals
 
-* Redis caching
-* Query optimization
-* Index tuning
-* Performance profiling
+* Redis caching — evidence-backed review outcome: **not introduced** (no measured expensive read justified one; Redis's existing rate-limiting/queue/pub-sub roles unchanged)
+* Query optimization — Reviews result-assembler N+1 and SearchAvailability redundant merge-group query both eliminated and batch-proven (unit + real-Postgres)
+* Index tuning — one evidence-backed additive index, `Reservation(userId, createdAt)` (~260x measured improvement on the customer reservation-history query)
+* Performance profiling — k6 adopted (ADR-029); Discovery/Reservation availability/Reservation creation/Analytics all measured live against the rebuilt production image, all within `NON_FUNCTIONAL_REQUIREMENTS.md` budgets
+
+---
+
+# Phase 15.5 — Discovery Module
+
+Status: ✅ **COMPLETE, LIVE VERIFIED, PRODUCTION VERIFIED** (2026-07-30). See `TASKS.md`'s "Phase 15.5 — Discovery Module: Pre-Implementation Architecture Decision Note" for the full, authoritative decision record (D1–D17), and its "Phase 15.5 — Discovery Module: Implementation & Verification Report" for the Docker-dependent verification evidence.
+
+## Goals
+
+* Restaurant text search (`ILIKE` on `Restaurant.name` only, v1)
+* Nearby restaurant search (bounding-box + Haversine on existing Branch geo columns/index, no PostGIS/GiST)
+* Cuisine/occasion taxonomy filtering (relational taxonomy, not the legacy `cuisineType` string)
+* Price-level and minimum-rating filtering
+* Deterministic sorting (name/rating/newest; distance for nearby)
+* Restaurant comparison (stateless, 2–5 restaurants, ADR-018)
+* `hasActiveOffer` result annotation
+* Public Discovery rate limiting (closes a pre-existing gap on the already-shipped Discovery browsing routes)
+* Customer-safe FloorPlan/Table projection correction (security fix to the already-shipped floor-plan endpoint)
+
+Explicitly out of v1: reservation availability filtering, Menu, external search engines/extensions, Redis caching, personalized/sponsored ranking, favorites integration.
+
+---
+
+# Phase 15.6 — Messaging Module
+
+Status: ✅ **COMPLETE, LIVE VERIFIED, PRODUCTION VERIFIED** (2026-08-02). See `TASKS.md`'s "Phase 15.6 — Messaging Module: Implementation & Verification Report" for the full evidence trail, and `DECISIONS.md` ADR-020/ADR-030 (plus ADR-020's "Phase 15.6 Messaging — Owner Decisions" note, D1–D15) for the architecture decisions.
+
+## Goals
+
+* Customer–restaurant in-app conversations, tenant-resolved transitively via `restaurantId → Restaurant.organizationId` (ADR-030, no direct `organizationId` column)
+* Per-person read receipts, `Closed` (staff, both sides) vs. `Archived` (customer, self only) with auto-reopen on a new message
+* Dual Actor authorization for the Restaurant side (Employee `conversations:manage` + branch scope, or OrganizationMember Owner/Admin) — same use-case-branching pattern as Tables Merge/Split (ADR-026) and Analytics (ADR-028)
+* Realtime delivery via a new `conversation:{id}` room (fifth `RoomType`, Phase 8's own anticipated extension point)
+* Customer-only notification on a staff reply — never the reverse, never staff
+* Inline image attachments (JPEG/PNG/WebP, reusing the existing Files/MinIO pipeline, private bucket)
+* Cursor (keyset) pagination — a deliberate new convention for this phase's message/conversation lists only
+* Per-participant rate limiting and `Idempotency-Key` support on `SendMessage`/`StartConversation`
+
+Explicitly out of v1: GDPR erasure job/endpoint (schema field only), virus scanning on attachments, document/PDF attachments.
 
 ---
 
@@ -508,6 +551,29 @@ Minimum target coverage: **90%** (see TESTING_STRATEGY.md)
 * Monitoring
 * Logging
 * Backup strategy
+
+---
+
+# Phase 18 — Menu Management
+
+**Architecture frozen 2026-08-02 (see DECISIONS.md ADR-031); ownership/availability/isFeatured corrected 2026-08-03 (ADR-032); implementation not yet authorized.**
+
+## Goals
+
+* One or more Menus per Restaurant, containing Categories, containing Menu Items — exactly one Menu per Restaurant is `isDefault` (**corrected by ADR-032** from the original singleton design)
+* Configurable per-item Option Groups (with Options) and Add-ons
+* Always/Unavailable/Scheduled item availability, with Scheduled backed by a relational `MenuItemAvailability` table (**corrected by ADR-032** from a `scheduleJson` column)
+* Per-item `isFeatured` highlighting flag (**added by ADR-032**)
+* Reuse of existing File/MinIO infrastructure for Category/Item images (no new upload system)
+
+## Deliverables
+
+* `Menu`, `MenuCategory`, `MenuItem`, `MenuItemOptionGroup`, `MenuItemOption`, `MenuItemAddOn`, `MenuItemAvailability` Prisma models
+* Owner/Admin management API (CRUD + reorder + availability-window replace + set-default) and Customer public read API
+* `menu:manage` permission slug
+* Discovery `hasMenu` boolean (no search, no indexing, no recommendation engine)
+
+Explicitly out of Phase 18: Reservations/Reviews/Offers/Messaging/Analytics/Notifications/Realtime integration (Offer→MenuItem reference documented for a future phase only, not implemented); `MenuItem.sku` explicitly evaluated and deferred pending a future POS/Inventory/ERP integration ADR (ADR-032).
 
 ---
 

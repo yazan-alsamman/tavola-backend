@@ -188,9 +188,11 @@ Notifications
 
 Subscriptions
 
-Payments
-
 Analytics
+
+Discovery (Phase 15.5 — Customer-facing public restaurant discovery/search surface. Every route is public/unauthenticated, no guard, no organization scope, and intentionally crosses tenant boundaries — the only module permitted to do so, per its explicit ADR-018 architecture freeze. Reuses the same read-model response DTOs the Owner/Admin management endpoints already return; never leaks `organizationId` or any other tenant-internal field. See TASKS.md's "Phase 15.5 — Discovery Module" pre-implementation decision note.)
+
+Messaging (Phase 15.6 — Customer↔Restaurant conversation threads (`Conversation`/`ConversationParticipant`/`Message`), delivered over the same Realtime gateway/room-authorization mechanism as every other WebSocket surface (see "Realtime Architecture" below). Restaurant-side sender identity resolves through the Employee/OrganizationMember actor model, customer-side through the authenticated User — both participant types are authorized per-conversation via a centralized `ConversationAccessService`, never by trusting a client-supplied conversation id alone.)
 
 Files
 
@@ -425,7 +427,6 @@ Potential future services include:
 
 * Reservation Service
 * Notification Service
-* Payment Service
 * Analytics Service
 * Search Service
 * Organization & Tenancy Service

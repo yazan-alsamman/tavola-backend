@@ -7,5 +7,8 @@
   "MINIO_ACCESS_KEY": "tavla_minio_test_access",
   "MINIO_SECRET_KEY": "tavla_minio_test_secret",
   "MINIO_PUBLIC_BUCKET": "tavla-test-public",
-  "MINIO_PRIVATE_BUCKET": "tavla-test-private"
+  "MINIO_PRIVATE_BUCKET": "tavla-test-private",
+  "MINIO_PUBLIC_ENDPOINT": "localhost",
+  "MINIO_PUBLIC_PORT": "19000",
+  "MINIO_PUBLIC_USE_SSL": "false"
 }

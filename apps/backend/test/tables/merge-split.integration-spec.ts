@@ -125,7 +125,11 @@ describe('Phase 6 Merge/Split Tables - schema, atomicity, and concurrency (integ
     await rawPrisma.$disconnect();
   });
 
-  async function seedBranch(): Promise<{ restaurantId: string; branchId: string; floorPlanId: string }> {
+  async function seedBranch(): Promise<{
+    restaurantId: string;
+    branchId: string;
+    floorPlanId: string;
+  }> {
     const restaurant = await rawPrisma.restaurant.create({
       data: {
         organizationId: org.id,
@@ -154,7 +158,11 @@ describe('Phase 6 Merge/Split Tables - schema, atomicity, and concurrency (integ
     floorPlanId: string,
     tableNumber: string,
     capacity = 4,
-    overrides: Partial<{ status: TableStatus; mergeGroupId: string | null; isMergePrimary: boolean }> = {},
+    overrides: Partial<{
+      status: TableStatus;
+      mergeGroupId: string | null;
+      isMergePrimary: boolean;
+    }> = {},
   ): Promise<string> {
     const table = await rawPrisma.table.create({
       data: {
@@ -190,11 +198,7 @@ describe('Phase 6 Merge/Split Tables - schema, atomicity, and concurrency (integ
     );
   }
 
-  async function mergeAsOwner(
-    _restaurantId: string,
-    tableIds: string[],
-    primaryTableId?: string,
-  ) {
+  async function mergeAsOwner(_restaurantId: string, tableIds: string[], primaryTableId?: string) {
     return asOrg(org.id, () =>
       mergeUseCase.execute({ actor: orgMemberActor(org.id), tableIds, primaryTableId }),
     );
@@ -444,7 +448,9 @@ describe('Phase 6 Merge/Split Tables - schema, atomicity, and concurrency (integ
 
       const attempts = 5;
       const outcomes = await Promise.allSettled(
-        Array.from({ length: attempts }, () => mergeAsOwner(restaurantId, [tableA, tableB], tableA)),
+        Array.from({ length: attempts }, () =>
+          mergeAsOwner(restaurantId, [tableA, tableB], tableA),
+        ),
       );
 
       const fulfilled = outcomes.filter((o) => o.status === 'fulfilled');
@@ -452,7 +458,9 @@ describe('Phase 6 Merge/Split Tables - schema, atomicity, and concurrency (integ
       expect(fulfilled).toHaveLength(1);
       expect(rejected).toHaveLength(attempts - 1);
       for (const outcome of rejected) {
-        expect((outcome as PromiseRejectedResult).reason).toBeInstanceOf(TableMergeConflictException);
+        expect((outcome as PromiseRejectedResult).reason).toBeInstanceOf(
+          TableMergeConflictException,
+        );
       }
 
       const rowA = await rawPrisma.table.findUnique({ where: { id: tableA } });
@@ -520,7 +528,9 @@ describe('Phase 6 Merge/Split Tables - schema, atomicity, and concurrency (integ
       const rejected = outcomes.filter((o) => o.status === 'rejected');
       expect(fulfilled).toHaveLength(1);
       expect(rejected).toHaveLength(1);
-      expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(TableMergeConflictException);
+      expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(
+        TableMergeConflictException,
+      );
 
       // Whichever merge won, table B (the shared, contested table) belongs to
       // exactly one group, never both and never neither.
@@ -646,10 +656,8 @@ describe('Phase 6 Merge/Split Tables - schema, atomicity, and concurrency (integ
       );
       expect(tooHigh.map((t) => t.tableId.value)).not.toContain(tableA);
 
-      const satisfiedByCombinedOnly = await tableRepository.findManyAvailableByBranchIdAndMinCapacity(
-        byBranchId,
-        6,
-      );
+      const satisfiedByCombinedOnly =
+        await tableRepository.findManyAvailableByBranchIdAndMinCapacity(byBranchId, 6);
       expect(satisfiedByCombinedOnly.map((t) => t.tableId.value)).toContain(tableA);
       // Table A's own raw `capacity` column is never overwritten.
       const primaryResult = satisfiedByCombinedOnly.find((t) => t.tableId.value === tableA)!;
@@ -665,7 +673,10 @@ describe('Phase 6 Merge/Split Tables - schema, atomicity, and concurrency (integ
       await mergeAsOwner(restaurantId, [tableA, tableB], tableA);
 
       const byBranchId = BranchId.create(branchId);
-      const results = await tableRepository.findManyAvailableByBranchIdAndMinCapacity(byBranchId, 1);
+      const results = await tableRepository.findManyAvailableByBranchIdAndMinCapacity(
+        byBranchId,
+        1,
+      );
       expect(results.map((t) => t.tableId.value)).not.toContain(tableB);
     });
 
@@ -679,9 +690,46 @@ describe('Phase 6 Merge/Split Tables - schema, atomicity, and concurrency (integ
       await splitAsOwner(tableB);
 
       const byBranchId = BranchId.create(branchId);
-      const results = await tableRepository.findManyAvailableByBranchIdAndMinCapacity(byBranchId, 3);
+      const results = await tableRepository.findManyAvailableByBranchIdAndMinCapacity(
+        byBranchId,
+        3,
+      );
       expect(results.map((t) => t.tableId.value)).toContain(tableA);
       expect(results.map((t) => t.tableId.value)).not.toContain(tableB);
+    });
+
+    it('Phase 15 (Optimization): findManyByMergeGroupIds resolves multiple merge groups in one call against real Postgres', async () => {
+      if (!dbAvailable) return;
+
+      const { restaurantId, branchId, floorPlanId } = await seedBranch();
+      const groupOneA = await createTable(branchId, floorPlanId, 'G1A', 4);
+      const groupOneB = await createTable(branchId, floorPlanId, 'G1B', 2);
+      const groupTwoA = await createTable(branchId, floorPlanId, 'G2A', 3);
+      const groupTwoB = await createTable(branchId, floorPlanId, 'G2B', 3);
+      await mergeAsOwner(restaurantId, [groupOneA, groupOneB], groupOneA);
+      await mergeAsOwner(restaurantId, [groupTwoA, groupTwoB], groupTwoA);
+
+      const primaryOne = await tableRepository.findById(TableId.create(groupOneA));
+      const primaryTwo = await tableRepository.findById(TableId.create(groupTwoA));
+      const mergeGroupIdOne = primaryOne!.mergeGroupId!;
+      const mergeGroupIdTwo = primaryTwo!.mergeGroupId!;
+
+      const result = await tableRepository.findManyByMergeGroupIds([
+        mergeGroupIdOne,
+        mergeGroupIdTwo,
+        mergeGroupIdOne, // duplicate on purpose - must not duplicate members or error
+      ]);
+
+      expect(result.size).toBe(2);
+      expect(new Set(result.get(mergeGroupIdOne)!.map((t) => t.tableId.value))).toEqual(
+        new Set([groupOneA, groupOneB]),
+      );
+      expect(new Set(result.get(mergeGroupIdTwo)!.map((t) => t.tableId.value))).toEqual(
+        new Set([groupTwoA, groupTwoB]),
+      );
+
+      // Empty input returns an empty Map without issuing a query.
+      expect((await tableRepository.findManyByMergeGroupIds([])).size).toBe(0);
     });
   });
 

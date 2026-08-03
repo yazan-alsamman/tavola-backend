@@ -282,9 +282,7 @@ describe('Merge/Split Tables (ADR-026) (e2e)', () => {
   }
 
   function splitRequest(accessToken: string | null, tableId: string) {
-    const req = request(app!.getHttpServer())
-      .post(`/api/v1/tables/${tableId}/split`)
-      .send({});
+    const req = request(app!.getHttpServer()).post(`/api/v1/tables/${tableId}/split`).send({});
     return accessToken !== null ? req.set('Authorization', `Bearer ${accessToken}`) : req;
   }
 
@@ -549,10 +547,9 @@ describe('Merge/Split Tables (ADR-026) (e2e)', () => {
       4,
     );
 
-    const response = await mergeRequest(owner.accessToken, [
-      tableIds[0],
-      otherFloorTable,
-    ]).expect(409);
+    const response = await mergeRequest(owner.accessToken, [tableIds[0], otherFloorTable]).expect(
+      409,
+    );
     expect(response.body.code).toBe('TABLE_MERGE_CONFLICT');
 
     const row = await prisma.table.findUnique({ where: { id: tableIds[0] } });
@@ -715,9 +712,8 @@ describe('Merge/Split Tables (ADR-026) (e2e)', () => {
   it('POST /tables/:tableId/move rejects a table currently part of an active merge group (400 VALIDATION_ERROR), leaving it untouched', async () => {
     if (!dbAvailable || !app) return;
 
-    const { owner, restaurantId, branchId, floorPlanId, tableIds } = await setUpWorld(
-      'move-rejected-merged',
-    );
+    const { owner, restaurantId, branchId, floorPlanId, tableIds } =
+      await setUpWorld('move-rejected-merged');
     const [t1] = tableIds;
     const patioFloorPlanId = await createFloorPlan(
       owner.accessToken,

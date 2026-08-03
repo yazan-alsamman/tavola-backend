@@ -17,6 +17,11 @@ import {
 import { TenantContextService } from '@infrastructure/tenancy/tenant-context.service';
 import { InMemoryBranchRepository } from '../../../../test/branches/support/in-memory-branch.repository';
 import { InMemoryReservationRepository } from '../../../../test/reservations/support/in-memory-reservation.repository';
+import { InMemoryConversationRepository } from '../../../../test/messaging/support/in-memory-conversation.repository';
+import { InMemoryConversationParticipantRepository } from '../../../../test/messaging/support/in-memory-conversation-participant.repository';
+import { Conversation } from '@modules/messaging/domain/entities/conversation.entity';
+import { ConversationParticipant } from '@modules/messaging/domain/entities/conversation-participant.entity';
+import { ConversationStatus } from '@modules/messaging/domain/enums/messaging.enums';
 import { RoomAuthorizationService } from './room-authorization.service';
 import { RoomType } from './room';
 
@@ -27,6 +32,7 @@ const restaurantId = '22222222-2222-4222-8222-222222222222';
 const branchId = '33333333-3333-4333-8333-333333333333';
 const otherBranchId = '88888888-8888-4888-8888-888888888888';
 const reservationId = '44444444-4444-4444-8444-444444444444';
+const conversationId = '44444444-4444-4444-8444-444444444445';
 const tableId = '55555555-5555-4555-8555-555555555555';
 const userId = '66666666-6666-4666-8666-666666666666';
 const employeeId = '77777777-7777-4777-8777-777777777777';
@@ -166,14 +172,27 @@ async function build() {
     }),
   );
 
+  const conversationParticipantRepository = new InMemoryConversationParticipantRepository();
+  const conversationRepository = new InMemoryConversationRepository(
+    conversationParticipantRepository,
+  );
+
   const service = new RoomAuthorizationService(
     reservationRepository,
     branchRepository,
     restaurantRepository,
+    conversationRepository,
+    conversationParticipantRepository,
     tenantContextService,
   );
 
-  return { service, reservationRepository, branchRepository };
+  return {
+    service,
+    reservationRepository,
+    branchRepository,
+    conversationRepository,
+    conversationParticipantRepository,
+  };
 }
 
 describe('RoomAuthorizationService', () => {
@@ -465,6 +484,144 @@ describe('RoomAuthorizationService', () => {
     it('rejects a malformed reservation id', async () => {
       const { service } = await build();
       expect(await service.authorize(userActor(), RoomType.Reservation, malformedId)).toBeNull();
+    });
+  });
+
+  describe('conversation room (Phase 15.6, DECISIONS.md D9)', () => {
+    async function seedConversation(
+      conversationRepository: InMemoryConversationRepository,
+      overrides: Partial<{ restaurantId: string; branchId: string | null }> = {},
+    ) {
+      const conversation = Conversation.reconstitute({
+        id: conversationId,
+        restaurantId: overrides.restaurantId ?? restaurantId,
+        branchId: overrides.branchId === undefined ? branchId : overrides.branchId,
+        reservationId: null,
+        subject: null,
+        status: ConversationStatus.Open,
+        lastMessageAt: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await conversationRepository.create(conversation);
+    }
+
+    async function seedCustomerParticipant(
+      conversationParticipantRepository: InMemoryConversationParticipantRepository,
+      customerUserId: string,
+    ) {
+      const participant = ConversationParticipant.createCustomer({
+        id: '44444444-4444-4444-8444-444444444446',
+        conversationId,
+        userId: customerUserId,
+        now,
+      });
+      await conversationParticipantRepository.create(participant);
+    }
+
+    it('allows the Customer participant', async () => {
+      const { service, conversationRepository, conversationParticipantRepository } = await build();
+      await seedConversation(conversationRepository);
+      await seedCustomerParticipant(conversationParticipantRepository, userId);
+
+      const room = await service.authorize(userActor(), RoomType.Conversation, conversationId);
+      expect(room).toBe(`conversation:${conversationId}`);
+    });
+
+    it('denies a User who is not the Customer participant', async () => {
+      const { service, conversationRepository, conversationParticipantRepository } = await build();
+      await seedConversation(conversationRepository);
+      await seedCustomerParticipant(conversationParticipantRepository, userId);
+
+      const room = await service.authorize(
+        userActor({ userId: 'someone-else' }),
+        RoomType.Conversation,
+        conversationId,
+      );
+      expect(room).toBeNull();
+    });
+
+    it('allows an Employee holding conversations:manage assigned to the conversation branch', async () => {
+      const { service, conversationRepository } = await build();
+      await seedConversation(conversationRepository);
+
+      const room = await service.authorize(
+        employeeActor({ branchIds: [branchId], permissions: ['conversations:manage'] }),
+        RoomType.Conversation,
+        conversationId,
+      );
+      expect(room).toBe(`conversation:${conversationId}`);
+    });
+
+    it('denies an Employee scoped to a different branch (cross-branch denial, D14)', async () => {
+      const { service, conversationRepository } = await build();
+      await seedConversation(conversationRepository);
+
+      const room = await service.authorize(
+        employeeActor({ branchIds: [otherBranchId], permissions: ['conversations:manage'] }),
+        RoomType.Conversation,
+        conversationId,
+      );
+      expect(room).toBeNull();
+    });
+
+    it('denies an Employee missing the conversations:manage permission', async () => {
+      const { service, conversationRepository } = await build();
+      await seedConversation(conversationRepository);
+
+      const room = await service.authorize(
+        employeeActor({ permissions: [] }),
+        RoomType.Conversation,
+        conversationId,
+      );
+      expect(room).toBeNull();
+    });
+
+    it('allows OrganizationMember Owner/Admin when the conversation transitively belongs to their organization', async () => {
+      const { service, conversationRepository } = await build();
+      await seedConversation(conversationRepository);
+
+      const room = await service.authorize(orgMemberActor(), RoomType.Conversation, conversationId);
+      expect(room).toBe(`conversation:${conversationId}`);
+    });
+
+    it('denies OrganizationMember from a different organization (cross-org denial, D14)', async () => {
+      const { service, conversationRepository } = await build();
+      await seedConversation(conversationRepository);
+
+      const room = await service.authorize(
+        orgMemberActor({ organizationId: otherOrganizationId }),
+        RoomType.Conversation,
+        conversationId,
+      );
+      expect(room).toBeNull();
+    });
+
+    it('allows Staff access to a restaurant-wide conversation (branchId null) regardless of branch restriction', async () => {
+      const { service, conversationRepository } = await build();
+      await seedConversation(conversationRepository, { branchId: null });
+
+      const room = await service.authorize(
+        employeeActor({ branchIds: [otherBranchId], permissions: ['conversations:manage'] }),
+        RoomType.Conversation,
+        conversationId,
+      );
+      expect(room).toBe(`conversation:${conversationId}`);
+    });
+
+    it('denies (does not throw, IDOR-safe) for an unknown conversation id', async () => {
+      const { service } = await build();
+      const room = await service.authorize(
+        userActor(),
+        RoomType.Conversation,
+        '00000000-0000-4000-8000-000000000000',
+      );
+      expect(room).toBeNull();
+    });
+
+    it('rejects a malformed conversation id', async () => {
+      const { service } = await build();
+      expect(await service.authorize(userActor(), RoomType.Conversation, malformedId)).toBeNull();
     });
   });
 });

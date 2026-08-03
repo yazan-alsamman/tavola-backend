@@ -16,6 +16,8 @@ import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/su
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
 import { InMemoryFloorPlanRepository } from '../../../../../test/tables/support/in-memory-floor-plan.repository';
 import { InMemoryTableRepository } from '../../../../../test/tables/support/in-memory-table.repository';
+import { RestaurantUsage } from '@modules/restaurants/domain/entities/restaurant-usage.entity';
+import { createPermissiveSubscriptionFixture } from '../../../../../test/subscriptions/support/permissive-subscription-fixture';
 
 describe('GetBranchUseCase', () => {
   const fixedNow = new Date('2026-07-16T12:00:00.000Z');
@@ -66,15 +68,36 @@ describe('GetBranchUseCase', () => {
     await seedRestaurant(restaurantRepository, restaurantId, organizationId);
     await seedRestaurant(restaurantRepository, otherRestaurantId, organizationId);
 
+    const { subscriptionRepository, subscriptionPlanRepository, restaurantUsageRepository } =
+      createPermissiveSubscriptionFixture(
+        organizationId,
+        {
+          planId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          subscriptionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          usageId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        },
+        fixedNow,
+      );
+    await restaurantUsageRepository.create(
+      RestaurantUsage.create({
+        id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        restaurantId,
+        now: fixedNow,
+      }),
+    );
     const createUseCase = new CreateBranchUseCase(
       branchRepository,
       restaurantRepository,
+      restaurantUsageRepository,
+      subscriptionRepository,
+      subscriptionPlanRepository,
       new FixedClock(fixedNow),
       new SequentialIdGenerator([
         '11111111-1111-4111-8111-111111111111',
         '55555555-5555-4555-8555-555555555556',
       ]),
       new CollectingEventPublisher(),
+      new ImmediateUnitOfWork(),
     );
     const created = await createUseCase.execute({
       actor: baseActor(),
@@ -96,6 +119,7 @@ describe('GetBranchUseCase', () => {
       restaurantRepository,
       new InMemoryFloorPlanRepository(),
       new InMemoryTableRepository(),
+      restaurantUsageRepository,
       new FixedClock(fixedNow),
       new SequentialIdGenerator(['44444444-4444-4444-8444-444444444445']),
       new CollectingEventPublisher(),

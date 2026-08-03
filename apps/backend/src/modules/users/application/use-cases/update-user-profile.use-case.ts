@@ -1,5 +1,5 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { ClockPort } from '@shared/application/ports/clock.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import {
   AuditLogWriterPort,
   AUDIT_LOG_WRITER,
@@ -7,10 +7,7 @@ import {
 import { UserId } from '@shared/domain/value-objects/identifiers.vo';
 import { PhoneNumber } from '@shared/domain/value-objects/phone-number.vo';
 import { UserRepository } from '@modules/authentication/domain/repositories/authentication.repositories';
-import {
-  CLOCK,
-  USER_REPOSITORY,
-} from '@modules/authentication/domain/tokens/authentication.tokens';
+import { USER_REPOSITORY } from '@modules/authentication/domain/tokens/authentication.tokens';
 import { UserNotFoundException } from '@modules/authentication/application/exceptions/user-not-found.exception';
 import { PhoneAlreadyExistsException } from '@modules/authentication/domain/exceptions/phone-already-exists.exception';
 import { UpdateUserProfileCommand } from '../dto/update-user-profile.command';

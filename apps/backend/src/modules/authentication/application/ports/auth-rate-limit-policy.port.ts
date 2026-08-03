@@ -22,7 +22,15 @@ export type RateLimitPolicyName =
   | 'customerRegisterSend'
   | 'customerRegisterVerify'
   | 'customerPasswordResetSend'
-  | 'customerPasswordResetVerify';
+  | 'customerPasswordResetVerify'
+  // Post-Audit Remediation (2026-08-02, item L1): the final "complete" step
+  // of each flow was the only unguarded route in this controller — an
+  // unlimited caller could otherwise trigger unbounded Argon2 hashing
+  // (deliberately CPU/memory-expensive) with no rate limit at all. Reuses
+  // the sibling "Send" policy's per-phone identifier and numbers, same
+  // precedent `changePassword` already set by reusing `resetPassword`'s.
+  | 'customerRegisterComplete'
+  | 'customerPasswordResetComplete';
 // Customer login reuses the existing 'login' policy above (same IP-scoped
 // brute-force rationale as Owner/staff login) rather than a new policy -
 // ADR-022 does not freeze a distinct number for it.

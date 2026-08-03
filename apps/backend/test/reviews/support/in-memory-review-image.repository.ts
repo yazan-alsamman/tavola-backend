@@ -23,6 +23,16 @@ export class InMemoryReviewImageRepository implements ReviewImageRepository {
       .sort((a, b) => a.sortOrder - b.sortOrder);
   }
 
+  async findManyByReviewIds(reviewIds: ReviewId[]): Promise<ReviewImage[]> {
+    if (reviewIds.length === 0) {
+      return [];
+    }
+    const uniqueIds = new Set(reviewIds.map((id) => id.value));
+    return [...this.rows.values()]
+      .filter((image) => uniqueIds.has(image.reviewId.value) && !image.isDeleted())
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
   async countByReviewId(reviewId: ReviewId): Promise<number> {
     return (await this.findManyByReviewId(reviewId)).length;
   }

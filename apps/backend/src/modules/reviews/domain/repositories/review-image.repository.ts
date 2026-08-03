@@ -11,6 +11,8 @@ export interface ReviewImageRepository {
   findById(id: ReviewImageId): Promise<ReviewImage | null>;
   /** Ordered by `sortOrder` ascending. */
   findManyByReviewId(reviewId: ReviewId): Promise<ReviewImage[]>;
+  /** Phase 15 (Optimization) batch accessor - all images for all given Reviews, ordered by `sortOrder` ascending within each Review, soft-deleted rows excluded. Empty input returns `[]` without a database round-trip. */
+  findManyByReviewIds(reviewIds: ReviewId[]): Promise<ReviewImage[]>;
   countByReviewId(reviewId: ReviewId): Promise<number>;
   softDelete(id: ReviewImageId, at: Date): Promise<void>;
 }

@@ -1,7 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { ClockPort } from '@shared/application/ports/clock.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import { EmployeeId, RestaurantId, BranchId } from '@shared/domain/value-objects/identifiers.vo';
-import { CLOCK } from '@modules/authentication/domain/tokens/authentication.tokens';
 import { EmployeeNotFoundException } from '@modules/authorization/domain/exceptions/employee-not-found.exception';
 import { EmployeeRepository } from '@modules/authorization/domain/repositories/authorization.repositories';
 import { EMPLOYEE_REPOSITORY } from '@modules/authorization/application/tokens/authorization.tokens';

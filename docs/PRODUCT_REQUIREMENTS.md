@@ -24,6 +24,12 @@ Multi-tenant SaaS enabling restaurants to manage reservations, operations, custo
 
 ---
 
+# Product Scope Boundary — Payments
+
+TAVLA does not process payments inside the platform. Reservation payments, deposits, pre-authorizations, refunds, payment settlement, and payment-provider integrations are outside product scope and are handled independently by restaurants where applicable (Owner Decision, 2026-07-28 — see `TASKS.md`/`PROJECT_ROADMAP.md` Phase 13 and `DECISIONS.md` ADR-021 Disposition). This does not affect Phase 12 — Subscriptions, which remains in scope as plan/entitlement/limit/usage management, not as an in-app payment system.
+
+---
+
 # Actors
 
 | Actor | Description |
@@ -122,15 +128,17 @@ Multi-tenant SaaS enabling restaurants to manage reservations, operations, custo
 
 **2026-07-28 note:** FR-07.8 is the minimal Customer-facing browsing/detail capability (plain paginated listing, no filter/sort/geo-bounding-box) - FR-07.1/07.2/07.6 (search, nearby, comparison) remain ADR-018's own future Phase 2/Phase 15.5 Discovery scope, not reopened by this addition.
 
+**2026-07-30 note:** FR-07.1/07.2/07.3/07.4/07.5/07.6 are now delivered as Phase 15.5 — Discovery Module (architecture frozen 2026-07-29; complete, live-verified, production-verified 2026-07-30); see `TASKS.md`'s Phase 15.5 decision note (D1–D17) and its Implementation & Verification Report for the full, authoritative contract and evidence. FR-07.7 (Favorites) remains unchanged/unaffected (Phase 3, already implemented) — ADR-018 item 4 explicitly defers personalized ranking, and Phase 15.5 does not integrate Favorites into search results.
+
 ## FR-08 — Menus & Offers
 
 | ID | Requirement | Architecture reference |
 |---|---|---|
-| FR-08.1 | Menus, categories, items | Phase 4+, `Menus`, `MenuCategories`, `MenuItems` |
+| FR-08.1 | Menus, categories, items | Phase 18, `Menu Management` — **architecture frozen 2026-08-02 (DECISIONS.md ADR-031); implementation not yet authorized.** Roadmap gap (confirmed 2026-07-29, first recorded by `TASKS.md`'s Phase 15.5 decision note) resolved by design; no Prisma model or code exists yet. |
 | FR-08.2 | Promotions, coupons, time-bound offers | Phase 11, `Offers` |
 | FR-08.3 | Offer publication and expiration | `OfferPolicy` |
 
-**Phase 11 freeze (2026-07-28):** FR-08.2's "coupons" are display-only in v1 — no redemption engine, usage tracking, or payment integration (Payments is Phase 13, unscheduled). A single generic `Offer` aggregate (`type: Promotion | Coupon | Event`) satisfies FR-08.2, not three separate entities.
+**Phase 11 freeze (2026-07-28), implemented and live-verified the same day:** FR-08.2's "coupons" are display-only in v1 — no redemption engine, usage tracking, or payment integration. TAVLA does not process payments (Phase 13 — Payments removed from product scope, 2026-07-28; see `TASKS.md`), so no payment integration will exist for coupons to discount against, now or in the future. A single generic `Offer` aggregate (`type: Promotion | Coupon | Event`) satisfies FR-08.2, not three separate entities.
 
 ## FR-09 — Reviews & Ratings
 
@@ -162,21 +170,23 @@ Multi-tenant SaaS enabling restaurants to manage reservations, operations, custo
 
 | ID | Requirement | Architecture reference |
 |---|---|---|
-| FR-12.1 | Subscription plans with feature limits | Phase 12, `SubscriptionPlans`, `Subscriptions` |
-| FR-12.2 | Usage tracking | `SubscriptionUsage` |
-| FR-12.3 | Payments with provider abstraction | Phase 13, `PaymentGateway` port |
-| FR-12.4 | Payment transaction audit trail | `Payments`, `PaymentTransactions` |
-| FR-12.5 | Invoices (PDF/document generation) | ADR-021, `Invoices` |
+| FR-12.1 | Subscription plans with structural resource limits (`maxRestaurants`, `maxBranchesPerRestaurant`, `maxEmployeesPerRestaurant`) — architecture frozen 2026-07-28, ADR-027, not yet implemented | Phase 12, `SubscriptionPlans`, `Subscriptions` |
+| FR-12.2 | Usage tracking (`SubscriptionUsage` Organization-scoped, `RestaurantUsage` Restaurant-scoped) — architecture frozen 2026-07-28, ADR-027, not yet implemented | `SubscriptionUsage`, `RestaurantUsage` |
+| FR-12.3 – FR-12.5 | **Removed (2026-07-28):** in-app payment processing, payment transaction audit trail, and payment-generated invoices. Owner decision — TAVLA does not process payments; Phase 13 — Payments removed from product scope. See `TASKS.md`/`PROJECT_ROADMAP.md` Phase 13, `DECISIONS.md` ADR-021 Disposition. IDs retained as a tombstone, not reassigned. |
 | FR-12.6 | Multi-currency per branch | `Branches.currency`, `LOCALIZATION.md` |
+
+**2026-07-28 note (ADR-027):** subscription limits are structural/resource limits only. TAVLA does not, and will not, limit reservation volume by subscription tier — a restaurant must never become unable to accept reservations because of its Organization's plan. Reservation-volume measurement (not restriction) is FR-13/Phase 14 Analytics' concern.
 
 ## FR-13 — Analytics & Dashboard
 
+**2026-07-28 note (ADR-028):** FR-13 is rewritten to match Phase 14's architecture-frozen v1 scope. Prior wording (written 2026-07-07) referenced WebSocket delivery and revenue reporting that were never accurate for Phase 14 and predate both the Phase 8/9 realtime/notification freezes and the Payments removal — see ADR-028's Context for the full reconciliation.
+
 | ID | Requirement | Architecture reference |
 |---|---|---|
-| FR-13.1 | Restaurant operational dashboard | Phase 14, WebSocket + REST |
-| FR-13.2 | Reservation reports, occupancy, peak hours | `AnalyticsCalculator`, Phase 14 |
-| FR-13.3 | Activity feed (denormalized read model) | `ActivityFeed`, CQRS pattern in `ARCHITECTURE.md` |
-| FR-13.4 | Cross-branch currency aggregation rules | `LOCALIZATION.md` |
+| FR-13.1 | Restaurant operational dashboard, REST only | Phase 14, ADR-028 — no WebSocket integration; REST reads, direct PostgreSQL, no realtime fan-out |
+| FR-13.2 | Reservation reports, peak hours — **no occupancy percentage** (exact or approximate) in v1; no historical capacity/topology snapshot exists to compute one accurately | Phase 14, ADR-028 |
+| FR-13.3 | Activity feed (denormalized read model) — **deferred, out of Phase 14 v1 scope**; remains a documented future capability under the general CQRS pattern in `ARCHITECTURE.md`, not built by Phase 14 | `ActivityFeed`, CQRS pattern in `ARCHITECTURE.md` |
+| FR-13.4 | Cross-branch currency aggregation rules — **not applicable to Phase 14 v1**; Phase 14 has zero currency-denominated metrics (no revenue/payment analytics, ADR-028 Decision #12). Retained for a future phase if currency-denominated reporting is ever approved | `LOCALIZATION.md` |
 
 ## FR-14 — Employee & Role Management
 
@@ -238,7 +248,7 @@ Documented in `NON_FUNCTIONAL_REQUIREMENTS.md` § Extensibility. Architecture mu
 | Area | Approach |
 |---|---|
 | Loyalty programs | New `loyalty` module; events from `ReservationCompleted` |
-| Gift cards | New `billing` submodule; `PaymentGateway` extension |
+| Gift cards | **Out of scope** — depends on in-app payment processing, which is permanently out of TAVLA's product scope (Owner Decision, 2026-07-28; see `TASKS.md` Phase 13). Would require a future owner decision reversing that scope before this could be reconsidered. |
 | QR ordering | New module; links to `Menus` + table context |
 | Delivery / takeaway | New fulfillment module; branch capacity hooks |
 | AI recommendations | `RecommendationService` (DOMAIN_MODEL.md Future Evolution) |

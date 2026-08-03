@@ -6,15 +6,16 @@ import { TenantContextMissingException } from './tenant-context-missing.exceptio
  * Prisma Client Extension enforcing tenant scoping (TENANCY.md, ADR-012).
  *
  * Scope of this phase: enforcement covers the tenant-owned models that carry
- * a **direct** `organizationId` column today — `OrganizationMember` and
- * `Restaurant`. Per the schema, `Branch`/`Employee`/`EmployeeBranchAssignment`
- * are tenant-owned *transitively* (via `restaurantId` relation chains, one or
- * two hops deep) — correctly identified as such, but their enforcement is
- * deferred to whichever phase implements their first repository (Phase 5/6),
- * since relation-path injection needs per-model FK-chain logic that cannot be
- * meaningfully tested without a concrete consuming repository. Extend
- * `DIRECT_TENANT_OWNED_MODELS` (and add a relation-path strategy) when that
- * work begins — do not guess at the shape now.
+ * a **direct** `organizationId` column today — `OrganizationMember`,
+ * `Restaurant`, and (Phase 12, ADR-027 §12) `Subscription`/`SubscriptionUsage`.
+ * Per the schema, `Branch`/`Employee`/`EmployeeBranchAssignment`/
+ * `RestaurantUsage` are tenant-owned *transitively* (via `restaurantId`
+ * relation chains, one or two hops deep) — correctly identified as such, but
+ * their enforcement is deferred to whichever phase implements their first
+ * repository, since relation-path injection needs per-model FK-chain logic
+ * that cannot be meaningfully tested without a concrete consuming
+ * repository. Extend `DIRECT_TENANT_OWNED_MODELS` (and add a relation-path
+ * strategy) when that work begins — do not guess at the shape now.
  *
  * Fail-closed: any operation against a listed model with no TenantContext
  * bound throws `TenantContextMissingException` rather than running unscoped.
@@ -23,7 +24,12 @@ import { TenantContextMissingException } from './tenant-context-missing.exceptio
  * upstream) can never widen or redirect a query to another tenant by
  * supplying its own `organizationId`.
  */
-const DIRECT_TENANT_OWNED_MODELS = new Set(['OrganizationMember', 'Restaurant']);
+const DIRECT_TENANT_OWNED_MODELS = new Set([
+  'OrganizationMember',
+  'Restaurant',
+  'Subscription',
+  'SubscriptionUsage',
+]);
 
 const WHERE_SCOPED_OPERATIONS = new Set([
   'findUnique',

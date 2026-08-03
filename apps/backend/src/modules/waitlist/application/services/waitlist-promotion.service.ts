@@ -1,12 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
-import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
-import { UnitOfWorkPort } from '@shared/application/ports/unit-of-work.port';
+import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
 import {
-  ID_GENERATOR,
+  EventPublisherPort,
   EVENT_PUBLISHER,
-  UNIT_OF_WORK,
-} from '@modules/authentication/domain/tokens/authentication.tokens';
+} from '@shared/application/ports/event-publisher.port';
+import { UnitOfWorkPort, UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
 import {
   TableRepository,
   TABLE_REPOSITORY,
@@ -332,9 +330,7 @@ export class WaitlistPromotionService {
     const tableIdsWithOverlap = new Set(
       overlappingReservations.map((reservation) => reservation.tableId.value),
     );
-    const serviceable = candidates.filter(
-      (table) => !tableIdsWithOverlap.has(table.tableId.value),
-    );
+    const serviceable = candidates.filter((table) => !tableIdsWithOverlap.has(table.tableId.value));
 
     if (serviceable.length === 0) {
       return null;

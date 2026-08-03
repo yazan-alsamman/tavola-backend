@@ -1,7 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { AuthenticationModule } from '@modules/authentication/authentication.module';
 import { AuditingEventPublisher } from '@modules/authentication/infrastructure/events/auditing-event-publisher';
-import { EVENT_PUBLISHER } from '@modules/authentication/domain/tokens/authentication.tokens';
 import { ReservationsModule } from '@modules/reservations/reservations.module';
 import { BranchesModule } from '@modules/branches/branches.module';
 import {
@@ -11,6 +10,7 @@ import {
 import { RestaurantsModule } from '@modules/restaurants/restaurants.module';
 import { NotificationsModule } from '@modules/notifications/notifications.module';
 import { NotificationDispatcher } from '@modules/notifications/application/services/notification-dispatcher.service';
+import { MessagingModule } from '@modules/messaging/messaging.module';
 import { WsAuthenticationService } from './application/ws-authentication.service';
 import { RoomAuthorizationService } from './application/room-authorization.service';
 import { SocketIoRealtimeBroadcaster } from './infrastructure/socket-io-realtime-broadcaster';
@@ -18,6 +18,7 @@ import { REALTIME_BROADCASTER } from './domain/ports/realtime-broadcaster.port';
 import { RealtimeEventPublisher } from './infrastructure/events/realtime-event-publisher';
 import { NotifyingEventPublisher } from '@modules/notifications/infrastructure/events/notifying-event-publisher';
 import { RealtimeGateway } from './presentation/gateways/realtime.gateway';
+import { EVENT_PUBLISHER } from '@shared/application/ports/event-publisher.port';
 
 /**
  * Phase 8 (WebSocket, architecture frozen 2026-07-24) §20 — owns the entire
@@ -54,6 +55,14 @@ import { RealtimeGateway } from './presentation/gateways/realtime.gateway';
  * ambiently because this module is `@Global()`, exactly like every other
  * consumer of the token), which is a provider-level dependency satisfied
  * once `RealtimeEventPublisher` is constructed, not a module-import cycle.
+ *
+ * Phase 15.6 (Messaging, architecture designed 2026-07-30, D9) adds
+ * `MessagingModule` to this same one-directional list, purely so
+ * `RoomAuthorizationService.authorizeConversation` can reach
+ * `ConversationRepository`/`ConversationParticipantRepository`.
+ * `MessagingModule` never imports `RealtimeModule` back - its own realtime
+ * fan-out happens through the ambient `EVENT_PUBLISHER` token exactly like
+ * every other feature module, never a direct dependency on this module.
  */
 @Global()
 @Module({
@@ -63,6 +72,7 @@ import { RealtimeGateway } from './presentation/gateways/realtime.gateway';
     BranchesModule,
     RestaurantsModule,
     NotificationsModule,
+    MessagingModule,
   ],
   providers: [
     WsAuthenticationService,

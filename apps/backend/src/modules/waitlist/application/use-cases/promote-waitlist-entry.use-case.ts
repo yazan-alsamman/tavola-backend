@@ -1,6 +1,5 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { ClockPort } from '@shared/application/ports/clock.port';
-import { CLOCK } from '@modules/authentication/domain/tokens/authentication.tokens';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import {
   BranchRepository,
   BRANCH_REPOSITORY,

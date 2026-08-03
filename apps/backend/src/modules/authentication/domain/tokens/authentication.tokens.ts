@@ -8,10 +8,9 @@ export const DEVICE_SESSION_REPOSITORY = Symbol('DEVICE_SESSION_REPOSITORY');
 export const TOKEN_FAMILY_REPOSITORY = Symbol('TOKEN_FAMILY_REPOSITORY');
 export const LOGIN_ATTEMPT_REPOSITORY = Symbol('LOGIN_ATTEMPT_REPOSITORY');
 export const SYSTEM_CONFIGURATION = Symbol('SYSTEM_CONFIGURATION');
-export const UNIT_OF_WORK = Symbol('UNIT_OF_WORK');
-export const CLOCK = Symbol('CLOCK');
-export const EVENT_PUBLISHER = Symbol('EVENT_PUBLISHER');
-export const ID_GENERATOR = Symbol('ID_GENERATOR');
+// CLOCK, ID_GENERATOR, EVENT_PUBLISHER, UNIT_OF_WORK moved to their port
+// files under src/shared/application/ports (Post-Audit Remediation H1) -
+// they are shared-kernel concepts, not Authentication-owned.
 export const AUTH_REFRESH_POLICY = Symbol('AUTH_REFRESH_POLICY');
 export const RATE_LIMITER = Symbol('RATE_LIMITER');
 export const USER_CONSENT_REPOSITORY = Symbol('USER_CONSENT_REPOSITORY');

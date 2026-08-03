@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { PrismaModule } from '@infrastructure/prisma/prisma.module';
 import { AuthenticationModule } from '@modules/authentication/authentication.module';
 import { PlatformAdminController } from './presentation/controllers/platform-admin.controller';
@@ -15,10 +15,14 @@ import { PLATFORM_ADMIN_TOKEN_SERVICE } from './domain/services/platform-admin-t
  * shared User/PasswordHasher/LoginAttempt/Audit infrastructure for
  * `PlatformAdminLoginUseCase` - never `AuthenticationModule`'s
  * `JwtAuthGuard`/`TokenService`, which this module deliberately does not
- * use anywhere.
+ * use anywhere. Wrapped in `forwardRef` (Phase 12, ADR-027): `SubscriptionsModule`
+ * imports this module for `PlatformAdminGuard`, while `AuthenticationModule`
+ * imports `SubscriptionsModule` (also via `forwardRef`) - the same
+ * three-module cycle documented on `RestaurantsModule`'s own
+ * `AuthenticationModule` import.
  */
 @Module({
-  imports: [PrismaModule, AuthenticationModule],
+  imports: [PrismaModule, forwardRef(() => AuthenticationModule)],
   controllers: [PlatformAdminController],
   providers: [
     PlatformAdminGuard,

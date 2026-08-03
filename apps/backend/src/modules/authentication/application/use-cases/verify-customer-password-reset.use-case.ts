@@ -1,6 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PhoneNumber } from '@shared/domain/value-objects/phone-number.vo';
-import { ClockPort } from '@shared/application/ports/clock.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import {
   SYSTEM_CONFIG_KEYS,
   SystemConfigurationPort,
@@ -17,7 +17,6 @@ import { OtpAttemptsExhaustedException } from '../../domain/exceptions/otp-attem
 import { VerifyCustomerPasswordResetCommand } from '../dto/customer-password-reset.command';
 import { CustomerOtpResult, CUSTOMER_OTP_VERIFIED_MESSAGE } from '../dto/customer-otp.result';
 import {
-  CLOCK,
   CUSTOMER_PASSWORD_RESET_REPOSITORY,
   OTP_SERVICE,
   SYSTEM_CONFIGURATION,

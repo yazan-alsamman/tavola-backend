@@ -100,6 +100,16 @@ order
 
 Cursor pagination for large datasets.
 
+**Messaging (Phase 15.6, DECISIONS.md D13):** `GET /conversations/:id/messages` and the two conversation-list endpoints use true cursor (keyset) pagination — `(createdAt, id)` — default page size 50, maximum 100. This is the first true cursor-paginated endpoint set in the API; every other list endpoint in this codebase still uses page/limit offset pagination, and that convention is unchanged elsewhere. Cursor pagination was chosen specifically because message history is an append-heavy, high-churn feed where offset pagination double-counts/skips rows under concurrent inserts.
+
+---
+
+# Bulk Reorder Endpoints
+
+**Menu Management (Phase 18, architecture frozen 2026-08-02, ADR-031 — not implemented) introduces this as a new, reusable convention** — no prior module had a "reorder a bounded set of sibling rows" endpoint. Shape: `PATCH <parent-collection>/reorder`, body `{ orderedIds: string[] }` (a UUID array, `@IsUUID(4, { each: true })`, `@ArrayUnique()`, `@ArrayNotEmpty()`). Semantics are **whole-set replacement, not incremental**: `orderedIds` must exactly match the current non-deleted sibling set under the resolved parent (set equality, both directions) — a partial array, a foreign ID, or an ID belonging to a different parent is rejected with a validation error before any `displayOrder` value is written, not silently ignored. On success, every sibling's `displayOrder` is set to its index in `orderedIds`, in one transaction. First consumers: `PATCH /restaurants/:restaurantId/menus/:menuId/categories/reorder` (Categories within a Menu) and `PATCH /restaurants/:restaurantId/menus/:menuId/categories/:categoryId/items/reorder` (Items within a Category) — see `DOMAIN_MODEL.md`'s Menu Aggregate and `EVENTS.md`'s `CategoriesReordered`/`MenuItemsReordered`. **`:menuId` segment added by ADR-032** (2026-08-03): the original Phase 18 freeze assumed a singleton Menu per Restaurant (`.../menu/categories/reorder`, no id needed); ADR-032 supersedes that to Restaurant 1:N Menu, so every Menu-scoped route below the Restaurant must address a specific Menu explicitly. No live route existed under the old shape, so this is not a breaking change to anything implemented. Future modules needing ordered siblings under a shared parent should reuse this exact shape rather than inventing a new one.
+
+**Menu Item Availability (added by ADR-032)** reuses this same whole-set-replacement convention for a different field shape: `PATCH /restaurants/:restaurantId/menus/:menuId/categories/:categoryId/items/:itemId/availability`, body `{ windows: Array<{ dayOfWeek: number; startTime: string; endTime: string }> }`, valid only while the Item's `availabilityMode = Scheduled`. Replaces the entire `MenuItemAvailability` row set for that Item in one transaction — see `EVENTS.md`'s `MenuItemAvailabilityWindowsReplaced`.
+
 ---
 
 # Filtering
@@ -107,6 +117,8 @@ Cursor pagination for large datasets.
 Example
 
 GET /restaurants?city=Damascus&rating=5
+
+**Phase 15.5 (Discovery Module, architecture frozen 2026-07-29, complete/live-verified/production-verified 2026-07-30) frozen contract:** the actual filtering surface lives under `/discovery/restaurants`, not `/restaurants` (the latter remains Owner/Admin-only management CRUD - see "Customer Restaurant Discovery & Public Read Surface" below). `GET /discovery/restaurants` accepts `q` (name-only `ILIKE`), `cuisineId`, `occasionId`, `priceLevel`, `minRating`, `city`, `sort` (`name`|`rating`|`newest`), `order`, plus existing `page`/`limit`. `GET /discovery/restaurants/nearby` accepts `lat`, `lng`, `radiusKm` (default 5, max 50, kilometers) plus the same filters, sorted `distance ASC` only. `POST /discovery/restaurants/compare` accepts `{ restaurantIds: string[] }` (2-5 unique UUIDs). Full decision record: `TASKS.md`'s Phase 15.5 decision note (D1-D17) and `DECISIONS.md` ADR-018's own Phase 15.5 addendum.
 
 ---
 
@@ -219,6 +231,8 @@ Domain actions (business commands that don't fit generic CRUD) use `POST` on an 
 
 **Customer Restaurant Discovery & Public Read Surface (2026-07-28):** the management routes under `/restaurants`, `/restaurants/:restaurantId/branches`, and their Table/FloorPlan children are Owner/Admin-only (`OrganizationMemberGuard`) and cannot also serve public Customer reads on the same path (a route cannot carry two different guard chains). Public/unauthenticated browsing therefore lives on a parallel, deliberately separate path family, `GET /discovery/restaurants[/:restaurantId[/branches[/:branchId[/floor-plan]]]]`, owned by a new `DiscoveryModule` (`@ApiTags('Discovery')`, distinct from `@ApiTags('Restaurants')`/`@ApiTags('Branches')`/`@ApiTags('Tables')` in Swagger) - this is the minimal customer-facing slice of ADR-018's already-reserved `modules/discovery/` name, not its future Phase 15.5 search/nearby/ranking engine (no filter, sort, geo-bounding-box, or comparison logic lives here). Every response reuses the exact same Response DTOs (`RestaurantResponseDto`, `BranchResponseDto`, `FloorPlanResponseDto`, `TableResponseDto`) the management endpoints already return - those shapes never carried an `organizationId` or other internal field to begin with. `GET /reservations` and `GET /reservations/:id` (Customer's own reservations only, ownership-checked, IDOR-safe 404) were added to the existing `ReservationsController` on the same customer-facing `/reservations` resource, no new path family needed.
 
+**Phase 15.5 (Discovery Module, architecture frozen 2026-07-29, complete/live-verified/production-verified 2026-07-30):** extends this same `DiscoveryModule`/`@ApiTags('Discovery')` surface with `GET /discovery/restaurants/nearby` and `POST /discovery/restaurants/compare` (new routes) plus filter/sort query params on the existing `GET /discovery/restaurants`. Implementation note: `GET .../nearby` must be registered before the existing `GET .../:restaurantId` handler in `DiscoveryController`, since NestJS/Express matches routes in declaration order and `:restaurantId` would otherwise capture the literal segment `nearby` (failing its `ParseUUIDPipe`); `POST .../compare` has no such ordering constraint (distinct HTTP verb). The same session also corrects the existing `.../floor-plan` endpoint's response, replacing the reused internal `TableResponseDto` with a dedicated customer-safe projection that excludes `mergeGroupId`, `isMergePrimary`, and operational `status` - see `TASKS.md`'s Phase 15.5 decision note (D11) for the exact frozen field list.
+
 Prefer filtering over custom endpoints.
 
 Ensure backward compatibility between API versions.
@@ -229,11 +243,13 @@ Deprecate endpoints before removal, signaled via a `Deprecation` header (RFC 859
 
 # Webhook Endpoints
 
-Inbound webhooks (payment provider callbacks, OneSignal delivery receipts) are a distinct category from client-facing endpoints:
+Inbound webhooks (e.g., OneSignal delivery receipts) are a distinct category from client-facing endpoints:
 
 * Every webhook endpoint verifies the provider's signature (HMAC or provider-specific scheme) before processing; an invalid signature returns `401 Unauthorized` without processing the payload.
-* Webhook handlers are idempotent — a provider may deliver the same event more than once, and processing it twice must not duplicate side effects (e.g., must not double-credit a payment).
-* Webhook payloads are persisted (e.g., in `Payment Transactions.rawProviderPayload`, per DATABASE_SCHEMA.md) before triggering any business logic, so a processing failure can be replayed from the stored payload rather than lost.
+* Webhook handlers are idempotent — a provider may deliver the same event more than once, and processing it twice must not duplicate side effects.
+* Webhook payloads are persisted before triggering any business logic, so a processing failure can be replayed from the stored payload rather than lost.
+
+TAVLA does not process payments and has no payment-provider webhook integration (Owner Decision, 2026-07-28 — see `TASKS.md` Phase 13).
 
 ---
 
@@ -346,11 +362,29 @@ Response DTOs for the inbox routes expose only `id`, `type`, `title`, `body`, `d
 
 ---
 
+# Analytics Endpoints (Phase 14, ADR-028, implemented 2026-07-28)
+
+Operational restaurant analytics only — direct PostgreSQL reads, no mutation endpoints. All routes: `JwtAuthGuard` + `SessionVersionGuard` only; authorization resolved inside the use case (Organization Owner/Admin **or** Employee with `reports:view` + branch assignment where applicable), the same dual-actor shape ADR-026 already established — no NestJS OR-composed guard.
+
+| Method | Route | Scope | Notes |
+|---|---|---|---|
+| `GET` | `/api/v1/restaurants/:restaurantId/analytics/reservations/summary` | Restaurant (aggregates branches) or `?branchId=` | Status counts, source breakdown, completion/no-show/cancellation rate, average party size — no timezone bucketing, safe at Restaurant/Organization scope |
+| `GET` | `/api/v1/restaurants/:restaurantId/analytics/branches/:branchId/reservations/trends` | Branch (required) | Service-day trend, booking-created trend — zero-filled daily buckets, Branch-local calendar day |
+| `GET` | `/api/v1/restaurants/:restaurantId/analytics/branches/:branchId/peak-hours` | Branch (required) | 24 zero-filled hourly buckets, Branch-local |
+| `GET` | `/api/v1/restaurants/:restaurantId/analytics/customers` | Restaurant or `?branchId=` | Unique/returning registered customers, guest-backed count, avg party size |
+| `GET` | `/api/v1/restaurants/:restaurantId/analytics/waitlist` | Restaurant or `?branchId=` | Entry/outcome counts, closed-entry conversion rate |
+| `GET` | `/api/v1/restaurants/:restaurantId/analytics/reviews-summary` | Restaurant | Active review count, average rating |
+| `GET` | `/api/v1/organization/analytics/reservations/summary` | Organization | Aggregates every Restaurant the tenant-scoped `RestaurantRepository` resolves for the caller's organization. No `:organizationId` path segment — confirmed at implementation time that no route in this codebase carries one; `organizationId` always comes from the JWT (`GET /restaurants` precedent) |
+
+All six Restaurant/Branch-scope routes live on one `AnalyticsController` mounted at `restaurants/:restaurantId/analytics`; the Organization-scope route lives on its own `OrganizationAnalyticsController`. **Branch scope is mandatory for any timezone-bucketed series** (trends, peak hours) — Restaurant/Organization-scope endpoints never silently combine two branches' local calendar buckets into one series; they expose only non-bucketed aggregates instead. Query DTO: `dateFrom`/`dateTo` (`YYYY-MM-DD`, `@Matches` date-only pattern — not `@IsDateString()`, which also accepts full ISO timestamps this contract deliberately excludes) or a `range` preset (`today`/`last7d`/`last30d`/`thisMonth`), max span 366 days; optional `branchId` (`@IsUUID()`) on the Restaurant-scope routes only. No pagination — every response is a fixed-shape KPI object or a bounded, zero-filled time-series, not a list. Rates are numeric ratios (`0.0`–`1.0`), never percentage strings; a zero denominator returns `null`, not `0` or an omitted field. Every response includes `generatedAt` inside `data` (the shared envelope's `meta` is always `{}` and cannot carry it). Aggregate-only payloads — no `ReservationGuest` PII field, no raw customer/guest list, ever. Full formula rationale: `TASKS.md`'s Phase 14 section and `DECISIONS.md` ADR-028.
+
+---
+
 # Idempotency
 
-Sensitive operations such as payment and reservation creation should support idempotency keys where appropriate.
+Sensitive operations such as reservation creation should support idempotency keys where appropriate.
 
-Concretely: the client supplies an `Idempotency-Key` header (a client-generated UUID) on the request. The server stores the key alongside the resulting response for 24 hours; a repeated request with the same key within that window returns the original stored response (same status code and body) without re-executing the operation, rather than creating a duplicate resource. A repeated request with the same key but a materially different body returns `422 Unprocessable Entity` with error code `IDEMPOTENCY_KEY_CONFLICT`. This applies to `POST /reservations`, `POST /reservations/:id/reschedule`, and all payment-initiating endpoints.
+Concretely: the client supplies an `Idempotency-Key` header (a client-generated UUID) on the request. The server stores the key alongside the resulting response for 24 hours; a repeated request with the same key within that window returns the original stored response (same status code and body) without re-executing the operation, rather than creating a duplicate resource. A repeated request with the same key but a materially different body returns `422 Unprocessable Entity` with error code `IDEMPOTENCY_KEY_CONFLICT`. This applies to `POST /reservations` and `POST /reservations/:id/reschedule`.
 
 ---
 
@@ -363,6 +397,8 @@ Strict limits.
 Public search endpoints:
 
 Moderate limits.
+
+**Frozen (Phase 15.5, 2026-07-29):** all `/discovery/**` routes (the existing 2026-07-28 browsing routes and the new search/nearby/compare routes alike) share one tier — **60 requests / 60 seconds per client IP**, enforced by a Discovery-scoped policy reusing the existing Redis sliding-window rate-limiting primitive (`RateLimiterPort`), not Authentication's own closed policy registry and not a global throttler. Exceeding the limit returns `429` with the standard error envelope; a Redis outage fails closed (request fails), matching the existing rate limiter's current behavior. See `TASKS.md`'s Phase 15.5 decision note (D12) for the full rationale.
 
 Internal authenticated APIs:
 

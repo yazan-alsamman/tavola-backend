@@ -23,4 +23,12 @@ export class InMemoryRestaurantReplyRepository implements RestaurantReplyReposit
     }
     return null;
   }
+
+  async findManyByReviewIds(reviewIds: ReviewId[]): Promise<RestaurantReply[]> {
+    if (reviewIds.length === 0) {
+      return [];
+    }
+    const uniqueIds = new Set(reviewIds.map((id) => id.value));
+    return [...this.rows.values()].filter((reply) => uniqueIds.has(reply.reviewId.value));
+  }
 }

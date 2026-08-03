@@ -1,14 +1,17 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { Password } from '@shared/domain/value-objects/password.vo';
 import { UserId } from '@shared/domain/value-objects/identifiers.vo';
-import { ClockPort } from '@shared/application/ports/clock.port';
-import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
-import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
+import {
+  EventPublisherPort,
+  EVENT_PUBLISHER,
+} from '@shared/application/ports/event-publisher.port';
+import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
 import {
   SYSTEM_CONFIG_KEYS,
   SystemConfigurationPort,
 } from '@shared/application/ports/system-configuration.port';
-import { UnitOfWorkPort } from '@shared/application/ports/unit-of-work.port';
+import { UnitOfWorkPort, UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
 import {
   PasswordResetCompletedEvent,
   SessionRevokedEvent,
@@ -25,17 +28,13 @@ import { PasswordResetPolicy } from '../../domain/services/password-reset.policy
 import { OpaqueTokenService } from '../../domain/services/opaque-token.port';
 import { PasswordHasher } from '../../domain/services/password-hasher.port';
 import {
-  CLOCK,
   DEVICE_SESSION_REPOSITORY,
-  EVENT_PUBLISHER,
-  ID_GENERATOR,
   OPAQUE_TOKEN_SERVICE,
   PASSWORD_HASHER,
   PASSWORD_HISTORY_REPOSITORY,
   PASSWORD_RESET_REPOSITORY,
   SYSTEM_CONFIGURATION,
   TOKEN_FAMILY_REPOSITORY,
-  UNIT_OF_WORK,
   USER_REPOSITORY,
 } from '../../domain/tokens/authentication.tokens';
 import { ResetPasswordCommand } from '../dto/reset-password.command';

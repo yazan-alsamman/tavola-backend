@@ -79,6 +79,16 @@ export class SearchAvailabilityUseCase {
       overlappingReservations.map((reservation) => reservation.tableId.value),
     );
 
+    // Phase 15 (Optimization): one batched merge-group lookup for every
+    // merge group referenced by `tables`, instead of one
+    // `findManyByMergeGroupId` round-trip per merged table in the loop
+    // below - this path can otherwise re-query a whole branch's worth of
+    // merge groups on a customer-facing, unauthenticated hot path.
+    const mergeGroupIds = tables
+      .filter((table) => table.mergeGroupId !== null)
+      .map((table) => table.mergeGroupId as string);
+    const membersByGroup = await this.tableRepository.findManyByMergeGroupIds(mergeGroupIds);
+
     const results: TableAvailabilityResult[] = [];
     for (const table of tables) {
       // Phase 6 (Merge/Split Tables, ADR-026 decision #4/#14): `capacity`
@@ -90,9 +100,7 @@ export class SearchAvailabilityUseCase {
       // is the group's Primary.
       const capacity =
         table.mergeGroupId !== null
-          ? TableMergeService.computeEffectiveCapacity(
-              await this.tableRepository.findManyByMergeGroupId(table.mergeGroupId),
-            )
+          ? TableMergeService.computeEffectiveCapacity(membersByGroup.get(table.mergeGroupId) ?? [])
           : table.capacity;
       results.push({
         tableId: table.tableId.value,

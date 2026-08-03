@@ -85,14 +85,14 @@ Organization
 
 * The tenant boundary for the entire platform (see ADR-011).
 * Owns one or more Restaurants.
-* Owns exactly one Subscription (billing and plan limits are consolidated at the Organization level, not per-restaurant).
+* Owns exactly one Subscription — plan *assignment* is always at the Organization level (a Restaurant never has its own independent plan; see ADR-011). Individual limits within that plan may still apply on a per-Restaurant basis (`maxBranchesPerRestaurant`, `maxEmployeesPerRestaurant`) rather than as an Organization-wide total — see the Subscription Aggregate below and ADR-027 for the precise per-limit enforcement grain.
 * Owns membership and administrative roles across the restaurants it operates (`Owner`, `Admin`, `Billing`, `Staff` — distinct from restaurant-branch `Employee` roles, which govern day-to-day operational access rather than organization administration).
 
 ### Notes
 
 * An Organization is created transparently during restaurant-owner signup; single-restaurant customers never need to know the concept exists in the UI — it exists purely as the correct domain/data boundary.
 * `OrganizationMember` links a `User` to an `Organization` with an administrative role. One `User` may belong to multiple Organizations (e.g., a consultant or multi-brand operator); one Organization has one or more `OrganizationMember` records but exactly one member holds the non-transferable `Owner` role at any time.
-* `OrganizationLimits` is not a separate persisted entity — it is computed from the active `SubscriptionPlan` (max restaurants, max branches, max employees, max monthly reservations) and enforced by `SubscriptionValidator` (see Domain Services) whenever a new Restaurant, Branch, or Employee is created.
+* `OrganizationLimits` is not a separate persisted entity — it is computed from the active `SubscriptionPlan` (`maxRestaurants`, `maxBranchesPerRestaurant`, `maxEmployeesPerRestaurant` — no reservation-volume limit, ADR-027) and enforced by `SubscriptionValidator` (see Domain Services) whenever a new Restaurant, Branch, or Employee is created. `maxRestaurants` is checked against the Organization's own `SubscriptionUsage.restaurantCount`; `maxBranchesPerRestaurant`/`maxEmployeesPerRestaurant` are checked against the specific target Restaurant's own `RestaurantUsage` row, never an Organization-wide total (ADR-027) — see the Subscription Aggregate below.
 
 ---
 
@@ -145,6 +145,7 @@ Restaurant
 * WorkingHours
 * RestaurantGallery
 * RestaurantSocialLinks
+* RestaurantUsage (new, ADR-027 — Subscription usage counter scoped to this Restaurant; see Subscription Aggregate)
 
 ### Responsibilities
 
@@ -263,28 +264,27 @@ ReservationWaitlistEntry
 
 ### Root
 
-Conversation
+Conversation — tenant-resolved transitively via `restaurantId → Restaurant.organizationId` (ADR-030; no direct `organizationId`, same as `Branch`/`Reservation`).
 
 ### Child Entities
 
-* ConversationParticipant
-* Message
+* ConversationParticipant — per-individual (`Customer`, `Staff`, `System`); a `Staff` row is either an `Employee` (`employeeId`) or an `OrganizationMember` acting as Restaurant-side (`userId`), never both (DECISIONS.md D2).
+* Message — `senderType` (`Customer`, `Employee`, `OrganizationMember`, `System`) disambiguates `senderUserId`/`senderEmployeeId` (D3); optional `attachmentFileId` (`Files`, `ownerType = Message`); nullable `anonymizedAt` for GDPR compatibility (D10).
+
+### State Machine
+
+`ConversationStatus`: `Open -> {Closed, Archived}`, and `Closed`/`Archived -> Open` automatically whenever a new `Message` is sent (auto-reopen, D5). `Closed` is set by a Restaurant-side actor (closes for both sides); `Archived` is set by the Customer participant (soft-hides from their own list only, staff view unaffected).
 
 ### Responsibilities
 
-* Customer–restaurant staff messaging (ADR-020)
+* Customer–restaurant staff messaging (ADR-020, tenancy corrected by ADR-030)
 * Optional linkage to `Reservation`
-* Read receipts via `lastReadAt` on participants
+* Read receipts via per-participant `lastReadAt`
+* Dual Actor authorization for the Restaurant side — `Employee` (branch-scoped, `conversations:manage`) or `OrganizationMember` (org-scoped, Owner/Admin) — resolved inside use cases exactly like Tables Merge/Split (ADR-026) and Analytics (ADR-028), never a third authorization model (DECISIONS.md D15)
 
 ### Policies
 
-`ConversationPolicy` — only participants and authorized staff may read/send; customers cannot access other customers' threads.
-
----
-
-## Invoice Entity (Billing)
-
-Not a standalone aggregate root — owned by the **Subscription / Payment** bounded context. Generated from `Payment` success or subscription renewal (ADR-021). `Invoice` references `Files` for PDF storage.
+`ConversationPolicy` — a `Customer` may only read/send in a conversation where they are the `Customer` participant; a `Restaurant`-side actor must pass the Dual Actor check (D15) for the conversation's `restaurantId`/`branchId`. Cross-tenant or cross-branch resolution failures are IDOR-safe: unresolvable → `ConversationNotFoundException` (404); resolvable but unauthorized → `PermissionDeniedException`/`EmployeeBranchNotAssignedException` (403) (D14).
 
 ---
 
@@ -316,6 +316,8 @@ Employee
 
 ## Menu Aggregate
 
+**Architecture frozen 2026-08-02 (ADR-031, Phase 18), ownership/availability/isFeatured corrected 2026-08-03 (ADR-032) — not implemented, no Prisma model exists; implementation requires separate explicit authorization.** Resolves the roadmap gap recorded in `TASKS.md`'s Phase 15.5 note and `PRODUCT_REQUIREMENTS.md`'s `FR-08.1`.
+
 ### Root
 
 Menu
@@ -324,6 +326,28 @@ Menu
 
 * MenuCategory
 * MenuItem
+* MenuItemOptionGroup — owned by `MenuItem`, not a direct child of `Menu`
+* MenuItemOption — owned by `MenuItemOptionGroup`
+* MenuItemAddOn — owned by `MenuItem`, sibling of `MenuItemOptionGroup`, not nested under it
+* MenuItemAvailability — owned by `MenuItem`, sibling of `MenuItemOptionGroup`/`MenuItemAddOn`; populated only while `MenuItem.availabilityMode = Scheduled` (**ADR-032**, replaces `scheduleJson`)
+
+### Responsibilities
+
+* Restaurant-wide menu structure (Categories, Items) across one or more Menus per Restaurant (**ADR-032**)
+* Per-item configurable pricing (Option Groups/Options, Add-ons)
+* Per-item availability (Always / Unavailable / Scheduled), with Scheduled backed by relational `MenuItemAvailability` rows (**ADR-032**)
+* Per-item featured flag for highlighting within the item's own public representation, with no Discovery/ranking integration (**ADR-032**)
+* Category/Item imagery (delegates entirely to the existing `File`/MinIO infrastructure — no owned storage logic)
+
+### Notes
+
+* **Restaurant 1:N Menu, exactly one `isDefault` per Restaurant (corrected by ADR-032, 2026-08-03) — supersedes ADR-031's original singleton (`@@unique([restaurantId])`).** A Restaurant may own multiple Menus (breakfast/lunch/dinner/drinks/seasonal/QR/delivery, etc.); exactly one non-deleted Menu may be `isDefault = true`, enforced by a partial unique index reusing the `Table.isMergePrimary` mechanism (ADR-026) verbatim. `Restaurant.hasMenu` and the Customer public "the menu" read derive from the active, non-deleted, default Menu only — Discovery does not gain multi-menu awareness. This also resolves ADR-031's originally-open question of how a soft-deleted Menu interacts with uniqueness: the constraint no longer spans every row for a Restaurant, only non-deleted `isDefault` rows. See `DATABASE_SCHEMA.md` for the schema.
+* **Currency tension with the Branch Aggregate's documented ownership model (flagged, not resolved by ADR-031 or ADR-032):** the Branch Aggregate's currency note above states "Currency is owned at the Branch level... every Money value used in a Branch's context (menu prices, deposit amounts, offers) is denominated in that Branch's currency... Business logic must never assume a single currency across an Organization's branches." Phase 18 nonetheless specifies `MenuItem.currency` as a per-item field, which is only self-consistent when every Branch of a Restaurant shares one currency — the common case, but not one this freeze can silently assume given the existing documented multi-currency warning. A Restaurant whose Branches use different currencies cannot be correctly served by a shared Menu without a future per-Branch price-override mechanism. This must be resolved (either as a product constraint — "a Restaurant's Branches must share one currency" — or a schema extension) before implementation begins.
+* Like `Branch`/`Reservation`/`Review`/`Offer`, every Menu-family model is transitively-tenant-owned: a direct `restaurantId` FK, no `organizationId` column, not added to `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS` (`TENANCY.md`). `MenuCategory`/`MenuItem`/`MenuItemOptionGroup`/`MenuItemOption`/`MenuItemAddOn`/`MenuItemAvailability` additionally denormalize `restaurantId` directly (not only their immediate parent FK) so every tenancy resolution stays a single hop through `RestaurantRepository` regardless of nesting depth.
+* `MenuItem.availabilityMode` (`Always` / `Unavailable` / `Scheduled`) is the only state-machine-like field in this aggregate; `Scheduled` requires at least one `MenuItemAvailability` row (day-of-week + time-window, **corrected by ADR-032** to a relational shape — the `Branch.openingHours` `Json`-column ADR-031 originally cited as precedent is documented elsewhere in this file as dead, superseded technical debt, not this codebase's actual convention, which is the relational `WorkingHours`/`BranchWorkingHours` shape). No other entity in this aggregate has lifecycle states — Category/OptionGroup/Option/AddOn are plain CRUD + soft-delete.
+* `MenuItem.isFeatured` (**added by ADR-032**) is a pure, independently-mutable display flag with no cross-entity invariant and no dependency on any external system — evaluated and confirmed low-risk enough to add in the same freeze, unlike `sku` (see below).
+* `MenuItem.sku` was evaluated and explicitly **not added** (ADR-032) — its correct shape depends entirely on a not-yet-scoped POS/Inventory/ERP integration contract; a nullable column can be added later at zero migration cost once that contract exists, whereas guessing its uniqueness scope now risks a corrective migration, the same mistake the original singleton Menu design made.
+* No integration with Reservations, Reviews, Offers, Messaging, Analytics, Notifications, or Realtime (Phase 18 explicit scope, unchanged by ADR-032). Discovery exposes only a derived `Restaurant.hasMenu: boolean`. `Offer → MenuItem` reference is documented only as a Future Compatibility note, not implemented.
 
 ---
 
@@ -342,19 +366,27 @@ Review
 
 ## Subscription Aggregate
 
+**Architecture frozen 2026-07-28 (ADR-027) — entitlement/access contract, not billing.** A Subscription answers "what is this Organization allowed to do," never "how is this Organization being charged" — TAVLA does not process payments (ADR-021 Disposition). No trial, no proration, no `PastDue`/`Trialing` state exists.
+
 ### Root
 
 Subscription
 
-### Child Entities
+### Referenced / Related (not owned by this aggregate)
 
-* SubscriptionPlan
-* SubscriptionUsage
+* `SubscriptionPlan` — platform-global reference data (TENANCY.md), referenced by `planId`, not a child entity of any one Subscription.
+* `SubscriptionUsage` — Organization-scoped usage counter, 1:1 with Subscription's own Organization.
+* `RestaurantUsage` — **owned by the Restaurant Aggregate, not this one** (see Restaurant Aggregate below) — called out here because it is the counterpart that makes per-Restaurant plan limits enforceable.
 
 ### Notes
 
-* A Subscription belongs to exactly one **Organization**, not to a Restaurant (see ADR-011). All plan limits (`maxRestaurants`, `maxBranches`, `maxEmployees`, `maxMonthlyReservations`) are enforced against the Organization's aggregate usage across every Restaurant and Branch it owns, via `SubscriptionValidator`.
-* `SubscriptionUsage` is recalculated incrementally as domain events occur (`RestaurantCreated`, `BranchCreated`, `EmployeeCreated`, `ReservationCreated`) rather than computed from a live `COUNT(*)` query on every write, to avoid turning limit-checking into a performance bottleneck at scale.
+* A Subscription belongs to exactly one **Organization**, not to a Restaurant (see ADR-011) — plan *assignment* is always Organization-level; a Restaurant never has its own independent plan.
+* **Not every limit shares the same enforcement grain (ADR-027).** `maxRestaurants` is an Organization-wide aggregate, checked against `SubscriptionUsage.restaurantCount` (one row per Organization). `maxBranchesPerRestaurant` and `maxEmployeesPerRestaurant` are **per-Restaurant** limits — despite the Organization owning the one Subscription/Plan that defines their numeric value, each is checked against the specific target Restaurant's own `RestaurantUsage` row (one row per Restaurant, owned by the Restaurant Aggregate), never against an Organization-wide sum across every Restaurant it owns. Enforced by `SubscriptionValidator`.
+* **No reservation-volume limit exists (ADR-027, owner product decision).** A Restaurant must never become unable to accept reservations because of its Organization's subscription tier. `CreateReservationUseCase` is not a Phase 12 enforcement touch point. Reservation-volume *measurement* (not restriction) is Phase 14 Analytics' concern, not Phase 12's.
+* `SubscriptionUsage.restaurantCount` is recalculated incrementally as domain events occur (`RestaurantCreated` increments; a future Restaurant soft-delete would decrement) rather than computed from a live `COUNT(*)` query on every write. `RestaurantUsage.branchCount`/`employeeCount` follow the identical incremental principle, scoped to `BranchCreated`/`EmployeeCreated` events carrying that Branch's/Employee's own `restaurantId`.
+* Lifecycle states: `Active`, `Suspended`, `Cancelled`, `Expired` — no billing-derived states (`PastDue`, `Trialing`). `Suspended` is an administrative pause (PlatformAdmin-initiated, reactivatable); `Cancelled` is a terminal state (not automatically reactivated — resuming requires a fresh plan assignment via the same Assign action used for provisioning); `Expired` is reached automatically when `endsAt` elapses (BullMQ-scheduled + CAS-guarded, mirroring the Offer expiration precedent, Phase 11).
+* **An expired or suspended Subscription blocks only new resource creation** (`SubscriptionValidator`'s pre-creation checks) — it never mutates existing Restaurant/Branch/Employee state, and never gates any currently-completed feature (Reviews, Offers, Waitlist, Realtime, Notifications, Merge/Split, or reservation-taking itself). See "Restaurants" under Business Rules, below, for the explicit correction this makes to prior (pre-ADR-027) documentation.
+* Assignment/plan-change is PlatformAdmin-only (no customer-facing purchase/checkout flow of any kind exists or is planned) — see AUTHORIZATION_ARCHITECTURE.md and ADR-027.
 
 ---
 
@@ -371,12 +403,16 @@ Main entities include:
 * Reservation
 * Employee
 * Menu
+* MenuCategory
 * MenuItem
+* MenuItemOptionGroup
+* MenuItemOption
+* MenuItemAddOn
+* MenuItemAvailability
 * Review
 * Offer
 * Notification
 * Subscription
-* Payment
 * File
 
 ---
@@ -527,17 +563,15 @@ AccountAnonymizationService — implements the anonymization mechanics defined i
 
 PricingCalculator
 
-RestaurantSearchService — executes discovery queries per ADR-018: full-text and taxonomy filters in PostgreSQL for initial scale; optional external search index when restaurant count exceeds configured threshold. **Nearby** queries use branch `latitude`/`longitude`. **Comparison** returns a normalized DTO for a set of restaurant IDs (no separate aggregate).
+RestaurantSearchService — executes discovery queries per ADR-018: full-text and taxonomy filters in PostgreSQL for initial scale; optional external search index when restaurant count exceeds configured threshold. **Nearby** queries use branch `latitude`/`longitude`. **Comparison** returns a normalized DTO for a set of restaurant IDs (no separate aggregate). **Phase 15.5 v1 freeze (architecture frozen 2026-07-29, complete/live-verified/production-verified 2026-07-30):** "full-text" is `ILIKE` on `Restaurant.name` only (no `pg_trgm`/external index yet); "Nearby" is bounding-box + Haversine refinement on the existing geo B-tree index (no PostGIS/GiST); results are Restaurant-rooted with `nearestBranch`/`distanceKm` attached, never duplicated per branch. See `TASKS.md`'s Phase 15.5 decision note (D1-D17) for the full contract.
 
 WaitlistPromotionService — promotes the next eligible `ReservationWaitlistEntry` when a table slot opens or staff triggers manual promotion; creates `Reservation` in the same transaction as waitlist status update.
 
 ConversationService — creates threads, validates participants, appends messages; publishes `MessageSent` for WebSocket fan-out.
 
-AnalyticsCalculator
+AnalyticsCalculator — **Phase 14, implemented and live-verified 2026-07-28 (ADR-028).** Not a stateful Domain Service — a set of stateless formula/calculation helpers (rate ratios, zero-fill bucketing, branch-local date derivation) invoked by Analytics Query Use Cases. Holds no state and issues no queries itself; `AnalyticsQueryPort` implementations own data access. See `TASKS.md`'s Phase 14 section for the frozen metric register.
 
 FileStorageService (Interface Only)
-
-PaymentGateway (Interface Only)
 
 NotificationProvider (Phase 9, frozen 2026-07-25, implemented 2026-07-25) — `send(params): Promise<NotificationSendResult>` where the result is one of `{ outcome: 'accepted', providerMessageId }` / `{ outcome: 'noRecipients' }` / `{ outcome: 'retryableFailure', reason }` / `{ outcome: 'permanentFailure', reason }`; provider-independent (OneSignal is the current adapter behind it, ADR-007 — application/domain code never calls OneSignal directly). See `TASKS.md`'s Phase 9 decision item 8.
 
@@ -564,11 +598,14 @@ Business use cases depend on policies — they never embed permission logic inli
 | `TablePolicy` | Table CRUD, merge/split, availability overrides |
 | `EmployeePolicy` | Invite, assign roles, branch assignments, deactivate |
 | `OfferPolicy` | Offer lifecycle, publication |
+| `MenuPolicy` (Phase 18, architecture frozen 2026-08-02, ADR-031, corrected 2026-08-03 by ADR-032 — not implemented) | Menu/Category/Item/OptionGroup/Option/AddOn/Availability management, gated by the new `menu:manage` permission slug for Employees; Owner/Admin full access via existing role hierarchy; Customer read-only, no ownership check (public data) |
 | `ReviewPolicy` | Create review (post-completion, ownership); owning Customer or Restaurant Owner/Admin may delete; Restaurant Owner/Admin only may reply (zero-or-one, immutable); no Employee participation, no `reviews:reply` slug |
 | `SubscriptionPolicy` | Plan limits, feature gating |
 | `AnalyticsPolicy` | Report access by role and scope |
 | `ConversationPolicy` | Chat read/send, participant membership |
 | `WaitlistPolicy` | Join queue, promote, cancel waitlist entry |
+
+**`AnalyticsPolicy` (Phase 14, implemented and live-verified 2026-07-28, ADR-028):** dual-actor, resolved by use-case-level branching — the same pattern ADR-026 (Merge/Split) and Phase 7.3 (Cancel/Reschedule) already established, not a new generic Policy Engine composition. Authorized: OrganizationMember Owner/Admin of the owning organization, **or** an Employee holding the existing `reports:view` permission slug and (for Branch-scoped queries) matching branch assignment. No new permission slug. See `AUTHORIZATION_ARCHITECTURE.md` for the full mechanism.
 
 Policies compose `PermissionResolver` (RBAC) with **Ownership Rules** (resource-level checks).
 
@@ -580,7 +617,7 @@ Policies compose `PermissionResolver` (RBAC) with **Ownership Rules** (resource-
 | Restaurant Owner | All branches of owned restaurant unless branch-restricted |
 | Manager | Assigned branches; elevated operational permissions |
 | Receptionist | Reservations and guest management within branch scope |
-| Cashier | Payment-related actions within branch scope |
+| Cashier | Front-of-house reservation actions within branch scope (no payment/checkout functionality — TAVLA does not process payments) |
 | Customer | Own reservations, reviews, and profile only |
 | Platform Admin | System-context client only; fully audited |
 
@@ -623,11 +660,27 @@ ReviewRepository
 
 OfferRepository
 
+MenuRepository (Phase 18, architecture frozen 2026-08-02, ADR-031 — not implemented)
+
+MenuCategoryRepository (Phase 18, ADR-031 — not implemented)
+
+MenuItemRepository (Phase 18, ADR-031 — not implemented)
+
+MenuItemOptionGroupRepository (Phase 18, ADR-031 — not implemented)
+
+MenuItemOptionRepository (Phase 18, ADR-031 — not implemented)
+
+MenuItemAddOnRepository (Phase 18, ADR-031 — not implemented)
+
+MenuItemAvailabilityRepository (Phase 18, added by ADR-032 — not implemented)
+
 SubscriptionRepository
 
-NotificationRepository
+SubscriptionUsageRepository (ADR-027 — Organization-scoped `restaurantCount`)
 
-PaymentRepository
+RestaurantUsageRepository (ADR-027 — Restaurant-scoped `branchCount`/`employeeCount`; owned by the Restaurant Aggregate)
+
+NotificationRepository
 
 Repositories expose business-oriented operations rather than raw database access.
 
@@ -675,11 +728,13 @@ ReservationNoShow
 
 ReviewCreated
 
-SubscriptionUpgraded
+SubscriptionAssigned
 
-PaymentSucceeded
+SubscriptionPlanChanged
 
 NotificationCreated (Phase 9, implemented 2026-07-25 — see EVENTS.md's "Notification Events" section; the Notification row's own `pushStatus` column, not a separate `NotificationSent` event, tracks push-delivery outcome — `ReservationReminderSent` is the one event-level "sent" signal Phase 9 defines, scoped specifically to the Reminder flow, see EVENTS.md)
+
+MenuItemCreated (Phase 18, architecture frozen 2026-08-02, ADR-031, corrected 2026-08-03 by ADR-032, implemented 2026-08-03 — one representative example, see EVENTS.md's "Menu Events" section for the full 27-event catalog spanning Menu/Category/Item/OptionGroup/Option/AddOn/Availability)
 
 Events are immutable and published only after successful business operations.
 
@@ -734,9 +789,8 @@ Events are immutable and published only after successful business operations.
 ## Restaurants
 
 * Each restaurant owns one or more branches, and belongs to exactly one Organization (see Organizations above).
-* Restaurants must have an active subscription (at the Organization level) to access premium features.
-* Suspended restaurants cannot receive new reservations. Existing confirmed reservations at a suspended restaurant remain valid and must still be honored (suspension blocks new bookings, it does not cancel existing commitments); restaurant staff retain access only to fulfil already-confirmed reservations, not to create new ones.
-* **Subscription expiration with future reservations:** if an Organization's subscription lapses, its Restaurants transition to `Suspended` (per the rule above) rather than having their existing reservation data altered or deleted; reservations already booked continue to completion. Reactivating the subscription lifts the suspension without any data loss.
+* Suspended restaurants (`RestaurantStatus.Suspended`, an Owner/Admin-controlled operational state, unrelated to subscriptions) cannot receive new reservations. Existing confirmed reservations at a suspended restaurant remain valid and must still be honored (suspension blocks new bookings, it does not cancel existing commitments); restaurant staff retain access only to fulfil already-confirmed reservations, not to create new ones.
+* **Subscription state does not gate restaurant operations (corrected 2026-07-28, ADR-027 — supersedes prior text in this section).** An expired, suspended, or cancelled Organization Subscription never mutates `Restaurant.status`, never blocks existing reservation-taking, and never disables any currently-completed feature (Reviews, Offers, Waitlist, Realtime, Notifications, Merge/Split). Its only effect is blocking *new* Restaurant/Branch/Employee creation beyond the plan's limits (`SubscriptionValidator`, pre-creation). `RestaurantStatus.Suspended` remains exclusively an Owner/Admin-initiated operational state (`PATCH /restaurants/:id`) — Phase 12 does not write to it, avoiding two independent actors (subscription lifecycle vs. Owner/Admin) contending over the same field. See Subscription Aggregate, above, and ADR-027 for the full reasoning (this correction resolves a stale, pre-payment-removal assumption that no longer matches the owner-approved "no gating of currently completed features" decision).
 * **Branch deletion:** a Branch may only be soft-deleted if it has no `Pending` or `Approved` reservations with a future date/time; a Branch with future reservations must have them cancelled, completed, or migrated to another branch first. Soft-deleting a Branch cascades to soft-deleting its **Tables and FloorPlans** (Phase 6.1 architecture decision - both are child entities of the Branch Aggregate, so cascading to both is aggregate consistency, not a new feature) but never its historical Reservations, which are immutable per the Soft Delete Policy in DATABASE_SCHEMA.md. **This cascade must execute inside a single database transaction - partial completion is forbidden.** The system must never reach a state where the Branch is soft-deleted but its Tables and/or FloorPlans are not (or any other partially-applied combination); a failure partway through must roll back the entire operation, leaving the Branch, its Tables, and its FloorPlans exactly as they were before the delete was attempted.
 
 ---
@@ -916,7 +970,40 @@ No Update Review action exists (Reviews are immutable after creation).
 * Expire Offer (System, BullMQ-scheduled CAS, `Published -> Expired`)
 * Delete Offer (Owner/Admin, soft delete, any state)
 
-**Phase 11 freeze (2026-07-28):** single generic `Offer` aggregate with a `type` discriminator (`Promotion`/`Coupon`/`Event`) — see `DATABASE_SCHEMA.md`. No Employee actor exists for any Offer action (no `offers:*` permission slug, same declined-scope shape as Phase 10's `reviews:reply`). No Happy Hour / recurring-schedule concept in Phase 11.
+**Phase 11 freeze (2026-07-28), implemented and live-verified the same day:** single generic `Offer` aggregate with a `type` discriminator (`Promotion`/`Coupon`/`Event`) — see `DATABASE_SCHEMA.md`. No Employee actor exists for any Offer action (no `offers:*` permission slug, same declined-scope shape as Phase 10's `reviews:reply`). No Happy Hour / recurring-schedule concept in Phase 11.
+
+---
+
+## Menu Management
+
+* Create Menu (Owner/Admin or Employee with `menu:manage`; **1:N per Restaurant, corrected by ADR-032** — the first Menu created for a Restaurant is auto-marked `isDefault`)
+* Update Menu (active/inactive, `displayOrder`)
+* Set Default Menu (**added by ADR-032**; atomically unmarks the prior default in the same transaction)
+* Delete Menu (soft delete) — **added at implementation time (2026-08-03)**, the same CRUD-symmetry gap-fill already applied below to Option Group/Option/Add-on, extended to Menu itself since it is equally soft-deletable
+* Create Category
+* Update Category
+* Delete Category (soft delete)
+* Reorder Categories (bulk `displayOrder` replacement)
+* Create Item
+* Update Item (includes availability-mode and `isFeatured` changes — no separate endpoint)
+* Delete Item (soft delete)
+* Reorder Items (bulk `displayOrder` replacement, scoped to one Category)
+* Replace Item Availability Windows (**added by ADR-032**; bulk whole-set replacement of `MenuItemAvailability` rows, Scheduled mode only, same convention as Reorder)
+* Create Option Group
+* Update Option Group
+* Delete Option Group (soft delete)
+* Create Option
+* Update Option
+* Delete Option (soft delete)
+* Create Add-on
+* Update Add-on
+* Delete Add-on (soft delete)
+* List Restaurant Menus (Customer, public — **corrected by ADR-032** from a single-resource read to a collection read, since a Restaurant may own more than one Menu)
+* Get Menu (Customer, public, full nested tree for one Menu — defaults to the Restaurant's `isDefault` Menu when none is specified)
+* Get Category (Customer, public)
+* Get Item Details (Customer, public)
+
+**Phase 18 freeze (2026-08-02, ADR-031), ownership/availability/isFeatured corrected 2026-08-03 (ADR-032) — architecture only, not implemented.** Update/Delete for Option Group, Option, and Add-on are added beyond the Phase 18 brief's literal endpoint list, for CRUD symmetry with Category/Item and to satisfy the brief's own "soft delete all entities" requirement (a soft-deletable entity needs a Delete operation) — flagged as a Remaining Decision pending confirmation, not a unilateral scope expansion. No Reservations/Reviews/Offers/Messaging/Analytics/Notifications/Realtime integration (unchanged by ADR-032). Discovery exposes only a derived `hasMenu: boolean`.
 
 ---
 
@@ -934,17 +1021,13 @@ No Update Review action exists (Reviews are immutable after creation).
 ## Messaging
 
 * Start Conversation
+* Get Conversation
 * Send Message
+* List Customer Conversations
+* List Restaurant Conversations
+* List Messages
 * Mark Conversation Read
-* Close Conversation
-
----
-
-## Billing
-
-* Generate Invoice
-* Issue Invoice
-* Void Invoice
+* Close Conversation (actor-branched: Restaurant-side → `Closed`, Customer → `Archived`, D5)
 
 ---
 
@@ -971,7 +1054,6 @@ The following conditions must always remain true:
 * An employee's branch assignments, if any, always reference branches of that same employee's restaurant.
 * Every review belongs to a completed reservation.
 * Every subscription belongs to a valid organization.
-* Every payment belongs to a subscription or billable operation.
 * Every uploaded file has an owner and access policy.
 
 Violation of an invariant must result in a domain exception.
@@ -1034,10 +1116,6 @@ Examples:
 
 OneSignal Adapter
 
-Stripe Adapter
-
-PayPal Adapter
-
 MinIO Adapter
 
 SMTP Adapter
@@ -1058,7 +1136,6 @@ Potential future bounded contexts that can become independent services:
 * Notification Service
 * Analytics Service
 * Search Service
-* Payment Service
 * Identity Service
 * Recommendation Service
 * Loyalty & Rewards Service

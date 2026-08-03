@@ -144,4 +144,18 @@ export const envValidationSchema = Joi.object({
   ONESIGNAL_REQUEST_TIMEOUT_MS: Joi.number().integer().min(1).default(10000),
   ONESIGNAL_IDENTITY_VERIFICATION_PRIVATE_KEY: Joi.string().allow('').default(''),
   ONESIGNAL_IDENTITY_VERIFICATION_EXPIRY_SECONDS: Joi.number().integer().min(1).default(3600),
+
+  // Phase 15.5 (Discovery Module, architecture frozen 2026-07-29, D12) - one
+  // coherent public rate-limit tier for every /discovery/** route, reusing
+  // the existing RateLimiterPort. Default is the frozen v1 number (60/60s
+  // per client IP); env-overridable like every other RATE_LIMIT_* variable.
+  RATE_LIMIT_DISCOVERY_MAX: Joi.number().integer().min(1).default(60),
+  RATE_LIMIT_DISCOVERY_WINDOW_SECONDS: Joi.number().integer().min(1).default(60),
+
+  // Phase 15.6 (Messaging, DECISIONS.md D8/D12) - per-participant send rate
+  // limit and the Idempotency-Key replay TTL for
+  // POST /conversations[/:id/messages].
+  RATE_LIMIT_MESSAGING_SEND_MAX: Joi.number().integer().min(1).default(30),
+  RATE_LIMIT_MESSAGING_SEND_WINDOW_SECONDS: Joi.number().integer().min(1).default(60),
+  MESSAGING_IDEMPOTENCY_TTL_SECONDS: Joi.number().integer().min(1).default(86400),
 });

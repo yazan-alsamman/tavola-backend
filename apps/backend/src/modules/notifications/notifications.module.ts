@@ -4,6 +4,7 @@ import { PrismaModule } from '@infrastructure/prisma/prisma.module';
 import { AuthenticationModule } from '@modules/authentication/authentication.module';
 import { ReservationsModule } from '@modules/reservations/reservations.module';
 import { WaitlistModule } from '@modules/waitlist/waitlist.module';
+import { MessagingModule } from '@modules/messaging/messaging.module';
 import { OneSignalNotificationProvider } from '@infrastructure/notifications/providers/onesignal/onesignal-notification.provider';
 import { NOTIFICATION_REPOSITORY } from './domain/repositories/notification.repository';
 import { NOTIFICATION_TEMPLATE_REPOSITORY } from './domain/repositories/notification-template.repository';
@@ -32,8 +33,11 @@ import { NotificationsController } from './presentation/controllers/notification
  * recipient `User`), and `WaitlistModule` for
  * `RESERVATION_WAITLIST_ENTRY_REPOSITORY` (resolving a `WaitlistEntryPromoted`
  * recipient and activating `WaitlistEntryNotified` after push acceptance,
- * decision item 7) - all one-directional; none of those modules import this
- * one back. `EVENT_PUBLISHER` is not listed as an import: `RealtimeModule`
+ * decision item 7), and `MessagingModule` for
+ * `CONVERSATION_PARTICIPANT_REPOSITORY` (Phase 15.6, DECISIONS.md D6 -
+ * resolving a `MessageSent` notification's Customer-participant recipient)
+ * - all one-directional; none of those modules import this one back.
+ * `EVENT_PUBLISHER` is not listed as an import: `RealtimeModule`
  * is `@Global()` and exports it, resolved ambiently by
  * `ProcessNotificationDeliveryUseCase` exactly like every other consumer in
  * this codebase.
@@ -54,6 +58,7 @@ import { NotificationsController } from './presentation/controllers/notification
     AuthenticationModule,
     ReservationsModule,
     WaitlistModule,
+    MessagingModule,
     BullModule.registerQueue({ name: NOTIFICATION_QUEUE_NAME }),
   ],
   controllers: [NotificationsController],

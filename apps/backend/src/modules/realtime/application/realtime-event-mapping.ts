@@ -41,6 +41,12 @@ import {
   BranchDeletedEvent,
   BranchUpdatedEvent,
 } from '@modules/branches/domain/events/branch.events';
+import {
+  ConversationClosedEvent,
+  ConversationStartedEvent,
+  MessageReadEvent,
+  MessageSentEvent,
+} from '@modules/messaging/domain/events/messaging.events';
 import { RoomType, buildCanonicalRoom } from './room';
 
 /** Phase 8 §17 — the one canonical Socket.IO channel every envelope emits on. */
@@ -86,6 +92,9 @@ function branch(branchId: string): string {
 }
 function reservation(reservationId: string): string {
   return buildCanonicalRoom(RoomType.Reservation, reservationId);
+}
+function conversation(conversationId: string): string {
+  return buildCanonicalRoom(RoomType.Conversation, conversationId);
 }
 
 /** Strips server-internal actor identifiers a Customer never needs (Phase 8 §15/§19). */
@@ -416,6 +425,31 @@ export async function mapDomainEventForRealtime(
       staffPayload: {},
       reservationRoom: reservation(p.reservationId),
       customerPayload: { notificationId: p.notificationId, type: p.type },
+    };
+  }
+
+  // Phase 15.6 (Messaging, DECISIONS.md D9) - one shared `conversation:{id}`
+  // room for both sides; unlike Reservation events there is no separate
+  // staff/customer payload split, since only actors who already passed
+  // `RoomAuthorizationService.authorizeConversation` can be in the room at
+  // all (the room's own join-time authorization IS the audience control).
+  // Reuses the existing `staffRooms`/`staffPayload` fields as a generic
+  // "broadcast this payload to these rooms" mechanism - no interface change
+  // needed.
+  if (
+    event instanceof ConversationStartedEvent ||
+    event instanceof MessageSentEvent ||
+    event instanceof MessageReadEvent ||
+    event instanceof ConversationClosedEvent
+  ) {
+    const p = event.payload;
+    return {
+      aggregateType: 'Conversation',
+      aggregateId: p.conversationId,
+      staffRooms: [conversation(p.conversationId)],
+      staffPayload: { ...p },
+      reservationRoom: null,
+      customerPayload: null,
     };
   }
 

@@ -803,6 +803,17 @@ The product requires restaurant search, nearby discovery, taxonomy filters (cuis
 * Negative: Geo queries on PostgreSQL require careful indexing; GiST migration may be needed at scale (Phase 15).
 * Impact: `DATABASE_SCHEMA.md` (taxonomy tables), Phase 4–5 migrations, `modules/discovery/` (future module name).
 
+**Phase 15.5 pre-implementation decision note (architecture frozen 2026-07-29, owner-approved; implemented, Docker-dependent-verified, and production-verified 2026-07-30 — see `TASKS.md`'s "Phase 15.5 — Discovery Module: Implementation & Verification Report"):** the following freezes this ADR's Phase 1 parameters for the Discovery Module; no decision item above changes, and no new ADR was required (`CHANGE_POLICY.md`'s ten mandatory-ADR triggers were re-evaluated and none apply — this implements decision items 1/3/4 above exactly as already accepted).
+
+1. **Search identity:** Restaurant-rooted results. A Restaurant appears once per search regardless of branch count; a nearby search attaches `nearestBranch`/`distanceKm` computed from the nearest qualifying (Active, non-deleted, coordinate-populated) Branch within the requested radius.
+2. **Location source:** both client-supplied `lat`/`lng` and city-text search are supported; no IP geolocation, no server-derived device location.
+3. **Nearby algorithm:** PostgreSQL bounding-box prefilter on the existing `(latitude, longitude)` B-tree index (Phase 5.3), refined by an in-query Haversine distance calculation for exact-radius exclusion and ordering. No PostGIS, `earthdistance`/`cube`, or GiST in this phase — GiST remains attributed to Phase 15 (Optimization), "when query volume warrants," unchanged from this ADR's own Consequences line above. Default radius 5km, max radius 50km, kilometers throughout, `distance ASC` default order with `restaurantId ASC` as the deterministic tie-breaker.
+4. **Text search:** `ILIKE '%q%'` against `Restaurant.name` only for v1 — no `pg_trgm`/GIN index, no external search provider. Trigram/external-index evaluation remains Phase 15 (Optimization)'s "Search Index Evaluation (ADR-018 Phase 2 trigger)" item, not reopened here.
+5. **Taxonomy:** cuisine/occasion filtering uses the relational `CuisineCategory`/`RestaurantCuisineCategory` (and `OccasionCategory` equivalent) taxonomy exclusively. `Restaurant.cuisineType` (freeform string) remains legacy/display-only, not OR'd into filtering, not migrated or removed in this phase.
+6. **Comparison API:** implemented as part of this phase, exactly as decision item 3 above already specifies (stateless, 2–5 restaurant IDs, no persistence) — finalized under the Discovery route namespace (`POST /discovery/restaurants/compare`) rather than a top-level `/restaurants/compare` route, to keep the public search surface under one Swagger tag/module.
+7. **Rate limiting:** decision item 4's "public with rate limiting" is now concretely frozen — see `API_GUIDELINES.md`'s Rate Limiting section and `TASKS.md`'s Phase 15.5 decision note for the exact tier. Reuses the existing Redis sliding-window algorithm/primitive (`RateLimiterPort`); implemented as a new, Discovery-scoped policy rather than extending Authentication's own closed `RateLimitPolicyName` union, to avoid coupling an unrelated bounded context into Authentication's policy registry — same mechanism, not a second rate-limiting architecture.
+8. **Public FloorPlan/Table projection correction:** the already-shipped (2026-07-28) `GET /discovery/restaurants/:id/branches/:id/floor-plan` endpoint was found, during this freeze's audit, to reuse the internal Owner/Admin `TableResponseDto` verbatim, exposing `mergeGroupId`/`isMergePrimary`/operational `status`/timestamps publicly. This is corrected as part of Phase 15.5 implementation via a dedicated customer-safe projection (see `TASKS.md`'s Phase 15.5 decision note for the exact frozen field list) — a restoration of the customer-safe intent this document and `TENANCY.md` already assumed, not a scope expansion into Table/Merge-Split redesign.
+
 ---
 
 ## ADR-019
@@ -888,15 +899,33 @@ In-app chat between customers and restaurant staff is required (`PRODUCT_REQUIRE
 
 * Impact: New `modules/messaging/` bounded context; Phase 9+ implementation after auth/restaurant foundation.
 
+**Phase 15.6 Messaging — Owner Decisions (D1–D15) (architecture designed 2026-07-30, this implementation session):** an earlier task brief asserted these decisions, plus an "ADR-030" tenancy correction, were already frozen via a prior architecture-audit/owner-decision/freeze cycle. No such record existed anywhere in this document, `TASKS.md` (Phase 15.6 was `⏳ Pending`, all items unchecked), or `PROJECT_ROADMAP.md` (no Phase 15.6 section at all) before this session. Rather than implement against a fabricated decision history, the following freezes ADR-020's remaining open parameters now, transparently, as new decisions made in this session at the owner's direction. Item 1 formalizes the tenancy correction recorded as **ADR-030** below; items 2–15 are new decisions this ADR did not specify at implementation-ready granularity.
+
+1. **Tenancy** — see ADR-030. `Conversation`/`ConversationParticipant`/`Message` carry `restaurantId` only; no `organizationId` column; resolved transitively via the already-tenant-scoped `RestaurantRepository`, exactly like `Branch`/`Reservation`/`Review`/`Offer` (`TENANCY.md`).
+2. **`ConversationParticipant` shape** — per-individual rows, matching `DATABASE_SCHEMA.md`'s existing placeholder: `role` (`Customer`, `Staff`, `System`), `userId` (nullable), `employeeId` (nullable FK → `Employee`). A `Customer` row always sets `userId` (their own `User.id`), `employeeId` null. A `Staff` row set by an `Employee` sender sets `employeeId`, `userId` null; a `Staff` row set by an `OrganizationMember` sender sets `userId` to their own `User.id`, `employeeId` null (distinguishing the two is why `Message.senderType`, D3, exists — a bare `Staff` participant row with only `userId` set is structurally ambiguous with a `Customer` row unless `role` is also read). Rows are created lazily on first interaction (send or explicit read), each with its own `lastReadAt` — real per-person read receipts, not a single shared "restaurant side" flag. No guest (`ReservationGuest`) participants — messaging requires a registered `User`. Authorization for *which* `Employee`/`OrganizationMember` may act as Staff at all is resolved by D15, independent of whether a participant row yet exists.
+3. **`Message` sender attribution** — `senderType` (`Customer | Employee | OrganizationMember | System`) plus `senderUserId` (nullable) / `senderEmployeeId` (nullable FK → `Employee`), mirroring `resolveTableManagementActorId`'s dual resolution (`apps/backend/src/modules/tables/application/services/assert-actor-can-manage-tables.ts`): an `Employee` sender populates `senderEmployeeId`; an `OrganizationMember` sender populates `senderUserId` with their own `User.id` (there is no `Employee` row for them); a `Customer` sender populates `senderUserId`. The `senderUserId` XOR `senderEmployeeId` invariant (for non-`System` senders) is a database `CHECK` constraint added via raw SQL in the migration, exactly like `Reservation.userId`/`reservationGuestId` and `ReservationWaitlistEntry` — Prisma's schema language cannot express it directly, so it is not written in `schema.prisma` itself. `senderType` is additionally validated in the `Message` domain entity constructor (it disambiguates which of the two same-shaped XOR cases applies — a DB `CHECK` alone cannot tell a Customer's `senderUserId` from an OrganizationMember's).
+4. **Optional `reservationId`** — unchanged from ADR-020 item 4: nullable, no cascading behavior, soft link only.
+5. **Conversation status** — `ConversationStatus { Open, Closed, Archived }`, one column (no separate `archivedAt`). `POST /conversations/:id/close` is actor-branched, reusing the single endpoint rather than adding a ninth route: a `Restaurant`-side actor (`Employee`/`OrganizationMember`) sets `Closed` (closes for both sides); the `Customer` participant sets `Archived` (soft-hides from their own default `ListCustomerConversations` view only — staff visibility/list unaffected). Sending a new `Message` to a `Closed` or `Archived` conversation auto-transitions it back to `Open` from either side — closing/archiving is a convenience signal, not a hard lock.
+6. **Notifications** — customer-only, per the existing `NotificationDispatcher` precedent (`apps/backend/src/modules/notifications/application/services/notification-dispatcher.service.ts`), which has no staff notification path at all. When a `Restaurant`-side sender (`Employee` or `OrganizationMember`) sends a `Message`, exactly one `Notification` is dispatched to the `Customer` participant's `userId` via the existing `NOTIFICATION_PROVIDER`/dispatcher pipeline. A `Customer`-sent `Message` never triggers a `Notification` (staff visibility is realtime-only, per D9). No `Employee`/`OrganizationMember` ever receives a `Notification` row for messaging.
+7. **`FileOwnerType`** — add `Message` as a fifth enum value (`User | Restaurant | Review | Menu | Message`) alongside the TS union in `apps/backend/src/modules/files/domain/entities/file-record.entity.ts`. `Message.attachmentFileId` is a plain UUID pointer (no Prisma relation, consistent with `File`'s existing polymorphic `ownerId`/`ownerType` design). Upload flow mirrors `AddReviewImageUseCase` (`apps/backend/src/modules/reviews/application/use-cases/add-review-image.use-case.ts`) exactly: resolve+own-check the parent `Conversation` first, validate file, `StoragePort.upload()`, `FileRepository.create({ ownerType: 'Message', ownerId: message.id, ... })` with compensating delete on failure. No virus scanning in this phase (ADR-020 item 5's "virus scan in infrastructure layer" remains a future hardening item, not a blocker here).
+8. **Rate limiting** — new `MESSAGING_RATE_LIMITER` DI token bound to the existing `RedisSlidingWindowRateLimiter` (`RateLimiterPort`), following Discovery's precedent of binding its own token rather than reusing Authentication's closed `RateLimitPolicyName` union (`apps/backend/src/modules/discovery/presentation/guards/discovery-rate-limit.guard.ts`). Keyed per participant (`messaging:ratelimit:send:{participantKey}`, where `participantKey` is the resolved actor id from D15/D3). Applied only to `SendMessage`; reads use the standard global HTTP tier only.
+9. **Realtime** — extend `RoomType` (`apps/backend/src/modules/realtime/application/room.ts`) with `Conversation` — the addition its own doc comment anticipated and gated behind "a new architecture freeze"; this decision note is that freeze. Add `authorizeConversation(actor, conversationId)` to `RoomAuthorizationService`, dual-branching: `User` must be the conversation's `Customer` participant (`userId` match); `Employee`/`OrganizationMember` must pass the same D15 check used for `SendMessage`. Extend `realtime-event-mapping.ts` with `ConversationStarted`/`MessageSent`/`MessageRead`/`ConversationClosed`, broadcasting only to `conversation:{conversationId}`. No regression to the existing four `RoomType` values.
+10. **GDPR** — `Message.anonymizedAt` (nullable `DateTime`), mirroring `User.anonymizedAt`/`ReservationGuest.anonymizedAt`. Per-message (not per-conversation or per-participant) because `Message.body` is the PII-bearing content and a conversation may retain one anonymized participant's history while the other's remains intact. No erasure job implemented in this phase — same "anonymization-compatible; no erasure subsystem yet" posture already accepted for `User`/`ReservationGuest`.
+11. **Archival visibility** — `ListCustomerConversations` excludes `status = Archived` by default, with an explicit `includeArchived` query filter to show them; `ListRestaurantConversations` is unaffected by `Archived` (staff always see it, since D5 confines the meaning of `Archived` to the customer's own view). No separate `archivedAt` column — folded into `status` per D5.
+12. **Idempotency** — no generic `Idempotency-Key` handling exists anywhere in the codebase today. This phase introduces one, scoped to `POST /conversations` and `POST /conversations/:id/messages`: a small `IdempotencyStorePort` backed by the same Redis connection `RateLimiterPort` already uses (reuses existing Redis infrastructure, not a new subsystem), storing `(idempotencyKey, actorId) → response` for 24h and replaying it verbatim on retry instead of re-executing the command.
+13. **Pagination** — cursor-based (`(createdAt, id)` keyset) for `GET /conversations/:id/messages` and the two conversation-list endpoints, default page size 50 / max 100. A deliberate new convention for this codebase (every existing list endpoint uses page/limit offset pagination per `API_GUIDELINES.md`) — justified because message history is an append-heavy, high-churn feed where offset pagination double-counts/skips rows under concurrent inserts. Documented as a one-off precedent, not a retroactive change to any other module's pagination.
+14. **Cross-tenant/cross-branch denial** — IDOR-safe, matching `assertActorCanManageTables`/`assertEmployeeCanActOnReservation` exactly: an unresolvable `restaurantId`/`conversationId` (wrong org, wrong branch scope for `Employee`, or not a participant for `Customer`) resolves to `ConversationNotFoundException` (404); a resolvable-but-insufficient actor (right org/branch, wrong role/permission) resolves to `PermissionDeniedException`/`EmployeeBranchNotAssignedException` (403). Never a distinguishing error that reveals existence to an unauthorized caller.
+15. **Dual Actor authorization** — `Employee` (branch-scoped, new `conversations:manage` permission — no existing slug fits, unlike Analytics' reuse of `reports:view`) **or** `OrganizationMember` (org-scoped, `Owner`/`Admin` role only) may act as the `Restaurant` side, exactly the `assertActorCanManageTables`/ADR-026/ADR-028 shape: routes wear only `JwtAuthGuard` + `SessionVersionGuard`; a new `assertActorCanManageConversation(actor, restaurantId, branchId)` + `resolveMessagingActorId(actor)` pair, called from inside each staff-facing use case, does the branching. No third authorization model invented. `Customer` (`User`) side is single-actor: ownership check only (`conversation.customerParticipant.userId === actor.userId`).
+
 ---
 
 ## ADR-021
 
 ### Billing Invoices
 
-Status: Accepted (Architecture Compliance Audit 2026-07-07)
+Status: **Superseded — Withdrawn by Owner Product-Scope Decision (2026-07-28).** TAVLA will not process payments in-app; this ADR's invoice/payment design will not be implemented. Preserved below for historical record only — do not implement.
 
-Date: 2026-07-07
+Date: 2026-07-07 (Accepted) → 2026-07-28 (Withdrawn)
 
 #### Context
 
@@ -913,6 +942,10 @@ Subscriptions and payments were modeled (`Payments`, `PaymentTransactions`) but 
 
 * Payment provider ADR (provider selection) remains open; invoice structure is provider-agnostic.
 * Impact: Phase 13, `DATABASE_SCHEMA.md`, `EVENTS.md`.
+
+#### Disposition (2026-07-28)
+
+Owner decision: TAVLA does not process customer or reservation payments inside the platform, permanently. No `Payments`, `PaymentTransactions`, or `Invoices` table was ever implemented in Prisma — this ADR was never carried into code, so its withdrawal removes no production functionality. `Payments is Phase 13` and `Phase 13 — Payments` are removed from the roadmap as planned work; see `TASKS.md` and `PROJECT_ROADMAP.md`. Invoice document generation will not be built. Restaurants may handle financial settlement independently, outside TAVLA.
 
 ---
 
@@ -1259,7 +1292,11 @@ ADR-022 (§"Fonnte Integration Boundary") introduced Fonnte as the Customer phon
 
 Affects: `src/config/lightotp.config.ts` (new, replaces `fonnte.config.ts`), `LightOtpVerificationMessagingAdapter` (new, replaces `FonnteVerificationMessagingAdapter`), `PhoneNumber` value object (two Fonnte-specific methods removed), `env.validation.ts`, `configuration.module.ts`, `authentication.module.ts`, `docker-compose.yml`, `ENVIRONMENT_SETUP.md`, `AUTHENTICATION_ARCHITECTURE.md` §15.8 (rewritten in place to describe the current LightOTP contract, per that document's own "authoritative current specification" convention), `ARCHITECTURE_LOCK.md` (this ADR added to the locked table; ADR-022's row annotated), `PRODUCT_REQUIREMENTS.md` FR-01.1a, `DOMAIN_MODEL.md`, `EVENTS.md`, `TESTING_STRATEGY.md`, `README.md`, `PROJECT_ROADMAP.md`, `TASKS.md` (new migration report). Does not affect Customer identity rules, Owner email/password authentication, Owner provisioning, Employee authentication, phone-number normalization/canonical-E.164 architecture, or any Reservation-domain architecture (Phase 7.x).
 
----
+### Post-Audit Remediation Note (2026-08-02, item M4)
+
+A repository-wide audit flagged `LightOtpVerificationMessagingAdapter.sendVerificationCode` being `await`-ed inline inside `StartCustomerRegistrationUseCase`/`ResendCustomerRegistrationUseCase`/`StartCustomerPasswordResetUseCase`/`ResendCustomerPasswordResetUseCase` as a deviation from CLAUDE.md's "long-running operations must never block the request/response cycle" rule, since every other external-provider call in this codebase (OneSignal push, via `NotificationDeliveryProcessor`) goes through a BullMQ queue instead.
+
+**Evaluated and intentionally not queued.** Unlike a push notification (a secondary side effect of an already-durably-recorded `Notification` row), the OTP send *is* the primary outcome these four use cases exist to produce, and the caller is synchronously told whether it succeeded (`VerificationMessagingFailedException` on failure) so the Customer isn't left believing a code is on its way when it isn't. Moving the send behind a queue would force one of two changes neither of which this remediation pass is authorized to make unilaterally: (a) make these endpoints return "accepted" before delivery is confirmed, silently dropping the existing fail-fast error contract these use cases (and their tests) depend on, or (b) have the request handler block on the queued job's completion anyway, which adds BullMQ's operational overhead without removing the blocking wait it exists to avoid. Either is a product/API-contract decision, not a mechanical infrastructure change, per `CHANGE_POLICY.md`'s "no architecture change without an explicit decision" gate — so it is recorded here as a **deliberate, accepted exception** to the general async-external-call rule rather than implemented speculatively. No code changed as a result of this note.
 
 ## ADR-025
 
@@ -1400,13 +1437,372 @@ Affects: `DECISIONS.md` (this ADR), `ARCHITECTURE_LOCK.md`, `TASKS.md` Phase 6 f
 
 ---
 
+## ADR-027
+
+### Subscription System as Entitlement/Access Contract (Not Billing)
+
+Status: **Implemented (2026-07-28).** Architecture frozen the same day (Phase 12 pre-implementation decision session); implementation authorized and delivered, live-verified, immediately after. `Subscription`/`SubscriptionPlan`/`SubscriptionUsage`/`RestaurantUsage` all exist and are live. No decision recorded in this ADR was reopened or altered during implementation — see `TASKS.md`'s "Phase 12 — Subscription System: Implementation" section for the implementation-time reconciliations (all non-architectural: an Employee soft-delete decrement mapping, the exact atomic-counter mechanism, default-plan provisioning wiring, a route-naming clarification, an `actorId` addition to 5 event payloads for audit consistency, a `DIRECT_TENANT_OWNED_MODELS` registration fix, and a `forwardRef` module-wiring fix for a genuine three-module dependency cycle).
+
+Date: 2026-07-28
+
+#### Context
+
+Phase 12 — Subscription System was never implemented (confirmed: no Prisma model exists for any of these concepts). Prior documentation (`DOMAIN_MODEL.md`, `DATABASE_SCHEMA.md`, `EVENTS.md`, written 2026-07-07, before Payments was removed from product scope) modeled `Subscription` as a classic SaaS billing subscription: a `PastDue` status, `priceAmount`/`priceCurrency`/`billingInterval` fields on `SubscriptionPlan`, `SubscriptionUpgraded`/`SubscriptionDowngraded`/`SubscriptionRenewed` events, a `maxMonthlyReservations` limit, and an undocumented auto-suspend-on-lapse behavior tying `Subscription` expiration to `Restaurant.status`. None of this was ever implemented. Following the permanent removal of in-app payments from TAVLA's product scope (see this document's own Disposition note on ADR-021), this billing-shaped design could not proceed as documented and required an explicit pre-implementation architecture-decision session (40 numbered decisions, D1–D40) with the owner before any schema/code work could begin.
+
+#### Decision
+
+**Subscription = entitlement/access contract, never a billing subscription.** A restaurant/organization's plan is assigned/changed administratively by a Platform Admin; TAVLA models only the resulting entitlement, never how (or whether) money changes hands outside the platform.
+
+1. **Ownership (reaffirms ADR-011, not reopened).** One `Subscription` per `Organization` (unique `organizationId`); plan assignment is always Organization-level, never per-Restaurant.
+2. **`SubscriptionPlan`** — platform-global reference data (TENANCY.md, alongside `Country`/`Currency`/`Roles`), persisted and seeded (not dynamically CRUD-able in Phase 12; a read-only PlatformAdmin catalog endpoint is the only runtime surface). No commercial tier names (`Free`/`Basic`/…) are frozen by this ADR — the schema is generic; the catalog is business data, seeded separately. No `priceAmount`/`priceCurrency`/`billingInterval` — a Plan is never a priced product.
+3. **Numeric limits — exactly three, all structural/resource limits, no reservation-volume limit:** `maxRestaurants` (Organization-wide), `maxBranchesPerRestaurant` (**per-Restaurant** — each individual Restaurant under the Organization may have at most this many Branches, not an Organization-wide total), `maxEmployeesPerRestaurant` (**per-Restaurant**, same semantics). **`maxMonthlyReservations` is explicitly excluded by owner decision** — a restaurant must never become unable to accept reservations because of its Organization's subscription tier; reservation-volume *measurement* is Phase 14 Analytics' concern, never a Phase 12 restriction. No limit exists for offers, reviews, images, tables, floor plans, realtime connections, notifications, waitlist entries, or customers unless separately approved in a future architecture decision.
+4. **Two-tier usage tracking, matching each limit's actual enforcement grain — this is the resolution to a genuine cardinality mismatch caught during this session.** A single Organization-scoped counter cannot correctly enforce a *per-Restaurant* limit (it cannot distinguish "Restaurant A has 5 branches" from "Restaurant B has 0" — both would appear identically in an Organization-wide total). Therefore:
+   - **`SubscriptionUsage`** (one row per Organization, direct tenant-owned) tracks only `restaurantCount`, enforcing `maxRestaurants`.
+   - **`RestaurantUsage`** (new table, one row per Restaurant, transitively tenant-owned via `restaurantId -> Restaurant.organizationId`, same pattern as `RestaurantSettings`/`RestaurantGallery`/`Offer` — not added to `DIRECT_TENANT_OWNED_MODELS`) tracks `branchCount`/`employeeCount`, enforcing `maxBranchesPerRestaurant`/`maxEmployeesPerRestaurant` against the specific target Restaurant, never an Organization-wide sum.
+   - Both are recalculated incrementally from domain events (`RestaurantCreated`, `BranchCreated`, `EmployeeCreated`), never a live `COUNT(*)`.
+5. **Concurrency.** Atomic conditional counter update in the same transaction as the resource's own insert (`UPDATE ... SET count = count + 1 WHERE <key> = $1 AND count < $2`), keyed to each limit's own grain: `maxRestaurants` → `organizationId`-keyed update on `SubscriptionUsage`; `maxBranchesPerRestaurant`/`maxEmployeesPerRestaurant` → `restaurantId`-keyed update on `RestaurantUsage`. No advisory lock, no Redis lock, no read-count-then-insert race window.
+6. **Lifecycle: `Active`, `Suspended`, `Cancelled`, `Expired`.** No `PastDue`/`Trialing`/other billing-derived state. `Suspended` = administrative pause (PlatformAdmin, reactivatable via Reactivate). `Cancelled` = terminal (resumed only via a fresh Assign, not Reactivate). `Expired` = automatic, `endsAt` elapsed, BullMQ-scheduled + CAS-guarded (mirrors the Offer expiration precedent, Phase 11) with a lazy-check fallback. No trials (no `trialEndsAt`).
+7. **Assignment/change: PlatformAdmin-only.** No customer-facing purchase/checkout endpoint exists or is planned. `startsAt` + nullable `endsAt` (null = indefinite); no advance/`effectiveAt` scheduling; plan changes are immediate. Downgrade is **rejected outright** if the target plan's limits are exceeded by current usage — checked against `SubscriptionUsage.restaurantCount` for `maxRestaurants`, and against **every** Restaurant's own `RestaurantUsage` row (the maximum across all of the Organization's restaurants) for the two per-Restaurant limits. Never silently deletes/archives/auto-suspends resources.
+8. **Enforcement is a new step in the existing use-case-level authorization sequence (not a new mechanism):** Authentication → tenant/actor RBAC → **Subscription entitlement** (one `SubscriptionPolicy` check, numeric and any future feature-boolean entitlement together) → domain/business-invariant policy. Enforced in the application layer, before resource creation (`CreateRestaurantUseCase`, Branch-creation use case, Employee-invite use case) — never in a controller, guard, or repository. `CreateReservationUseCase` has **no** subscription-entitlement dependency (item 3, above).
+9. **An expired/suspended/cancelled Subscription blocks only new resource creation.** It never mutates `Restaurant.status`, never blocks existing reservation-taking, and gates no currently-completed feature (Reviews, Offers, Waitlist, Realtime, Notifications, Merge/Split) — explicitly correcting the pre-2026-07-28 `DOMAIN_MODEL.md` text that had `Restaurant.status` auto-transitioning to `Suspended` on subscription lapse (see Alternatives Considered). No new feature-entitlement gating of any existing capability is introduced by this ADR.
+10. **Plan immutability.** Once any `Subscription.planId` references a `SubscriptionPlan`, that plan's limit columns are immutable in place (application-enforced). A limit change means seeding a new plan and migrating affected subscriptions to it via the normal plan-change path (item 7) — never editing a live, referenced plan's numbers. A plan may be `archivedAt`-marked (excluded from future assignment) without affecting existing subscribers.
+11. **Existing-Organization compatibility.** Every existing Organization is backfilled with a `Subscription` row (default plan, `Active`, `startsAt = now()`, `endsAt = null`) and a `SubscriptionUsage` row (real one-time `COUNT(*)`) via a seed/backfill script — not embedded in the migration itself, not application-layer lazy provisioning. The default plan's limits must be validated against real production data before backfill runs, so no existing Organization is retroactively placed over any limit.
+12. **Tenancy.** `SubscriptionPlan` — platform-global. `Subscription`, `SubscriptionUsage` — direct tenant-owned (`organizationId`; add to `DIRECT_TENANT_OWNED_MODELS` at implementation time). `RestaurantUsage` — transitively tenant-owned via `restaurantId`.
+13. **Events (minimized, no PII):** `SubscriptionAssigned`, `SubscriptionPlanChanged`, `SubscriptionSuspended`, `SubscriptionReactivated`, `SubscriptionCancelled`, `SubscriptionExpired`. No `SubscriptionRenewed`/`Upgraded`/`Downgraded`, no `PlanCreated`/`PlanUpdated`.
+14. **No Realtime, no Notification integration in Phase 12.** No concrete operational need identified; both are closed-by-default per existing allow-list conventions.
+15. **Phase 14 boundary.** Phase 12 owns exactly the usage counters needed for the three approved limits. Phase 14 owns all historical/trend/comparative analytics, including any future reservation-volume reporting — which must never imply a subscription restriction.
+16. **Absolute payment boundary (reaffirmed).** No `Payment`, `PaymentTransaction`, `Invoice`, `BillingAccount`, `PaymentMethod`, `CheckoutSession`, `paymentProvider`, `paymentStatus`, `amountPaid`, card details, wallet, deposit, charge, proration, or payment webhook is introduced by this ADR, now or implicitly in any future Phase 12 implementation, unless a separate future owner decision explicitly reverses the payment-removal decision.
+
+#### Alternatives Considered
+
+* **Keep `maxMonthlyReservations` as a fourth limit (original pre-2026-07-28 draft).** Rejected by explicit owner override: reservation volume is an operational/analytics concern (Phase 14), not a commercial gate — a restaurant must never lose booking capability by successfully doing business.
+* **Single Organization-scoped `SubscriptionUsage` row carrying `branchCount`/`employeeCount` as flat totals (original pre-2026-07-28 draft).** Rejected: structurally cannot enforce a *per-Restaurant* limit — an Organization with Restaurant A at 5/5 branches and Restaurant B at 0/5 would read identically to one with both at 2.5/5 under a single aggregate number, either wrongly blocking B or wrongly allowing A. Split into `SubscriptionUsage` (org-scoped, `maxRestaurants` only) + new `RestaurantUsage` (restaurant-scoped) instead.
+* **Auto-suspend `Restaurant.status` on Subscription expiration (original pre-2026-07-28 `DOMAIN_MODEL.md` text).** Rejected: (a) directly contradicts the owner-approved "no gating of currently completed features" / "existing organizations must not accidentally lose access" principles; (b) `RestaurantStatus.Suspended` is already a real, Owner/Admin-mutable field (`PATCH /restaurants/:id`) — a second, subscription-driven writer of the same field is a correctness hazard (which actor's suspension "wins"?). Enforcement stays scoped to blocking new creation only.
+* **Redis-cached entitlement snapshot.** Rejected: no demonstrated performance need (entitlement checks gate low-frequency creation actions, not high-QPS paths); would also contradict the existing "no long-lived Redis cache as permissions/entitlement source of truth" convention (`NON_FUNCTIONAL_REQUIREMENTS.md`, `AUTHORIZATION_ARCHITECTURE.md` §18).
+* **Fully normalized `PlanFeature`/`Entitlement` table.** Rejected for v1: no feature-entitlement is being activated in this ADR at all (item 9); a normalized table is premature machinery for a currently-empty feature-gate list. Typed columns are the established precedent (`RestaurantSettings`) and sufficient today.
+* **Immutable/versioned plans or full entitlement-snapshotting into `Subscription`.** Rejected as more machinery than a small, seed-managed catalog (no dynamic authoring API) currently needs; archive-only plans (item 10) get the same "no silent retroactive change" safety property more cheaply.
+* **Trials.** Rejected: no product requirement identified; composes cleanly on top of the frozen lifecycle later if ever needed (a trial is just a short-`endsAt` Subscription).
+
+#### Consequences
+
+##### Positive
+
+* Closes the only remaining stale, pre-payment-removal, billing-shaped documentation in this codebase (`PastDue`, `SubscriptionUpgraded`, auto-suspend-on-lapse, `maxMonthlyReservations`) before any of it could be implemented.
+* Resolves a genuine, owner-caught schema cardinality mismatch (per-Restaurant limits vs. an Organization-wide-only counter) at the architecture stage, before a migration could bake in the wrong grain.
+* Reuses three proven precedents (Offer expiration's BullMQ+CAS shape, `RestaurantSettings`' transitively-tenant-owned shape, the existing `AUTHORIZATION_ARCHITECTURE.md` §16 deny-rule ordering) rather than inventing new mechanisms.
+* Existing organizations cannot regress — deterministic backfill, no feature gating activated, no restaurant-operational-state mutation.
+
+##### Negative
+
+* Two usage-tracking tables (`SubscriptionUsage` + `RestaurantUsage`) instead of one, because the limits genuinely have different enforcement grains — irreducible complexity given `maxBranchesPerRestaurant`/`maxEmployeesPerRestaurant`'s own per-Restaurant semantics, not an arbitrary design choice.
+* Plan catalog/limit values require a new seeded plan (not an in-place edit) for any future change, once any subscription references the old one — a deliberate trade-off for auditability over convenience.
+
+#### Impact
+
+Affects: `DECISIONS.md` (this ADR), `DOMAIN_MODEL.md` (Organization/Subscription/Restaurant Aggregates, Business Rules, Repositories, Domain Events), `DATABASE_SCHEMA.md` (Subscriptions/Subscription Plans/Subscription Usage rewritten, new Restaurant Usage table), `EVENTS.md` (Subscription Events rewritten), `AUTHORIZATION_ARCHITECTURE.md` §22, `TASKS.md`/`PROJECT_ROADMAP.md`/`PRODUCT_REQUIREMENTS.md` Phase 12 sections, `ARCHITECTURE_LOCK.md` (post-lock extensions table). No Prisma schema/migration in this session (architecture-freeze only; implementation requires separate explicit authorization). No changes to Reviews/Offers/Waitlist/Realtime/Notifications/Merge-Split modules. `CreateReservationUseCase` unaffected.
+
+---
+
+## ADR-028
+
+### Title
+
+Analytics Architecture — Operational Restaurant Analytics (Read-Only, No New Persistence)
+
+### Status
+
+**Accepted — architecture frozen 2026-07-28, implemented and live-verified the same day.** See `TASKS.md`'s Phase 14 Implementation & Verification Report for the full test/Docker/live-verification evidence.
+
+### Date
+
+2026-07-28
+
+### Context
+
+`DOMAIN_MODEL.md` has long listed `AnalyticsCalculator` and `AnalyticsPolicy` as standalone names with no further specification; `EVENTS.md` lists four placeholder Analytics events (`ReservationStatisticsGenerated`, `DailyReportGenerated`, `MonthlyReportGenerated`, `OccupancyCalculated`) and an `AnalyticsQueue` BullMQ entry, none ever implemented or elaborated; `PRODUCT_REQUIREMENTS.md`'s FR-13 referenced "WebSocket + REST" and "Revenue-ready reports" — both written 2026-07-07, before Payments was permanently removed from product scope (ADR-021 Disposition) and before Phase 8/9's actual realtime/notification allow-lists were frozen. `DECISIONS.md`'s Future Decisions list carried "Analytics architecture" as open since the original architecture baseline. Phase 14 — Analytics was never implemented (confirmed: no Prisma model, controller, or query port exists for it).
+
+A two-session pre-implementation process (Owner Decision Reconciliation, then this Documentation Freeze) resolved 50 numbered owner decisions (D0–D50) reconciling Phase 14's scope against current persisted data. This ADR freezes only the architecture-significant subset of those decisions; the full formula/route registers live in `TASKS.md`'s Phase 14 section, not duplicated here.
+
+One material finding from this session's repository re-verification changes the frozen query strategy: `Reservation.reservationDate` (a stored `@db.Date` column, distinct from `reservationStartTime`) is **not** reliably Branch-local. Tracing every reservation-creation/mutation code path found `create-reservation.use-case.ts` (Online/Phone/WalkIn, one shared use case) and `reschedule-reservation.use-case.ts` compute it via `Date.UTC(startTime.getUTCFullYear(), startTime.getUTCMonth(), startTime.getUTCDate())` — the UTC calendar date of `reservationStartTime`, with no reference to `Branch.timezone` anywhere in either file. Only the Waitlist-conversion path (`waitlist-promotion.service.ts`) is branch-local by construction, because it reuses the client-supplied `preferredDate` day string instead of re-deriving from `reservationStartTime`. No shared helper reconciles the two approaches. For a branch ahead of or behind UTC, an evening/late-night booking's stored `reservationDate` can therefore be off by one calendar day from the branch's true service day on 3 of 4 paths. This is a pre-existing data-quality condition in already-implemented Phase 7 code, not something this ADR changes or authorizes fixing (out of scope — documentation/architecture session only).
+
+### Decision
+
+1. **Product scope.** Phase 14 v1 is operational restaurant analytics only: Reservation Reports (status counts, source breakdown, service-day trend, booking-created trend, completion/no-show/cancellation rate, average party size), Peak Hours, Customer Insights, Waitlist Analytics, Review Summary. It is explicitly **not** financial analytics, a BI warehouse, CRM, marketing attribution, a realtime analytics platform, a reporting/export engine, or PlatformAdmin BI.
+
+2. **Data source and architecture.** Direct PostgreSQL reads over existing operational tables only — `Reservation`, `ReservationWaitlistEntry`, `Restaurant`, `Branch`, `Review` (`ReservationHistory` is not required by any frozen v1 formula — see Decision #9). Layering: `Controller → Query Use Case → AnalyticsQueryPort → Prisma/PostgreSQL implementation`, matching the existing Repository Pattern. No mutable Analytics aggregate or entity; rate/formula computation is stateless helper functions. No new Prisma model, table, materialized view, Redis cache, BullMQ queue/worker, event-sourced store, or warehouse in v1 — unless a future phase separately proves, with measured performance evidence, that one is required.
+
+3. **Reservation-date service-day derivation (supersedes any assumption that `Reservation.reservationDate` is branch-local).** Because `reservationDate` is proven inconsistent across creation paths (Context, above), service-day trend bucketing MUST derive the branch-local calendar date at query time from `reservationStartTime AT TIME ZONE Branch.timezone` (or the equivalent correct Prisma/PostgreSQL expression), never from the stored `reservationDate` column. Booking-created trend bucketing applies the identical Branch-timezone conversion to `createdAt`. This is an additive read-side query rule; it does not modify `Reservation.reservationDate`'s stored value, its writers, or any other consumer of that column.
+
+4. **Timezone contract.** `Branch.timezone` is authoritative for all operational analytics; `RestaurantSettings.timezone` never overrides it for this purpose (reaffirms D6). Timezone-bucketed series — service-day trend, booking-created trend, Peak Hours — require an explicit single `branchId` and are not exposed at Restaurant/Organization scope, so no endpoint can silently combine two branches' local calendar buckets into one misleading series. Restaurant/Organization-scope endpoints return only non-bucketed aggregates (status counts, source breakdown, rates, averages), which are timezone-agnostic by construction.
+
+5. **Authorization — no new permission slug, no new guard-composition mechanism.** Authorized actors: Organization Owner/Admin (`OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)`), **or** an Employee holding the already-seeded `reports:view` permission slug (`prisma/seed.ts`, granted to `manager`), constrained by existing branch-assignment rules. Per the precedent ADR-026 (Merge/Split) and the Phase 7.3 Cancel/Reschedule dual-actor routes already established, this is resolved by **use-case-level actor-type branching**, not a NestJS OR-composed guard: the route carries `JwtAuthGuard` + `SessionVersionGuard` only; the use case checks `actor.actorType === 'OrganizationMember' && actor.orgRole in (Owner, Admin)` OR `actor.actorType === 'Employee' && actor.permissions.includes('reports:view') && branch-assignment check when a branchId is in scope`. This ADR itself satisfies `CHANGE_POLICY.md` criterion #4 for this authorization-model decision, exactly as ADR-026 did for its own narrow extension. IDOR behavior follows the existing convention (unknown/foreign-tenant resource → 404). `JwtAuthGuard`, `SessionVersionGuard`, tenant isolation, and branch-assignment enforcement are unmodified.
+
+6. **Tenancy.** Organization → Restaurant → Branch, resolved through existing relationships exactly as `BranchesController`/`RestaurantRepository` already do (Restaurant loaded first, tenant-scoped; Branch resolved as its child). No `organizationId` column is added anywhere; no Analytics persistence model exists to own one. Employee-actor queries are additionally constrained by branch assignment. PlatformAdmin/`$systemContext` cross-tenant analytics remains out of scope for Phase 14 v1.
+
+7. **REST only, no realtime/notification integration.** No changes to the Phase 8 realtime allow-list, `RealtimeGateway`, or `RealtimeEventPublisher`; no changes to Phase 9 `NotificationProvider`/`NotificationDispatcherService`. Analytics reads persisted state on request; it does not publish or consume domain events.
+
+8. **Privacy boundary.** Every response is aggregate-only: counts, rates, and averages. No `ReservationGuest.fullName`/`phone`/`email`, no raw customer/guest lists, no OneSignal/push identifiers. Guest-backed reservations are exposed only as an aggregate count (`guestBackedReservationCount`); guest identity is never merged across records by phone/email/name (no such cross-record key exists in `ReservationGuest`). No k-anonymity threshold is introduced because no raw or near-raw list is ever returned.
+
+9. **Cancellation rate — exact formula, no `ReservationHistory` dependency.** `CancellationRate = Cancelled-from-Approved / (Cancelled-from-Approved + Completed + NoShow)`, where `Cancelled-from-Approved` means `Reservation.status = Cancelled AND Reservation.approvedAt IS NOT NULL` — `approvedAt` is never cleared on cancellation, so this is an exact, directly-persisted fact requiring no join to `ReservationHistory` and no dependency on that table's row-completeness for older data.
+
+10. **Occupancy is excluded, not approximated.** No exact or approximate occupancy percentage, and no historical capacity/merge-topology snapshot system, in v1. The schema has no capacity-history or topology-history table (`Table.mergeGroupId`/`isMergePrimary` reflect only current topology), so any occupancy percentage computed against historical reservations would silently misrepresent capacity at the time of booking. Reservation counts and Peak Hours remain available as defensible, non-occupancy demand signals. Occupancy remains deferred until a separately approved historical-capacity/topology architecture exists.
+
+11. **Subscription/plan independence.** Analytics is not plan-gated (reaffirms ADR-027 §15's Phase 14 boundary: Phase 12 owns only its three structural entitlement counters; Phase 14 owns all historical/trend/comparative analytics and must never imply a subscription restriction). No coupling to `SubscriptionUsage`/`RestaurantUsage` as analytics storage.
+
+12. **No payment/revenue analytics.** TAVLA does not process payments (ADR-021 Disposition); Phase 14 v1 has zero currency-denominated metrics.
+
+13. **Consistency and range contract.** Direct-read consistency (no serializable analytics snapshot claimed); responses include a `generatedAt` timestamp inside the `data` payload (the shared `ResponseEnvelopeInterceptor` hardcodes `meta: {}` with no per-route override, so `generatedAt` cannot live in `meta`). Maximum query range 366 days. No hard SLA beyond the existing `NON_FUNCTIONAL_REQUIREMENTS.md` "Heavy Operations ≤30s" target for Analytics/Reports — no new, separately-proven guarantee is claimed by this ADR.
+
+14. **Audit.** Ordinary Analytics GET requests do not create `AuditLog` rows, consistent with the existing convention (`AuditLog` writes are triggered only by explicit RBAC-denial calls or mutating-domain-event listeners — see `PermissionsGuard`/`AuditingEventPublisher` — and a read-only GET with no domain event and no denial path triggers neither).
+
+### Alternatives Considered
+
+* **Analytics warehouse / aggregate rollup tables / materialized views.** Rejected for v1: no measured performance evidence justifies the added consistency/operational complexity against a modular-monolith-scale dataset; direct reads over existing indexes are the simpler starting point (owner decision D3/D4).
+* **BullMQ `AnalyticsQueue` worker computing async rollups.** Rejected for v1 for the same reason; the queue name remains a documented, unimplemented placeholder in `EVENTS.md`, not an authorization to build it.
+* **NestJS-composed OR guard (`OrgRoleOrPermissionGuard`) for the dual-actor authorization.** Rejected: no such guard-composition mechanism exists anywhere in the codebase today; every prior dual-actor case (ADR-026 Merge/Split, Phase 7.3 Cancel/Reschedule) resolved the OR inside the use case instead, and introducing a new generic guard-composition primitive for Analytics alone would be a wider architectural change than this feature warrants.
+* **Fix `Reservation.reservationDate`'s UTC-derivation at the write side (Create/Reschedule use cases) instead of deriving branch-local dates at analytics query time.** Rejected for this ADR: modifying `create-reservation.use-case.ts`/`reschedule-reservation.use-case.ts` is a Phase 7 production-code change requiring its own authorization, migration/backfill consideration for already-persisted rows, and is out of scope for a documentation-freeze session. Deriving the date at analytics query time is correct regardless of whether the write-side bug is ever fixed, and remains correct if it is.
+* **Approximate historical occupancy from current table/merge topology.** Rejected (owner override, D9/D45/D47): presenting a topology-reconstruction estimate as occupancy would be mathematically misleading given no historical capacity/topology snapshot exists.
+
+### Consequences
+
+#### Positive
+
+* Phase 14 becomes implementable against verified, exact-or-explicitly-chosen formulas with zero schema changes.
+* Resolves a genuine latent data-quality inconsistency (`reservationDate`'s non-branch-local derivation) at the read layer without requiring a risky write-side migration first.
+* Reuses every existing architectural primitive (Repository Pattern, dual-actor use-case branching, response envelope, tenant resolution) — no new cross-cutting mechanism introduced.
+
+#### Negative
+
+* Restaurant/Organization-scope endpoints cannot show timezone-bucketed trends/peak-hours directly (Branch scope required) — a real capability constraint, not a documentation gap, until/unless a future ADR approves a per-branch-separated multi-timezone series contract at higher scope.
+* `Reservation.reservationDate`'s write-side inconsistency remains unfixed; every future consumer of that column (not only Analytics) should be re-evaluated against this ADR's finding.
+* No comparison periods, exports, or realtime analytics in v1 — deferred, not eliminated, so a future phase may need a follow-up ADR if any of these are approved later.
+
+### Impact
+
+Affects: `DECISIONS.md` (this ADR), `PRODUCT_REQUIREMENTS.md` (FR-13 rewritten), `PROJECT_ROADMAP.md`/`TASKS.md` Phase 14 sections, `DOMAIN_MODEL.md` (`AnalyticsCalculator`, `AnalyticsPolicy`), `AUTHORIZATION_ARCHITECTURE.md` (`reports:view`, `AnalyticsPolicy`), `EVENTS.md` (Analytics Events, `AnalyticsQueue` — labeled deferred), `DATABASE_SCHEMA.md` (explicit no-new-tables note), `API_GUIDELINES.md` (Analytics Endpoints route register), `ARCHITECTURE_LOCK.md` (post-lock extensions table). No Prisma schema/migration, no production code, in this session. No changes to Phase 8 realtime, Phase 9 notifications, Phase 12 subscriptions implementation, or Payments (remains permanently removed).
+
+---
+
+## ADR-029
+
+### Title
+
+Performance / Load-Testing Tooling — k6 Adoption
+
+### Status
+
+**Accepted — architecture frozen 2026-07-30** (owner decision, Phase 15 Architecture Freeze session). **Implemented and live-verified 2026-07-30** under Phase 15's own frozen "Performance Testing" scope — see `TASKS.md`'s Phase 15 Implementation & Verification Report and Final Live Re-Verification Report for the full evidence trail (all four scripts under `apps/backend/scripts/k6/`, run against the rebuilt production image, raw summary-export artifacts preserved).
+
+### Date
+
+2026-07-30
+
+### Context
+
+`docs/TESTING_STRATEGY.md:44`'s Load Tests section has long deferred throughput/response-time SLO validation to run "ahead of Phase 15 (Optimization)... against staging," explicitly leaving tooling choice open: "Tooling choice (k6, Artillery, Gatling) is an open decision, tracked in DECISIONS.md's Future Decisions under 'Monitoring stack' adjacent work." This document's own Future Decisions list (`:1570`, below) lists "Monitoring stack" among the topics that "require an ADR before implementation" (`:1566`). The Phase 15 Pre-Implementation Audit (`TASKS.md`, 2026-07-30) confirmed no load-testing tool (k6/Artillery/autocannon) exists anywhere in the repository today — only a manual, threshold-free `apps/backend/scripts/perf-smoke.mjs` script and a concurrency-safety-only `apps/backend/test/load-smoke.e2e-spec.ts`. Because `CHANGE_POLICY.md`'s trigger #8 ("Adopts a technology listed under Future Decisions in `DECISIONS.md`") applies to the load-testing-tool sub-topic tracked under "Monitoring stack," a new ADR is required before implementation proceeds. This ADR satisfies that requirement; it does not resolve the broader Monitoring/Observability stack topic.
+
+### Decision
+
+1. **Tool.** Adopt **k6** as the project's official performance/load-testing tool. Artillery and Gatling are explicitly rejected for this purpose (owner decision).
+2. **Scope of this ADR.** Resolves only the load-testing-tool sub-topic tracked under the "Monitoring stack" Future Decision, per `TESTING_STRATEGY.md:44`'s own framing. The broader Monitoring/Observability stack topic (metrics, tracing, log aggregation, alerting) remains an open Future Decision requiring its own future ADR.
+3. **Integration model.** k6 is a standalone Go-binary test runner with its own embedded JS runtime — it is not a Node.js package and is not added to `apps/backend/package.json` `dependencies`/`devDependencies`. It runs as an external CLI (or the official `grafana/k6` Docker image) against a running instance of the stack, matching the existing precedent of `apps/backend/scripts/perf-smoke.mjs` (a host/Docker-run script outside the Jest suites, not inside them).
+4. **Placement.** k6 scripts live under a new `apps/backend/scripts/k6/` directory, alongside the existing non-Jest `perf-smoke.mjs` — not under `apps/backend/test/` (Jest's tree), since k6 scripts are not Jest specs and do not run under the Jest test runner.
+5. **Scope of first suite.** Per Phase 15's frozen implementation scope, the first k6 suite covers at minimum: Discovery, Reservation availability, Reservation creation, Analytics. Thresholds are sourced exclusively from `NON_FUNCTIONAL_REQUIREMENTS.md`'s existing targets (public API p95≤500ms/p99≤1s; reservation lookup <100ms; heavy-operation ≤30s) — no invented target.
+6. **CI scope unchanged.** Per `TESTING_STRATEGY.md:44,95`, k6 runs remain out of the standard CI pipeline, executed on-demand/pre-release against a staging-like environment — this ADR does not change that scope.
+
+### Alternatives Considered
+
+* **Artillery.** Rejected (owner decision) — no repository evidence favored it, and it is an npm package, which would add to the Node dependency graph unlike k6's external-binary model.
+* **Gatling.** Rejected (owner decision) — JVM-based, heavier operational footprint than warranted; no other JVM component exists anywhere in this project.
+* **Continue relying on `perf-smoke.mjs`/`load-smoke.e2e-spec.ts` alone.** Rejected — neither asserts throughput/response-time thresholds against `NON_FUNCTIONAL_REQUIREMENTS.md`'s SLOs, and `TESTING_STRATEGY.md` itself already mandates real load testing "ahead of Phase 15."
+
+### Consequences
+
+#### Positive
+
+* Resolves a Future Decision open since `TESTING_STRATEGY.md`'s original authoring, unblocking Phase 15's "Performance Testing" checklist item.
+* No Node dependency-graph impact (k6 is external), consistent with the repository's existing pattern for non-Jest performance scripts.
+
+#### Negative
+
+* Introduces a new external tool that must be installed wherever load tests run (developer machines, staging runners) — not tracked in `package.json`, so its version should be pinned/documented separately (e.g., in `ENVIRONMENT_SETUP.md` or the new `scripts/k6/` directory) at implementation time.
+
+### Impact
+
+Affects: `DECISIONS.md` (this ADR), `docs/TESTING_STRATEGY.md` (tooling choice no longer open for the load-test sub-topic only), `TASKS.md` Phase 15 section (Performance Testing scope). No `package.json` dependency change (by design — k6 remains an external tool, per Decision #3). The four k6 scripts, shared config, and fixture seed/cleanup tooling were implemented and executed against the rebuilt production image in the Phase 15 Implementation & Verification session and re-executed with raw artifact capture in the subsequent Final Live Re-Verification session (`TASKS.md`).
+
+---
+
+## ADR-030
+
+### Title
+
+Messaging Tenancy Correction — Restaurant-Resolved Tenancy for Conversation
+
+### Status
+
+**Accepted — Phase 15.6 Architecture Design Session, 2026-07-30.** Supersedes ADR-020 Decision Item 1 only; items 2–5 of ADR-020 are unchanged and not reopened. Pre-implementation correction — no `Conversation`/`ConversationParticipant`/`Message` table, migration, or data existed before this session (Phase 15.6 was `⏳ Pending` in `TASKS.md`), so this is not a production tenancy-mechanism change, only a correction to an unimplemented specification.
+
+### Date
+
+2026-07-30
+
+### Context
+
+ADR-020 (2026-07-07) specified `Conversation`/`ConversationParticipant`/`Message` as "tenant-scoped via `organizationId`" — a direct column, mirrored verbatim into `DATABASE_SCHEMA.md`'s placeholder tables. Since then, ADR-011/ADR-012's tenant-isolation mechanism (`TENANCY.md`'s `withTenantScoping` Prisma extension + `DIRECT_TENANT_OWNED_MODELS` allowlist) has been repeatedly refined by real implementation experience: `ReservationWaitlistEntry` (Phase 7.5) had its originally-specified direct `organizationId` column dropped via a corrective migration because a Customer-initiated row has no bound `TenantContext.organizationId` to populate it with; `Reservation`, `Notification`, `Review`, and `Offer` all independently arrived at the same "no direct `organizationId`, resolve transitively via `restaurantId → Restaurant.organizationId`" shape (`TENANCY.md`). `Conversation` has the identical structural problem: a Customer starts a conversation, and a Customer actor has no bound `TenantContext.organizationId` to write into a required direct column — the same problem already solved four times over, not a new one.
+
+### Decision
+
+1. **No `organizationId` column** on `Conversation`, `ConversationParticipant`, or `Message`. `Conversation.restaurantId` (required) is the sole tenancy-relevant FK.
+2. **Transitive resolution.** Tenancy resolves `Conversation.restaurantId → Restaurant.organizationId`, exactly like `Branch`/`Reservation`/`Review`/`Offer`. None of the three Messaging tables are added to `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS`.
+3. **Use-case resolution gate.** Every use case resolves the parent `Restaurant` via the already-tenant-scoped `RestaurantRepository` first (mirroring `CreateBranchUseCase`'s documented gate). A `restaurantId` belonging to another organization resolves to `null` → `RestaurantNotFoundException`/`ConversationNotFoundException`, IDOR-safe like every other cross-tenant lookup in this codebase. `organizationId` is read off the resolved `Restaurant` only when constructing domain events or audit entries — never persisted on a Messaging row.
+4. **ADR-020 items 2–5 unchanged** — real-time delivery, `ConversationPolicy` authorization, optional `reservationId`, and attachment handling are not reopened by this ADR.
+
+### Alternatives Considered
+
+* **Keep the direct `organizationId` column, populate it via a branch/restaurant lookup at write time.** Rejected — this still requires the exact same `Restaurant` resolution step this ADR mandates, but additionally introduces a second, denormalized copy of the tenant id that can drift (e.g. a restaurant's organization changes) with no single source of truth.
+* **Register `Conversation` in `DIRECT_TENANT_OWNED_MODELS`, using the `$systemContext` escape hatch for Customer-initiated creates.** Rejected — `$systemContext` is reserved for platform-admin/analytics/support tooling and must never appear inside `src/modules/**` (`TENANCY.md`); this would bypass fail-closed tenant scoping on every ordinary customer-facing write, the exact anti-pattern `TENANCY.md` already documents as wrong for Customer-owned/-spanning models.
+
+### Consequences
+
+#### Positive
+
+* Consistent with every other transitively-tenant-owned model in the schema (`Branch`, `Reservation`, `Review`, `Offer`, `ReservationWaitlistEntry`) — no new tenancy shape introduced.
+* No drift risk between a stored `organizationId` and the restaurant's actual current organization.
+* Simpler write path: `StartConversationUseCase` never needs to resolve or store an `organizationId`.
+
+#### Negative
+
+* Every repository query needs a `restaurantId → Restaurant` resolution (or an explicit join) rather than a flat `WHERE organizationId = ...` filter — most visible in `ListRestaurantConversations` for an `OrganizationMember` listing across branches, which must join through `Restaurant`/`Branch` rather than filter a single column. This is the same cost every other transitively-tenant-owned model already pays.
+
+### Impact
+
+Affects: `DECISIONS.md` (this ADR; also see the Phase 15.6 Owner Decisions D1–D15 note under ADR-020), `DATABASE_SCHEMA.md` (Conversations/Messages tables — remove `organizationId`, document `restaurantId` as the sole tenancy FK), `DOMAIN_MODEL.md`, `TENANCY.md` (add `Conversation`/`ConversationParticipant`/`Message` to the transitively-tenant-owned list alongside `Branch`/`Reservation`/`Review`/`Offer`), new `modules/messaging/` bounded context.
+
+---
+
+## ADR-031
+
+### Title
+
+Menu Management Architecture — Phase 18 Freeze
+
+### Status
+
+**Accepted — Phase 18 Architecture Freeze, 2026-08-02. Architecture only — implementation not authorized.** No `Menu`/`MenuCategory`/`MenuItem`/`MenuItemOptionGroup`/`MenuItemOption`/`MenuItemAddOn` table, migration, or code exists before this session (`FR-08.1` in `PRODUCT_REQUIREMENTS.md` had no implementation phase, recorded as a gap in `TASKS.md`'s Phase 15.5 note). This ADR resolves that gap by design only; a separate explicit go-ahead is required before any Prisma migration or code is written.
+
+### Date
+
+2026-08-02
+
+### Context
+
+`PRODUCT_REQUIREMENTS.md`'s `FR-08.1` ("Menus, categories, items") has never had an assigned implementation phase or schema design. The platform needs a production-grade Menu Management module — one Menu per Restaurant, containing Categories, containing Menu Items, each with configurable Option Groups/Options and Add-ons, image support via the existing File infrastructure, and Always/Unavailable/Scheduled availability — without inventing a new architecture pattern. Everything must follow the same Clean Architecture / DDD / repository-pattern conventions already established by `Restaurant`/`Branch`/`Table`/`Offer`.
+
+### Decision
+
+1. **Six new Prisma models**, all soft-deletable (`deletedAt: Date | null`, matching the `Offer`/`Branch` convention exactly, never `isDeleted` booleans): `Menu`, `MenuCategory`, `MenuItem`, `MenuItemOptionGroup`, `MenuItemOption`, `MenuItemAddOn`. See `DATABASE_SCHEMA.md` for full field lists.
+2. **Singleton Menu per Restaurant**, enforced by a `@@unique([restaurantId])` constraint plus an application-layer existence check in `CreateMenuUseCase`. The DB-level interaction between this uniqueness constraint and soft-delete (can a new Menu be created after the old one is soft-deleted?) is **left open** — see Remaining Decisions in the Phase 18 report; it does not block the freeze because it is a migration-time detail, not a domain-model detail.
+3. **Transitively-tenant-owned**, exactly like `Branch`/`Reservation`/`Review`/`Offer` (`TENANCY.md`): every one of the six models carries a direct `restaurantId` FK and **no `organizationId` column**; none are added to `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS`. `MenuCategory`, `MenuItem`, `MenuItemOptionGroup`, `MenuItemOption`, and `MenuItemAddOn` additionally denormalize `restaurantId` directly (not just their immediate parent FK), mirroring `Table`'s existing denormalization of `floorPlanId` alongside `branchId` — this keeps every tenancy resolution a single hop through `RestaurantRepository` regardless of nesting depth, rather than requiring a multi-hop walk up the Category→Menu→Restaurant chain on every read.
+4. **Money as `Decimal(10, 2)`**, matching `Offer.discountValue` — not integer cents. `MenuItem.price`/`MenuItemOption.priceModifier`/`MenuItemAddOn.price` all follow this. `MenuItem.currency` is a plain nullable `String` (ISO 4217 code), matching the existing `Branch.currency` free-text convention — no new currency enum introduced.
+5. **Images reuse the existing polymorphic `FileRecord` mechanism unchanged.** `FileOwnerType` already includes `'Menu'` (`file-record.entity.ts`) — no File module change is required. `MenuCategory.imageFileId`/`MenuItem.imageFileId` are bare nullable UUID columns (no Prisma relation), exactly like `Restaurant.logoId`; `ownerType = 'Menu'`, `ownerId` = the specific `MenuCategory.id`/`MenuItem.id`. Signed read URLs are resolved at read time and never persisted, per `AddRestaurantGalleryImageUseCase`'s existing pattern.
+6. **Options and Add-ons are relational entities, not a JSON blob.** `MenuItemOptionGroup` → `MenuItemOption` (1:N) and `MenuItem` → `MenuItemAddOn` (1:N) are modeled as first-class tables with their own repositories, matching this codebase's consistent preference for typed relational entities over `Json` columns for anything with independent validation rules (`minSelections`/`maxSelections`/`required`) — `Json` columns in this schema (`Branch.openingHours`, the new `MenuItem.scheduleJson`) are reserved for genuinely unstructured or purely-descriptive data, not domain entities with invariants.
+7. **`displayOrder` reorder is a new bulk-update pattern** — no prior precedent existed anywhere in the schema (`RestaurantGallery.sortOrder` is assigned once on insert via `max()+1`, never bulk-reordered). `PATCH .../categories/reorder` and `PATCH .../items/reorder` accept a complete ordered array of sibling IDs and replace all `displayOrder` values in one transaction; a partial or foreign-ID array is rejected (set-equality check against the current sibling set). This pattern is documented in `API_GUIDELINES.md` as a reusable convention for future modules needing the same capability.
+8. **New permission slug `menu:manage`**, following the existing `<resource>:<action>` convention (`AUTHORIZATION_ARCHITECTURE.md`), enforced via `@RequirePermission('menu:manage')` per-controller (never a global `APP_GUARD`, matching every other mutating module). Owner/Admin (`OrganizationMember` role hierarchy) retain full access without needing the slug, exactly as for every other Employee-RBAC-gated resource. Customer-facing read endpoints require no permission slug (public, unauthenticated).
+9. **No integration with Reservations, Reviews, Offers, Messaging, Analytics, Notifications, or Realtime.** Discovery exposes only a derived `Restaurant.hasMenu: boolean` (true iff an active, non-deleted `Menu` exists) — no search, no indexing, no recommendation surface. `Offer → MenuItem` reference is documented as a future-phase possibility only (see Future Compatibility in the Phase 18 report) and is explicitly not implemented now.
+
+### Alternatives Considered
+
+* **Model Options/Add-ons as a `Json` column on `MenuItem`.** Rejected — `minSelections`/`maxSelections`/`required`/per-option pricing are independently validated, independently mutable, independently soft-deletable data with their own lifecycle; a `Json` blob would push that validation into application code with no DB-level integrity and no independent audit trail per option, breaking from this codebase's established preference for relational modeling of anything with real invariants.
+* **Denormalize `organizationId` directly onto Menu/Category/Item for simpler queries.** Rejected for the same reason ADR-030 rejected it for Messaging — a second, driftable copy of the tenant id with no single source of truth. The `restaurantId`-denormalization-per-row approach (Decision Item 3) gets the query-performance benefit without the drift risk, since `restaurantId` is immutable once a row is created (never reassigned to a different restaurant).
+* **Enforce "exactly one Menu per Restaurant" purely at the application layer, no DB constraint.** Rejected — a bare application-layer check is a well-known race condition under concurrent requests; a `@@unique([restaurantId])` constraint is the correct primary guard, with the soft-delete interaction left as an explicit open item rather than silently accepting the race.
+
+### Consequences
+
+#### Positive
+
+* Zero new architecture patterns introduced — Menu Management is a straightforward application of already-proven conventions (soft delete, transitive tenancy, `Decimal` money, polymorphic `FileRecord` images).
+* No File/MinIO module changes required at all — `FileOwnerType.Menu` was already reserved, confirming the existing infrastructure was designed with this module in mind.
+* The bulk-reorder pattern, once implemented, becomes available to any future module needing ordered siblings (e.g., a future multi-menu-per-restaurant ordering), rather than being a one-off.
+
+#### Negative
+
+* `restaurantId` denormalization onto five tables (Decision Item 3) is more columns to keep consistent than a pure parent-chain walk would need, though the risk is bounded since the column is write-once.
+* The Menu-per-Restaurant uniqueness/soft-delete interaction is deliberately left unresolved by this freeze (see Remaining Decisions) — implementation cannot begin on `CreateMenuUseCase`/the Prisma migration until it is settled.
+* Twenty-two distinct domain events across six entities (see `EVENTS.md`) is a larger event surface than most single-phase freezes in this codebase; justified by one-event-per-mutating-use-case audit-trail completeness (matching the Reservation module's granularity), but worth confirming during implementation that this doesn't produce excessive audit-log volume for high-churn menus.
+
+### Impact
+
+Affects: `DECISIONS.md` (this ADR), `DOMAIN_MODEL.md` (new Menu Aggregate), `DATABASE_SCHEMA.md` (six new tables), `EVENTS.md` (new Menu event catalog), `AUTHORIZATION_ARCHITECTURE.md` (new `menu:manage` slug), `TENANCY.md` (six new transitively-tenant-owned models), `API_GUIDELINES.md` (new bulk-reorder endpoint convention), `PRODUCT_REQUIREMENTS.md` (`FR-08.1` now points to Phase 18), `PROJECT_ROADMAP.md` / `TASKS.md` (new Phase 18 entry), `ARCHITECTURE_LOCK.md` (post-lock extension entry), new `modules/menus/` bounded context (not yet created).
+
+---
+
+## ADR-032
+
+### Title
+
+Menu Ownership, Availability, and Featured-Item Reconciliation — Phase 18 Correction (supersedes ADR-031 Decision Item 2 and the `MenuItem.scheduleJson` field only)
+
+### Status
+
+**Accepted — Phase 18 Architecture Reconciliation, 2026-08-03.** Supersedes only ADR-031 Decision Item 2 (singleton Menu) and the `scheduleJson` field documented in `DATABASE_SCHEMA.md`'s Menu Items table (that field was never a numbered ADR-031 Decision item in its own right, only a schema-level consequence of it). ADR-031 Decision Items 1, 3, 4, 5, 6, 7, 8, 9 are unchanged and not reopened. Pre-implementation correction, exactly like ADR-030's relationship to ADR-020 — no `Menu`/`MenuCategory`/`MenuItem`/`MenuItemOptionGroup`/`MenuItemOption`/`MenuItemAddOn` table, migration, or code exists before this session, so this is not a production schema change, only a correction to an unimplemented specification. Implementation remains unauthorized by this ADR.
+
+### Date
+
+2026-08-03
+
+### Context
+
+A Phase 18 architecture reconciliation was requested to re-open exactly five points of ADR-031 before implementation begins: (D1) Menu ownership cardinality, (D2) the shape of `MenuItem` availability data, (D3) `displayOrder` consistency across the aggregate, (D4) whether `MenuItem.isFeatured` belongs in v1, and (D5) whether `MenuItem.sku` belongs in v1. All other ADR-031 decisions remain frozen.
+
+**D1.** ADR-031 Decision Item 2 froze a singleton Menu per Restaurant (`@@unique([restaurantId])`), leaving its own uniqueness/soft-delete interaction as an explicitly open Remaining Decision. The product surface this platform targets (breakfast/lunch/dinner/drinks/seasonal/Ramadan/QR/delivery menus, eventual POS integration) structurally requires more than one Menu per Restaurant. `Menu.displayOrder` and `Menu.active` already exist as columns in the frozen schema specifically "reserved for a future multi-menu-per-restaurant capability" (`DATABASE_SCHEMA.md`), meaning ADR-031 itself anticipated this reopening without acting on it.
+
+**D2.** ADR-031's `MenuItem.scheduleJson` was justified as "following the `Branch.openingHours` `Json`-column precedent." That precedent is stale: `DATABASE_SCHEMA.md`'s own Branch section documents that `Branch.openingHours` is "pre-existing technical debt... `NULL`/unused by any code... structurally superseded by `BranchWorkingHours`" — a relational table (`dayOfWeek`, `openingTime`, `closingTime`, `breakStartTime`, `breakEndTime`, unique on `(branchId, dayOfWeek)`) built in Phase 5.2, mirroring an identical Restaurant-level `WorkingHours` table built in Phase 4.3. This codebase has adopted the relational day-of-week-schedule shape twice already; ADR-031 cited the one column this same document flags as dead technical debt, not the codebase's actual convention.
+
+**D3.** Re-examination of the already-frozen `DATABASE_SCHEMA.md` field lists confirms `displayOrder` already exists on all six ADR-031 entities (`Menu`, `MenuCategory`, `MenuItem`, `MenuItemOptionGroup`, `MenuItemOption`, `MenuItemAddOn`). No gap exists; this topic is closed with no change.
+
+**D4/D5.** `isFeatured` and `sku` were evaluated against this codebase's established discipline of not speculatively expanding schema ahead of a real consumer (`DATABASE_SCHEMA.md`'s "Candidate index... not frozen, not created in this session" precedent at the `MenuItem` availabilityMode note, and ADR-031's own deferral of `Offer → MenuItem` to "a future-phase possibility only").
+
+### Decision
+
+1. **Restaurant 1:N Menu.** Drop ADR-031 Decision Item 2's `@@unique([restaurantId])` constraint entirely. A Restaurant may own any number of non-deleted `Menu` rows. Add `Menu.isDefault: Boolean @default(false)`, distinct from the existing `Menu.active` (which continues to mean "enabled/visible," independent of default status). Exactly one non-deleted Menu per Restaurant may have `isDefault = true`, enforced by a hand-written partial unique index in the migration SQL (`menus_restaurant_one_default_key` on `(restaurant_id) WHERE is_default = true AND deleted_at IS NULL`) — the identical mechanism already proven in production for `Table.isMergePrimary` (ADR-026's `tables_merge_group_one_primary_key`), not a new pattern. This simultaneously resolves ADR-031's own open "uniqueness vs. soft-delete" Remaining Decision: because the constraint is now scoped to `isDefault = true AND deletedAt IS NULL` rather than to every row for a Restaurant, a Restaurant can always create additional (non-default) Menus, and a soft-deleted default Menu no longer blocks a new one from taking its place. `Restaurant.hasMenu` (Discovery) and the Customer public "the menu" read continue to derive from the single active, non-deleted, default Menu, preserving ADR-031 Decision Item 9's "no integration beyond `hasMenu`" scope unchanged — Discovery does not gain multi-menu awareness in this reconciliation.
+2. **`MenuItemAvailability` relational table replaces `scheduleJson`.** New table: `id`, `menuItemId`, `restaurantId` (denormalized, matching every sibling Menu-family table), `dayOfWeek` (Int, 0–6), `startTime`/`endTime` (String, `"HH:mm"`, matching `BranchWorkingHours.openingTime`/`closingTime`'s exact type convention), `createdAt`, `updatedAt` — no `deletedAt`, matching `WorkingHours`/`BranchWorkingHours`'s existing precedent of whole-set replacement rather than soft-deleted history for schedule rows. Multiple rows per `dayOfWeek` are permitted (unlike `WorkingHours`'s one-row-per-day shape) because a Menu Item may have more than one serving window in a day (e.g., available at breakfast and dinner but not lunch) — this is the actual differentiator over `Json`, not merely "relational vs. not." Rows exist only while `MenuItem.availabilityMode = Scheduled`; a whole-set bulk-replace endpoint (`PATCH .../items/:itemId/availability`, body `{ windows: Array<{dayOfWeek, startTime, endTime}> }`) reuses `API_GUIDELINES.md`'s existing bulk-reorder-style whole-set-replacement convention rather than inventing a second one. `MenuItem.availabilityMode` itself is unchanged (`Always`/`Unavailable`/`Scheduled`).
+3. **`MenuItem.isFeatured: Boolean @default(false)`, added now.** A pure, independently-mutable display flag with no cross-entity invariant, no state machine, and no dependency on any not-yet-built external system — the same shape as the already-frozen `MenuItemOption.active`/`MenuItemAddOn.active`. Adding it in the same freeze as the other four Menu Item scalar fields costs one column; deferring it would cost a full future ADR + migration cycle under this project's `CHANGE_POLICY.md` for a field with no design risk to wait out. No Discovery/ranking integration is implied or added — `isFeatured` is read-only-relevant to the Menu Item's own public representation, consistent with ADR-031 Decision Item 9's integration boundary.
+4. **`displayOrder` — no change.** Confirmed present and consistent across all six ADR-031 entities already; D3 is closed with no schema action.
+5. **`MenuItem.sku` — not added.** Unlike `isFeatured`, `sku`'s correct shape (uniqueness scope: per-Restaurant? per-Organization? globally? barcode/GTIN distinction? per-option-variant SKUs?) is entirely dictated by a POS/Inventory/ERP integration contract that does not exist anywhere in this codebase yet. Adding a nullable column now buys nothing — a nullable `String?` can be added later with zero migration cost to existing data — while guessing the wrong uniqueness scope today would itself require a corrective migration later, the exact asymmetry ADR-031 Decision Item 2's singleton mistake (D1, above) illustrates avoiding. `sku` remains an explicit future-phase item, tracked the same way ADR-031 already tracks `Offer → MenuItem`.
+
+### Alternatives Considered
+
+* **Keep the singleton Menu and add per-Branch or per-daypart fields directly on the existing single `Menu` row instead of allowing multiple Menu rows.** Rejected — a daypart (breakfast/lunch/dinner) or channel (QR/delivery) menu each has its own Categories/Items/structure, not just a different subset of one shared tree; modeling that as flags on a single Menu row would require inventing a parallel filtering mechanism across every child table instead of the one already-proven partial-unique-default pattern.
+* **Keep `scheduleJson`.** Rejected — its sole justification (`Branch.openingHours` precedent) is documented, in this same schema, as dead code; the actual repeated convention for "day-of-week + time window" in this codebase is relational (`WorkingHours`, `BranchWorkingHours`).
+* **Model `MenuItemAvailability` as one row per `dayOfWeek` (unique constraint), matching `WorkingHours` exactly.** Rejected — a Menu Item's realistic availability shape (multiple disjoint windows per day) is narrower than a Branch's single open/close window; forcing one row per day would silently drop the multi-window case `Json` could already express, which would be a regression, not a neutral change.
+* **Add `sku` now as a nullable, unconstrained `String`.** Rejected — a nullable column with no consumer and no validated uniqueness scope is not "free" the way `isFeatured` is; a POS/Inventory ADR must define the scope before the column is added, or the column risks being redefined (breaking) once that integration actually arrives.
+
+### Consequences
+
+#### Positive
+
+* Resolves ADR-031's own previously-open "Menu-per-Restaurant uniqueness/soft-delete interaction" Remaining Decision as a side effect of the D1 redesign, rather than leaving it open into implementation.
+* Reuses two already-production-proven patterns (`Table.isMergePrimary`'s partial unique index; `BranchWorkingHours`'s relational day/time shape) instead of introducing either as new architecture — consistent with CLAUDE.md's "never sacrifice architecture for speed" read the other way: no new pattern is justified when a proven one already fits.
+* Avoids a costly future breaking migration + `VERSIONING.md` API-version bump that would otherwise be needed the first time a Restaurant requests a second Menu (breakfast/lunch split, QR menu, etc.) after Phase 18 ships as originally frozen.
+
+#### Negative
+
+* Every Menu-scoped management endpoint path must include a `:menuId` segment it did not need under the singleton design (e.g. `.../menus/:menuId/categories/reorder` instead of `.../menu/categories/reorder`) — a real, if mechanical, change to `API_GUIDELINES.md`'s Phase 18 route shapes, none of which were implemented yet, so no breaking change to any live route.
+* `MenuItemAvailability` adds a seventh Menu-family table and four new domain events (`MenuSetAsDefault`, `MenuItemFeatured`, `MenuItemUnfeatured`, `MenuItemAvailabilityWindowsReplaced`) to an already-large 22-event catalog (now 26) — see `EVENTS.md`; same audit-volume caveat ADR-031 already flagged applies with slightly larger surface.
+* A Customer-facing "the menu" experience must now explicitly pick the default Menu (or let the Customer switch between Menus) rather than trivially rendering "the" Menu — a product/UX decision Phase 18's original single-Menu framing did not have to make, deferred to implementation.
+
+### Impact
+
+Affects: `DECISIONS.md` (this ADR), `ARCHITECTURE_LOCK.md` (ADR-031 row annotated "corrected by ADR-032," new ADR-032 row added to the post-lock extensions table), `DATABASE_SCHEMA.md` (Menu: drop singleton unique, add `isDefault` + partial unique index; MenuItem: drop `scheduleJson`, add `isFeatured`; new `MenuItemAvailability` table), `DOMAIN_MODEL.md` (Menu Aggregate notes, entity list, repository list, event count), `EVENTS.md` (four new Menu events, two corrected event descriptions), `TENANCY.md` (add `MenuItemAvailability` to the transitively-tenant-owned Menu-family list), `API_GUIDELINES.md` (Menu reorder/availability route shapes now include `:menuId`), `PROJECT_ROADMAP.md` / `TASKS.md` (Phase 18 goals updated). Implementation remains unauthorized.
+
+---
+
 # Future Decisions
 
 The following topics require an ADR before implementation:
 
-* Payment provider integration
 * Dedicated search engine adoption threshold and operations (storage/query ADR-018 Phase 2 — interface defined)
-* Analytics architecture
 * Reporting engine
 * Monitoring stack
 * CI/CD pipeline
@@ -1422,7 +1818,9 @@ The following topics require an ADR before implementation:
 * Partner API key management and rate tiers
 * White-label deployment topology (single-tenant vs multi-tenant branding)
 
-**Resolved (no longer open):** API versioning strategy — see `VERSIONING.md` and `/api/v1` prefix.
+**Removed (2026-07-28):** *Payment provider integration* was previously listed here as an open future ADR topic. Owner decision (2026-07-28) permanently removed in-app payments from TAVLA's product scope — see ADR-021's Disposition note, `PRODUCT_REQUIREMENTS.md`, and `TASKS.md`/`PROJECT_ROADMAP.md` Phase 13. This is no longer an open decision to revisit; it is a closed, decided-against topic, not a deferral.
+
+**Resolved (no longer open):** API versioning strategy — see `VERSIONING.md` and `/api/v1` prefix. **Analytics architecture** — see ADR-028 (implemented and live-verified 2026-07-28). **Performance/load-testing tooling (k6)** — see ADR-029 (architecture frozen 2026-07-30, not yet implemented); this resolves only the load-testing-tool sub-topic previously tracked under "Monitoring stack" below — the broader Monitoring/Observability stack topic (metrics, tracing, log aggregation, alerting) remains open.
 
 ---
 

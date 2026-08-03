@@ -159,7 +159,7 @@ describe('/api/v1/discovery/restaurants (e2e)', () => {
     if (!dbAvailable) return;
 
     const owner = await registerAndLoginOwner('detail');
-    const { restaurantId, branchId, tableId } = await setUpRestaurantBranchTable(
+    const { restaurantId, branchId, floorPlanId, tableId } = await setUpRestaurantBranchTable(
       owner.accessToken,
       'Detail',
     );
@@ -185,7 +185,8 @@ describe('/api/v1/discovery/restaurants (e2e)', () => {
     const floorPlanResponse = await request(app!.getHttpServer())
       .get(`/api/v1/discovery/restaurants/${restaurantId}/branches/${branchId}/floor-plan`)
       .expect(200);
-    expect(floorPlanResponse.body.data.floorPlan.isActive).toBe(true);
+    expect(floorPlanResponse.body.data.floorPlan.floorPlanId).toBe(floorPlanId);
+    expect(floorPlanResponse.body.data.floorPlan).not.toHaveProperty('isActive');
     expect(floorPlanResponse.body.data.tables).toHaveLength(1);
     expect(floorPlanResponse.body.data.tables[0].tableId).toBe(tableId);
   });
@@ -222,4 +223,206 @@ describe('/api/v1/discovery/restaurants (e2e)', () => {
       .send({ name: 'Should Not Work' })
       .expect(404);
   });
+
+  /**
+   * Phase 15.5 (Discovery Module, architecture frozen 2026-07-29). Every
+   * assertion below still targets a genuinely public route (no Authorization
+   * header).
+   */
+  it('D5/D6/D7: search filters by q, cuisineId, priceLevel, and minRating', async () => {
+    if (!dbAvailable) return;
+    const owner = await registerAndLoginOwner('search');
+    const { restaurantId } = await setUpRestaurantBranchTable(owner.accessToken, 'Old Mill Search');
+    await request(app!.getHttpServer())
+      .patch(`/api/v1/restaurants/${restaurantId}`)
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({ name: 'Old Mill Search Bistro', priceLevel: 4, status: 'Active' })
+      .expect(200);
+
+    const byName = await request(app!.getHttpServer())
+      .get('/api/v1/discovery/restaurants')
+      .query({ q: 'old mill', limit: 100 })
+      .expect(200);
+    expect(
+      byName.body.data.items.some(
+        (item: { restaurantId: string }) => item.restaurantId === restaurantId,
+      ),
+    ).toBe(true);
+    expect(byName.body.data.items[0]).toHaveProperty('hasActiveOffer');
+
+    const byPrice = await request(app!.getHttpServer())
+      .get('/api/v1/discovery/restaurants')
+      .query({ priceLevel: 4, limit: 100 })
+      .expect(200);
+    expect(
+      byPrice.body.data.items.some(
+        (item: { restaurantId: string }) => item.restaurantId === restaurantId,
+      ),
+    ).toBe(true);
+
+    const byWrongPrice = await request(app!.getHttpServer())
+      .get('/api/v1/discovery/restaurants')
+      .query({ priceLevel: 1, q: 'old mill search', limit: 100 })
+      .expect(200);
+    expect(
+      byWrongPrice.body.data.items.some(
+        (item: { restaurantId: string }) => item.restaurantId === restaurantId,
+      ),
+    ).toBe(false);
+  });
+
+  it('D4: nearby search includes a branch inside the radius and excludes one far away, with deterministic distance ordering', async () => {
+    if (!dbAvailable) return;
+    const owner = await registerAndLoginOwner('nearby');
+    // Damascus coordinates, matching setUpRestaurantBranchTable's fixture.
+    const { restaurantId: nearId } = await setUpRestaurantBranchTable(
+      owner.accessToken,
+      'Nearby Near',
+    );
+
+    const farRestaurant = await request(app!.getHttpServer())
+      .post('/api/v1/restaurants')
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({ name: 'Nearby Far Bistro', slug: `discovery-e2e-${randomUUID()}` })
+      .expect(201);
+    const farRestaurantId = farRestaurant.body.data.restaurantId as string;
+    await request(app!.getHttpServer())
+      .post(`/api/v1/restaurants/${farRestaurantId}/branches`)
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({
+        city: 'Aleppo',
+        address: '1 Far St',
+        latitude: 36.2021,
+        longitude: 37.1343,
+        countryCode: 'SY',
+        timezone: 'Asia/Damascus',
+      })
+      .expect(201);
+
+    const response = await request(app!.getHttpServer())
+      .get('/api/v1/discovery/restaurants/nearby')
+      .query({ lat: 33.5138, lng: 36.2765, radiusKm: 5, limit: 100 })
+      .expect(200);
+
+    const ids = response.body.data.items.map((item: { restaurantId: string }) => item.restaurantId);
+    expect(ids).toContain(nearId);
+    expect(ids).not.toContain(farRestaurantId);
+    const nearItem = response.body.data.items.find(
+      (item: { restaurantId: string }) => item.restaurantId === nearId,
+    );
+    expect(nearItem).toHaveProperty('nearestBranchId');
+    expect(nearItem).toHaveProperty('distanceKm');
+  });
+
+  it('D4: rejects nearby search with an out-of-range latitude/longitude or an over-limit radius (400)', async () => {
+    if (!dbAvailable) return;
+    await request(app!.getHttpServer())
+      .get('/api/v1/discovery/restaurants/nearby')
+      .query({ lat: 999, lng: 36.2765 })
+      .expect(400);
+    await request(app!.getHttpServer())
+      .get('/api/v1/discovery/restaurants/nearby')
+      .query({ lat: 33.5138, lng: 36.2765, radiusKm: 500 })
+      .expect(400);
+    await request(app!.getHttpServer())
+      .get('/api/v1/discovery/restaurants/nearby')
+      .query({ lng: 36.2765 })
+      .expect(400);
+  });
+
+  it('D15/D18/D19: compares 2-5 restaurants, preserving requested order and silently omitting a hidden id', async () => {
+    if (!dbAvailable) return;
+    const owner = await registerAndLoginOwner('compare');
+    const { restaurantId: idA } = await setUpRestaurantBranchTable(owner.accessToken, 'Compare A');
+    const { restaurantId: idB } = await setUpRestaurantBranchTable(owner.accessToken, 'Compare B');
+
+    const response = await request(app!.getHttpServer())
+      .post('/api/v1/discovery/restaurants/compare')
+      .send({ restaurantIds: [idB, randomUUID(), idA] })
+      .expect(200);
+
+    expect(
+      response.body.data.items.map((item: { restaurantId: string }) => item.restaurantId),
+    ).toEqual([idB, idA]);
+  });
+
+  it('D18: rejects a comparison request with fewer than 2 or more than 5 restaurantIds, or duplicates (400)', async () => {
+    if (!dbAvailable) return;
+    await request(app!.getHttpServer())
+      .post('/api/v1/discovery/restaurants/compare')
+      .send({ restaurantIds: [randomUUID()] })
+      .expect(400);
+    await request(app!.getHttpServer())
+      .post('/api/v1/discovery/restaurants/compare')
+      .send({
+        restaurantIds: [
+          randomUUID(),
+          randomUUID(),
+          randomUUID(),
+          randomUUID(),
+          randomUUID(),
+          randomUUID(),
+        ],
+      })
+      .expect(400);
+    const dup = randomUUID();
+    await request(app!.getHttpServer())
+      .post('/api/v1/discovery/restaurants/compare')
+      .send({ restaurantIds: [dup, dup] })
+      .expect(400);
+  });
+
+  it('D11: the public floor-plan response never includes mergeGroupId/isMergePrimary/status/timestamps, but keeps safe geometry fields', async () => {
+    if (!dbAvailable) return;
+    const owner = await registerAndLoginOwner('privacy');
+    const { restaurantId, branchId } = await setUpRestaurantBranchTable(
+      owner.accessToken,
+      'Privacy',
+    );
+
+    const response = await request(app!.getHttpServer())
+      .get(`/api/v1/discovery/restaurants/${restaurantId}/branches/${branchId}/floor-plan`)
+      .expect(200);
+
+    expect(response.body.data.floorPlan).not.toHaveProperty('isActive');
+    expect(response.body.data.floorPlan).not.toHaveProperty('createdAt');
+    expect(response.body.data.floorPlan).not.toHaveProperty('updatedAt');
+
+    const table = response.body.data.tables[0];
+    expect(table).toBeDefined();
+    expect(table).not.toHaveProperty('mergeGroupId');
+    expect(table).not.toHaveProperty('isMergePrimary');
+    expect(table).not.toHaveProperty('status');
+    expect(table).not.toHaveProperty('branchId');
+    expect(table).not.toHaveProperty('createdAt');
+    expect(table).not.toHaveProperty('updatedAt');
+    // Safe layout/selection fields must still be present.
+    expect(table).toHaveProperty('tableId');
+    expect(table).toHaveProperty('tableNumber');
+    expect(table).toHaveProperty('capacity');
+    expect(table).toHaveProperty('shape');
+  });
+
+  it('D12: rate-limits the public Discovery surface at 60 requests/60s per client IP, returning 429 past the limit', async () => {
+    if (!dbAvailable) return;
+    // A fresh, distinguishing header so this test's own bucket cannot collide
+    // with traffic any other test in this file already sent from the same
+    // loopback IP within the same 60s sliding window.
+    const forwardedFor = `203.0.113.${Math.floor(Math.random() * 200) + 1}`;
+
+    let sawTooManyRequests = false;
+    for (let i = 0; i < 65; i += 1) {
+      const response = await request(app!.getHttpServer())
+        .get('/api/v1/discovery/restaurants')
+        .set('X-Forwarded-For', forwardedFor)
+        .query({ limit: 1 });
+      if (response.status === 429) {
+        sawTooManyRequests = true;
+        expect(response.body.code).toBe('RATE_LIMIT_EXCEEDED');
+        break;
+      }
+      expect(response.status).toBe(200);
+    }
+    expect(sawTooManyRequests).toBe(true);
+  }, 30000);
 });

@@ -1,7 +1,7 @@
 import { Entity } from '@shared/domain/base/entity.base';
 import { FileId } from '@shared/domain/value-objects/identifiers.vo';
 
-export type FileOwnerType = 'User' | 'Restaurant' | 'Review' | 'Menu';
+export type FileOwnerType = 'User' | 'Restaurant' | 'Review' | 'Menu' | 'Message';
 export type FileAccessPolicy = 'Public' | 'Private';
 
 export interface FileRecordProps {

@@ -92,6 +92,22 @@ export default registerAs('auth', () => ({
         10,
       ),
     },
+    // Post-Audit Remediation (2026-08-02, L1) — reuses the sibling "Send"
+    // policy's numbers, same precedent `changePassword` already set above.
+    customerRegisterComplete: {
+      max: parseInt(process.env.RATE_LIMIT_CUSTOMER_REGISTER_COMPLETE_MAX ?? '5', 10),
+      windowSeconds: parseInt(
+        process.env.RATE_LIMIT_CUSTOMER_REGISTER_COMPLETE_WINDOW_SECONDS ?? '3600',
+        10,
+      ),
+    },
+    customerPasswordResetComplete: {
+      max: parseInt(process.env.RATE_LIMIT_CUSTOMER_PASSWORD_RESET_COMPLETE_MAX ?? '5', 10),
+      windowSeconds: parseInt(
+        process.env.RATE_LIMIT_CUSTOMER_PASSWORD_RESET_COMPLETE_WINDOW_SECONDS ?? '3600',
+        10,
+      ),
+    },
   },
 }));
 
@@ -123,5 +139,7 @@ export interface AuthConfig {
     customerRegisterVerify: AuthRateLimitPolicyConfig;
     customerPasswordResetSend: AuthRateLimitPolicyConfig;
     customerPasswordResetVerify: AuthRateLimitPolicyConfig;
+    customerRegisterComplete: AuthRateLimitPolicyConfig;
+    customerPasswordResetComplete: AuthRateLimitPolicyConfig;
   };
 }

@@ -248,6 +248,22 @@ export class PrismaReservationRepository implements ReservationRepository {
     return count > 0;
   }
 
+  async findBlockedTableIds(tableIds: TableId[], now: Date): Promise<TableId[]> {
+    if (tableIds.length === 0) {
+      return [];
+    }
+    const rows = await this.prismaContext.client.reservation.findMany({
+      where: {
+        tableId: { in: tableIds.map((id) => id.value) },
+        status: { in: [ReservationStatus.Pending, ReservationStatus.Approved] },
+        reservationEndTime: { gt: now },
+      },
+      select: { tableId: true },
+      distinct: ['tableId'],
+    });
+    return rows.map((row) => TableId.create(row.tableId));
+  }
+
   async findManyByUserId(
     userId: UserId,
     page: number,

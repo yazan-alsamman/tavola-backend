@@ -8,6 +8,8 @@ export interface RestaurantReplyRepository {
    *  database level, never a pre-check alone. */
   create(reply: RestaurantReply): Promise<void>;
   findByReviewId(reviewId: ReviewId): Promise<RestaurantReply | null>;
+  /** Phase 15 (Optimization) batch accessor - at most one reply per Review, order not guaranteed. Empty input returns `[]` without a database round-trip. */
+  findManyByReviewIds(reviewIds: ReviewId[]): Promise<RestaurantReply[]>;
 }
 
 export const RESTAURANT_REPLY_REPOSITORY = Symbol('RESTAURANT_REPLY_REPOSITORY');

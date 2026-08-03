@@ -1,14 +1,17 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { PhoneNumber } from '@shared/domain/value-objects/phone-number.vo';
 import { Password } from '@shared/domain/value-objects/password.vo';
-import { ClockPort } from '@shared/application/ports/clock.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import {
   SYSTEM_CONFIG_KEYS,
   SystemConfigurationPort,
 } from '@shared/application/ports/system-configuration.port';
-import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
-import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
-import { UnitOfWorkPort } from '@shared/application/ports/unit-of-work.port';
+import {
+  EventPublisherPort,
+  EVENT_PUBLISHER,
+} from '@shared/application/ports/event-publisher.port';
+import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
+import { UnitOfWorkPort, UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
 import {
   CustomerPasswordResetRepository,
   DeviceSessionRepository,
@@ -28,16 +31,12 @@ import {
 import { CompleteCustomerPasswordResetCommand } from '../dto/customer-password-reset.command';
 import { CustomerOtpResult } from '../dto/customer-otp.result';
 import {
-  CLOCK,
   CUSTOMER_PASSWORD_RESET_REPOSITORY,
   DEVICE_SESSION_REPOSITORY,
-  EVENT_PUBLISHER,
-  ID_GENERATOR,
   PASSWORD_HASHER,
   PASSWORD_HISTORY_REPOSITORY,
   SYSTEM_CONFIGURATION,
   TOKEN_FAMILY_REPOSITORY,
-  UNIT_OF_WORK,
   USER_REPOSITORY,
 } from '../../domain/tokens/authentication.tokens';
 

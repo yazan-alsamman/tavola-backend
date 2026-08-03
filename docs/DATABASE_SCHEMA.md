@@ -247,9 +247,11 @@ Indexes
 
 ---
 
-## Email Verification Tokens
+## Email Verification Tokens (Removed — Phase 2.23, migration `20260722130000_phase_2_23_drop_email_verification_tokens`)
 
-Purpose
+**This table was dropped, not merely unimplemented.** It existed and was migrated in earlier phases, then removed once ADR-022 replaced email-based verification with the phone-first OTP registration/recovery flow (`PendingCustomerRegistration`/`CustomerPasswordResetToken`, documented above) — Owner accounts are administratively provisioned with no verification step, and customers never had email. No model exists in `schema.prisma`; the section below is retained only as a historical record of the dropped shape, per MIGRATION_POLICY.md.
+
+Purpose (historical)
 
 Single-use, time-limited tokens for email address verification after registration (AUTHENTICATION_ARCHITECTURE.md).
 
@@ -546,7 +548,9 @@ Indexes
 
 ---
 
-## Restaurant Social Links
+## Restaurant Social Links (Future — Not Yet Implemented)
+
+**Documented as planned schema but never implemented in Prisma (no migration, no model) — matches the disposition of Payments/Invoices below.** No owning module exists in `src/modules`; do not treat as live.
 
 Purpose
 
@@ -605,8 +609,9 @@ Notes
 * `countryCode` and `currency` are owned at this level, not the Restaurant level (see DOMAIN_MODEL.md Money/Currency Ownership). If `currency` is null, the application falls back to `Restaurant Settings.defaultCurrency`.
 * Geo coordinates are authoritative for **nearby restaurant** queries at branch granularity (a restaurant with multiple branches appears once per qualifying branch).
 * **Phase 5.1 (Branch CRUD) scope**: `id`, `restaurantId`, `city`, `district`, `address`, `countryCode`, `currency`, `timezone`, `phone` are exposed and mutable via `POST`/`GET`/`PATCH`/`DELETE /api/v1/restaurants/:restaurantId/branches[/:branchId]`. `Branch` carries no direct `organizationId` column and is deliberately not registered in the tenant-scoping Prisma extension's `DIRECT_TENANT_OWNED_MODELS`; tenant isolation is enforced by resolving the parent Restaurant first (see TENANCY.md and TASKS.md's "Phase 5.1" report).
-* **Phase 5.3 (Geo Coordinates for Nearby Search, ADR-018) scope**: `latitude`/`longitude` are now also exposed and mutable via the same `POST`/`PATCH` routes above - both must be set together or both omitted (`InvalidBranchCoordinatesException`, 400), and range-validated (-90..90 / -180..180) at both the DTO and domain layers. The actual bounding-box/nearby-search query that reads these columns is out of this scope, deferred to a future Discovery module (TASKS.md Phase 15.5) per ADR-018's own attribution - the columns and index exist and are populated, but nothing queries them yet. See TASKS.md's "Phase 5.3" report.
+* **Phase 5.3 (Geo Coordinates for Nearby Search, ADR-018) scope**: `latitude`/`longitude` are now also exposed and mutable via the same `POST`/`PATCH` routes above - both must be set together or both omitted (`InvalidBranchCoordinatesException`, 400), and range-validated (-90..90 / -180..180) at both the DTO and domain layers. The actual bounding-box/nearby-search query that reads these columns was out of this scope, delivered by the Discovery module (TASKS.md Phase 15.5, complete/live-verified/production-verified 2026-07-30) per ADR-018's own attribution. See TASKS.md's "Phase 5.3" report and Phase 15.5's Implementation & Verification Report.
 * **Phase 5.2 (Working Schedule) resolution**: the branch-level working-hours override was delivered as a separate table, `BranchWorkingHours` (see below), not via this row's own `openingHours` Json column. `openingHours` remains `NULL`/unused by any code - it is pre-existing technical debt from the Phase 2.1 foundation migration (flagged, not removed, since no phase owns cleaning it up yet), structurally superseded by `BranchWorkingHours` for any future consumer.
+* **Phase 15.5 (Discovery Module, architecture frozen 2026-07-29, complete/live-verified/production-verified 2026-07-30) index plan**: the existing composite `(latitude, longitude)` B-tree index (above) is reused unchanged as a bounding-box prefilter; exact-radius/ordering distance is computed via Haversine at query time, not via a spatial index type. No GiST, PostGIS, or `earthdistance`/`cube` extension was added (GiST upgrade remains deferred to Phase 15 — Optimization, unchanged from the note above). `Restaurant.status`, `Restaurant.priceLevel`, and `Restaurant.averageRating` were evaluated as candidate additive indexes against a real 20,000-restaurant `EXPLAIN (ANALYZE, BUFFERS)` benchmark during implementation verification (2026-07-30) - current query plans proved comfortably within `NON_FUNCTIONAL_REQUIREMENTS.md`'s p95 budget using only existing indexes, so **no index was added**; see TASKS.md's Phase 15.5 Implementation & Verification Report for the before/after evidence. Remains a Phase 15 (Optimization) candidate only if real production query volume later proves otherwise.
 
 ---
 
@@ -756,6 +761,7 @@ Indexes
 * status
 * composite (branchId, reservationDate, status) — the primary availability-search query filters by branch and date and excludes cancelled/expired reservations; this composite index directly serves that query without a full scan
 * composite (tableId, reservationDate, reservationStartTime) — supports the conflict-check query executed inside the advisory-locked transaction (ADR-013) that verifies no overlapping reservation exists for a specific table before insert
+* composite (userId, createdAt) — Phase 15 (Optimization), migration `20260729220811_phase_15_add_reservation_user_created_at_index`: supports the customer reservation-history query (`userId` filter, `orderBy: createdAt desc`, paginated). Plain ascending (no explicit descending sort in the index) — PostgreSQL serves the query's `ORDER BY createdAt DESC` via a backward index scan, identical in cost to a declared-descending index. Measured (this implementation session, 158,000 synthetic `Pending` reservations, one user holding all of them as the worst case, `EXPLAIN (ANALYZE, BUFFERS)`, fixture fully removed afterward): 45.5ms (Parallel Seq Scan, no index) → 0.175ms (Index Scan Backward, with index) — evidence originally gathered in the Phase 15 Pre-Implementation Audit (`TASKS.md`) and re-measured, not reused, during implementation.
 * exclusion constraint EXCLUDE USING gist (tableId WITH =, tstzrange(reservationStartTime, reservationEndTime) WITH &&) WHERE status NOT IN ('Cancelled', 'Expired', 'Rejected', 'Pending') — the database-level safety net from ADR-013; guards only `Approved`/`Completed`/`NoShow` rows, matching "a table cannot have overlapping **confirmed** reservations" below — `Pending` is deliberately excluded so two overlapping Pending reservations for the same table may coexist (per the business rule immediately below), resolved at approval time, not blocked at creation time; requires the `btree_gist` extension
 * CHECK constraint `reservations_party_xor_chk` (Phase 7.4, migration `20260723184453_phase_7_4_reservation_guests`): `(userId IS NOT NULL AND reservationGuestId IS NULL) OR (userId IS NULL AND reservationGuestId IS NOT NULL)` — the reservation-party invariant enforced at the database layer in addition to the domain layer (`Reservation`'s own `validateParty`)
 
@@ -885,6 +891,8 @@ Indexes
 
 * restaurantId
 * email
+* userId (Post-Audit Remediation M3, 2026-08-02 — `findActiveAuthContextByUserId` runs this lookup on every login/token-refresh; was previously an unindexed full-table scan)
+* roleId
 
 Notes
 
@@ -1011,7 +1019,9 @@ Indexes
 
 ---
 
-## Menus
+## Menus (Future — Not Yet Implemented)
+
+**Documented as planned schema but never implemented in Prisma (no migration, no model) — matches the disposition of Payments/Invoices below.** `src/modules/menus` exists only as an unregistered scaffold (not wired into `AppModule`); do not treat this or the two following sections (Menu Categories, Menu Items) as live.
 
 Restaurant menus.
 
@@ -1033,7 +1043,7 @@ Indexes
 
 ---
 
-## Menu Categories
+## Menu Categories (Future — Not Yet Implemented)
 
 Fields
 
@@ -1050,7 +1060,7 @@ Indexes
 
 ---
 
-## Menu Items
+## Menu Items (Future — Not Yet Implemented)
 
 Fields
 
@@ -1223,7 +1233,7 @@ Indexes
 
 Restaurant promotions.
 
-**Phase 11 freeze (2026-07-28):** a single generic `Offer` aggregate covers Promotions, Coupons, and Events — not three separate tables — distinguished only by the additive `type` field below. Coupons are display-only in v1 (no redemption code, usage tracking, or reservation/payment integration — Payments is Phase 13, unscheduled). Content is editable only while `status = Draft`; `Published`/`Expired` are immutable. Soft-delete is available to Owner/Admin from any state. `Published -> Expired` is a BullMQ-scheduled, CAS-guarded transition (`WHERE status = 'Published'`), not a lazy/computed status. Transitively tenant-owned via `restaurantId -> Restaurant.organizationId` (same pattern as `RestaurantGallery`/`RestaurantSettings`/`Review`) — not added to `DIRECT_TENANT_OWNED_MODELS`, no `organizationId` column.
+**Phase 11 freeze (2026-07-28), implemented via migration `20260728113109_phase_11_offers`:** a single generic `Offer` aggregate covers Promotions, Coupons, and Events — not three separate tables — distinguished only by the additive `type` field below. Coupons are display-only in v1 (no redemption code, usage tracking, or reservation/payment integration — TAVLA does not process payments; Phase 13 — Payments removed from product scope, 2026-07-28). Content is editable only while `status = Draft`; `Published`/`Expired` are immutable. Soft-delete is available to Owner/Admin from any state. `Published -> Expired` is a BullMQ-scheduled, CAS-guarded transition (`WHERE status = 'Published'`), not a lazy/computed status. Transitively tenant-owned via `restaurantId -> Restaurant.organizationId` (same pattern as `RestaurantGallery`/`RestaurantSettings`/`Review`) — not added to `DIRECT_TENANT_OWNED_MODELS`, no `organizationId` column.
 
 Fields
 
@@ -1248,54 +1258,227 @@ Indexes
 
 ---
 
+## Menu Management
+
+**Phase 18 architecture freeze (2026-08-02, ADR-031), ownership/availability/isFeatured corrected by the Phase 18 reconciliation (2026-08-03, ADR-032) — not implemented, no Prisma model or migration exists; implementation requires separate explicit authorization.** Seven tables: `Menu` (root, 1:N per Restaurant, exactly one `isDefault` per Restaurant — corrected by ADR-032, see below), `MenuCategory`, `MenuItem`, `MenuItemOptionGroup`, `MenuItemOption`, `MenuItemAddOn`, `MenuItemAvailability` (new, ADR-032). All seven are transitively tenant-owned via `restaurantId -> Restaurant.organizationId` (same pattern as `Offer`/`Review`/`Branch`) — not added to `DIRECT_TENANT_OWNED_MODELS`, no `organizationId` column on any of them. All except `MenuItemAvailability` are soft-deletable (`deletedAt`); `MenuItemAvailability` has no `deletedAt`, matching `WorkingHours`/`BranchWorkingHours`'s existing whole-set-replacement precedent for schedule rows (see below). `MenuCategory`/`MenuItem`/`MenuItemOptionGroup`/`MenuItemOption`/`MenuItemAddOn`/`MenuItemAvailability` all additionally carry a denormalized `restaurantId` (not only their immediate parent FK) so tenancy resolution stays a single hop through `RestaurantRepository` regardless of nesting depth — see `DOMAIN_MODEL.md`'s Menu Aggregate. Money fields use `Decimal(10,2)`, matching `Offer.discountValue` — not integer cents. Images (`imageFileId`) are bare nullable `String @db.Uuid` pointers into the existing polymorphic `File` table (`FileOwnerType.Menu`, already reserved), with no Prisma relation, matching `Restaurant.logoId` — the File module requires no changes. **Currency caveat:** `MenuItem.currency` is a plain per-item field on a Restaurant-level Menu, which is only self-consistent when a Restaurant's Branches all share one currency — see `DOMAIN_MODEL.md`'s Menu Aggregate Notes for the documented tension with the Branch Aggregate's "currency is Branch-owned" decision, flagged as a Remaining Decision, not resolved here. `displayOrder` reorder (Menus within a Restaurant; Categories within a Menu; Items within a Category) is a bulk-replace pattern with no prior precedent outside this aggregate (`RestaurantGallery.sortOrder` is set once on insert and never bulk-reordered) — see `API_GUIDELINES.md`'s reorder-endpoint convention.
+
+### Menu
+
+Fields
+
+* id (UUID)
+* restaurantId
+* name (String, default `"Main Menu"` — **added at implementation time, 2026-08-03**: distinguishing multiple Menus, e.g. Breakfast/Lunch/Dinner/QR, is the entire motivation for ADR-032's 1:N ownership change and was missing from that ADR's own field list; a pure gap-fill, no behavior change)
+* active (Boolean, default `true` — enabled/visible; independent of `isDefault`)
+* isDefault (Boolean, default `false` — **ADR-032**: exactly one non-deleted Menu per Restaurant may be `true`; `Restaurant.hasMenu` and the Customer public "the menu" read derive from the active, non-deleted, default Menu)
+* displayOrder (Int, default `0` — **ADR-032**: now meaningful, orders multiple Menus for a Restaurant; previously reserved/inert under the singleton design)
+* createdAt
+* updatedAt
+* deletedAt
+
+Indexes
+
+* restaurantId (non-unique — a Restaurant may own multiple Menus, **ADR-032** dropped the singleton `@@unique([restaurantId])`)
+* partial unique `(restaurantId) WHERE isDefault = true AND deletedAt IS NULL` (`menus_restaurant_one_default_key`, hand-written in migration SQL — same mechanism as `Table`'s `tables_merge_group_one_primary_key`, ADR-026) — enforces exactly one Default Menu per Restaurant; resolves ADR-031's originally-open uniqueness/soft-delete interaction, since the constraint no longer applies to soft-deleted or non-default rows
+
+### Menu Categories
+
+Fields
+
+* id (UUID)
+* menuId
+* restaurantId (denormalized)
+* name
+* description (nullable)
+* displayOrder (Int)
+* imageFileId (nullable UUID, `File.id` via `FileOwnerType.Menu`)
+* createdAt
+* updatedAt
+* deletedAt
+
+Indexes
+
+* menuId
+* restaurantId
+* composite (menuId, displayOrder)
+
+### Menu Items
+
+Fields
+
+* id (UUID)
+* categoryId
+* restaurantId (denormalized)
+* name
+* description (nullable)
+* price (Decimal(10,2))
+* currency (String, ISO 4217 — see currency caveat above)
+* imageFileId (nullable UUID, `File.id` via `FileOwnerType.Menu`)
+* availabilityMode (`Always`, `Unavailable`, `Scheduled` — unchanged by ADR-032)
+* isFeatured (Boolean, default `false` — **added by ADR-032**: pure display flag, no Discovery/ranking integration)
+* preparationTimeMinutes (nullable Int)
+* spicyLevel (nullable Int, 0–3)
+* calories (nullable Int)
+* allergens (String[], free-text tags, nullable/empty by default)
+* dietaryLabels (enum array — `Vegetarian`, `Vegan`, `Halal`, `GlutenFree`, `DairyFree`, extensible via migration as the taxonomy grows)
+* displayOrder (Int)
+* createdAt
+* updatedAt
+* deletedAt
+
+**`scheduleJson` removed by ADR-032** — see `MenuItemAvailability` below, which now holds the day-of-week + time-window data whenever `availabilityMode = Scheduled`.
+
+Indexes
+
+* categoryId
+* restaurantId
+* composite (categoryId, displayOrder)
+
+**Candidate index (not frozen, not created in this session):** composite (restaurantId, availabilityMode) — plausible if a future "unavailable items" admin filter view is added; confirm against the real query plan during implementation, per the same "no speculative schema expansion" discipline Phase 15.5 applied.
+
+### Menu Item Availability
+
+**Added by ADR-032**, replacing `MenuItem.scheduleJson`. Relational day-of-week + time-window rows, matching the existing `WorkingHours`/`BranchWorkingHours` convention (Phase 4.3/5.2) rather than a `Json` column — `Branch.openingHours` (the field ADR-031 originally cited as precedent) is documented elsewhere in this file as dead, superseded technical debt, not the codebase's actual convention. Rows exist only while the owning `MenuItem.availabilityMode = Scheduled`; unlike `WorkingHours`'s one-row-per-day shape, more than one row per `dayOfWeek` is permitted, since a Menu Item may have multiple disjoint serving windows in a day (e.g., breakfast and dinner but not lunch).
+
+Fields
+
+* id (UUID)
+* menuItemId
+* restaurantId (denormalized)
+* dayOfWeek (Int, 0–6)
+* startTime (String, `"HH:mm"` — matching `BranchWorkingHours.openingTime`'s exact type convention)
+* endTime (String, `"HH:mm"`)
+* createdAt
+* updatedAt
+
+No `deletedAt` — matching `WorkingHours`/`BranchWorkingHours`'s existing precedent, availability windows are whole-set replaced (`PATCH .../items/:itemId/availability`, same bulk-replace convention as `CategoriesReordered`/`MenuItemsReordered`), not soft-deleted individually.
+
+Indexes
+
+* menuItemId
+* restaurantId
+* composite (menuItemId, dayOfWeek)
+
+### Menu Item Option Groups
+
+Fields
+
+* id (UUID)
+* menuItemId
+* restaurantId (denormalized)
+* name
+* required (Boolean)
+* minSelections (Int)
+* maxSelections (Int)
+* displayOrder (Int)
+* createdAt
+* updatedAt
+* deletedAt
+
+Indexes
+
+* menuItemId
+* restaurantId
+* composite (menuItemId, displayOrder)
+
+### Menu Item Options
+
+Fields
+
+* id (UUID)
+* optionGroupId
+* restaurantId (denormalized)
+* name
+* priceModifier (Decimal(10,2) — zero, positive, or negative; see Remaining Decisions in the Phase 18 report on whether negative/discount options are in scope)
+* active (Boolean, default `true`)
+* displayOrder (Int)
+* createdAt
+* updatedAt
+* deletedAt
+
+Indexes
+
+* optionGroupId
+* restaurantId
+* composite (optionGroupId, displayOrder)
+
+### Menu Item Add-ons
+
+Fields
+
+* id (UUID)
+* menuItemId
+* restaurantId (denormalized)
+* name
+* price (Decimal(10,2))
+* active (Boolean, default `true`)
+* displayOrder (Int)
+* createdAt
+* updatedAt
+* deletedAt
+
+Indexes
+
+* menuItemId
+* restaurantId
+* composite (menuItemId, displayOrder)
+
+---
+
 ## Subscriptions
 
-Stores active subscription plans.
+Stores each Organization's current plan assignment and lifecycle state. Entitlement/access contract only — see ADR-027; no billing, invoicing, or payment fields exist on this table (TAVLA does not process payments).
 
 Fields
 
 * id (UUID)
 * organizationId
 * subscriptionPlanId
-* status (`Active`, `PastDue`, `Cancelled`, `Expired`)
-* startedAt
-* renewsAt
-* cancelledAt
+* status (`Active`, `Suspended`, `Cancelled`, `Expired`)
+* startsAt
+* endsAt (nullable — null means indefinite; no fixed-term/proration concept)
 * createdAt
 * updatedAt
 
 Indexes
 
-* organizationId (unique — one active subscription per organization)
+* organizationId (unique — one Subscription per Organization)
 
 Notes
 
-* `organizationId`, not `restaurantId` — see ADR-011. All plan limits apply to the Organization's aggregate usage across its restaurants.
+* `organizationId`, not `restaurantId` — see ADR-011. Plan *assignment* is always Organization-level (one Subscription per Organization; Restaurants never have an independent plan of their own).
+* Every Organization has exactly one Subscription at all times, provisioned automatically (a default plan) at Organization creation (ADR-027) — there is no nullable/missing-subscription state for enforcement code to special-case.
+* No `PastDue`, `Trialing`, `startedAt`/`renewsAt`/`cancelledAt` billing-cycle fields — removed as stale, pre-payment-removal assumptions (ADR-027). `startsAt`/`endsAt` replace `startedAt`/`renewsAt`/`cancelledAt`.
 
 ---
 
 ## Subscription Plans
 
-* Free
-* Basic
-* Professional
-* Enterprise
+Platform-global reference data (like `Country`/`Currency`/`Roles`/`Permissions`, TENANCY.md) — not tenant-owned, no `organizationId` column. Generic architecture; no commercial tier names are frozen by this schema (ADR-027) — actual catalog rows (names, exact limit values) are seeded/business data, not an architectural commitment.
 
 Fields
 
 * id (UUID)
-* name
-* maxRestaurants
-* maxBranchesPerRestaurant
-* maxEmployeesPerRestaurant
-* maxMonthlyReservations
-* priceAmount
-* priceCurrency
-* billingInterval (`Monthly`, `Yearly`)
+* name (unique)
+* slug (unique)
+* maxRestaurants (nonnegative — Organization-wide: total Restaurants the Organization may own)
+* maxBranchesPerRestaurant (nonnegative — **per-Restaurant**: each individual Restaurant under the Organization may have at most this many Branches; this is not an Organization-wide total)
+* maxEmployeesPerRestaurant (nonnegative — **per-Restaurant**, identical semantics to the field above)
+* archivedAt (nullable — an archived plan may not be newly assigned to any Subscription; existing subscribers already on it are unaffected — see ADR-027 "Plan Immutability")
+* createdAt
+* updatedAt
 
 Indexes
 
 * name (unique)
+* slug (unique)
+
+Notes
+
+* No `priceAmount`/`priceCurrency`/`billingInterval` fields — TAVLA does not process payments; a Plan is an entitlement/limit definition only, never a priced product (ADR-021 Disposition, ADR-027).
+* No `maxMonthlyReservations` or any reservation-volume field of any kind — reservation volume is explicitly **not** a subscription-limited resource (ADR-027, owner product decision): a restaurant must never become unable to accept reservations because of its Organization's subscription tier. Reservation-volume *measurement* (not restriction) belongs to Phase 14 Analytics only.
+* Once any `Subscription.subscriptionPlanId` references a plan, that plan's limit columns are immutable in place (application-layer enforced, not a DB trigger) — see ADR-027 "Plan Immutability." A limit change means seeding a new plan and moving affected subscriptions to it via a normal plan-change (Subscription Plan Change, below), never editing a live, referenced plan's numbers.
+* No feature-entitlement columns exist yet — no currently-completed feature (Reviews, Offers, Waitlist, Realtime, Notifications, Merge/Split) is plan-gated (ADR-027). The pattern for adding one (a single typed boolean column) is established but not exercised until a concrete feature-gating decision is separately approved by the owner.
 
 ---
 
@@ -1303,117 +1486,69 @@ Indexes
 
 Purpose
 
-Tracks an Organization's current usage against its plan limits (DOMAIN_MODEL.md: recalculated incrementally from domain events, not a live COUNT(*)).
+Organization-scoped usage counter. Tracks only what `SubscriptionPlans.maxRestaurants` needs to enforce — recalculated incrementally from domain events (DOMAIN_MODEL.md), never a live `COUNT(*)` on every write.
 
 Fields
 
 * id (UUID)
 * organizationId
 * restaurantCount
-* branchCount
-* employeeCount
-* monthlyReservationCount
-* usagePeriodStart
+* createdAt (Post-Audit Remediation M3/L3, 2026-08-02)
 * updatedAt
 
 Indexes
 
 * organizationId (unique)
 
+Notes
+
+* Deliberately does **not** carry `branchCount`/`employeeCount`/any reservation counter — see "Restaurant Usage" below for why `maxBranchesPerRestaurant`/`maxEmployeesPerRestaurant` cannot be correctly enforced from an Organization-scoped counter, and the notes above for why no reservation-volume counter exists at all (ADR-027).
+
 ---
 
-## Payments
+## Restaurant Usage
 
-Payment records.
+Purpose
 
-Provider-independent.
+Restaurant-scoped usage counter (new table, ADR-027) — required because `maxBranchesPerRestaurant`/`maxEmployeesPerRestaurant` are **per-Restaurant** limits (see "Subscription Plans," above): a single Organization-wide counter cannot tell whether *this specific* Restaurant is over its own cap without incorrectly conflating its count with every sibling Restaurant's count under the same Organization. Transitively tenant-owned via `restaurantId -> Restaurant.organizationId` — same pattern as `RestaurantSettings`/`RestaurantGallery`/`Offer`: **not** added to `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS`, no `organizationId` column, resolved via the already-tenant-scoped `RestaurantRepository`.
 
 Fields
 
 * id (UUID)
-* organizationId
-* subscriptionId (nullable — null for a non-subscription billable operation)
-* amount
-* currency
-* status (`Pending`, `Succeeded`, `Failed`, `Refunded`)
-* provider
-* providerReference
-* createdAt
+* restaurantId
+* branchCount
+* employeeCount
+* createdAt (Post-Audit Remediation M3/L3, 2026-08-02)
 * updatedAt
 
 Indexes
 
-* organizationId
-* subscriptionId
-* providerReference
+* restaurantId (unique — one Restaurant Usage row per Restaurant)
+
+Notes
+
+* Created alongside the Restaurant itself (`branchCount = 0`, `employeeCount = 0`), in the same transaction as `RestaurantCreated`.
+* Incremented on `BranchCreated`/`EmployeeCreated` (each scoped to that specific Branch's/Employee's own `restaurantId`), decremented on Branch soft-delete. Exact Employee-deactivation-vs-decrement semantics are a narrow implementation-detail question left open for Phase 12 implementation, not a blocking architectural gap.
+* A Subscription's `maxBranchesPerRestaurant`/`maxEmployeesPerRestaurant` value (sourced from the Organization's one Plan, per ADR-011) is always checked against **this specific Restaurant's own row** — never an Organization-wide sum across every Restaurant the Organization owns.
 
 ---
 
-## Payment Transactions
-
-Tracks payment lifecycle.
-
-Fields
-
-* id (UUID)
-* paymentId
-* status
-* rawProviderPayload (jsonb — stored for audit/dispute resolution; never logged in plaintext application logs per CODING_STANDARDS.md)
-* occurredAt
-* createdAt
-
-Indexes
-
-* paymentId
-
----
-
-## Invoices
-
-Billing documents generated from successful payments or subscription renewals (ADR-021). Stored metadata in PostgreSQL; PDF binary in MinIO via `Files`.
-
-Fields
-
-* id (UUID)
-* organizationId
-* paymentId (nullable — null for pro-forma or manual invoices not yet linked)
-* invoiceNumber (unique per organization — human-readable, e.g. `INV-2026-00042`)
-* status (`Draft`, `Issued`, `Paid`, `Void`, `Overdue`)
-* subtotalAmount
-* taxAmount
-* totalAmount
-* currency
-* lineItems (jsonb — structured line items for display/PDF)
-* issuedAt (nullable)
-* dueAt (nullable)
-* paidAt (nullable)
-* pdfFileId (nullable — FK → `Files`)
-* providerInvoiceId (nullable — external billing system reference)
-* createdAt
-* updatedAt
-
-Indexes
-
-* organizationId
-* composite unique (organizationId, invoiceNumber)
-* paymentId
-* status
+**Payments, Payment Transactions, and Invoices — removed from product scope (Owner Decision, 2026-07-28).** These tables were documented as planned schema but never implemented in Prisma (no migration, no model). TAVLA does not process payments in-app; no payment/invoice tables will be added. See `TASKS.md`/`PROJECT_ROADMAP.md` Phase 13 and `DECISIONS.md` ADR-021 Disposition.
 
 ---
 
 ## Conversations
 
-Customer–restaurant messaging threads (ADR-020). Tenant-scoped via `organizationId`.
+Customer–restaurant messaging threads (ADR-020, tenancy corrected by ADR-030). **Transitively tenant-owned** via `restaurantId → Restaurant.organizationId` — no direct `organizationId` column, not in `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS`, exactly like `Branch`/`Reservation`/`Review`/`Offer` (`TENANCY.md`). Every use case resolves the parent `Restaurant` via the already-tenant-scoped `RestaurantRepository` first; a cross-organization `restaurantId` resolves to `null` → `RestaurantNotFoundException`/`ConversationNotFoundException`.
 
 Fields
 
 * id (UUID)
-* organizationId
 * restaurantId
 * branchId (nullable)
 * reservationId (nullable — when chat is about a specific booking)
 * subject (nullable)
-* status (`Open`, `Closed`, `Archived`)
+* status (`Open`, `Closed`, `Archived` — DECISIONS.md D5: `Closed` set by Restaurant-side actor closes for both sides; `Archived` set by the Customer soft-hides from their own list only; either auto-reopens to `Open` on a new `Message`)
 * lastMessageAt
 * createdAt
 * updatedAt
@@ -1421,24 +1556,25 @@ Fields
 
 Indexes
 
-* organizationId
 * restaurantId
+* branchId
 * reservationId
-* composite (organizationId, lastMessageAt)
+* composite (restaurantId, lastMessageAt)
+* composite (restaurantId, updatedAt) — cursor pagination sort key (D13); `updatedAt` is never null and is bumped on create/send/close/archive, unlike the nullable `lastMessageAt` above, avoiding NULLS LAST row-value comparison complexity in a keyset cursor
 * status
 
 ---
 
 ## Conversation Participants
 
-Links users and/or employees to a conversation. A customer participant is always a `User`; staff participants are `Employee` records.
+Links users and/or employees to a conversation, per-individual (DECISIONS.md D2). A `Customer` row is always a `User`; a `Staff` row is either an `Employee` or an `OrganizationMember` acting as Restaurant-side (dual actor, DECISIONS.md D15) — rows are created lazily on first interaction (send or explicit read), each with its own `lastReadAt` (real per-person read receipts).
 
 Fields
 
 * id (UUID)
 * conversationId
-* userId (nullable)
-* employeeId (nullable)
+* userId (nullable — `Customer`'s own `User.id`, or an `OrganizationMember`'s own `User.id` when `role` = `Staff`)
+* employeeId (nullable — set only when an `Employee` is the Staff participant)
 * role (`Customer`, `Staff`, `System`)
 * lastReadAt (nullable)
 * joinedAt
@@ -1466,11 +1602,13 @@ Fields
 
 * id (UUID)
 * conversationId
-* senderUserId (nullable)
-* senderEmployeeId (nullable)
+* senderType (`Customer`, `Employee`, `OrganizationMember`, `System` — DECISIONS.md D3; disambiguates `senderUserId` between a Customer and an OrganizationMember, both of which reference `User`)
+* senderUserId (nullable — Customer's or OrganizationMember's own `User.id`)
+* senderEmployeeId (nullable — Employee sender only)
 * body (text — max length enforced at application layer)
 * messageType (`Text`, `System`, `Attachment`)
-* attachmentFileId (nullable — FK → `Files`)
+* attachmentFileId (nullable — plain UUID pointer to `Files`, no FK, same polymorphic convention `Files.ownerId` already uses)
+* anonymizedAt (nullable — DECISIONS.md D10, GDPR; mirrors `User.anonymizedAt`/`ReservationGuest.anonymizedAt`; no erasure job implemented yet)
 * createdAt
 * updatedAt
 * deletedAt
@@ -1482,7 +1620,7 @@ Indexes
 
 Constraints
 
-* CHECK: exactly one of `senderUserId` or `senderEmployeeId` is non-null for `messageType` = `Text`
+* CHECK (raw SQL migration, like `Reservation.userId`/`reservationGuestId`): exactly one of `senderUserId` or `senderEmployeeId` is non-null, unless `senderType` = `System` (both null). `senderType` itself (which of `Customer`/`OrganizationMember` a populated `senderUserId` means) is validated in the `Message` domain entity constructor — a DB `CHECK` alone cannot distinguish the two.
 
 ---
 
@@ -1496,7 +1634,7 @@ Fields
 
 * id (UUID)
 * ownerId
-* ownerType (`User`, `Restaurant`, `Review`, `Menu`)
+* ownerType (`User`, `Restaurant`, `Review`, `Menu`, `Message` — `Message` added by DECISIONS.md D7 for chat attachments)
 * bucket
 * objectKey
 * mimeType
@@ -1561,6 +1699,7 @@ Fields
 * value (jsonb)
 * description
 * updatedBy
+* createdAt (Post-Audit Remediation M3/L3, 2026-08-02)
 * updatedAt
 
 Indexes
@@ -1569,7 +1708,9 @@ Indexes
 
 ---
 
-## Feature Flags
+## Feature Flags (Future — Not Yet Implemented)
+
+**Documented as planned schema but never implemented in Prisma (no migration, no model) — matches the disposition of Payments/Invoices below.**
 
 Purpose
 
@@ -1591,7 +1732,9 @@ Indexes
 
 ---
 
-## Activity Feed
+## Activity Feed (Future — Not Yet Implemented)
+
+**Documented as planned schema but never implemented in Prisma (no migration, no model) — matches the disposition of Payments/Invoices below.**
 
 Purpose
 
@@ -1614,7 +1757,9 @@ Indexes
 
 ---
 
-## Country
+## Country (Future — Not Yet Implemented)
+
+**Documented as planned schema but never implemented in Prisma (no migration, no model) — matches the disposition of Payments/Invoices below.**
 
 Purpose
 
@@ -1630,7 +1775,9 @@ Fields
 
 ---
 
-## Currency
+## Currency (Future — Not Yet Implemented)
+
+**Documented as planned schema but never implemented in Prisma (no migration, no model) — matches the disposition of Payments/Invoices below.**
 
 Purpose
 
@@ -1643,6 +1790,22 @@ Fields
 * symbol
 * decimalPlaces
 * isActive
+
+---
+
+## Analytics (Phase 14)
+
+**Implemented and live-verified 2026-07-28 (ADR-028).**
+
+Phase 14 introduces **no new tables** in v1 — no rollup/aggregate tables, no materialized views, no analytics warehouse, no historical capacity/topology snapshot table. Analytics reads existing operational tables directly:
+
+* `Reservation` — status counts, source breakdown, rates, average party size, service-day/booking-created trends (bucketed by `reservationStartTime`/`createdAt` converted to `Branch.timezone` at query time — **not** the stored `reservationDate` column, which is not reliably Branch-local; see ADR-028 Context/Decision #3), Peak Hours
+* `ReservationWaitlistEntry` — entry/outcome counts, conversion rate
+* `Restaurant` — `averageRating` passthrough
+* `Branch` — `timezone` (authoritative for all timezone-bucketed queries)
+* `Review` — active count (`deletedAt IS NULL`)
+
+`ReservationHistory` is not required by any frozen v1 formula (the cancellation-rate formula uses `Reservation.approvedAt` directly — see ADR-028 Decision #9). No new indexes are frozen speculatively; indexes are added only once actual query shape is verified against `EXPLAIN`/`EXPLAIN ANALYZE` at implementation time, per the existing Indexing Policy below.
 
 ---
 
@@ -1781,6 +1944,12 @@ Subscriptions
 ↓
 
 Subscription Usage
+
+Restaurant
+
+↓
+
+Restaurant Usage
 
 Users
 
@@ -1936,8 +2105,8 @@ This section consolidates the highest-value composite indexes defined per-table 
 | Reviews | (reservationId) unique | Enforces "one reservation may produce only one review." |
 | Reservation Waitlist Entries | (branchId, status, position) | Serves queue ordering and promotion (ADR-019). |
 | Branches | (latitude, longitude) | Bounding-box nearby-restaurant queries (ADR-018). |
-| Conversations | (organizationId, lastMessageAt) | Staff inbox sorted by recency (ADR-020). |
-| Invoices | (organizationId, invoiceNumber) unique | Human-readable invoice lookup per tenant (ADR-021). |
+| Conversations | (restaurantId, lastMessageAt) | Staff inbox sorted by recency (ADR-020, tenancy per ADR-030). |
+| Restaurant Usage | (restaurantId) unique | Concurrency key for `maxBranchesPerRestaurant`/`maxEmployeesPerRestaurant` — one atomically-updated counter row per Restaurant (ADR-027). |
 
 ---
 

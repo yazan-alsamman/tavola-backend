@@ -6,6 +6,7 @@ import { PrismaNotificationTemplateRepository } from '@modules/notifications/inf
 import { PrismaReservationRepository } from '@modules/reservations/infrastructure/persistence/prisma-reservation.repository';
 import { PrismaReservationWaitlistEntryRepository } from '@modules/waitlist/infrastructure/persistence/prisma-reservation-waitlist-entry.repository';
 import { PrismaUserRepository } from '@modules/authentication/infrastructure/persistence/prisma-user.repository';
+import { PrismaConversationParticipantRepository } from '@modules/messaging/infrastructure/persistence/prisma-conversation-participant.repository';
 import { NotificationDispatcher } from '@modules/notifications/application/services/notification-dispatcher.service';
 import { ProcessNotificationDeliveryUseCase } from '@modules/notifications/application/use-cases/process-notification-delivery.use-case';
 import { BullMqNotificationDeliveryScheduler } from '@modules/notifications/infrastructure/bullmq/bullmq-notification-delivery.scheduler';
@@ -82,6 +83,7 @@ describe('Notification dispatch + delivery pipeline (integration, real Postgres 
   let reservationRepository: PrismaReservationRepository;
   let waitlistEntryRepository: PrismaReservationWaitlistEntryRepository;
   let userRepository: PrismaUserRepository;
+  let conversationParticipantRepository: PrismaConversationParticipantRepository;
   let notificationQueue: Queue<NotificationDeliveryJobData>;
   let org: { id: string };
 
@@ -99,12 +101,14 @@ describe('Notification dispatch + delivery pipeline (integration, real Postgres 
       PrismaReservationRepository,
       PrismaReservationWaitlistEntryRepository,
       PrismaUserRepository,
+      PrismaConversationParticipantRepository,
     ]);
     notificationRepository = moduleRef.get(PrismaNotificationRepository);
     templateRepository = moduleRef.get(PrismaNotificationTemplateRepository);
     reservationRepository = moduleRef.get(PrismaReservationRepository);
     waitlistEntryRepository = moduleRef.get(PrismaReservationWaitlistEntryRepository);
     userRepository = moduleRef.get(PrismaUserRepository);
+    conversationParticipantRepository = moduleRef.get(PrismaConversationParticipantRepository);
 
     const parsed = new URL(redisUrl);
     notificationQueue = new Queue(NOTIFICATION_QUEUE_NAME, {
@@ -269,6 +273,7 @@ describe('Notification dispatch + delivery pipeline (integration, real Postgres 
       notificationRepository,
       templateRepository,
       deliveryScheduler,
+      conversationParticipantRepository,
       new FixedClock(new Date('2026-07-25T12:00:00.000Z')),
       new UuidGenerator(),
     );

@@ -128,6 +128,10 @@ enum FileOwnerType {
   Restaurant
   Review
   Menu
+  // Phase 15.6 (Messaging, DECISIONS.md D7): chat attachments. Same
+  // polymorphic ownerId/ownerType convention as every other value here - no
+  // Prisma relation, resolved by the application layer.
+  Message
 }
 
 enum FileAccessPolicy {
@@ -149,8 +153,10 @@ model Organization {
   updatedAt    DateTime           @updatedAt @map("updated_at")
   deletedAt    DateTime?          @map("deleted_at")
 
-  members     OrganizationMember[]
-  restaurants Restaurant[]
+  members           OrganizationMember[]
+  restaurants       Restaurant[]
+  subscription      Subscription?
+  subscriptionUsage SubscriptionUsage?
 
   @@index([slug])
   @@map("organizations")
@@ -234,6 +240,8 @@ model User {
   notifications               Notification[]
   reviews                     Review[]
   restaurantReplies           RestaurantReply[]
+  conversationParticipants    ConversationParticipant[]
+  sentMessages                Message[]
 
   @@unique([email])
   @@unique([phone])
@@ -441,6 +449,10 @@ model Restaurant {
   reservations       Reservation[]
   waitlistEntries    ReservationWaitlistEntry[]
   reviews            Review[]
+  offers             Offer[]
+  usage              RestaurantUsage?
+  conversations      Conversation[]
+  menus              Menu[]
 
   @@index([organizationId])
   @@index([slug])
@@ -669,6 +681,7 @@ model Branch {
   tables                    Table[]
   reservations              Reservation[]
   waitlistEntries           ReservationWaitlistEntry[]
+  conversations             Conversation[]
 
   @@index([restaurantId])
   @@index([city])
@@ -878,6 +891,7 @@ model Reservation {
   history          ReservationHistory[]
   waitlistEntry    ReservationWaitlistEntry?
   review           Review?
+  conversations    Conversation[]
 
   @@index([reservationDate])
   @@index([tableId])
@@ -885,6 +899,7 @@ model Reservation {
   @@index([status])
   @@index([branchId, reservationDate, status])
   @@index([tableId, reservationDate, reservationStartTime])
+  @@index([userId, createdAt])
   @@map("reservations")
 }
 
@@ -1103,6 +1118,344 @@ model RestaurantReply {
 }
 
 // ---------------------------------------------------------------------------
+// Offers (Phase 11, architecture frozen 2026-07-28, implemented 2026-07-28,
+// TASKS.md "Phase 11 — Offers: Pre-implementation architecture decisions").
+// Single generic Offer aggregate covers Promotions/Coupons/Events (`type`
+// discriminator, display-only - no redemption engine, no behavioral
+// branching by type). Transitively tenant-owned via restaurantId ->
+// Restaurant.organizationId, same pattern as Review/RestaurantGallery - NOT
+// added to withTenantScoping's DIRECT_TENANT_OWNED_MODELS, no
+// organizationId column. Content editable only while status = Draft;
+// Published/Expired are immutable. Published -> Expired is a BullMQ-
+// scheduled, CAS-guarded transition (OfferExpirationQueue), never a lazy/
+// computed status.
+// ---------------------------------------------------------------------------
+
+enum OfferType {
+  Promotion
+  Coupon
+  Event
+}
+
+enum OfferDiscountType {
+  Percentage
+  FixedAmount
+}
+
+enum OfferStatus {
+  Draft
+  Published
+  Expired
+}
+
+model Offer {
+  id            String            @id @default(uuid()) @db.Uuid
+  restaurantId  String            @map("restaurant_id") @db.Uuid
+  type          OfferType
+  title         String
+  description   String
+  discountType  OfferDiscountType @map("discount_type")
+  discountValue Decimal           @map("discount_value") @db.Decimal(10, 2)
+  startsAt      DateTime          @map("starts_at")
+  endsAt        DateTime          @map("ends_at")
+  status        OfferStatus       @default(Draft)
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  deletedAt     DateTime?         @map("deleted_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId])
+  @@index([restaurantId, status])
+  @@map("offers")
+}
+
+// ---------------------------------------------------------------------------
+// Menu Management (Phase 18, architecture frozen 2026-08-02, ADR-031;
+// ownership/availability/isFeatured corrected 2026-08-03, ADR-032). Seven
+// models, all transitively tenant-owned via restaurantId ->
+// Restaurant.organizationId (same pattern as Offer/Review/Branch) - none
+// added to withTenantScoping's DIRECT_TENANT_OWNED_MODELS. MenuCategory/
+// MenuItem/MenuItemOptionGroup/MenuItemOption/MenuItemAddOn/
+// MenuItemAvailability all additionally denormalize restaurantId directly
+// (not only their immediate parent FK), mirroring Table's own
+// floorPlanId/branchId denormalization, so every tenancy resolution stays a
+// single hop through RestaurantRepository regardless of nesting depth.
+//
+// ADR-032 supersedes ADR-031's original singleton `@@unique([restaurantId])`
+// on Menu: a Restaurant now owns 1:N Menus, with exactly one non-deleted
+// Menu marked isDefault - enforced by a hand-written partial unique index
+// (menus_restaurant_one_default_key, added in this migration's raw SQL,
+// mirroring ADR-026's tables_merge_group_one_primary_key mechanism exactly,
+// since Prisma's schema DSL cannot express a partial unique index).
+//
+// MenuItem.scheduleJson (ADR-031's original design) is replaced by the
+// relational MenuItemAvailability table (ADR-032) - the actual repeated
+// day-of-week/time-window convention in this codebase (WorkingHours,
+// BranchWorkingHours), not the dead-code Branch.openingHours Json precedent
+// ADR-031 had mistakenly cited (see DATABASE_SCHEMA.md's Branch section).
+// No deletedAt on MenuItemAvailability - matching WorkingHours/
+// BranchWorkingHours, availability windows are whole-set replaced, not
+// individually soft-deleted.
+// ---------------------------------------------------------------------------
+
+enum MenuItemAvailabilityMode {
+  Always
+  Unavailable
+  Scheduled
+}
+
+enum MenuItemDietaryLabel {
+  Vegetarian
+  Vegan
+  Halal
+  GlutenFree
+  DairyFree
+}
+
+model Menu {
+  id           String    @id @default(uuid()) @db.Uuid
+  restaurantId String    @map("restaurant_id") @db.Uuid
+  name         String    @default("Main Menu")
+  active       Boolean   @default(true)
+  isDefault    Boolean   @default(false) @map("is_default")
+  displayOrder Int       @default(0) @map("display_order")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  restaurant Restaurant     @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  categories MenuCategory[]
+
+  @@index([restaurantId])
+  @@map("menus")
+}
+
+model MenuCategory {
+  id           String    @id @default(uuid()) @db.Uuid
+  menuId       String    @map("menu_id") @db.Uuid
+  restaurantId String    @map("restaurant_id") @db.Uuid
+  name         String
+  description  String?
+  displayOrder Int       @default(0) @map("display_order")
+  imageFileId  String?   @map("image_file_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  menu  Menu       @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  items MenuItem[]
+
+  @@index([menuId])
+  @@index([restaurantId])
+  @@index([menuId, displayOrder])
+  @@map("menu_categories")
+}
+
+model MenuItem {
+  id                     String                   @id @default(uuid()) @db.Uuid
+  categoryId             String                   @map("category_id") @db.Uuid
+  restaurantId           String                   @map("restaurant_id") @db.Uuid
+  name                   String
+  description            String?
+  price                  Decimal                  @db.Decimal(10, 2)
+  currency               String?
+  imageFileId            String?                  @map("image_file_id") @db.Uuid
+  availabilityMode       MenuItemAvailabilityMode @default(Always) @map("availability_mode")
+  isFeatured             Boolean                  @default(false) @map("is_featured")
+  preparationTimeMinutes Int?                     @map("preparation_time_minutes")
+  spicyLevel             Int?                     @map("spicy_level")
+  calories               Int?
+  allergens              String[]
+  dietaryLabels          MenuItemDietaryLabel[]   @map("dietary_labels")
+  displayOrder           Int                      @default(0) @map("display_order")
+  createdAt              DateTime                 @default(now()) @map("created_at")
+  updatedAt              DateTime                 @updatedAt @map("updated_at")
+  deletedAt              DateTime?                @map("deleted_at")
+
+  category     MenuCategory           @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  optionGroups MenuItemOptionGroup[]
+  addOns       MenuItemAddOn[]
+  availability MenuItemAvailability[]
+
+  @@index([categoryId])
+  @@index([restaurantId])
+  @@index([categoryId, displayOrder])
+  @@map("menu_items")
+}
+
+model MenuItemAvailability {
+  id           String   @id @default(uuid()) @db.Uuid
+  menuItemId   String   @map("menu_item_id") @db.Uuid
+  restaurantId String   @map("restaurant_id") @db.Uuid
+  dayOfWeek    Int      @map("day_of_week")
+  startTime    String   @map("start_time")
+  endTime      String   @map("end_time")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@index([menuItemId])
+  @@index([restaurantId])
+  @@index([menuItemId, dayOfWeek])
+  @@map("menu_item_availability")
+}
+
+model MenuItemOptionGroup {
+  id            String    @id @default(uuid()) @db.Uuid
+  menuItemId    String    @map("menu_item_id") @db.Uuid
+  restaurantId  String    @map("restaurant_id") @db.Uuid
+  name          String
+  required      Boolean   @default(false)
+  minSelections Int       @default(0) @map("min_selections")
+  maxSelections Int       @default(1) @map("max_selections")
+  displayOrder  Int       @default(0) @map("display_order")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  menuItem MenuItem         @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  options  MenuItemOption[]
+
+  @@index([menuItemId])
+  @@index([restaurantId])
+  @@index([menuItemId, displayOrder])
+  @@map("menu_item_option_groups")
+}
+
+model MenuItemOption {
+  id            String    @id @default(uuid()) @db.Uuid
+  optionGroupId String    @map("option_group_id") @db.Uuid
+  restaurantId  String    @map("restaurant_id") @db.Uuid
+  name          String
+  priceModifier Decimal   @default(0) @map("price_modifier") @db.Decimal(10, 2)
+  active        Boolean   @default(true)
+  displayOrder  Int       @default(0) @map("display_order")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  optionGroup MenuItemOptionGroup @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
+
+  @@index([optionGroupId])
+  @@index([restaurantId])
+  @@index([optionGroupId, displayOrder])
+  @@map("menu_item_options")
+}
+
+model MenuItemAddOn {
+  id           String    @id @default(uuid()) @db.Uuid
+  menuItemId   String    @map("menu_item_id") @db.Uuid
+  restaurantId String    @map("restaurant_id") @db.Uuid
+  name         String
+  price        Decimal   @db.Decimal(10, 2)
+  active       Boolean   @default(true)
+  displayOrder Int       @default(0) @map("display_order")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@index([menuItemId])
+  @@index([restaurantId])
+  @@index([menuItemId, displayOrder])
+  @@map("menu_item_add_ons")
+}
+
+// ---------------------------------------------------------------------------
+// Subscriptions (Phase 12, architecture frozen 2026-07-28, ADR-027).
+// Entitlement/access-contract system - NOT billing (TAVLA does not process
+// payments, ADR-021 Disposition). No price/billing-cycle fields anywhere in
+// this section.
+//
+// SubscriptionPlan is platform-global reference data (TENANCY.md, alongside
+// Country/Currency/Roles) - no organizationId column, seed-managed only (no
+// runtime write API in Phase 12).
+//
+// Subscription and SubscriptionUsage are directly Organization-owned
+// (organizationId, unique) - added to withTenantScoping's
+// DIRECT_TENANT_OWNED_MODELS.
+//
+// RestaurantUsage is transitively tenant-owned via
+// restaurantId -> Restaurant.organizationId (same pattern as
+// RestaurantSettings/RestaurantGallery/Offer) - deliberately NOT added to
+// DIRECT_TENANT_OWNED_MODELS. It exists because maxBranchesPerRestaurant/
+// maxEmployeesPerRestaurant are PER-RESTAURANT limits: a single
+// Organization-scoped counter cannot tell which specific Restaurant is over
+// its own cap (ADR-027's core reconciliation).
+// ---------------------------------------------------------------------------
+
+enum SubscriptionStatus {
+  Active
+  Suspended
+  Cancelled
+  Expired
+}
+
+model SubscriptionPlan {
+  id                        String    @id @default(uuid()) @db.Uuid
+  name                      String
+  slug                      String
+  maxRestaurants            Int       @map("max_restaurants")
+  maxBranchesPerRestaurant  Int       @map("max_branches_per_restaurant")
+  maxEmployeesPerRestaurant Int       @map("max_employees_per_restaurant")
+  archivedAt                DateTime? @map("archived_at")
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @updatedAt @map("updated_at")
+
+  subscriptions Subscription[]
+
+  @@unique([name])
+  @@unique([slug])
+  @@map("subscription_plans")
+}
+
+model Subscription {
+  id                 String             @id @default(uuid()) @db.Uuid
+  organizationId     String             @unique @map("organization_id") @db.Uuid
+  subscriptionPlanId String             @map("subscription_plan_id") @db.Uuid
+  status             SubscriptionStatus @default(Active)
+  startsAt           DateTime           @map("starts_at")
+  endsAt             DateTime?          @map("ends_at")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan         SubscriptionPlan @relation(fields: [subscriptionPlanId], references: [id], onDelete: Restrict)
+
+  @@index([subscriptionPlanId])
+  @@index([status])
+  @@map("subscriptions")
+}
+
+model SubscriptionUsage {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @unique @map("organization_id") @db.Uuid
+  restaurantCount Int      @default(0) @map("restaurant_count")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("subscription_usage")
+}
+
+model RestaurantUsage {
+  id            String   @id @default(uuid()) @db.Uuid
+  restaurantId  String   @unique @map("restaurant_id") @db.Uuid
+  branchCount   Int      @default(0) @map("branch_count")
+  employeeCount Int      @default(0) @map("employee_count")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@map("restaurant_usage")
+}
+
+// ---------------------------------------------------------------------------
 // Authorization (RBAC)
 // ---------------------------------------------------------------------------
 
@@ -1164,14 +1517,18 @@ model Employee {
   updatedAt          DateTime  @updatedAt @map("updated_at")
   deletedAt          DateTime? @map("deleted_at")
 
-  restaurant        Restaurant                 @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  role              Role                       @relation(fields: [roleId], references: [id], onDelete: Restrict)
-  user              User?                      @relation(fields: [userId], references: [id], onDelete: SetNull)
-  branchAssignments EmployeeBranchAssignment[]
-  rolePermissions   RolePermission[]
+  restaurant               Restaurant                 @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  role                     Role                       @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  user                     User?                      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  branchAssignments        EmployeeBranchAssignment[]
+  rolePermissions          RolePermission[]
+  conversationParticipants ConversationParticipant[]
+  sentMessages             Message[]
 
   @@index([restaurantId])
   @@index([email])
+  @@index([userId])
+  @@index([roleId])
   @@map("employees")
 }
 
@@ -1252,6 +1609,7 @@ model SystemConfiguration {
   value       Json
   description String?
   updatedBy   String?
+  createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
 
@@ -1344,4 +1702,129 @@ model NotificationTemplate {
   @@unique([eventType, language, channel])
   @@index([eventType, channel, isDefault])
   @@map("notification_templates")
+}
+
+// ---------------------------------------------------------------------------
+// Messaging (Phase 15.6 — Customer-Restaurant Messaging, ADR-020, tenancy
+// corrected by ADR-030; DECISIONS.md's Phase 15.6 Owner Decisions D1-D15).
+//
+// Tenant-owned TRANSITIVELY via restaurantId -> Restaurant.organizationId
+// (D1/ADR-030) - deliberately NOT added to withTenantScoping's
+// DIRECT_TENANT_OWNED_MODELS, exactly like Branch/Reservation/Review/Offer
+// (TENANCY.md). No organizationId column on any of the three tables below.
+// Every use case must resolve the parent Restaurant via the already-tenant-
+// scoped RestaurantRepository first - a cross-organization restaurantId
+// resolves to null -> RestaurantNotFoundException/ConversationNotFoundException,
+// IDOR-safe like every other transitively-tenant-owned model.
+//
+// ConversationParticipant is per-individual (D2): a Customer row always sets
+// userId; a Staff row set by an Employee sets employeeId, set by an
+// OrganizationMember sets userId instead (there is no Employee row for an
+// OrganizationMember) - Message.senderType is what disambiguates a bare
+// userId between the Customer and OrganizationMember cases.
+//
+// The (conversationId, userId)/(conversationId, employeeId) partial unique
+// indexes and the senderUserId/senderEmployeeId XOR CHECK on Message cannot
+// be expressed in Prisma's schema language - added via raw SQL in this
+// phase's migration, exactly like Reservation/ReservationWaitlistEntry's own
+// userId/reservationGuestId XOR constraints.
+// ---------------------------------------------------------------------------
+
+enum ConversationStatus {
+  Open
+  Closed
+  Archived
+}
+
+enum ConversationParticipantRole {
+  Customer
+  Staff
+  System
+}
+
+enum MessageSenderType {
+  Customer
+  Employee
+  OrganizationMember
+  System
+}
+
+enum MessageType {
+  Text
+  System
+  Attachment
+}
+
+model Conversation {
+  id            String             @id @default(uuid()) @db.Uuid
+  restaurantId  String             @map("restaurant_id") @db.Uuid
+  branchId      String?            @map("branch_id") @db.Uuid
+  reservationId String?            @map("reservation_id") @db.Uuid
+  subject       String?
+  status        ConversationStatus @default(Open)
+  lastMessageAt DateTime?          @map("last_message_at")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+  deletedAt     DateTime?          @map("deleted_at")
+
+  restaurant   Restaurant                @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  branch       Branch?                   @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  reservation  Reservation?              @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@index([restaurantId])
+  @@index([branchId])
+  @@index([reservationId])
+  @@index([restaurantId, lastMessageAt])
+  // Cursor pagination (D13) sorts/pages by updatedAt, not the nullable
+  // lastMessageAt above - updatedAt is never null and is bumped on every
+  // meaningful mutation (create/send/close/archive), avoiding NULLS LAST
+  // row-value comparison complexity a nullable cursor column would require.
+  @@index([restaurantId, updatedAt])
+  @@index([status])
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id             String                      @id @default(uuid()) @db.Uuid
+  conversationId String                      @map("conversation_id") @db.Uuid
+  userId         String?                     @map("user_id") @db.Uuid
+  employeeId     String?                     @map("employee_id") @db.Uuid
+  role           ConversationParticipantRole
+  lastReadAt     DateTime?                   @map("last_read_at")
+  joinedAt       DateTime                    @default(now()) @map("joined_at")
+  leftAt         DateTime?                   @map("left_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employee     Employee?    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([userId])
+  @@index([employeeId])
+  @@map("conversation_participants")
+}
+
+model Message {
+  id               String            @id @default(uuid()) @db.Uuid
+  conversationId   String            @map("conversation_id") @db.Uuid
+  senderType       MessageSenderType @map("sender_type")
+  senderUserId     String?           @map("sender_user_id") @db.Uuid
+  senderEmployeeId String?           @map("sender_employee_id") @db.Uuid
+  body             String
+  messageType      MessageType       @default(Text) @map("message_type")
+  attachmentFileId String?           @map("attachment_file_id") @db.Uuid
+  anonymizedAt     DateTime?         @map("anonymized_at")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  deletedAt        DateTime?         @map("deleted_at")
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderUser     User?        @relation(fields: [senderUserId], references: [id], onDelete: SetNull)
+  senderEmployee Employee?    @relation(fields: [senderEmployeeId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId])
+  @@index([conversationId, createdAt])
+  @@map("messages")
 }

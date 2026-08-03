@@ -3,6 +3,7 @@ import { PrismaModule } from '@infrastructure/prisma/prisma.module';
 import { AuthenticationModule } from '@modules/authentication/authentication.module';
 import { AuthorizationModule } from '@modules/authorization/authorization.module';
 import { RestaurantsModule } from '@modules/restaurants/restaurants.module';
+import { SubscriptionsModule } from '@modules/subscriptions/subscriptions.module';
 import { TablesModule } from '@modules/tables/tables.module';
 import { CreateBranchUseCase } from './application/use-cases/create-branch.use-case';
 import { GetBranchUseCase } from './application/use-cases/get-branch.use-case';
@@ -46,12 +47,20 @@ import { BranchesController } from './presentation/controllers/branches.controll
  * (TASKS.md Phase 6.1 decision #1) - a genuine circular dependency between
  * the two feature modules, resolved with Nest's standard mechanism rather
  * than restructuring either module.
+ *
+ * Phase 12 (Subscriptions, ADR-027 §8/D14, 2026-07-28): `SubscriptionsModule`
+ * supplies `SUBSCRIPTION_REPOSITORY`/`SUBSCRIPTION_PLAN_REPOSITORY` so
+ * `CreateBranchUseCase` can enforce `maxBranchesPerRestaurant` (per-Restaurant,
+ * via `RESTAURANT_USAGE_REPOSITORY` already available through
+ * `RestaurantsModule` above) and `DeleteBranchUseCase` can decrement it. Not
+ * circular - `SubscriptionsModule` does not import `BranchesModule`.
  */
 @Module({
   imports: [
     AuthenticationModule,
     AuthorizationModule,
     RestaurantsModule,
+    SubscriptionsModule,
     forwardRef(() => TablesModule),
     PrismaModule,
   ],

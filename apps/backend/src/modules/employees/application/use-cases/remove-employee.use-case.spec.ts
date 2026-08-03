@@ -9,10 +9,14 @@ import { Restaurant } from '@modules/restaurants/domain/entities/restaurant.enti
 import { RestaurantStatus } from '@modules/restaurants/domain/enums/restaurant.enums';
 import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
 import { EmployeeId } from '@shared/domain/value-objects/identifiers.vo';
-import { FixedClock } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
+import {
+  FixedClock,
+  ImmediateUnitOfWork,
+} from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryEmployeeRepository } from '../../../../../test/authorization/support/in-memory-employee.repository';
 import { InMemoryRoleRepository } from '../../../../../test/authorization/support/in-memory-role.repository';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
+import { InMemoryRestaurantUsageRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-usage.repository';
 
 describe('RemoveEmployeeUseCase', () => {
   const fixedNow = new Date('2026-07-20T12:00:00.000Z');
@@ -106,7 +110,9 @@ describe('RemoveEmployeeUseCase', () => {
       employeeRepository,
       roleRepository,
       restaurantRepository,
+      new InMemoryRestaurantUsageRepository(),
       new FixedClock(fixedNow),
+      new ImmediateUnitOfWork(),
     );
 
     return { useCase, employeeRepository };

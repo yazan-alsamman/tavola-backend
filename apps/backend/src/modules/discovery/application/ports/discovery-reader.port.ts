@@ -9,13 +9,59 @@ export interface DiscoveryListPage<T> {
 }
 
 /**
- * Customer Restaurant Discovery & Public Read Surface. Minimal, read-only,
- * cross-tenant lookup of publicly-discoverable Restaurant/Branch/FloorPlan/
- * Table fields - owned by this bounded context, not a full Restaurants/
- * Branches/Tables repository. Required because discovery is public/
- * unauthenticated (ADR-018 §4 "Search/nearby endpoints are public"): there
- * is no bound `TenantContext.organizationId` to scope by, but `Restaurant`/
- * `Branch`/`FloorPlan`/`Table` are all tenant-owned (directly or
+ * Phase 15.5 (Discovery Module, architecture frozen 2026-07-29, D5/D6/D7/D14):
+ * optional filters shared by plain search (`listRestaurants`) and nearby
+ * search (`searchNearby`). `q` matches `ILIKE '%q%'` against `Restaurant.name`
+ * only (no description, no `cuisineType` - D5/D6); `cuisineId`/`occasionId`
+ * filter via the relational taxonomy join tables, never the legacy
+ * `Restaurant.cuisineType` string column.
+ */
+export interface DiscoverableRestaurantFilters {
+  q?: string;
+  cuisineId?: string;
+  occasionId?: string;
+  priceLevel?: number;
+  minRating?: number;
+  city?: string;
+}
+
+export type DiscoverableRestaurantSort = 'name' | 'rating' | 'newest';
+export type SortOrder = 'asc' | 'desc';
+
+export interface ListRestaurantsParams extends DiscoverableRestaurantFilters {
+  page: number;
+  limit: number;
+  sort?: DiscoverableRestaurantSort;
+  order?: SortOrder;
+}
+
+export interface NearbySearchParams extends DiscoverableRestaurantFilters {
+  lat: number;
+  lng: number;
+  radiusKm: number;
+  page: number;
+  limit: number;
+}
+
+/**
+ * A Restaurant result annotated with the nearest qualifying Branch's id and
+ * exact-refined distance (D2/D4: Restaurant-rooted, deduplicated - never one
+ * row per matching Branch).
+ */
+export interface NearbyRestaurantResult extends RestaurantResult {
+  nearestBranchId: string;
+  distanceKm: number;
+}
+
+/**
+ * Phase 15.5 (Discovery Module, architecture frozen 2026-07-29) extends the
+ * Customer Restaurant Discovery & Public Read Surface (2026-07-28) - minimal,
+ * read-only, cross-tenant lookup of publicly-discoverable Restaurant/Branch/
+ * FloorPlan/Table fields, owned by this bounded context, not a full
+ * Restaurants/Branches/Tables repository. Required because discovery is
+ * public/unauthenticated (ADR-018 §4 "Search/nearby endpoints are public"):
+ * there is no bound `TenantContext.organizationId` to scope by, but
+ * `Restaurant`/`Branch`/`FloorPlan`/`Table` are all tenant-owned (directly or
  * transitively) under `withTenantScoping` - a query through the standard
  * tenant-scoped `PrismaContext` client with no bound context throws
  * `TenantContextMissingException` by design (TENANCY.md fail-closed
@@ -31,10 +77,27 @@ export interface DiscoveryListPage<T> {
  * interfaces to begin with) - reused verbatim, not duplicated.
  */
 export interface DiscoveryReaderPort {
-  listRestaurants(page: number, limit: number): Promise<DiscoveryListPage<RestaurantResult>>;
+  listRestaurants(params: ListRestaurantsParams): Promise<DiscoveryListPage<RestaurantResult>>;
 
   /** Returns `null` for unknown, soft-deleted, or non-`Active` restaurants. */
   getRestaurantById(restaurantId: string): Promise<RestaurantResult | null>;
+
+  /**
+   * Phase 15.5 (D6/D18/D19 - Comparison API): returns only the subset of
+   * `restaurantIds` that resolve to a publicly-visible (`Active`, non-deleted)
+   * restaurant. Order is not guaranteed - the caller re-orders per the
+   * caller-requested id order.
+   */
+  getRestaurantsByIds(restaurantIds: string[]): Promise<RestaurantResult[]>;
+
+  /**
+   * Phase 15.5 (D2/D4/D11-adjacent geo instructions): bounding-box prefilter
+   * (existing `(latitude, longitude)` B-tree index) refined by an exact
+   * Haversine distance calculation, Restaurant-deduplicated (nearest
+   * qualifying Branch wins), ordered `distance ASC` then `restaurantId ASC`.
+   * A Branch with a `NULL` `latitude`/`longitude` never qualifies.
+   */
+  searchNearby(params: NearbySearchParams): Promise<DiscoveryListPage<NearbyRestaurantResult>>;
 
   listBranchesByRestaurantId(
     restaurantId: string,

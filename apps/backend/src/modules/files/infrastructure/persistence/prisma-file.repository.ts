@@ -21,6 +21,17 @@ export class PrismaFileRepository implements FileRepository {
     return row ? FilePrismaMapper.toDomain(row) : null;
   }
 
+  async findManyByIds(ids: FileId[]): Promise<FileRecord[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const uniqueIds = [...new Set(ids.map((id) => id.value))];
+    const rows = await this.prismaContext.client.file.findMany({
+      where: { id: { in: uniqueIds } },
+    });
+    return rows.map(FilePrismaMapper.toDomain);
+  }
+
   async softDelete(id: FileId, at: Date): Promise<void> {
     await this.prismaContext.client.file.updateMany({
       where: { id: id.value, deletedAt: null },

@@ -1,13 +1,16 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { RefreshTokenHash } from '@shared/domain/value-objects/refresh-token-hash.vo';
-import { ClockPort } from '@shared/application/ports/clock.port';
-import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
-import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
+import {
+  EventPublisherPort,
+  EVENT_PUBLISHER,
+} from '@shared/application/ports/event-publisher.port';
+import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
 import {
   SYSTEM_CONFIG_KEYS,
   SystemConfigurationPort,
 } from '@shared/application/ports/system-configuration.port';
-import { UnitOfWorkPort } from '@shared/application/ports/unit-of-work.port';
+import { UnitOfWorkPort, UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
 import { DeviceSession } from '../../domain/entities/device-session.entity';
 import { SessionRevokeReason } from '../../domain/enums/authentication.enums';
 import {
@@ -38,15 +41,11 @@ import {
 } from '../ports/employee-access-resolver.port';
 import {
   AUTH_REFRESH_POLICY,
-  CLOCK,
   DEVICE_SESSION_REPOSITORY,
-  EVENT_PUBLISHER,
-  ID_GENERATOR,
   OPAQUE_TOKEN_SERVICE,
   SYSTEM_CONFIGURATION,
   TOKEN_FAMILY_REPOSITORY,
   TOKEN_SERVICE,
-  UNIT_OF_WORK,
   USER_REPOSITORY,
 } from '../../domain/tokens/authentication.tokens';
 import { RefreshSessionCommand } from '../dto/refresh-session.command';

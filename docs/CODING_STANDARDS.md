@@ -110,7 +110,7 @@ Repositories always use the injected, tenant-scoped Prisma client (see TENANCY.m
 
 # Transactions and Concurrency
 
-Any database transaction that acquires a PostgreSQL advisory lock (see ADR-013, used by the Reservation Engine) must contain **only** database statements — no external I/O (notification dispatch, payment gateway calls, file storage calls) may occur inside that transaction. External side effects are triggered via a BullMQ job published only after the transaction commits. This keeps locked transactions short-lived and prevents a slow external call from holding a contended lock.
+Any database transaction that acquires a PostgreSQL advisory lock (see ADR-013, used by the Reservation Engine) must contain **only** database statements — no external I/O (notification dispatch, file storage calls) may occur inside that transaction. External side effects are triggered via a BullMQ job published only after the transaction commits. This keeps locked transactions short-lived and prevents a slow external call from holding a contended lock.
 
 BullMQ job handlers must explicitly establish Tenant Context (see TENANCY.md) from the job's payload as the first line of the handler, since jobs have no inbound HTTP/WebSocket request to derive it from automatically. Job payloads must always include `organizationId` explicitly.
 

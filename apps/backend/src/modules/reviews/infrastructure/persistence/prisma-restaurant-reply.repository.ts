@@ -40,4 +40,15 @@ export class PrismaRestaurantReplyRepository implements RestaurantReplyRepositor
     });
     return row ? RestaurantReplyPrismaMapper.toDomain(row) : null;
   }
+
+  async findManyByReviewIds(reviewIds: ReviewId[]): Promise<RestaurantReply[]> {
+    if (reviewIds.length === 0) {
+      return [];
+    }
+    const uniqueIds = [...new Set(reviewIds.map((id) => id.value))];
+    const rows = await this.prismaContext.client.restaurantReply.findMany({
+      where: { reviewId: { in: uniqueIds } },
+    });
+    return rows.map(RestaurantReplyPrismaMapper.toDomain);
+  }
 }

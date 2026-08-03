@@ -1,13 +1,16 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { ClockPort } from '@shared/application/ports/clock.port';
-import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
-import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
+import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
+import {
+  EventPublisherPort,
+  EVENT_PUBLISHER,
+} from '@shared/application/ports/event-publisher.port';
+import { UnitOfWorkPort, UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
 import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import {
-  CLOCK,
-  ID_GENERATOR,
-  EVENT_PUBLISHER,
-} from '@modules/authentication/domain/tokens/authentication.tokens';
+  SubscriptionUsageRepository,
+  SUBSCRIPTION_USAGE_REPOSITORY,
+} from '@modules/subscriptions/domain/repositories/subscription-usage.repository';
 import {
   RestaurantRepository,
   RESTAURANT_REPOSITORY,
@@ -16,13 +19,17 @@ import { RestaurantNotFoundException } from '../../domain/exceptions/restaurant-
 import { RestaurantDeletedEvent } from '../../domain/events/restaurant.events';
 import { DeleteRestaurantCommand } from '../dto/delete-restaurant.command';
 
+/** Phase 12 (Subscriptions, ADR-027 §11): decrements `SubscriptionUsage.restaurantCount` in the same transaction as the Restaurant's own soft-delete - never below zero (repository-guarded). */
 @Injectable()
 export class DeleteRestaurantUseCase {
   constructor(
     @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
+    @Inject(SUBSCRIPTION_USAGE_REPOSITORY)
+    private readonly subscriptionUsageRepository: SubscriptionUsageRepository,
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
+    @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
   ) {}
 
   async execute(command: DeleteRestaurantCommand): Promise<void> {
@@ -34,7 +41,10 @@ export class DeleteRestaurantUseCase {
 
     const now = this.clock.now();
     const deleted = restaurant.softDelete(now);
-    await this.restaurantRepository.save(deleted);
+    await this.unitOfWork.execute(async () => {
+      await this.restaurantRepository.save(deleted);
+      await this.subscriptionUsageRepository.decrementRestaurantCount(command.actor.organizationId);
+    });
 
     await this.eventPublisher.publish(
       new RestaurantDeletedEvent(

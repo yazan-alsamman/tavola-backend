@@ -1,13 +1,11 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { ClockPort } from '@shared/application/ports/clock.port';
-import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
-import { EventPublisherPort } from '@shared/application/ports/event-publisher.port';
-import { ReservationId } from '@shared/domain/value-objects/identifiers.vo';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
+import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
 import {
-  CLOCK,
-  ID_GENERATOR,
+  EventPublisherPort,
   EVENT_PUBLISHER,
-} from '@modules/authentication/domain/tokens/authentication.tokens';
+} from '@shared/application/ports/event-publisher.port';
+import { ReservationId } from '@shared/domain/value-objects/identifiers.vo';
 import { ReservationNotFoundException } from '../../domain/exceptions/reservation-not-found.exception';
 import { InvalidReservationStatusTransitionException } from '../../domain/exceptions/invalid-reservation-status-transition.exception';
 import { ReservationRejectedEvent } from '../../domain/events/reservation.events';

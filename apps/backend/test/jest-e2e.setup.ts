@@ -30,9 +30,15 @@ process.env.ARGON2_TIME_COST ??= '1';
 // X-Forwarded-For header) never trip the production-accurate limits.
 // rate-limit.e2e-spec.ts overrides these to small values for its own
 // isolated app instance and restores them afterward.
-process.env.RATE_LIMIT_LOGIN_MAX ??= '1000';
-process.env.RATE_LIMIT_REFRESH_MAX ??= '1000';
-process.env.RATE_LIMIT_FORGOT_PASSWORD_MAX ??= '1000';
-process.env.RATE_LIMIT_RESET_PASSWORD_MAX ??= '1000';
-process.env.RATE_LIMIT_REGISTER_MAX ??= '1000';
-process.env.RATE_LIMIT_CHANGE_PASSWORD_MAX ??= '1000';
+// Raised from 1000 (2026-07-29, Phase 15.5 verification session): the suite
+// has grown to 465 tests across 41 e2e files, each commonly logging in
+// multiple times in setup; 1000 shared logins per 900s window across the
+// whole loopback-IP-keyed counter started tripping mid-run. Login's own
+// window is 900s (auth.config.ts) - this only needs to clear real full-suite
+// wall-clock volume within that window, not change any production default.
+process.env.RATE_LIMIT_LOGIN_MAX ??= '10000';
+process.env.RATE_LIMIT_REFRESH_MAX ??= '10000';
+process.env.RATE_LIMIT_FORGOT_PASSWORD_MAX ??= '10000';
+process.env.RATE_LIMIT_RESET_PASSWORD_MAX ??= '10000';
+process.env.RATE_LIMIT_REGISTER_MAX ??= '10000';
+process.env.RATE_LIMIT_CHANGE_PASSWORD_MAX ??= '10000';

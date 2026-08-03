@@ -63,6 +63,14 @@ export class InMemoryTableRepository implements TableRepository {
         row.status === TableStatus.Available,
     );
 
+    // Mirrors the real Prisma repository (Phase 15 Optimization): one
+    // batched merge-group lookup for the whole candidate set, not one
+    // `findManyByMergeGroupId` call per merged candidate.
+    const mergeGroupIds = candidates
+      .filter((table) => table.mergeGroupId !== null)
+      .map((table) => table.mergeGroupId as string);
+    const membersByGroup = await this.findManyByMergeGroupIds(mergeGroupIds);
+
     const eligible: Table[] = [];
     for (const table of candidates) {
       if (table.mergeGroupId === null) {
@@ -71,7 +79,7 @@ export class InMemoryTableRepository implements TableRepository {
         }
         continue;
       }
-      const members = await this.findManyByMergeGroupId(table.mergeGroupId);
+      const members = membersByGroup.get(table.mergeGroupId) ?? [];
       if (TableMergeService.computeEffectiveCapacity(members) >= minCapacity) {
         eligible.push(table);
       }
@@ -106,6 +114,26 @@ export class InMemoryTableRepository implements TableRepository {
     return [...this.rows.values()].filter(
       (row) => row.mergeGroupId === mergeGroupId && !row.isSoftDeleted(),
     );
+  }
+
+  async findManyByMergeGroupIds(mergeGroupIds: string[]): Promise<Map<string, Table[]>> {
+    if (mergeGroupIds.length === 0) {
+      return new Map();
+    }
+    const uniqueIds = new Set(mergeGroupIds);
+    const membersByGroup = new Map<string, Table[]>();
+    for (const row of this.rows.values()) {
+      if (row.mergeGroupId === null || row.isSoftDeleted() || !uniqueIds.has(row.mergeGroupId)) {
+        continue;
+      }
+      const existing = membersByGroup.get(row.mergeGroupId);
+      if (existing) {
+        existing.push(row);
+      } else {
+        membersByGroup.set(row.mergeGroupId, [row]);
+      }
+    }
+    return membersByGroup;
   }
 
   async acquireTopologyLocks(tableIds: string[]): Promise<void> {
