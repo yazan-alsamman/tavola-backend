@@ -474,6 +474,10 @@ For WebSocket connections, the same `organizationId` is extracted at Socket.IO h
 
 Affects: Infrastructure layer (Prisma module setup), `common/guards`, a new `common/context` module (TenantContextService + interceptor), all tenant-owned repositories, BullMQ job authoring (workers must explicitly establish tenant context before repository calls), CODING_STANDARDS.md (new rule on `$systemContext` usage), TENANCY.md (new document, see Phase 0 deliverables).
 
+### Superseding Note
+
+**Decision Item 3 only (the `$systemContext` escape hatch) is superseded by ADR-035** (2026-08-04). Direct source inspection during the Phase 19 Final Decision session found `$systemContext` was never implemented — every real cross-tenant need since this ADR has instead been solved by one of two other mechanisms (an explicit Tenant Context rebind to a caller-specified target tenant, reusing the ordinary tenant-scoped repository; or a raw, unscoped `PrismaService` reader for genuinely cross-tenant reads, ESLint-whitelisted). ADR-035 formalizes these two as the canonical patterns and retires `$systemContext` as a distinct mechanism. **Decision Items 1, 2, and 4 (Tenant Context via `AsyncLocalStorage`, the Scoped Prisma Client Extension, and the thin-repository rule) are unaffected and remain fully in force** — this correction touches only the cross-tenant escape-hatch mechanism, never the core tenant-scoping mechanism itself.
+
 ---
 
 ## ADR-013
@@ -1795,6 +1799,250 @@ A Phase 18 architecture reconciliation was requested to re-open exactly five poi
 ### Impact
 
 Affects: `DECISIONS.md` (this ADR), `ARCHITECTURE_LOCK.md` (ADR-031 row annotated "corrected by ADR-032," new ADR-032 row added to the post-lock extensions table), `DATABASE_SCHEMA.md` (Menu: drop singleton unique, add `isDefault` + partial unique index; MenuItem: drop `scheduleJson`, add `isFeatured`; new `MenuItemAvailability` table), `DOMAIN_MODEL.md` (Menu Aggregate notes, entity list, repository list, event count), `EVENTS.md` (four new Menu events, two corrected event descriptions), `TENANCY.md` (add `MenuItemAvailability` to the transitively-tenant-owned Menu-family list), `API_GUIDELINES.md` (Menu reorder/availability route shapes now include `:menuId`), `PROJECT_ROADMAP.md` / `TASKS.md` (Phase 18 goals updated). Implementation remains unauthorized.
+
+---
+
+## ADR-033
+
+### Title
+
+Customer Acquisition & Pricing Engine — Financial Source of Truth, Not Billing
+
+### Status
+
+**Accepted — architecture frozen 2026-08-04 (Phase 19 Part 1 / Part 2 / Final Decision sessions). Architecture frozen only — not implemented, no Prisma model exists; implementation requires separate explicit authorization.**
+
+### Date
+
+2026-08-04
+
+### Context
+
+Phase 19 — Platform Back Office requires a financial source of truth for the platform's own revenue model: restaurants pay TAVLA once per genuinely new customer TAVLA delivers to them — never a subscription fee (a separate, already-frozen entitlement contract, ADR-027) and never a payment-processing fee (in-app payments are permanently removed from product scope, `TASKS.md` Phase 13, reaffirmed by ADR-021's Disposition). `Reservation` is operational (ADR-013's concurrency model, staff/customer-driven lifecycle) and was deliberately kept free of any revenue concept by ADR-028 ("Phase 14 v1 has zero currency-denominated metrics"). No existing table expresses "has this customer already generated revenue at this Restaurant" — a new aggregate is required, and it must not be computed live from `Reservation` at report time (fragile, expensive at scale, and would let a future change to reservation semantics silently rewrite historical revenue — ADR-028 itself already found `Reservation.reservationDate` derivation inconsistent across write paths).
+
+### Decision
+
+**Definition and scope**
+
+1. **Acquisition definition.** An acquired customer is a `(Restaurant, Customer-Identity)` pair for which a Reservation first reaches `Approved` status, where `Reservation.source ≠ WalkIn`. `Customer-Identity` is `userId` if present, else `reservationGuestId` — the same XOR `Reservation` already enforces via `reservations_party_xor_chk`.
+2. **Attribution scope is the Restaurant, not the Branch, not the Organization.** A customer acquired at one Branch of a Restaurant generates no new acquisition at another Branch of the same Restaurant. A customer acquired at one Restaurant generates a new, separate acquisition at a different Restaurant, even under the same Organization — each Restaurant is a separately-paying tenant business. This mirrors ADR-027's `RestaurantUsage` grain, not its `Subscription`/Organization grain.
+3. **Trigger is the transition into `Approved`, never `Completed`.** `Approved` is the point the Restaurant — not the customer's later behavior — commits to serving the customer. Gating on `Completed` would let a Restaurant dodge fees by marking Approved reservations `NoShow`, a Restaurant-controlled field; gating on `Approved` also makes revenue recognition immediate and auditable.
+4. **`source = WalkIn` never generates a fee.** A walk-in customer arrived with zero platform mediation; every other `source` value (`Online`, `Phone`, `Staff`, `WaitlistConversion`) is eligible, since in each case the Restaurant used TAVLA's reservation infrastructure to intake and hold a new customer relationship. No schema change is required — `Reservation.source` already has exactly these five values.
+5. **One-time per relationship.** A second, third, or Nth reservation by an already-acquired customer at the same Restaurant, of any source or outcome, never generates a new acquisition.
+6. **Cancellation, no-show, and rejection after `Approved` never reverse an already-recorded acquisition automatically.** The commitment already occurred at approval time. Reservations that never reach `Approved` (Rejected, Expired, Cancelled-while-Pending) never generate one in the first place.
+7. **Soft-deletes/suspensions never retroactively mutate acquisition history.** `Reservation` has no `deletedAt` (it is never soft-deleted, only transitioned) and is unaffected by this decision. Branch/Restaurant/Organization soft-delete or suspension leaves all historical `CustomerAcquisition` rows immutable and unaffected, exactly as historical Reservations already survive Branch soft-delete.
+8. **Customer recreation.** A new `userId` (e.g. after anonymization and re-registration) is, by definition, a new Customer-Identity — a new acquisition is legitimately possible. The platform never attempts to infer that two distinct identities are the same physical person.
+9. **Concurrency.** Uniqueness is enforced by a database constraint, not application logic alone: a partial unique index on `(restaurantId, customerIdentityKey) WHERE status != 'Reversed'`, with the triggering use case performing an atomic insert-if-not-exists and treating a unique-violation as "already acquired, no-op." Reuses ADR-026's partial-unique-index pattern (`Table.isMergePrimary`) and ADR-027 §5's atomic-conditional-write pattern.
+
+**Reversal and manual correction**
+
+10. **`CustomerAcquisition` is never hard-deleted.** Correcting an over-count is always an explicit compensating action — `status: Reversed`, with required `reversedAt`/`reversedBy`/`reversalReason` — performed by a PlatformAdmin, never automatically by any downstream Reservation-lifecycle event. A reversal frees the uniqueness slot in Decision Item 9; a genuinely new qualifying event afterward may create a fresh record.
+11. **Manual (retroactive) recording.** A symmetric, PlatformAdmin-only path exists for the opposite case — an acquisition that should have been recorded automatically but wasn't (bug, source mislabeling). It requires an explicit `restaurantId` + customer identity + mandatory reason, still governed by the same uniqueness constraint (Decision Item 9), and is permanently distinguished from automatic creation via a `createdVia: Automatic | ManualPlatformAdminCorrection` discriminator — never silently indistinguishable from an automatic record in reporting or audit.
+
+**Tenancy**
+
+12. **`CustomerAcquisition` and `AcquisitionPricingRule` are transitively tenant-owned**, via `restaurantId → Restaurant.organizationId` for `CustomerAcquisition` (identical shape to `RestaurantUsage`, ADR-027 §12) — no `organizationId` column, not registered in `DIRECT_TENANT_OWNED_MODELS`. `AcquisitionPricingRule` at `Organization`/`Restaurant` scope resolves the same way; at `Platform` scope it carries no tenant FK at all (platform-global reference data, alongside `SubscriptionPlan`).
+13. **Creation happens inside the ordinary tenant-scoped request that approves a reservation** (an Organization Owner/Admin or Employee, acting in their normal tenant context), in the same database transaction as the `Reservation` status update — exactly how `RestaurantUsage` counters update alongside their triggering resource (ADR-027 §4). No cross-tenant read/write pattern is required for creation. Cross-tenant rollups (Platform-wide Dashboard/Revenue totals) use the Tenant-Agnostic Raw Reader pattern (ADR-035).
+
+**Pricing Engine**
+
+14. **A single `AcquisitionPricingRule` table**, not separate tables per pricing concept: `scopeType` (`Platform | Organization | Restaurant`), `scopeId` (null at Platform scope), `feeType` (`Flat | Percentage`), `flatAmount`/`flatCurrency`, `percentageValue` (reserved, see Decision Item 16), `effectiveFrom`, `effectiveTo` (null = open-ended — a "campaign" is simply a rule with both bounds set), `label`, `createdBy`, `archivedAt`. Resolution at acquisition time: most specific matching `scopeType` (Restaurant > Organization > Platform), tie-broken by latest active `effectiveFrom`; falls back to the seeded Platform default if nothing else resolves.
+15. **Rules are never edited in place.** A pricing change always creates a new row (with its own `effectiveFrom`) and archives or bounds the superseded row — mirroring ADR-027 §10's plan-immutability. "Rollback" requires no new mechanism: archiving a mistaken rule (`archivedAt = now()`) causes resolution to fall back to the next-most-recent still-active rule automatically.
+16. **`feeType = Percentage` is structurally defined but functionally disabled.** No field anywhere in this schema expresses a monetary reservation/order value (payments were fully removed) — there is nothing for a percentage to compute against. Application-layer validation must reject `feeType = Percentage` until a separate, explicit future architecture decision introduces a monetary base-value source. This is not a placeholder in the CLAUDE.md-forbidden sense; it is an explicitly-defined, explicitly-guarded deferral.
+17. **Currency: exact match required, no conversion, ever.** No `Country`/`Currency` reference table exists in this codebase (`DATABASE_SCHEMA.md` labels both "Future — Not Yet Implemented"); currency today is unconstrained free-text on four unrelated columns with zero FX/conversion logic anywhere. Pricing resolution (Decision Item 14) must additionally filter by the target Restaurant's operating currency (`RestaurantSettings.defaultCurrency`, falling back per `Branch.currency`'s existing convention); if no rule exists in the matching currency at any scope, resolution fails closed (an explicit error, never a silent guess or an automatic conversion). Automatic FX conversion is rejected outright — it would require sourcing, storing, and refreshing exchange rates, a genuinely new external dependency (`CHANGE_POLICY.md` criterion #2) with real staleness/correctness risk on a number restaurants are actually told they owe, directly contradicting this platform's own "not a payment gateway" framing (Decision Item 21).
+18. **Fee snapshot, never a live join.** `CustomerAcquisition.feeAmount`/`feeCurrency`/`pricingRuleId` are captured at creation time. Changing or archiving a rule afterward has zero effect on any already-recorded acquisition — there is no live join from a historical record back to a mutable rule value. This is the concrete mechanism satisfying "never allow historical acquisitions to change after pricing changes."
+19. **Pricing simulation/preview.** A stateless, read-only preview capability (proposed rule × recent acquisition volume → a projected cost estimate) is authorized, following the existing "direct read, no new persistence" pattern (ADR-028). No persisted "draft rule" state machine is introduced — the preview is illustrative only and must be labeled as an estimate, never a commitment.
+20. **Default value.** The Platform default fee is 1000 Syrian Pounds, seeded as a single `Platform`-scope `AcquisitionPricingRule` row — never a hardcoded application constant, satisfying CLAUDE.md's "never hardcoded values" rule the same way `RestaurantSettings` does for restaurant-level config.
+
+**Reporting and export**
+
+21. **Absolute payment boundary (reaffirmed).** No `Payment`, `PaymentTransaction`, `Invoice`, `BillingAccount`, `PaymentMethod`, `CheckoutSession`, `paymentStatus`, `amountPaid`, or any settlement/reference-batch field is introduced by this ADR, now or implicitly in any future Phase 19 implementation, unless a separate future owner decision explicitly reverses the payment-removal decision (reaffirms ADR-027 §16, extended to this ADR). `CustomerAcquisition` records what is *owed*, never what was *paid*; settlement occurs entirely outside the platform.
+22. **Revenue metrics are limited to "Recorded" and "Reversed."** TAVLA never observes payment state, so "Collected revenue" and "Outstanding revenue" are not valid metrics and must not be exposed by any report. The only honest metrics are the sum/count of `Recorded`-status and `Reversed`-status acquisitions, plus derived Growth/Trend/Top-Restaurant/Inactive-Restaurant views over the same two underlying facts. "Average acquisition cost" is defined only as the mean recorded fee amount — never as a marketing-spend/cost-to-acquire figure, since no such data source exists anywhere in this platform.
+23. **Export capability is authorized** — a date-range × Restaurant/Organization structured export of `CustomerAcquisition` records, reusing the existing Heavy-Operations pattern (`NON_FUNCTIONAL_REQUIREMENTS.md`: synchronous if ≤30s, BullMQ-async otherwise). This, together with the fee snapshot (Decision Item 18), is deliberately the *entire* invoice-readiness mechanism: no settlement-batch/invoice-reference field is added to `CustomerAcquisition` (see Decision Item 21) — the append-only, exportable ledger is sufficient by design, and adding such a field would be the first step toward exactly the `Invoice`/`PaymentTransaction` machinery this ADR exists to avoid.
+24. **Revenue reporting is a distinct domain from Phase 14 Analytics**, never computed by querying `Reservation` directly (per Decision Item 1's own Context). One flexible, parameterized read surface (`groupBy` = day/week/month/quarter/year/restaurant/organization/source) is authorized, matching ADR-028's own established query shape, rather than a fixed endpoint per report type.
+
+**Events**
+
+25. New domain events: `CustomerAcquisitionRecorded`, `CustomerAcquisitionReversed`, `CustomerAcquisitionManuallyRecorded`, `AcquisitionPricingRuleActivated`. No `PaymentX`/`InvoiceX` event is introduced, consistent with Decision Item 21.
+
+### Alternatives Considered
+
+* **Compute revenue live from `Reservation` at report time.** Rejected — expensive at scale, and a future change to reservation semantics would silently rewrite historical revenue with no audit trail.
+* **Branch- or Organization-scoped attribution.** Rejected — Branch-scoping would double-count a single customer relationship across a brand's locations; Organization-scoping would undercharge a multi-restaurant Organization relative to the actual per-Restaurant value delivered. Restaurant-scoping matches the paying entity exactly.
+* **Trigger on `Completed` instead of `Approved`.** Rejected — lets a Restaurant unilaterally avoid fees via the `NoShow`/`Cancelled` fields it already controls.
+* **Include `source = Phone`/`Staff` alongside `WalkIn` as excluded.** Rejected — both represent the Restaurant using TAVLA's reservation infrastructure to intake a genuinely new customer relationship, the same value delivered as `Online`; only `WalkIn` (zero platform mediation, customer already physically present) is structurally different.
+* **Automatic FX conversion for multi-currency pricing.** Rejected — see Decision Item 17; would introduce a new external dependency and real financial-correctness risk with no existing precedent anywhere in this codebase.
+* **Add a settlement-batch/invoice-reference field to `CustomerAcquisition` for "billing readiness."** Rejected — the export capability (Decision Item 23) already provides everything a future external invoicing process needs; a reference field is the first step toward reintroducing banned billing/invoicing machinery.
+* **Four separate pricing tables (flat/restaurant-override/organization-override/campaign).** Rejected — a "campaign" and a "restaurant-specific override" are the same primitive (a scoped, time-boxed fee) at different scope levels; one table with `scopeType`/`effectiveFrom`/`effectiveTo` covers all cases without duplicated resolution logic.
+
+### Consequences
+
+#### Positive
+
+* A dedicated, immutable financial ledger exists independent of `Reservation`'s operational lifecycle, closing the gap ADR-028 deliberately left open.
+* Reuses five already-proven patterns from this codebase (ADR-026's partial unique index, ADR-027's atomic-conditional-write / plan-immutability / transitive tenancy, ADR-028's direct-read reporting shape) rather than inventing new mechanisms.
+* The currency fail-closed rule and the Percentage-type guard both keep this ADR fully inside the platform's existing "not a payment gateway" boundary rather than quietly expanding it.
+* Manual recording (Decision Item 11) closes the one operational gap an immutable, automatic-only ledger would otherwise have.
+
+#### Negative
+
+* `source = WalkIn` exclusion relies on accurate staff self-reporting at reservation-creation time; the architecture provides no fraud-detection mechanism for mislabeling (an explicitly accepted business-process risk, not an architectural gap).
+* `feeType = Percentage` ships structurally present but functionally unusable until a future, separate ADR introduces a monetary base value — a real, disclosed limitation, not an oversight.
+* Currency fail-closed (Decision Item 17) means a new operating country/currency requires deliberately seeding a matching-currency pricing rule before its restaurants can generate acquisitions — an operational cost, not an architectural one.
+
+### Impact
+
+Affects: `DECISIONS.md` (this ADR), `DOMAIN_MODEL.md` (new Customer Acquisition Aggregate), `DATABASE_SCHEMA.md` (new `Customer Acquisitions` / `Acquisition Pricing Rules` tables), `EVENTS.md` (four new events), `AUTHORIZATION_ARCHITECTURE.md` (no new mechanism — PlatformAdmin-only mutation per ADR-034), `API_GUIDELINES.md` (new route family, ownership only — no endpoints designed), `PRODUCT_REQUIREMENTS.md` (FR-19 extended), `ARCHITECTURE_LOCK.md` (post-lock extension entry). No Prisma schema/migration in this session — architecture-freeze only; implementation requires separate explicit authorization.
+
+---
+
+## ADR-034
+
+### Title
+
+Platform Back Office — PlatformAdmin Operational Authority (Restaurant/Organization Lifecycle, Account Access Control, Audit, Two-Tier Role)
+
+### Status
+
+**Accepted — architecture frozen 2026-08-04 (Phase 19 Part 2 / Final Decision sessions). Architecture frozen only — not implemented; implementation requires separate explicit authorization.**
+
+### Date
+
+2026-08-04
+
+### Context
+
+`PlatformAdmin`'s entire capability surface, before this ADR, is exactly two controllers / seven routes: `POST /platform-admin/login`, `POST /platform-admin/restaurant-owners`, and the six Subscription-lifecycle routes (`GET /plans`, `GET/POST .../subscription`, `.../suspend`, `.../reactivate`, `.../cancel`) — confirmed by exhaustive grep of every `PlatformAdminGuard` usage in the codebase. `PRODUCT_REQUIREMENTS.md`'s FR-19 ("Platform Administration") names three sub-requirements — FR-19.1 (platform admin user management), FR-19.2 (cross-tenant reporting/support tooling), FR-19.3 (security alert aggregation) — none of which has ever had an implementation phase. `PlatformAdminClaims` today is exactly `{ sub, iat, exp }` — no role/scope field exists. `AuditLog.actorType` is `User | Employee | System` — `PlatformAdmin` actions are silently mapped onto `User`. `OrganizationMember.changeRole()` already throws `OwnershipTransferRequiredException`, referencing a transfer path that does not exist anywhere in the codebase — a real, shipped defect, not a hypothetical gap. The `Organizations` module today has zero use-cases or controllers (pure repository DI scaffolding). No audit-log read API exists anywhere. This ADR resolves the PlatformAdmin-authority portion of Phase 19 (Customer Acquisition/Pricing itself is ADR-033; the tenancy-mechanism correction is ADR-035, standalone per `CHANGE_POLICY.md` criterion #3).
+
+### Decision
+
+**Prerequisite — audit correctness**
+
+1. **`AuditActorType` gains `PlatformAdmin` as a real value**, additive to the existing `User | Employee | System` enum. `OrganizationMember` remains mapped onto `User` (no proven need for a finer distinction yet). This must land before any decision item below writes an audit row, so every new PlatformAdmin-mutating capability in this ADR is correctly attributed from day one.
+2. **Audit Log Read API.** A new `GET /platform-admin/audit-logs` capability, filterable by `actorId`/`targetType`/`targetId`/`action`/`organizationId`/date range, paginated, reusing the already-existing composite indexes (`(targetType, targetId)`, `organizationId`, `occurredAt`) — no new index, no new writer logic, read-only. Bounded date range required (mirrors ADR-028 §13's 366-day cap), since `AuditLog` is a high-write-volume, append-only table at platform scale.
+
+**Restaurant lifecycle**
+
+3. **PlatformAdmin gains Suspend/Reactivate/Delete/Restore authority over Restaurant**, reusing the existing `RestaurantActivated`/`RestaurantSuspended`/`RestaurantDeleted` events and the existing `deletedAt` field unchanged — no new schema, only a new authorized actor. `RestaurantStatus` remains exactly `{Active, Suspended}` by its own existing, deliberate design; no third "Archived" status is introduced. A new `RestaurantRestored` event is introduced, since no actor — Owner, Admin, or otherwise — has ever had a restore capability; this closes a standing reversibility gap independent of Phase 19 (ADR-010's auditability principle implies reversibility, which soft delete alone does not guarantee without an undo path).
+
+**Organization lifecycle**
+
+4. **PlatformAdmin gains Suspend/Reactivate/Delete/Restore authority over Organization**, composing with the existing `/platform-admin/organizations/:id/subscription*` route family (already live, ADR-027). Reuses `OrganizationSuspended` (already documented, zero producer until now) and introduces `OrganizationReactivated`/`OrganizationDeleted`/`OrganizationRestored`.
+5. **Organization Suspend never mutates `Restaurant.status`. No cascade, ever.** This directly reuses ADR-027's own rejected-alternative reasoning — auto-suspending `Restaurant.status` on Subscription lapse was rejected precisely because a second writer of the same field is a correctness hazard ("which actor's suspension wins?"). Effective "hidden while Organization is Suspended" visibility is derived at Discovery/read time from `Organization.status`, exactly as Discovery already excludes non-Active/soft-deleted Restaurants — no new write path, no new field.
+
+**Ownership transfer**
+
+6. **A narrow, PlatformAdmin-only emergency Organization ownership transfer is authorized**, reusing the existing, already-implemented `OrganizationMembershipPolicy.assertSingleActiveOwner` invariant unchanged. This directly resolves `OwnershipTransferRequiredException`'s standing, previously-unsatisfiable precondition. `OrganizationOwnershipTransferred` (already documented, zero producer) gains its first real producer.
+7. **Full self-service Organization management** (Owner-initiated invite/role-change/remove/transfer, an `OrganizationMemberGuard`/`@RequireOrgRole`-gated controller surface) **is explicitly out of scope for this ADR.** It is a real, separate, pre-existing gap (the Organizations module has zero controllers today) but is not the "internal company back office" this ADR governs — tracked as a distinct future phase, not silently absorbed here.
+
+**Account access control**
+
+8. **PlatformAdmin gains Force Logout, Credential Reset, and Disable Login authority over any User/Employee account.** Force Logout reuses the existing `sessionVersion` mechanism and the already-documented "Admin force-logout user" trigger (`AUTHENTICATION_ARCHITECTURE.md`'s `sessionVersion`-bump table) — no new event; the existing `SessionFamilyRevoked` audit row, now correctly attributed via Decision Item 1, is sufficient to distinguish an admin-forced logout from self-service. Credential Reset introduces one new event, `PlatformAdminCredentialReset` — a distinct flow from self-service password reset (no OTP step, direct set by the admin, mirroring the trust model already established for Restaurant Owner provisioning). Disable Login reuses the existing `User.status` field with two new events, `AccountLoginDisabled`/`AccountLoginEnabled`. All three are sequenced after Decision Items 1–2.
+9. **Impersonation is explicitly deferred, not built.** No proven need is stated anywhere in the requirements, and it would require new session/audit-representation mechanics (time-boxed token, mandatory reason capture, distinguishable actor-pair in `AuditLog`) with no existing precedent in this codebase — consistent with this codebase's repeated pattern of deferring infrastructure until a measured need exists (Redis permission cache, search engine, notification DLQ).
+
+**PlatformAdmin account management**
+
+10. **PlatformAdmin account CRUD (create/list/revoke) is authorized**, finally delivering FR-19.1. Mirrors the existing Employee invite/deactivate shape. At least one PlatformAdmin account must remain operationally seeded (bootstrap); API-driven creation applies only to accounts created *after* that seed. `PlatformAdminAccountCreated`/`PlatformAdminAccountRevoked` are new events, finally making the existing `PlatformAdmin.revokedAt` column (present in schema since Phase 2.23, never previously settable via any code path) reachable.
+
+**Two-tier role**
+
+11. **`PlatformAdminClaims` gains a `role` field: `PlatformAdmin | PlatformSupport`.** `PlatformSupport` is read-only (Dashboard, Revenue/Acquisition reports, Audit Log reads, the narrow lookup capability in Decision Item 13) — no Suspend/Delete/Restore/Reversal/Manual-Record/Credential-Reset/pricing-mutation authority. `PlatformAdmin` retains full authority, unchanged. This is a genuine separation-of-duties control, not speculative: before this ADR, PlatformAdmin's power was limited to login/provisioning/Subscription-lifecycle (already appropriately PlatformAdmin-tier); Decision Items 3–10 are the first point PlatformAdmin gains real financial-mutation and destructive-tenant power, which a flat role would grant to every internal support account by default.
+12. **Mechanism: a new decorator+guard pair, not a reuse of `PermissionsGuard`/`OrganizationMemberGuard`.** Both existing RBAC guards hard-require `AUTHENTICATED_ACTOR_KEY`, which `PlatformAdminGuard` never sets (it sets a separate `PLATFORM_ADMIN_ACTOR_KEY`). The new pair (e.g. `@RequirePlatformAdminRole(...)` + a guard reading the new claim) clones the existing `@RequireOrgRole`/`OrganizationMemberGuard` *pattern* — metadata-driven via `Reflector`, fail-closed, audited denials — without reusing either guard's actor-key assumptions. **This is not an ADR-026/028-style OR-composed dual-actor guard** (those ADRs addressed combining two *different* actor types on one route); this is a single actor type (`PlatformAdmin`) with an internal tier, structurally identical to the already-accepted `@RequireOrgRole` shape — stated explicitly to prevent a future reader misreading ADR-026/028 as prohibiting it.
+
+**Search**
+
+13. **A narrow, per-entity, indexed-column lookup is authorized** (Restaurant/Organization/Acquisition/PricingRule by name/id, reusing the existing `ILIKE`-filter pattern Discovery already uses) — a support tool, not a search engine. A unified cross-entity or full-text search is explicitly rejected: no proven need, and this codebase has already twice rejected search-engine escalation "on the evidence (no measured need)" (`TASKS.md` Phase 15). `ARCHITECTURE_LOCK.md`'s "Search engine: Open ADR required" Future Decision remains open and unaffected by this item.
+
+**Rejected scope**
+
+14. **Bulk operations are rejected**, except for the range-based Export already authorized by ADR-033 (a filtered read, not a mutating bulk operation). Bulk pricing updates in particular are rejected as directly contradicting ADR-027/033's deliberate one-at-a-time, individually-labeled, auditable pricing-change philosophy.
+15. **Operational-monitoring duplication is rejected.** Recent Errors, Queue Status, API/Traffic, Slow Queries, Storage Usage, and Search-usage tracking are all rejected as Platform Back Office capabilities — each already has a better-suited home (Pino/log aggregation, Prometheus/Grafana per `NON_FUNCTIONAL_REQUIREMENTS.md`, MinIO's own console, PostgreSQL tooling) and duplicating them here would violate the platform's own "stateless API servers, no local persistent storage" principle. The one exception: Notification delivery-status aggregation (a direct read over `Notification.pushStatus`, no new persistence) is authorized, since it is genuine business-domain data only this backend can meaningfully report on.
+
+### Alternatives Considered
+
+* **Cascade Organization Suspend to all child Restaurants automatically.** Rejected — see Decision Item 5; reintroduces the exact dual-writer hazard ADR-027 already eliminated for the identical shape of problem.
+* **Build the full self-service Organization Management module now.** Rejected — see Decision Item 7; a materially larger, differently-scoped deliverable that would blur two different actor stories into one ADR.
+* **Build Impersonation now.** Rejected — see Decision Item 9; no proven need, real new mechanics with no precedent.
+* **Full Employee-style permission-slug graph for PlatformAdmin, instead of a flat two-tier role.** Rejected — no stated need anywhere for per-capability granularity; a full slug graph would be speculative machinery disproportionate to any evidenced requirement.
+* **Keep PlatformAdmin flat (single role) permanently.** Rejected — see Decision Item 11; acceptable before this ADR, no longer acceptable once Decision Items 3–10 exist.
+* **Build a unified/full-text cross-entity search.** Rejected — see Decision Item 13; repeats a mistake this codebase has already twice avoided.
+
+### Consequences
+
+#### Positive
+
+* Closes a real, shipped defect (`OwnershipTransferRequiredException`'s unsatisfiable precondition) rather than leaving it latent.
+* Every new capability reuses an existing event, field, or guard-pattern shape — zero new tenancy mechanism, zero new guard-composition primitive beyond the single, precedented decorator+guard clone in Decision Item 12.
+* Finally delivers FR-19.1 (Decision Item 10), the first-named sub-requirement of the FR this phase exists to satisfy.
+* The two-tier role (Decision Item 11) closes a real internal-control gap at the exact moment it first becomes material (Decision Items 3–10), not before and not after.
+
+#### Negative
+
+* PlatformAdmin's write surface into tenant-owned Restaurant/Organization data (Decision Items 3–4) is a genuinely new category of cross-tenant mutation — must be sequenced after Decision Items 1–2 to avoid shipping unauditable power, even temporarily.
+* Full self-service Organization management (Decision Item 7) remains an open, unaddressed gap — explicitly deferred, not solved, by this ADR.
+* The two-tier role (Decision Item 11) is new maintenance surface for what is presumably a small internal team; justified here, but should not be extended toward a full permission graph without an equally concrete, evidenced need.
+
+### Impact
+
+Affects: `DECISIONS.md` (this ADR), `DATABASE_SCHEMA.md` (`AuditLog.actorType` enum extension; `PlatformAdmin.role` column), `AUTHORIZATION_ARCHITECTURE.md` (role hierarchy, ownership table, new decorator/guard pair, `PlatformAdminClaims` shape), `DOMAIN_MODEL.md` (Organization/Restaurant Aggregate actor notes), `EVENTS.md` (new events per Decision Items 3, 4, 6, 8, 10), `API_GUIDELINES.md` (new route families, ownership only), `PRODUCT_REQUIREMENTS.md` (FR-19.1 addressed; FR-03.4/FR-04.3 cross-referenced), `ARCHITECTURE_LOCK.md` (post-lock extension entry). No Prisma schema/migration, no code, in this session — architecture-freeze only; implementation requires separate explicit authorization.
+
+---
+
+## ADR-035
+
+### Title
+
+Cross-Tenant Access Patterns — Formalizing Explicit Tenant Rebind and Tenant-Agnostic Raw Reader (Retiring the Undelivered `$systemContext`)
+
+### Status
+
+**Accepted — architecture correction, 2026-08-04 (Phase 19 Final Decision session). Supersedes ADR-012 Decision Item 3 only** (the `$systemContext` escape-hatch mechanism); ADR-012's core tenant-isolation mechanism (Prisma Client Extension + `AsyncLocalStorage` Tenant Context, `DIRECT_TENANT_OWNED_MODELS`, fail-closed `TenantContextMissingException`) is unchanged and not reopened. This is a correction to documentation that was never implemented, not a change to a production tenancy mechanism — the same category of correction as ADR-030's relationship to ADR-020.
+
+### Date
+
+2026-08-04
+
+### Context
+
+ADR-012 Decision Item 3 (2026-07-06) specified a distinct, second Prisma client variant — `prisma.$systemContext` — as the sanctioned escape hatch for platform-admin/analytics/support cross-tenant operations. `TENANCY.md`, `AUTHORIZATION_ARCHITECTURE.md`, `PRODUCT_REQUIREMENTS.md`, `CODING_STANDARDS.md`, and `ARCHITECTURE_COMPLIANCE_AUDIT.md` have all referenced it since as though it exists. Direct source inspection (Phase 19 Final Decision session) confirms it does not: exhaustive grep of `apps/backend/src` for `$systemContext`/`systemContext` returns zero implementations — no second `PrismaClient` instance, no `.$systemContext` property, no method by that name. Every hit is a documentation comment.
+
+Two other, real mechanisms have independently and repeatedly solved the exact problem `$systemContext` was meant to solve, already shipped in production:
+
+1. **`PlatformAdminSubscriptionsController`'s actual cross-tenant mechanism** (ADR-027, live since 2026-07-28): `PlatformAdminGuard` never runs the normal `TenantContextInterceptor` binding (it sets a separate `PLATFORM_ADMIN_ACTOR_KEY`, not `AUTHENTICATED_ACTOR_KEY`). Each use case (`AssignSubscriptionUseCase`, `GetOrganizationSubscriptionUseCase`, etc.) manually rebinds `TenantContext` to the caller-supplied `:organizationId` via `TenantContextPort.runAsync()`, then calls the exact same tenant-scoped repository every ordinary Organization-member request uses. The tenant-scoping Prisma extension never learns the difference — it enforces the bound `organizationId` exactly as designed, just pointed at a guard-verified, trusted target.
+2. **`PrismaDiscoveryReader` and its two siblings** (`PrismaRestaurantDirectoryReader`, `PrismaLoginOrganizationReader`; ADR-018, live since Phase 3.3/15.5): inject the raw, unextended `PrismaService` directly, for the structurally different case where no single tenant identity applies at all. Enforced by an ESLint `no-restricted-imports` rule with an explicit, enumerated `excludedFiles` whitelist, plus a mandatory doc-comment justifying each exception. Every existing use is read-only and structurally excludes `organizationId` from its response DTOs (all three existing uses are Customer-facing, where tenant identity must never leak).
+
+Both mechanisms already satisfy every design goal ADR-012 Decision Item 3 stated for `$systemContext` — fail-closed scoping, grep-able/auditable cross-tenant access, restriction to a small reviewed set of call sites — without the added complexity of a third, never-built mechanism. Building `$systemContext` as originally specified now would duplicate existing, proven capability for zero net new functionality, directly against CLAUDE.md's "never duplicate code" rule.
+
+### Decision
+
+1. **`$systemContext` as a distinct third Prisma client variant is retired.** It is not built, and no future work should attempt to build it as originally specified. `TENANCY.md`'s "System / Platform-Administration Operations" section is corrected to describe the two real patterns below instead of the undelivered concept.
+2. **Pattern 1 — Explicit Tenant Rebind.** For a PlatformAdmin action targeting one specific, caller-supplied tenant (an `:organizationId`/`:restaurantId` path parameter): the route is guarded by `PlatformAdminGuard` alone (never `JwtAuthGuard`); the use case manually calls `TenantContextPort.runAsync({ organizationId: <target>, ... }, () => ...)` before invoking the target's own ordinary, unmodified tenant-scoped repository. **Allowed when:** the target tenant id is explicit, caller-supplied, and the guard has already verified the caller is a legitimate, active PlatformAdmin. **Forbidden when:** the operation must read/aggregate across more than one tenant at once (no single `organizationId` to rebind to) — use Pattern 2 instead. Security guarantee: the tenant-scoping extension is never bypassed; every query remains scoped to exactly one `organizationId`, merely one chosen by a verified trusted actor instead of derived from the caller's own membership. Audit: writes flow through the same domain-event → `AuditingEventPublisher` pipeline as any ordinary tenant-scoped write, correctly attributed to `actorType = PlatformAdmin` per ADR-034 Decision Item 1.
+3. **Pattern 2 — Tenant-Agnostic Raw Reader.** For genuinely cross-tenant reads with no single applicable tenant identity (Platform Dashboard aggregation, platform-wide Revenue Reports, Organization listing/search): a dedicated, purpose-built reader class injects the raw `PrismaService` directly, added by name to `.eslintrc.js`'s `no-restricted-imports` `excludedFiles` whitelist, alongside `PrismaDiscoveryReader`/`PrismaRestaurantDirectoryReader`/`PrismaLoginOrganizationReader`. **Allowed when:** the operation is read-only and no bound `organizationId` could correctly scope it. **Forbidden when:** the operation is a write (Pattern 1 covers PlatformAdmin writes; a raw-client write is never permitted anywhere in this codebase) or when a single target tenant is actually known (use Pattern 1 instead — never reach for the raw reader out of convenience). **DTO requirement — the one place Platform Back Office readers differ from the three existing customer-facing readers:** Discovery/RestaurantDirectory/LoginOrganization readers structurally exclude `organizationId` from every response, because customers must never see tenant boundaries. A Platform Back Office raw reader has the opposite requirement — it must *include* `organizationId`/`restaurantId` in every row, since displaying cross-tenant breakdowns to PlatformAdmin is the entire point. A future implementer must not copy the customer-facing DTO-stripping convention by reflex. Audit: none required — these are reads, consistent with the existing convention that GETs are audited only on RBAC denial.
+4. **No third mechanism is introduced.** Every future cross-tenant need must be classified as either Pattern 1 (one known target tenant) or Pattern 2 (no single target tenant, read-only) — never a new, bespoke escape hatch.
+5. **Grep-ability is preserved, restated for the two real patterns.** Pattern 1's `TenantContextPort.runAsync()` rebind calls are searchable and confined to PlatformAdmin-actor use cases. Pattern 2's raw-`PrismaService` injections are enumerable via the ESLint whitelist itself — grepping the whitelist array *is* the audit of every cross-tenant read path in the codebase, a stronger guarantee than a naming convention alone would provide.
+
+### Alternatives Considered
+
+* **Build `$systemContext` exactly as originally documented (a second, general-purpose Prisma client instance/property).** Rejected — duplicates capability already proven in production by Patterns 1 and 2, adds a new extension-application mode or client instantiation for zero net new functionality, and would need to independently re-derive both patterns' already-battle-tested safety properties from scratch.
+* **Leave `TENANCY.md` unchanged, keep documenting `$systemContext` as aspirational.** Rejected — every phase built since ADR-012 (Subscriptions, Discovery, RestaurantDirectory, LoginOrganization) has silently solved this problem a different, better way without ever updating the governing documentation; leaving the gap open only deepens the documentation-vs-reality drift for the next module that needs a cross-tenant read.
+* **A single, unified mechanism instead of two named patterns.** Rejected — the two real needs (act on one known tenant vs. read across all tenants at once) are structurally different enough that a single mechanism would need internal branching to tell them apart; two named, specifically-scoped patterns give a clearer classification exercise for future implementers than one polymorphic escape hatch would.
+
+### Consequences
+
+#### Positive
+
+* Closes a real documentation-vs.-implementation gap that has persisted, unnoticed, since ADR-012 (2026-07-06) across at least five documents.
+* Zero new code required to "resolve" this ADR — it formalizes what already ships and works; Phase 19's Dashboard/Revenue Reporting (ADR-033) can be implemented directly against Pattern 2 without first building unproven new infrastructure.
+* Strengthens, rather than weakens, the original design goal (auditable, grep-able cross-tenant access) — the ESLint whitelist is a stronger enforcement mechanism than a naming convention alone.
+
+#### Negative
+
+* Every document that referenced `$systemContext` (`TENANCY.md`, `AUTHORIZATION_ARCHITECTURE.md`, `PRODUCT_REQUIREMENTS.md`, `CODING_STANDARDS.md`, `ARCHITECTURE_COMPLIANCE_AUDIT.md`, `DATABASE_SCHEMA.md`) requires a correction pass — a real, if mechanical, one-time documentation cost.
+* Pattern 2's raw-reader shape requires a small, purpose-built reader class per genuinely cross-tenant query (no generic escape-hatch shortcut) — slightly more code than a single polymorphic client would need, in exchange for the auditability guarantee.
+
+### Impact
+
+Affects: `DECISIONS.md` (this ADR; ADR-012 receives a Superseding Note, its own Decision text unchanged), `TENANCY.md` ("System / Platform-Administration Operations" section rewritten to describe Patterns 1/2), `AUTHORIZATION_ARCHITECTURE.md` (role hierarchy diagram, ownership table, tenant-scope-resolution section), `CODING_STANDARDS.md` (repository rule corrected), `PRODUCT_REQUIREMENTS.md` (FR-03.4/FR-19.2 corrected), `DATABASE_SCHEMA.md` (Platform Admins purpose line corrected), `ARCHITECTURE_COMPLIANCE_AUDIT.md` (addendum note, historical table row not rewritten), `ARCHITECTURE_LOCK.md` (post-lock extension entry; `TENANCY.md`'s locked-content description unaffected in substance). No Prisma schema/migration, no code, in this session.
 
 ---
 

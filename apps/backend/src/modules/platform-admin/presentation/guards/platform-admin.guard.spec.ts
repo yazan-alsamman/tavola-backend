@@ -3,7 +3,13 @@ import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PlatformAdminGuard } from './platform-admin.guard';
 import { JwtPlatformAdminTokenService } from '../../infrastructure/security/jwt-platform-admin-token.service';
-import { PlatformAdminRepository } from '../../domain/repositories/platform-admin.repository';
+import {
+  PlatformAdminAuthContext,
+  PlatformAdminListPage,
+  PlatformAdminRecord,
+  PlatformAdminRepository,
+} from '../../domain/repositories/platform-admin.repository';
+import { PlatformAdminRole } from '../../domain/enums/platform-admin.enums';
 
 /**
  * ADR-022 §"Platform Admin Authentication" (Phase 2.23 closure) - security-
@@ -35,8 +41,29 @@ describe('PlatformAdminGuard — token isolation', () => {
 
   class FakePlatformAdminRepository implements PlatformAdminRepository {
     constructor(private readonly activeAdminIds: Set<string> = new Set([adminUserId])) {}
-    async isActiveAdmin(userId: string): Promise<boolean> {
-      return this.activeAdminIds.has(userId);
+    async findActiveAdminContext(userId: string): Promise<PlatformAdminAuthContext | null> {
+      return this.activeAdminIds.has(userId) ? { role: PlatformAdminRole.PlatformAdmin } : null;
+    }
+    findById(): Promise<PlatformAdminRecord | null> {
+      throw new Error('Not needed by this suite.');
+    }
+    findByUserId(): Promise<PlatformAdminRecord | null> {
+      throw new Error('Not needed by this suite.');
+    }
+    list(): Promise<PlatformAdminListPage> {
+      throw new Error('Not needed by this suite.');
+    }
+    create(): Promise<void> {
+      throw new Error('Not needed by this suite.');
+    }
+    updateRole(): Promise<void> {
+      throw new Error('Not needed by this suite.');
+    }
+    revoke(): Promise<void> {
+      throw new Error('Not needed by this suite.');
+    }
+    reactivate(): Promise<void> {
+      throw new Error('Not needed by this suite.');
     }
   }
 
@@ -49,7 +76,7 @@ describe('PlatformAdminGuard — token isolation', () => {
 
   function issueRealPlatformAdminToken(subject: string): string {
     const tokenService = new JwtPlatformAdminTokenService(buildConfigService());
-    return tokenService.signAccessToken({ sub: subject });
+    return tokenService.signAccessToken({ sub: subject, role: PlatformAdminRole.PlatformAdmin });
   }
 
   function issueOrdinaryToken(actorType: string, subject: string): string {

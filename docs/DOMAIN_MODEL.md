@@ -93,6 +93,7 @@ Organization
 * An Organization is created transparently during restaurant-owner signup; single-restaurant customers never need to know the concept exists in the UI — it exists purely as the correct domain/data boundary.
 * `OrganizationMember` links a `User` to an `Organization` with an administrative role. One `User` may belong to multiple Organizations (e.g., a consultant or multi-brand operator); one Organization has one or more `OrganizationMember` records but exactly one member holds the non-transferable `Owner` role at any time.
 * `OrganizationLimits` is not a separate persisted entity — it is computed from the active `SubscriptionPlan` (`maxRestaurants`, `maxBranchesPerRestaurant`, `maxEmployeesPerRestaurant` — no reservation-volume limit, ADR-027) and enforced by `SubscriptionValidator` (see Domain Services) whenever a new Restaurant, Branch, or Employee is created. `maxRestaurants` is checked against the Organization's own `SubscriptionUsage.restaurantCount`; `maxBranchesPerRestaurant`/`maxEmployeesPerRestaurant` are checked against the specific target Restaurant's own `RestaurantUsage` row, never an Organization-wide total (ADR-027) — see the Subscription Aggregate below.
+* **Organization lifecycle and ownership transfer (ADR-034, architecture frozen 2026-08-04, not implemented).** The Organizations module has zero use-cases or controllers as of this freeze — only repository DI scaffolding. `OrganizationMember.changeRole()` already throws `OwnershipTransferRequiredException`, referencing a transfer path that does not otherwise exist. ADR-034 authorizes: (1) PlatformAdmin-authorized Suspend/Reactivate/Delete/Restore, never cascading to `Restaurant.status` (no second writer of that field — reuses ADR-027's own rejected-alternative reasoning); (2) a **narrow, PlatformAdmin-only emergency ownership transfer**, reusing `OrganizationMembershipPolicy.assertSingleActiveOwner` unchanged, resolving `OwnershipTransferRequiredException`'s standing precondition. **Full self-service Organization management** (Owner-initiated Invite/Change Role/Remove/Transfer via an `OrganizationMemberGuard`-gated controller) **remains explicitly out of scope** — a real, separate, pre-existing gap, deliberately not absorbed into ADR-034.
 
 ---
 
@@ -158,6 +159,7 @@ Restaurant
 * Every Restaurant belongs to exactly one Organization (`organizationId`, required, immutable after creation — see Organization Aggregate and ADR-011). A Restaurant is never itself the tenant boundary; the Organization is.
 * Restaurant no longer carries a direct `ownerId` to a single User. Ownership and administrative access are expressed through the parent Organization's `OrganizationMember` records. A Restaurant's "owner" for display purposes is the Organization member holding the `Owner` role.
 * `RestaurantSettings` is the value object holding `reservationInterval`, `maxGuestsPerReservation`, `cancellationWindow`, `autoApproval`, and `timezone` (unchanged from the original model), plus `defaultCurrency` (used only as a fallback when a Branch does not specify its own currency — see Branch Aggregate below and the Money/Currency Ownership note), `defaultReservationDurationMinutes` (Phase 7.1 — fallback `Reservation.reservationEndTime` derivation), and, as of Phase 7.6 (Operational Signals, ADR-019), `reservationReminderMinutesBefore` (default 60) and `lateArrivalGraceMinutes` (default 15) — the two per-restaurant offsets the Reminder and Late-Arrival BullMQ jobs read to compute their fire time relative to `reservationStartTime`.
+* **PlatformAdmin operational authority (ADR-034, architecture frozen 2026-08-04, not implemented).** In addition to Organization Owner/Admin, PlatformAdmin gains Suspend/Reactivate/Delete/Restore authority over Restaurant, reusing the existing `RestaurantActivated`/`RestaurantSuspended`/`RestaurantDeleted` events and `deletedAt` field unchanged — no new schema. `RestaurantStatus` remains exactly `{Active, Suspended}` by its own existing, deliberate design; no third "Archived" status is introduced. Restore (`RestaurantRestored`, new) closes a standing gap — no actor, Owner/Admin or otherwise, had a restore capability before this ADR.
 
 ---
 
@@ -387,6 +389,37 @@ Subscription
 * Lifecycle states: `Active`, `Suspended`, `Cancelled`, `Expired` — no billing-derived states (`PastDue`, `Trialing`). `Suspended` is an administrative pause (PlatformAdmin-initiated, reactivatable); `Cancelled` is a terminal state (not automatically reactivated — resuming requires a fresh plan assignment via the same Assign action used for provisioning); `Expired` is reached automatically when `endsAt` elapses (BullMQ-scheduled + CAS-guarded, mirroring the Offer expiration precedent, Phase 11).
 * **An expired or suspended Subscription blocks only new resource creation** (`SubscriptionValidator`'s pre-creation checks) — it never mutates existing Restaurant/Branch/Employee state, and never gates any currently-completed feature (Reviews, Offers, Waitlist, Realtime, Notifications, Merge/Split, or reservation-taking itself). See "Restaurants" under Business Rules, below, for the explicit correction this makes to prior (pre-ADR-027) documentation.
 * Assignment/plan-change is PlatformAdmin-only (no customer-facing purchase/checkout flow of any kind exists or is planned) — see AUTHORIZATION_ARCHITECTURE.md and ADR-027.
+
+---
+
+## Customer Acquisition Aggregate
+
+**Architecture frozen 2026-08-04 (ADR-033) — the platform's financial source of truth, never computed from Reservation at read time.** Distinct from Subscription: Subscription answers "what is this Organization entitled to do"; Customer Acquisition answers "how much does this Restaurant owe the platform." Deliberately not a payment/invoice record — TAVLA does not process payments (ADR-021 Disposition, reaffirmed by ADR-033 §21).
+
+### Root
+
+CustomerAcquisition
+
+### Referenced / Related (not owned by this aggregate)
+
+* `AcquisitionPricingRule` — platform/organization/restaurant-scoped reference data, referenced by `pricingRuleId`, not a child entity of any one acquisition.
+
+### Responsibilities
+
+* Records, once per `(Restaurant, Customer-Identity)` relationship, that the platform delivered a new customer to a Restaurant.
+* Snapshots the fee owed at the moment of recording, immune to later pricing changes.
+* Supports exactly two corrections — Reversal (over-count) and Manual Recording (under-count) — both PlatformAdmin-only, both permanently distinguishable from an automatic record.
+
+### Notes
+
+* An acquisition is created when a Reservation first transitions into `Approved` for a given `(Restaurant, Customer-Identity)` pair, provided `Reservation.source ≠ WalkIn` (ADR-033 §§1-4). Attribution is Restaurant-scoped, not Branch- or Organization-scoped.
+* Never hard-deleted. `status = Reversed` is the only correction for an over-count; `createdVia = ManualPlatformAdminCorrection` is the only correction for an under-count (ADR-033 §§10-11).
+* Transitively tenant-owned via `restaurantId → Restaurant.organizationId`, identical shape to `RestaurantUsage` — see DATABASE_SCHEMA.md. Created inside the same transaction as the triggering Reservation's approval; no cross-tenant mechanism needed for creation (ADR-033 §13).
+* Revenue reporting reads only this aggregate, never `Reservation` directly (ADR-028 §12 already excluded currency-denominated metrics from Analytics; this aggregate is the intentional answer to that boundary, not an exception to it).
+
+## Acquisition Pricing (part of the Customer Acquisition bounded context, not its own aggregate root)
+
+`AcquisitionPricingRule` is platform/organization/restaurant-scoped reference data (ADR-033 §14), the same category as `SubscriptionPlan` at Platform scope. Never edited in place; a pricing change is always a new row (ADR-033 §15). `feeType = Percentage` is defined but application-rejected — no monetary base value exists anywhere in this schema for it to compute against (ADR-033 §16). Currency resolution is exact-match only, no FX conversion (ADR-033 §17) — no `Country`/`Currency` reference table exists in this codebase.
 
 ---
 
@@ -891,10 +924,11 @@ Events are immutable and published only after successful business operations.
 ## Organization
 
 * Create Organization (typically implicit during restaurant-owner signup)
-* Invite Organization Member
-* Change Organization Member Role
-* Remove Organization Member
-* Transfer Ownership
+* Invite Organization Member — **not implemented; no self-service Organization Management controller exists** (ADR-034 §7, explicitly out of scope for Phase 19)
+* Change Organization Member Role — **not implemented**, same gap
+* Remove Organization Member — **not implemented**, same gap
+* Transfer Ownership — **narrow, PlatformAdmin-only emergency transfer authorized (ADR-034 §6)**; full self-service Owner-initiated transfer remains not implemented
+* Suspend / Reactivate / Delete / Restore Organization (PlatformAdmin-only, ADR-034 §4-5 — never cascades to `Restaurant.status`)
 
 ---
 

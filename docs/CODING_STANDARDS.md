@@ -104,7 +104,7 @@ Repositories encapsulate database access.
 
 Business logic must never be placed inside repositories.
 
-Repositories always use the injected, tenant-scoped Prisma client (see TENANCY.md, ADR-012). The `prisma.$systemContext` cross-tenant escape hatch must never be used inside a feature-module repository — it is reserved for a small, explicitly reviewed set of platform-administration services, and any use of it must be justified in the pull request description.
+Repositories always use the injected, tenant-scoped Prisma client (see TENANCY.md, ADR-012). Two named exceptions exist, formalized by ADR-035 (2026-08-04, correcting this section's prior reference to an unimplemented `prisma.$systemContext`): **Pattern 1, Explicit Tenant Rebind** (a PlatformAdmin use case manually rebinds Tenant Context to a caller-supplied target tenant, then calls the ordinary tenant-scoped repository unchanged — no repository-level exception at all) and **Pattern 2, Tenant-Agnostic Raw Reader** (a dedicated reader class injects the raw `PrismaService` directly, for genuinely cross-tenant reads with no single tenant identity — restricted to files explicitly listed in `.eslintrc.js`'s `no-restricted-imports` `excludedFiles` whitelist). Pattern 2 must never be used inside an ordinary feature-module repository outside that whitelist, and any addition to the whitelist must be justified with a doc comment on the class itself, per TENANCY.md.
 
 ---
 

@@ -1,0 +1,675 @@
+{
+  "info": {
+    "_postman_id": "9075e734-067d-44eb-bf77-a4828a4a02cf",
+    "name": "TAVLA — Platform Back Office (Phase 19.1, standalone fragment)",
+    "description": "Standalone Postman fragment for Phase 19.1 — Platform Back Office Foundation (ADR-034 subset, ADR-035 tenancy patterns).\n\n**Not yet merged into the main TAVLA API collection** — import this alongside it. Reuses the main collection's `{{baseUrl}}` and `{{platformAdminAccessToken}}` conventions.\n\n**Scope**: Platform Roles/RBAC (PlatformAdmin/PlatformSupport), Platform Admin account CRUD, Restaurant lifecycle (Suspend/Reactivate/Delete/Restore), Organization lifecycle (Suspend/Reactivate/Emergency Ownership Transfer), Account access control (Force Logout/Reset Credentials/Disable/Enable Login).\n\n**Out of scope this fragment**: ADR-033 (Customer Acquisition/Pricing/Revenue), Platform Dashboard, Audit Log Read API, Platform Search, Organization Delete/Restore, Notification delivery aggregation — none implemented this phase.\n\nAll routes: `{{baseUrl}}/platform-admin/...`, guarded by `PlatformAdminGuard` + `PlatformAdminRoleGuard`. Every mutation requires the `PlatformAdmin` tier; `PlatformSupport` is read-only.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://api.tavola.business/api/v1"
+    },
+    {
+      "key": "platformAdminAccessToken",
+      "value": ""
+    },
+    {
+      "key": "platformAdminId",
+      "value": ""
+    },
+    {
+      "key": "newPlatformAdminEmail",
+      "value": "new-support@tavla.internal"
+    },
+    {
+      "key": "newPlatformAdminPassword",
+      "value": "SecurePass123!"
+    },
+    {
+      "key": "targetRestaurantId",
+      "value": ""
+    },
+    {
+      "key": "targetOrganizationId",
+      "value": ""
+    },
+    {
+      "key": "targetOrganizationOwnerUserId",
+      "value": ""
+    },
+    {
+      "key": "targetAccountUserId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "01 - Platform Admin Accounts",
+      "item": [
+        {
+          "name": "Create Platform Admin",
+          "id": "2379de9a-85ec-4616-8220-4584ed359fb7",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/platform-admin/admins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "platform-admin",
+                "admins"
+              ]
+            },
+            "description": "## Purpose\nCreate a Platform Admin or Platform Support account (PlatformAdmin only). Mirrors Restaurant Owner provisioning's trust model — no OTP, the supplied password is final.\n## Authorization\nBearer `{{platformAdminAccessToken}}` (Platform Admin issuer).\nGuards: PlatformAdminGuard, PlatformAdminRoleGuard\n## Required Role\nPlatformAdmin (PlatformSupport denied)\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json`\n## Success Response\nEnvelope message: \"Platform Admin account created successfully.\"\n## Error Responses\n- 403 FORBIDDEN if caller is not an active Platform Admin (or wrong tier)\n- 404 NOT_FOUND for an unknown/cross-tenant id (IDOR-safe)\n## Notes\n- Phase 19.1 (ADR-034 subset). See docs/DECISIONS.md ADR-034/ADR-035.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{platformAdminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{newPlatformAdminEmail}}\",\n  \"password\": \"{{newPlatformAdminPassword}}\",\n  \"firstName\": \"New\",\n  \"lastName\": \"Support\",\n  \"role\": \"PlatformSupport\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Account created (201)', function () { pm.response.to.have.status(201); });",
+                  "const jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.data) { pm.collectionVariables.set('platformAdminId', jsonData.data.id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Platform Admins",
+          "id": "ed1ace9f-c86e-4056-99a3-4b1f80031d29",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/platform-admin/admins",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "platform-admin",
+                "admins"
+              ]
+            },
+            "description": "## Purpose\nList Platform Admin/Support accounts (PlatformAdmin or PlatformSupport).\n## Authorization\nBearer `{{platformAdminAccessToken}}` (Platform Admin issuer).\nGuards: PlatformAdminGuard, PlatformAdminRoleGuard\n## Required Role\nPlatformAdmin or PlatformSupport (read-only)\n## Headers\n- `Authorization: Bearer <token>`\n## Success Response\nEnvelope message: \"Platform Admin accounts retrieved successfully.\"\n## Error Responses\n- 403 FORBIDDEN if caller is not an active Platform Admin (or wrong tier)\n- 404 NOT_FOUND for an unknown/cross-tenant id (IDOR-safe)\n## Notes\n- Phase 19.1 (ADR-034 subset). See docs/DECISIONS.md ADR-034/ADR-035.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{platformAdminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Platform Admin",
+          "id": "f4d24011-df3a-4ad4-b62a-87b74c6447f5",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/platform-admin/admins/{{platformAdminId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "platform-admin",
+                "admins",
+                "{{platformAdminId}}"
+              ]
+            },
+            "description": "## Purpose\nGet a Platform Admin/Support account by id (PlatformAdmin or PlatformSupport).\n## Authorization\nBearer `{{platformAdminAccessToken}}` (Platform Admin issuer).\nGuards: PlatformAdminGuard, PlatformAdminRoleGuard\n## Required Role\nPlatformAdmin or PlatformSupport (read-only)\n## Headers\n- `Authorization: Bearer <token>`\n## Success Response\nEnvelope message: \"Platform Admin account retrieved successfully.\"\n## Error Responses\n- 403 FORBIDDEN if caller is not an active Platform Admin (or wrong tier)\n- 404 NOT_FOUND for an unknown/cross-tenant id (IDOR-safe)\n## Notes\n- Phase 19.1 (ADR-034 subset). See docs/DECISIONS.md ADR-034/ADR-035.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{platformAdminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Platform Admin Role",
+          "id": "a8f1a6a6-039a-4fa6-90bc-50af729a10db",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/platform-admin/admins/{{platformAdminId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "platform-admin",
+                "admins",
+                "{{platformAdminId}}"
+              ]
+            },
+            "description": "## Purpose\nChange a Platform Admin account's role (PlatformAdmin only). `role` is the only mutable field on this resource.\n## Authorization\nBearer `{{platformAdminAccessToken}}` (Platform Admin issuer).\nGuards: PlatformAdminGuard, PlatformAdminRoleGuard\n## Required Role\nPlatformAdmin (PlatformSupport denied)\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json`\n## Success Response\nEnvelope message: \"Platform Admin role updated successfully.\"\n## Error Responses\n- 403 FORBIDDEN if caller is not an active Platform Admin (or wrong tier)\n- 404 NOT_FOUND for an unknown/cross-tenant id (IDOR-safe)\n## Notes\n- Phase 19.1 (ADR-034 subset). See docs/DECISIONS.md ADR-034/ADR-035.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{platformAdminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"PlatformAdmin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Deactivate Platform Admin",
+          "id": "49aa4288-709e-4d7f-bb92-dc914d69b2ad",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/platform-admin/admins/{{platformAdminId}}/deactivate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "platform-admin",
+                "admins",
+                "{{platformAdminId}}",
+                "deactivate"
+              ]
+            },
+            "description": "## Purpose\nDeactivate (revoke) a Platform Admin account (PlatformAdmin only). Terminal until Reactivate. Also serves as \"Delete Platform Admin\" — no hard-delete endpoint exists (no precedent for an audit-relevant entity). Rejects deactivating your own account (self-lockout prevention).\n## Authorization\nBearer `{{platformAdminAccessToken}}` (Platform Admin issuer).\nGuards: PlatformAdminGuard, PlatformAdminRoleGuard\n## Required Role\nPlatformAdmin (PlatformSupport denied)\n## Headers\n- `Authorization: Bearer <token>`\n## Success Response\nEnvelope message: \"Platform Admin account deactivated successfully.\"\n## Error Responses\n- 403 FORBIDDEN if caller is not an active Platform Admin (or wrong tier)\n- 404 NOT_FOUND for an unknown/cross-tenant id (IDOR-safe)\n## Notes\n- Phase 19.1 (ADR-034 subset). See docs/DECISIONS.md ADR-034/ADR-035.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{platformAdminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reactivate Platform Admin",
+          "id": "0ee2c410-b4cd-4320-abef-2b637a4582f1",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/platform-admin/admins/{{platformAdminId}}/reactivate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "platform-admin",
+                "admins",
+                "{{platformAdminId}}",
+                "reactivate"
+              ]
+            },
+            "description": "## Purpose\nReactivate a previously deactivated Platform Admin account (PlatformAdmin only).\n## Authorization\nBearer `{{platformAdminAccessToken}}` (Platform Admin issuer).\nGuards: PlatformAdminGuard, PlatformAdminRoleGuard\n## Required Role\nPlatformAdmin (PlatformSupport denied)\n## Headers\n- `Authorization: Bearer <token>`\n## Success Response\nEnvelope message: \"Platform Admin account reactivated successfully.\"\n## Error Responses\n- 403 FORBIDDEN if caller is not an active Platform Admin (or wrong tier)\n- 404 NOT_FOUND for an unknown/cross-tenant id (IDOR-safe)\n## Notes\n- Phase 19.1 (ADR-034 subset). See docs/DECISIONS.md ADR-034/ADR-035.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{platformAdminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 - Restaurants (Platform Admin lifecycle)",
+      "item": [
+        {
+          "name": "Suspend Restaurant",
+          "id": "3badf1e5-a65b-4ea3-9499-7d774ffb7605",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/platform-admin/restaurants/{{targetRestaurantId}}/suspend",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "platform-admin",
+                "restaurants",
+                "{{targetRestaurantId}}",
+                "suspend"
+              ]
+            },
+            "description": "## Purpose\nSuspend a Restaurant across any Organization (PlatformAdmin only).\n## Authorization\nBearer `{{platformAdminAccessToken}}` (Platform Admin issuer).\nGuards: PlatformAdminGuard, PlatformAdminRoleGuard\n## Required Role\nPlatformAdmin (PlatformSupport denied)\n## Headers\n- `Authorization: Bearer <token>`\n## Success Response\nEnvelope message: \"Restaurant suspended successfully.\"\n## Error Responses\n- 403 FORBIDDEN if caller is not an active Platform Admin (or wrong tier)\n- 404 NOT_FOUND for an unknown/cross-tenant id (IDOR-safe)\n## Notes\n- Phase 19.1 (ADR-034 subset). See docs/DECISIONS.md ADR-034/ADR-035.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{platformAdminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reactivate Restaurant",
+          "id": "aab1b236-0d26-4757-a0ef-7fb68b98bf73",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/platform-admin/restaurants/{{targetRestaurantId}}/reactivate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "platform-admin",
+                "restaurants",
+                "{{targetRestaurantId}}",
+                "reactivate"
+              ]
+            },
+            "description": "## Purpose\nReactivate a suspended Restaurant across any Organization (PlatformAdmin only).\n## Authorization\nBearer `{{platformAdminAccessToken}}` (Platform Admin issuer).\nGuards: PlatformAdminGuard, PlatformAdminRoleGuard\n## Required Role\nPlatformAdmin (PlatformSupport denied)\n## Headers\n- `Authorization: Bearer <token>`\n## Success Response\nEnvelope message: \"Restaurant reactivated successfully.\"\n## Error Responses\n- 403 FORBIDDEN if caller is not an active Platform Admin (or wrong tier)\n- 404 NOT_FOUND for an unknown/cross-tenant id (IDOR-safe)\n## Notes\n- Phase 19.1 (ADR-034 subset). See docs/DECISIONS.md ADR-034/ADR-035.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{platformAdminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Restaurant",
+          "id": "5c819302-4022-4c1b-b74b-17d61cb70b54",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/platform-admin/restaurants/{{targetRestaurantId}}/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "platform-admin",
+                "restaurants",
+                "{{targetRestaurantId}}",
+                "delete"
+              ]
+            },
+            "description": "## Purpose\nSoft-delete a Restaurant across any Organization (PlatformAdmin only). Decrements SubscriptionUsage.restaurantCount in the same transaction (ADR-027 §11).\n## Authorization\nBearer `{{platformAdminAccessToken}}` (Platform Admin issuer).\nGuards: PlatformAdminGuard, PlatformAdminRoleGuard\n## Required Role\nPlatformAdmin (PlatformSupport denied)\n## Headers\n- `Authorization: Bearer <token>`\n## Success Response\nEnvelope message: \"Restaurant deleted successfully.\"\n## Error Responses\n- 403 FORBIDDEN if caller is not an active Platform Admin (or wrong tier)\n- 404 NOT_FOUND for an unknown/cross-tenant id (IDOR-safe)\n## Notes\n- Phase 19.1 (ADR-034 subset). See docs/DECISIONS.md ADR-034/ADR-035.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{platformAdminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Restore Restaurant",
+          "id": "dfb7baa3-dfae-45be-9680-e7b41b9d74d8",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/platform-admin/restaurants/{{targetRestaurantId}}/restore",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "platform-admin",
+                "restaurants",
+                "{{targetRestaurantId}}",
+                "restore"
+              ]
+            },
+            "description": "## Purpose\nRestore a soft-deleted Restaurant across any Organization (PlatformAdmin only). Closes a standing gap — no actor has ever had a restore capability before ADR-034.\n## Authorization\nBearer `{{platformAdminAccessToken}}` (Platform Admin issuer).\nGuards: PlatformAdminGuard, PlatformAdminRoleGuard\n## Required Role\nPlatformAdmin (PlatformSupport denied)\n## Headers\n- `Authorization: Bearer <token>`\n## Success Response\nEnvelope message: \"Restaurant restored successfully.\"\n## Error Responses\n- 403 FORBIDDEN if caller is not an active Platform Admin (or wrong tier)\n- 404 NOT_FOUND for an unknown/cross-tenant id (IDOR-safe)\n## Notes\n- Phase 19.1 (ADR-034 subset). See docs/DECISIONS.md ADR-034/ADR-035.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{platformAdminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 - Organizations (Platform Admin lifecycle)",
+      "item": [
+        {
+          "name": "Suspend Organization",
+          "id": "d3c9c58a-f7fc-47ef-88fc-56c6b8b6a871",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/platform-admin/organizations/{{targetOrganizationId}}/suspend",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "platform-admin",
+                "organizations",
+                "{{targetOrganizationId}}",
+                "suspend"
+              ]
+            },
+            "description": "## Purpose\nSuspend an Organization (PlatformAdmin only). Never cascades to Restaurant.status — no cascade, ever (ADR-034 §5).\n## Authorization\nBearer `{{platformAdminAccessToken}}` (Platform Admin issuer).\nGuards: PlatformAdminGuard, PlatformAdminRoleGuard\n## Required Role\nPlatformAdmin (PlatformSupport denied)\n## Headers\n- `Authorization: Bearer <token>`\n## Success Response\nEnvelope message: \"Organization suspended successfully.\"\n## Error Responses\n- 403 FORBIDDEN if caller is not an active Platform Admin (or wrong tier)\n- 404 NOT_FOUND for an unknown/cross-tenant id (IDOR-safe)\n## Notes\n- Phase 19.1 (ADR-034 subset). See docs/DECISIONS.md ADR-034/ADR-035.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{platformAdminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reactivate Organization",
+          "id": "9c4c689e-4c0d-45fc-936a-c35cdbde9b1f",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/platform-admin/organizations/{{targetOrganizationId}}/reactivate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "platform-admin",
+                "organizations",
+                "{{targetOrganizationId}}",
+                "reactivate"
+              ]
+            },
+            "description": "## Purpose\nReactivate a suspended Organization (PlatformAdmin only).\n## Authorization\nBearer `{{platformAdminAccessToken}}` (Platform Admin issuer).\nGuards: PlatformAdminGuard, PlatformAdminRoleGuard\n## Required Role\nPlatformAdmin (PlatformSupport denied)\n## Headers\n- `Authorization: Bearer <token>`\n## Success Response\nEnvelope message: \"Organization reactivated successfully.\"\n## Error Responses\n- 403 FORBIDDEN if caller is not an active Platform Admin (or wrong tier)\n- 404 NOT_FOUND for an unknown/cross-tenant id (IDOR-safe)\n## Notes\n- Phase 19.1 (ADR-034 subset). See docs/DECISIONS.md ADR-034/ADR-035.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{platformAdminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Transfer Organization Ownership",
+          "id": "e8f2a4ae-eb75-4ef8-9ffc-455e2eb50c4e",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/platform-admin/organizations/{{targetOrganizationId}}/transfer-ownership",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "platform-admin",
+                "organizations",
+                "{{targetOrganizationId}}",
+                "transfer-ownership"
+              ]
+            },
+            "description": "## Purpose\nEmergency-transfer Organization ownership to another Active member (PlatformAdmin only). Narrow, ADR-034 §6 — finally resolves OwnershipTransferRequiredException's previously unsatisfiable precondition. Full self-service Organization management remains out of scope.\n## Authorization\nBearer `{{platformAdminAccessToken}}` (Platform Admin issuer).\nGuards: PlatformAdminGuard, PlatformAdminRoleGuard\n## Required Role\nPlatformAdmin (PlatformSupport denied)\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json`\n## Success Response\nEnvelope message: \"Organization ownership transferred successfully.\"\n## Error Responses\n- 403 FORBIDDEN if caller is not an active Platform Admin (or wrong tier)\n- 404 NOT_FOUND for an unknown/cross-tenant id (IDOR-safe)\n## Notes\n- Phase 19.1 (ADR-034 subset). See docs/DECISIONS.md ADR-034/ADR-035.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{platformAdminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newOwnerUserId\": \"{{targetOrganizationOwnerUserId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04 - Account Access Control",
+      "item": [
+        {
+          "name": "Force Logout",
+          "id": "3d7a0922-95ec-4822-ae68-24e6d475f81b",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/platform-admin/accounts/{{targetAccountUserId}}/force-logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "platform-admin",
+                "accounts",
+                "{{targetAccountUserId}}",
+                "force-logout"
+              ]
+            },
+            "description": "## Purpose\nForce logout every session of a User/Employee account (PlatformAdmin only). Reuses the existing sessionVersion mechanism — no new event.\n## Authorization\nBearer `{{platformAdminAccessToken}}` (Platform Admin issuer).\nGuards: PlatformAdminGuard, PlatformAdminRoleGuard\n## Required Role\nPlatformAdmin (PlatformSupport denied)\n## Headers\n- `Authorization: Bearer <token>`\n## Success Response\nEnvelope message: \"Account sessions revoked successfully.\"\n## Error Responses\n- 403 FORBIDDEN if caller is not an active Platform Admin (or wrong tier)\n- 404 NOT_FOUND for an unknown/cross-tenant id (IDOR-safe)\n## Notes\n- Phase 19.1 (ADR-034 subset). See docs/DECISIONS.md ADR-034/ADR-035.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{platformAdminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reset Credentials",
+          "id": "d032fd2d-372b-4f9a-9605-bdd9d0a1f852",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/platform-admin/accounts/{{targetAccountUserId}}/reset-credentials",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "platform-admin",
+                "accounts",
+                "{{targetAccountUserId}}",
+                "reset-credentials"
+              ]
+            },
+            "description": "## Purpose\nDirectly reset a User/Employee account password (PlatformAdmin only). No OTP step — mirrors Restaurant Owner provisioning's trust model (ADR-022 Decision #15).\n## Authorization\nBearer `{{platformAdminAccessToken}}` (Platform Admin issuer).\nGuards: PlatformAdminGuard, PlatformAdminRoleGuard\n## Required Role\nPlatformAdmin (PlatformSupport denied)\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json`\n## Success Response\nEnvelope message: \"Account credentials reset successfully.\"\n## Error Responses\n- 403 FORBIDDEN if caller is not an active Platform Admin (or wrong tier)\n- 404 NOT_FOUND for an unknown/cross-tenant id (IDOR-safe)\n## Notes\n- Phase 19.1 (ADR-034 subset). See docs/DECISIONS.md ADR-034/ADR-035.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{platformAdminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newPassword\": \"NewSecurePass123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Disable Login",
+          "id": "11a6ef82-7b22-4a68-8f56-c823f6d43567",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/platform-admin/accounts/{{targetAccountUserId}}/disable-login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "platform-admin",
+                "accounts",
+                "{{targetAccountUserId}}",
+                "disable-login"
+              ]
+            },
+            "description": "## Purpose\nDisable login for a User/Employee account (PlatformAdmin only).\n## Authorization\nBearer `{{platformAdminAccessToken}}` (Platform Admin issuer).\nGuards: PlatformAdminGuard, PlatformAdminRoleGuard\n## Required Role\nPlatformAdmin (PlatformSupport denied)\n## Headers\n- `Authorization: Bearer <token>`\n## Success Response\nEnvelope message: \"Account login disabled successfully.\"\n## Error Responses\n- 403 FORBIDDEN if caller is not an active Platform Admin (or wrong tier)\n- 404 NOT_FOUND for an unknown/cross-tenant id (IDOR-safe)\n## Notes\n- Phase 19.1 (ADR-034 subset). See docs/DECISIONS.md ADR-034/ADR-035.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{platformAdminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Enable Login",
+          "id": "f11a6d68-cd23-439c-a246-67b875406144",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/platform-admin/accounts/{{targetAccountUserId}}/enable-login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "platform-admin",
+                "accounts",
+                "{{targetAccountUserId}}",
+                "enable-login"
+              ]
+            },
+            "description": "## Purpose\nRe-enable login for a previously-disabled User/Employee account (PlatformAdmin only). Only valid from a Suspended (admin-disabled) status.\n## Authorization\nBearer `{{platformAdminAccessToken}}` (Platform Admin issuer).\nGuards: PlatformAdminGuard, PlatformAdminRoleGuard\n## Required Role\nPlatformAdmin (PlatformSupport denied)\n## Headers\n- `Authorization: Bearer <token>`\n## Success Response\nEnvelope message: \"Account login enabled successfully.\"\n## Error Responses\n- 403 FORBIDDEN if caller is not an active Platform Admin (or wrong tier)\n- 404 NOT_FOUND for an unknown/cross-tenant id (IDOR-safe)\n## Notes\n- Phase 19.1 (ADR-034 subset). See docs/DECISIONS.md ADR-034/ADR-035.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{platformAdminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

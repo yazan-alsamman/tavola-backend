@@ -1,13 +1,19 @@
 /**
- * The three actor categories DATABASE_SCHEMA.md's "Audit Logs" section
- * defines. Deliberately narrower than the JWT `AccessTokenActorType` union
- * (`User`/`Employee`/`OrganizationMember`/`PlatformAdmin`) - that is a
+ * The actor categories DATABASE_SCHEMA.md's "Audit Logs" section defines.
+ * Deliberately narrower than the JWT `AccessTokenActorType` union (`User`/
+ * `Employee`/`OrganizationMember`/`PlatformAdmin`) - that is a
  * request-authentication concept, this is the audit table's own documented
- * schema. Callers map `OrganizationMember`/`PlatformAdmin` actors onto
- * `User` (the closest fit within the three documented values) rather than
- * expanding this enum, which would be an undocumented schema change.
+ * schema. Callers map `OrganizationMember` actors onto `User` (no proven
+ * need yet for a finer distinction - ADR-034 §1) rather than expanding this
+ * enum further than the schema does.
+ *
+ * `PlatformAdmin` was added by ADR-034 §1 / Phase 19.1 (`AuditActorType`
+ * Prisma migration, prerequisite for every PlatformAdmin-mutating capability
+ * this phase introduces to be correctly attributed) - no longer an
+ * undocumented schema change, unlike when this comment previously mapped
+ * PlatformAdmin actors onto `User`.
  */
-export type AuditActorType = 'User' | 'Employee' | 'System';
+export type AuditActorType = 'User' | 'Employee' | 'System' | 'PlatformAdmin';
 
 /**
  * Mirrors DATABASE_SCHEMA.md's "Audit Logs" field list exactly - no

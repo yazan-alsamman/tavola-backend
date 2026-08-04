@@ -2606,6 +2606,64 @@ This gap was first recorded during Phase 15.5 (see note above, line ~2443) and r
 
 ---
 
+# Phase 19 — Platform Back Office
+
+Status: **Phase 19.1 (Platform Back Office Foundation) implemented 2026-08-04** — a curated subset of ADR-034: Platform Roles/RBAC, Platform Admin account CRUD, Restaurant lifecycle (Suspend/Reactivate/Delete/Restore), Organization Suspend/Reactivate/Emergency Ownership Transfer, and Account access control. See the Phase 19.1 Implementation Report below. **⏳ Pending** for everything else — ADR-033 (Customer Acquisition & Pricing Engine) in full, plus ADR-034's Audit Log Read API, narrow per-entity lookup/search, Platform Dashboard composition, Notification delivery-status aggregation, and complete Organization Management (Delete/Restore) — none authorized or implemented this session. Architecture frozen 2026-08-04 across three sessions (Part 1: Customer Acquisition & Pricing Engine; Part 2/Final Decision: PlatformAdmin Operational Authority and the cross-tenant tenancy correction), see `DECISIONS.md` ADR-033/ADR-034/ADR-035.
+
+Delivers `PRODUCT_REQUIREMENTS.md` FR-19 (Platform Administration), extended with FR-19.4/FR-19.5/FR-19.6. This is the internal system used by the company operating the platform — distinct from the Restaurant Dashboard (Organization-scoped) and the Customer App.
+
+**ADR-033 — Customer Acquisition & Pricing Engine (financial source of truth, not billing):**
+
+- [ ] Prisma schema (`CustomerAcquisition`, `AcquisitionPricingRule`) + migration, including the partial unique indexes on `(restaurantId, userId)` / `(restaurantId, reservationGuestId)` WHERE `status != 'Reversed'` (reuses ADR-026's `Table.isMergePrimary` partial-index shape)
+- [ ] Domain layer (entities, repository interfaces, domain exceptions, domain events)
+- [ ] Application layer — acquisition-on-approval side effect (same transaction as `ApproveReservationUseCase`), Reversal use case, Manual Recording use case, Pricing resolution service (exact-currency-match, most-specific-scope), Pricing simulation/preview use case, Export use case (Heavy-Operations pattern), Revenue Reporting query use case (`groupBy` day/week/month/quarter/year/restaurant/organization/source, "Recorded"/"Reversed" metrics only — never "Collected"/"Outstanding")
+- [ ] Infrastructure layer (Prisma repositories/mappers)
+- [ ] Presentation layer — see `API_GUIDELINES.md`'s Platform Back Office Route Ownership table
+- [ ] Seed: default Platform-scope `AcquisitionPricingRule` (1000 SYP flat)
+- [ ] Tenancy integration tests (cross-org leak, missing-context-throws) for both new transitively-tenant-owned models
+- [ ] Unit / integration / E2E tests per `TESTING_STRATEGY.md`
+
+**ADR-034 — PlatformAdmin Operational Authority:**
+
+- [x] `AuditActorType` enum migration (`PlatformAdmin` value) — sequenced first, prerequisite for correct attribution of everything below. **Implemented Phase 19.1.**
+- [ ] Audit Log Read API (`AuditLogReaderPort` + Prisma implementation, `GET /platform-admin/audit-logs`) — sequenced second. **Not implemented — out of Phase 19.1 scope.**
+- [x] Restaurant Suspend/Reactivate/Delete/Restore (PlatformAdmin controller extension; new `RestaurantRestored` event). **Implemented Phase 19.1** (`PlatformAdminRestaurantsController`, resolves `restaurantId → organizationId` via a new ADR-035 Pattern 2 reader before Pattern-1 rebinding, since this route family only supplies `restaurantId`).
+- [x] Organization Suspend/Reactivate (Organization module's first real use-case layer; new `OrganizationReactivated` event; no cascade to `Restaurant.status`). **Implemented Phase 19.1.**
+- [ ] Organization Delete/Restore (new `OrganizationDeleted`/`OrganizationRestored` events). **Not implemented — explicitly out of Phase 19.1 scope** ("complete Organization Management" not authorized this session).
+- [x] Narrow emergency Organization ownership transfer (reuses `OrganizationMembershipPolicy.assertSingleActiveOwner` via a new `transferOwnership` policy method). **Implemented Phase 19.1** — resolves `OwnershipTransferRequiredException`'s previously unsatisfiable precondition.
+- [x] Account access control: Force Logout (reuses `sessionVersion`), Credential Reset (new `PlatformAdminCredentialReset` event), Disable/Enable Login (reuses `User.status`, new events). **Implemented Phase 19.1.**
+- [x] PlatformAdmin account CRUD (create/list/get/revoke) — delivers FR-19.1. **Implemented Phase 19.1**, plus two implementation-scope additions beyond the literal "create/list/revoke" text: Reactivate (clearing `revokedAt`) and Update (role change) — symmetric with Restaurant/Organization Reactivate, no new schema. No hard-delete endpoint — no precedent in this codebase for hard-deleting an audit-relevant entity; Deactivate serves as "Delete."
+- [x] `PlatformAdminClaims.role` field (`PlatformAdmin | PlatformSupport`) + new `@RequirePlatformAdminRole` decorator/guard pair. **Implemented Phase 19.1** (`PlatformAdminRoleGuard`; `PlatformAdminGuard` re-verifies the live role every request, not just at token issuance).
+- [ ] Narrow per-entity lookup (Restaurant/Organization/Acquisition/PricingRule, `ILIKE`-based, no search engine). **Not implemented.**
+- [ ] Platform Dashboard composition endpoint (parallelized reads across Restaurant/Organization/Acquisition/Subscription/Messaging). **Not implemented.**
+- [ ] Notification delivery-status aggregation (direct read over `Notification.pushStatus`). **Not implemented.**
+- [x] Unit / integration / E2E tests per `TESTING_STRATEGY.md` — **for the Phase 19.1 subset above**, per its own Implementation Report below.
+
+**ADR-035 — Cross-Tenant Access Patterns (documentation correction, no code change of its own):** `$systemContext` retired; Explicit Tenant Rebind and Tenant-Agnostic Raw Reader formalized as the two canonical patterns (already in production use since ADR-027 and ADR-018 respectively). Any Phase 19 code touching cross-tenant data must classify itself as Pattern 1 or Pattern 2 per `TENANCY.md`. **Phase 19.1 is this pattern's first Platform Back Office implementation** — see TENANCY.md's own Phase 19.1 note.
+
+**Explicitly out of scope (see ADR-034's Alternatives Considered):** full self-service Organization management, Impersonation, bulk operations (beyond range-based export), a unified/full-text search engine, and operational-monitoring widgets better served by existing infrastructure (Prometheus/Grafana, MinIO console, PostgreSQL tooling).
+
+**ADR-033 implementation is not authorized by this freeze** — a separate explicit go-ahead is required before its Prisma migration or code is written, per the two-step convention used by every phase since ADR-026. Phase 19.1 (the ADR-034 subset above) was explicitly authorized and implemented 2026-08-04.
+
+---
+
+## Phase 19.1 — Platform Back Office Foundation: Implementation Report
+
+**Status: Implemented 2026-08-04.** Scope: a curated subset of ADR-034 explicitly authorized this session — see the checklist above for exactly which ADR-034 items are in vs. out.
+
+**Key implementation decisions** (none change frozen architecture; all are minimal, precedented extensions):
+
+* **Restaurant lookup-by-id**: `/platform-admin/restaurants/:id/...` only supplies `restaurantId`, but Pattern 1 (Explicit Tenant Rebind) needs `organizationId` first. Resolved with a new ADR-035 Pattern 2 reader, `PrismaPlatformAdminRestaurantLookupReader` (added to `.eslintrc.js`'s raw-`PrismaService` whitelist), which resolves `restaurantId → organizationId` with no tenant context bound, then the use case Pattern-1-rebinds to mutate through the ordinary tenant-scoped `RestaurantRepository`.
+* **Actor attribution for events both PlatformAdmin and Owner/Admin can now produce** (`RestaurantSuspended`, `OrganizationSuspended`, etc.): `TenantContext.actorType`/`TenantBootstrapContext` gained an additive `'PlatformAdmin'` value, and `AuditingEventPublisher` branches on it — the same ambiguous-actor mechanism already used for `TableMerged`/`ReservationCancelled`, extended rather than duplicated. Force Logout's reuse of `SessionFamilyRevokedEvent` is disambiguated via its existing `reason` field instead (no TenantContext exists for Account operations), with one new optional `actorId` payload field.
+* **`AuditLogWriterPort`'s `AuditActorType` TS type** (deliberately narrower than the Prisma enum, to avoid an "undocumented schema change") is widened to include `'PlatformAdmin'` — no longer undocumented once ADR-034 §1's migration landed.
+* **"Delete Platform Admin"**: no hard-delete endpoint — no precedent anywhere in this codebase for hard-deleting an audit-relevant entity (Employee/Restaurant/Organization are all soft-delete-only). Deactivate (revoke) serves this role.
+* **Ownership Transfer** bypasses `OrganizationMember.changeRole()`'s owner-guard by design (that guard is exactly what makes transfer impossible today) via a new `OrganizationMembershipPolicy.transferOwnership()` method, not a change to `changeRole()`.
+* **`AuthenticationModule` ↔ `OrganizationsModule` ↔ `PlatformAdminModule`** module-import cycles resolved with `forwardRef` on both sides of each new edge, matching the existing `RestaurantsModule`↔`SubscriptionsModule`↔`AuthenticationModule` precedent.
+
+**Verification**: TypeScript (`tsc --noEmit`), ESLint (zero warnings), `nest build`, and the full existing unit test suite (249 suites / 1970 tests) all pass with zero regressions; full `AppModule` DI graph compiles (proven by running the pre-existing `platform-admin.e2e-spec.ts`, which requires every module — including this phase's new cross-module `forwardRef` wiring — to resolve). Docker/PostgreSQL/Redis were not reachable in the implementing environment, so live migration deploy, integration tests, and e2e assertions against a real database could not be executed this session — new integration/e2e specs are written and confirmed to compile and skip gracefully via this codebase's existing `isDatabaseReachable()`/`skipUnlessDatabaseAvailable()` convention; running them against a real database (`docker compose up`, `prisma migrate deploy`, `pnpm test:integration`, `pnpm test:e2e`) remains an open verification step for whoever next has Docker access.
+
+---
+
 # Rules
 
 Whenever a task is completed:

@@ -13,6 +13,14 @@ export interface TenantBootstrapContext {
   readonly organizationId: string;
   readonly userId: string | null;
   readonly correlationId: string;
+  /**
+   * Phase 19.1 (ADR-034/035): set only by PlatformAdmin Restaurant/
+   * Organization lifecycle use cases Explicit-Tenant-Rebinding (Pattern 1)
+   * to a caller-supplied target tenant, so `AuditingEventPublisher` can
+   * correctly attribute events also producible by an ordinary
+   * OrganizationMember (which never sets this field).
+   */
+  readonly actorType?: 'PlatformAdmin';
 }
 
 export interface TenantContextPort {

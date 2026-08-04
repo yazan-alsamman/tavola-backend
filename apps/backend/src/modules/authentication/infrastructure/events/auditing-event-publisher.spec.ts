@@ -14,15 +14,32 @@ import {
   UserLoggedInEvent,
   UserLoggedOutEvent,
   UserRegisteredEvent,
+  PlatformAdminCredentialResetEvent,
+  AccountLoginDisabledEvent,
+  AccountLoginEnabledEvent,
 } from '../../domain/events/authentication.events';
+import { SessionRevokeReason } from '../../domain/enums/authentication.enums';
 import { DomainEvent } from '@shared/domain/base/domain-event.base';
 import {
   RestaurantActivatedEvent,
   RestaurantCreatedEvent,
   RestaurantDeletedEvent,
+  RestaurantRestoredEvent,
   RestaurantSuspendedEvent,
   RestaurantUpdatedEvent,
 } from '@modules/restaurants/domain/events/restaurant.events';
+import {
+  OrganizationOwnershipTransferredEvent,
+  OrganizationReactivatedEvent,
+  OrganizationSuspendedEvent,
+} from '@modules/organizations/domain/events/organization.events';
+import {
+  PlatformAdminAccountCreatedEvent,
+  PlatformAdminAccountReactivatedEvent,
+  PlatformAdminAccountRevokedEvent,
+  PlatformAdminRoleChangedEvent,
+} from '@modules/platform-admin/domain/events/platform-admin.events';
+import { PlatformAdminRole } from '@modules/platform-admin/domain/enums/platform-admin.enums';
 import {
   TableMergedEvent,
   TableMovedEvent,
@@ -99,7 +116,7 @@ describe('AuditingEventPublisher', () => {
 
   function createPublisher(
     organizationId: string | null = null,
-    actorType: 'User' | 'Employee' | 'OrganizationMember' | null = null,
+    actorType: 'User' | 'Employee' | 'OrganizationMember' | 'PlatformAdmin' | null = null,
   ) {
     const inner = new NoopLoggingEventPublisher();
     const auditLogWriter = new RecordingAuditLogWriter();
@@ -421,6 +438,290 @@ describe('AuditingEventPublisher', () => {
         actorId: userId,
         targetType: 'Restaurant',
         targetId: restaurantId,
+      });
+    });
+
+    it('Phase 19.1: RestaurantSuspendedEvent attributes actorType User for the existing Owner/Admin path (TenantContext.actorType unset)', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId, null);
+      await publisher.publish(new RestaurantSuspendedEvent('event-1', restaurantPayload(), now));
+
+      expect(auditLogWriter.entries[0]).toMatchObject({ actorType: 'User' });
+    });
+
+    it('Phase 19.1: RestaurantSuspendedEvent attributes actorType PlatformAdmin when the new PlatformAdmin path Explicit-Tenant-Rebinds with actorType (ADR-034 §1)', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId, 'PlatformAdmin');
+      await publisher.publish(new RestaurantSuspendedEvent('event-1', restaurantPayload(), now));
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'restaurant.suspended',
+        actorType: 'PlatformAdmin',
+      });
+    });
+
+    it('Phase 19.1: RestaurantActivatedEvent attributes actorType PlatformAdmin for the new Reactivate path', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId, 'PlatformAdmin');
+      await publisher.publish(new RestaurantActivatedEvent('event-1', restaurantPayload(), now));
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'restaurant.activated',
+        actorType: 'PlatformAdmin',
+      });
+    });
+
+    it('Phase 19.1: RestaurantDeletedEvent attributes actorType PlatformAdmin for the new PlatformAdmin Delete path', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId, 'PlatformAdmin');
+      await publisher.publish(new RestaurantDeletedEvent('event-1', restaurantPayload(), now));
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'restaurant.deleted',
+        actorType: 'PlatformAdmin',
+      });
+    });
+
+    it('Phase 19.1 (ADR-034 §3): maps RestaurantRestoredEvent to restaurant.restored, always PlatformAdmin (no other actor has ever had this capability)', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId);
+      await publisher.publish(new RestaurantRestoredEvent('event-1', restaurantPayload(), now));
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'restaurant.restored',
+        actorId: userId,
+        actorType: 'PlatformAdmin',
+        targetType: 'Restaurant',
+        targetId: restaurantId,
+      });
+    });
+  });
+
+  describe('Phase 19.1 — Organization events (ADR-034 §4/§6)', () => {
+    const organizationId = '66666666-6666-4666-8666-666666666666';
+
+    function orgPayload() {
+      return { organizationId, actorId: userId };
+    }
+
+    it('maps OrganizationSuspendedEvent to organization.suspended, attributed User for the (currently unbuilt) Owner path', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId, null);
+      await publisher.publish(
+        new OrganizationSuspendedEvent('event-1', orgPayload(), now, 'corr-1'),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'organization.suspended',
+        actorId: userId,
+        actorType: 'User',
+        targetType: 'Organization',
+        targetId: organizationId,
+        organizationId,
+        correlationId: 'corr-1',
+      });
+    });
+
+    it('maps OrganizationSuspendedEvent to actorType PlatformAdmin for the real, only-existing PlatformAdmin-authorized producer', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId, 'PlatformAdmin');
+      await publisher.publish(new OrganizationSuspendedEvent('event-1', orgPayload(), now));
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'organization.suspended',
+        actorType: 'PlatformAdmin',
+      });
+    });
+
+    it('maps OrganizationReactivatedEvent to organization.reactivated', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId, 'PlatformAdmin');
+      await publisher.publish(new OrganizationReactivatedEvent('event-1', orgPayload(), now));
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'organization.reactivated',
+        actorType: 'PlatformAdmin',
+        targetType: 'Organization',
+        targetId: organizationId,
+      });
+    });
+
+    it('maps OrganizationOwnershipTransferredEvent to organization.ownership_transferred, always PlatformAdmin (ADR-034 §6 - narrow, PlatformAdmin-only)', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId);
+      const previousOwnerUserId = '77777777-7777-4777-8777-777777777777';
+      const newOwnerUserId = '88888888-8888-4888-8888-888888888888';
+      await publisher.publish(
+        new OrganizationOwnershipTransferredEvent(
+          'event-1',
+          { organizationId, actorId: userId, previousOwnerUserId, newOwnerUserId },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'organization.ownership_transferred',
+        actorId: userId,
+        actorType: 'PlatformAdmin',
+        targetType: 'Organization',
+        targetId: organizationId,
+      });
+    });
+  });
+
+  describe('Phase 19.1 — Platform Admin account events (ADR-034 §10-11)', () => {
+    const platformAdminId = '99999999-9999-4999-8999-999999999999';
+
+    it('maps PlatformAdminAccountCreatedEvent to platform_admin.admin_account.created', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      await publisher.publish(
+        new PlatformAdminAccountCreatedEvent(
+          'event-1',
+          { platformAdminId, role: PlatformAdminRole.PlatformSupport, actorId: userId },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'platform_admin.admin_account.created',
+        actorId: userId,
+        actorType: 'PlatformAdmin',
+        targetType: 'PlatformAdmin',
+        targetId: platformAdminId,
+      });
+    });
+
+    it('maps PlatformAdminAccountRevokedEvent to platform_admin.admin_account.revoked', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      await publisher.publish(
+        new PlatformAdminAccountRevokedEvent(
+          'event-1',
+          { platformAdminId, role: PlatformAdminRole.PlatformAdmin, actorId: userId },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'platform_admin.admin_account.revoked',
+        actorType: 'PlatformAdmin',
+        targetId: platformAdminId,
+      });
+    });
+
+    it('maps PlatformAdminAccountReactivatedEvent to platform_admin.admin_account.reactivated', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      await publisher.publish(
+        new PlatformAdminAccountReactivatedEvent(
+          'event-1',
+          { platformAdminId, role: PlatformAdminRole.PlatformAdmin, actorId: userId },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'platform_admin.admin_account.reactivated',
+        targetId: platformAdminId,
+      });
+    });
+
+    it('maps PlatformAdminRoleChangedEvent to platform_admin.admin_account.role_changed', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      await publisher.publish(
+        new PlatformAdminRoleChangedEvent(
+          'event-1',
+          {
+            platformAdminId,
+            role: PlatformAdminRole.PlatformAdmin,
+            previousRole: PlatformAdminRole.PlatformSupport,
+            actorId: userId,
+          },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'platform_admin.admin_account.role_changed',
+        targetId: platformAdminId,
+      });
+    });
+  });
+
+  describe('Phase 19.1 — Account access control events (ADR-034 §8)', () => {
+    it('maps PlatformAdminCredentialResetEvent to platform_admin.account.credentials_reset, actorId is the admin (resetBy), target is the affected account', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      const targetUserId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+      await publisher.publish(
+        new PlatformAdminCredentialResetEvent('event-1', { targetUserId, resetBy: userId }, now),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'platform_admin.account.credentials_reset',
+        actorId: userId,
+        actorType: 'PlatformAdmin',
+        targetType: 'User',
+        targetId: targetUserId,
+      });
+    });
+
+    it('maps AccountLoginDisabledEvent to platform_admin.account.login_disabled', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      const targetUserId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+      await publisher.publish(
+        new AccountLoginDisabledEvent('event-1', { targetUserId, actorId: userId }, now),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'platform_admin.account.login_disabled',
+        actorType: 'PlatformAdmin',
+        targetId: targetUserId,
+      });
+    });
+
+    it('maps AccountLoginEnabledEvent to platform_admin.account.login_enabled', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      const targetUserId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+      await publisher.publish(
+        new AccountLoginEnabledEvent('event-1', { targetUserId, actorId: userId }, now),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'platform_admin.account.login_enabled',
+        actorType: 'PlatformAdmin',
+        targetId: targetUserId,
+      });
+    });
+
+    it('Force Logout: SessionFamilyRevokedEvent with reason=Admin attributes actorType PlatformAdmin and actorId from the new optional field, distinct from the self-service target', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      const targetUserId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+      const adminActorId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+      await publisher.publish(
+        new SessionFamilyRevokedEvent(
+          'event-1',
+          {
+            userId: targetUserId,
+            tokenFamilyId: 'all',
+            reason: SessionRevokeReason.Admin,
+            actorId: adminActorId,
+          },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'auth.session_family.revoked',
+        actorId: adminActorId,
+        actorType: 'PlatformAdmin',
+        targetType: 'TokenFamily',
+        targetId: 'all',
+      });
+    });
+
+    it('existing self-service SessionFamilyRevokedEvent producers (reuse-detected) remain attributed User with actorId falling back to payload.userId (unchanged behavior)', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      await publisher.publish(
+        new SessionFamilyRevokedEvent(
+          'event-1',
+          { userId, tokenFamilyId, reason: SessionRevokeReason.ReuseDetected },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        actorId: userId,
+        actorType: 'User',
+        targetId: tokenFamilyId,
       });
     });
   });

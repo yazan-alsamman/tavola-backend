@@ -18,7 +18,7 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://187.127.76.76:3000/api/v1"
+      "value": "https://api.tavola.business/api/v1"
     },
     {
       "key": "accessToken",
@@ -1386,6 +1386,611 @@
             }
           },
           "response": []
+        },
+        {
+          "name": "Reservations",
+          "description": "Phase 18.x (Customer Reservation History, mobile-facing) - the authenticated Customer's own reservation set/upcoming/history/details, distinct from `08 - Reservations`'s plain `GET /reservations`/`GET /reservations/:id` (mine, unfiltered, no actor-type gate).",
+          "item": [
+            {
+              "name": "Get My Reservations",
+              "id": "7cf1c4ae-e6aa-42b8-a100-0460795a0146",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/reservations/my?page=1&limit=20",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "reservations",
+                    "my"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "Defaults to 1."
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "description": "Defaults to 20, max 100."
+                    },
+                    {
+                      "key": "restaurantId",
+                      "value": "{{restaurantId}}",
+                      "description": "Filter by restaurant.",
+                      "disabled": true
+                    },
+                    {
+                      "key": "branchId",
+                      "value": "{{branchId}}",
+                      "description": "Filter by branch.",
+                      "disabled": true
+                    },
+                    {
+                      "key": "dateFrom",
+                      "value": "2026-08-01",
+                      "description": "Inclusive lower bound against reservationDate.",
+                      "disabled": true
+                    },
+                    {
+                      "key": "dateTo",
+                      "value": "2026-12-31",
+                      "description": "Inclusive upper bound against reservationDate.",
+                      "disabled": true
+                    },
+                    {
+                      "key": "sort",
+                      "value": "reservationDate",
+                      "description": "reservationDate | createdAt. Defaults to reservationDate.",
+                      "disabled": true
+                    },
+                    {
+                      "key": "order",
+                      "value": "desc",
+                      "description": "asc | desc. Defaults to desc.",
+                      "disabled": true
+                    },
+                    {
+                      "key": "status",
+                      "value": "Approved",
+                      "description": "Pending | Approved | Rejected | Cancelled | Completed | Expired | NoShow. Only accepted on this route.",
+                      "disabled": true
+                    }
+                  ]
+                },
+                "description": "## Purpose\nReturns the authenticated Customer's complete reservation set (upcoming + history combined), enriched with Restaurant/Branch/Table display fields (one joined query, no N+1).\n## Authorization\nBearer `{{customerAccessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nCustomer (User actor only - an Employee or OrganizationMember token is rejected with 403, even if it happens to own the reservation)\n## Headers\n- `Authorization: Bearer <token>`\n## Path Params\n_None_\n## Query Params\n- `page`, `limit` - pagination\n- `restaurantId`, `branchId` - filter by restaurant/branch\n- `dateFrom`, `dateTo` - inclusive reservationDate range\n- `sort` (reservationDate | createdAt), `order` (asc | desc)\n- `status` - the only one of the four GET /reservations/my* routes that accepts this filter\n## Body\n_None_\n## Success Response\nEnvelope message: \"Your reservations retrieved successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR (invalid page/limit/status/date/sort/order)\n- **401**: AUTH_INVALID_TOKEN, AUTH_EXPIRED_TOKEN\n- **403**: FORBIDDEN (caller is not a Customer)\n## Notes\n- Controller: `ReservationsController.myReservations`\n- Full path: `/api/v1/reservations/my`\n- Always resolves from the caller's own JWT userId, never a client-supplied id.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{customerAccessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [
+                {
+                  "name": "200 OK - get my reservations",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "",
+                      "host": [],
+                      "path": []
+                    }
+                  },
+                  "status": "OK",
+                  "code": 200,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n  \"success\": true,\n  \"message\": \"Your reservations retrieved successfully.\",\n  \"data\": {\n    \"items\": [\n      {\n        \"reservationId\": \"6f1c9f1e-6b1a-4b0a-8b0e-2c9f1e6b1a4b\",\n        \"restaurantId\": \"{{restaurantId}}\",\n        \"restaurantName\": \"The Old Mill\",\n        \"restaurantImage\": \"9f8e7d6c-5b4a-3928-1706-f5e4d3c2b1a0\",\n        \"branchId\": \"{{branchId}}\",\n        \"branchName\": \"123 Main St\",\n        \"reservationDate\": \"2026-09-12\",\n        \"reservationStartTime\": \"2026-09-12T18:00:00.000Z\",\n        \"reservationEndTime\": \"2026-09-12T19:30:00.000Z\",\n        \"partySize\": 2,\n        \"status\": \"Approved\",\n        \"reservationSource\": \"Online\",\n        \"createdAt\": \"2026-08-20T09:15:00.000Z\",\n        \"updatedAt\": \"2026-08-20T09:15:05.000Z\",\n        \"specialRequest\": \"Window seat please\",\n        \"table\": {\n          \"tableId\": \"{{tableId}}\",\n          \"tableNumber\": \"T12\",\n          \"capacity\": 4\n        }\n      }\n    ],\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 1\n  }\n}"
+                },
+                {
+                  "name": "401 Unauthorized - missing/expired access token",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "",
+                      "host": [],
+                      "path": []
+                    }
+                  },
+                  "status": "Unauthorized",
+                  "code": 401,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n  \"success\": false,\n  \"message\": \"Access token is missing, invalid, or expired.\",\n  \"error\": {\n    \"code\": \"AUTH_INVALID_TOKEN\"\n  }\n}"
+                },
+                {
+                  "name": "403 Forbidden - actor is not a Customer",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "",
+                      "host": [],
+                      "path": []
+                    }
+                  },
+                  "status": "Forbidden",
+                  "code": 403,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n  \"success\": false,\n  \"message\": \"You do not have permission to perform this action.\",\n  \"error\": {\n    \"code\": \"FORBIDDEN\"\n  }\n}"
+                },
+                {
+                  "name": "400 Bad Request - invalid query params",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "",
+                      "host": [],
+                      "path": []
+                    }
+                  },
+                  "status": "Bad Request",
+                  "code": 400,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n  \"success\": false,\n  \"message\": \"status must be one of the following values: Pending, Approved, Rejected, Cancelled, Completed, Expired, NoShow\",\n  \"error\": {\n    \"code\": \"VALIDATION_ERROR\"\n  }\n}"
+                }
+              ]
+            },
+            {
+              "name": "Get My Upcoming Reservations",
+              "id": "6c458e8e-d369-403c-b89c-e465bc7664d3",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/reservations/my/upcoming?page=1&limit=20",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "reservations",
+                    "my",
+                    "upcoming"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "Defaults to 1."
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "description": "Defaults to 20, max 100."
+                    },
+                    {
+                      "key": "restaurantId",
+                      "value": "{{restaurantId}}",
+                      "description": "Filter by restaurant.",
+                      "disabled": true
+                    },
+                    {
+                      "key": "branchId",
+                      "value": "{{branchId}}",
+                      "description": "Filter by branch.",
+                      "disabled": true
+                    },
+                    {
+                      "key": "dateFrom",
+                      "value": "2026-08-01",
+                      "description": "Inclusive lower bound against reservationDate.",
+                      "disabled": true
+                    },
+                    {
+                      "key": "dateTo",
+                      "value": "2026-12-31",
+                      "description": "Inclusive upper bound against reservationDate.",
+                      "disabled": true
+                    },
+                    {
+                      "key": "sort",
+                      "value": "reservationDate",
+                      "description": "reservationDate | createdAt. Defaults to reservationDate.",
+                      "disabled": true
+                    },
+                    {
+                      "key": "order",
+                      "value": "desc",
+                      "description": "asc | desc. Defaults to desc.",
+                      "disabled": true
+                    }
+                  ]
+                },
+                "description": "## Purpose\nReturns only the authenticated Customer's future reservations - derived automatically server-side (Pending/Approved AND reservationStartTime in the future). The client never filters the full dataset itself.\n## Authorization\nBearer `{{customerAccessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nCustomer (User actor only)\n## Headers\n- `Authorization: Bearer <token>`\n## Path Params\n_None_\n## Query Params\n- `page`, `limit` - pagination\n- `restaurantId`, `branchId` - filter by restaurant/branch\n- `dateFrom`, `dateTo` - inclusive reservationDate range\n- `sort` (reservationDate | createdAt), `order` (asc | desc)\n- No `status` filter - status is implied by the scope\n## Body\n_None_\n## Success Response\nEnvelope message: \"Your upcoming reservations retrieved successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR (invalid page/limit/date/sort/order)\n- **401**: AUTH_INVALID_TOKEN, AUTH_EXPIRED_TOKEN\n- **403**: FORBIDDEN (caller is not a Customer)\n## Notes\n- Controller: `ReservationsController.myUpcomingReservations`\n- Full path: `/api/v1/reservations/my/upcoming`\n- Shares SearchMyReservationsUseCase/MyReservationsReaderPort with Get My Reservations and Get My Reservation History verbatim (only the scope differs).",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{customerAccessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [
+                {
+                  "name": "200 OK - get my upcoming reservations",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "",
+                      "host": [],
+                      "path": []
+                    }
+                  },
+                  "status": "OK",
+                  "code": 200,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n  \"success\": true,\n  \"message\": \"Your upcoming reservations retrieved successfully.\",\n  \"data\": {\n    \"items\": [\n      {\n        \"reservationId\": \"6f1c9f1e-6b1a-4b0a-8b0e-2c9f1e6b1a4b\",\n        \"restaurantId\": \"{{restaurantId}}\",\n        \"restaurantName\": \"The Old Mill\",\n        \"restaurantImage\": \"9f8e7d6c-5b4a-3928-1706-f5e4d3c2b1a0\",\n        \"branchId\": \"{{branchId}}\",\n        \"branchName\": \"123 Main St\",\n        \"reservationDate\": \"2026-09-12\",\n        \"reservationStartTime\": \"2026-09-12T18:00:00.000Z\",\n        \"reservationEndTime\": \"2026-09-12T19:30:00.000Z\",\n        \"partySize\": 2,\n        \"status\": \"Approved\",\n        \"reservationSource\": \"Online\",\n        \"createdAt\": \"2026-08-20T09:15:00.000Z\",\n        \"updatedAt\": \"2026-08-20T09:15:05.000Z\",\n        \"specialRequest\": null,\n        \"table\": {\n          \"tableId\": \"{{tableId}}\",\n          \"tableNumber\": \"T12\",\n          \"capacity\": 4\n        }\n      }\n    ],\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 1\n  }\n}"
+                },
+                {
+                  "name": "401 Unauthorized - missing/expired access token",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "",
+                      "host": [],
+                      "path": []
+                    }
+                  },
+                  "status": "Unauthorized",
+                  "code": 401,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n  \"success\": false,\n  \"message\": \"Access token is missing, invalid, or expired.\",\n  \"error\": {\n    \"code\": \"AUTH_INVALID_TOKEN\"\n  }\n}"
+                },
+                {
+                  "name": "403 Forbidden - actor is not a Customer",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "",
+                      "host": [],
+                      "path": []
+                    }
+                  },
+                  "status": "Forbidden",
+                  "code": 403,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n  \"success\": false,\n  \"message\": \"You do not have permission to perform this action.\",\n  \"error\": {\n    \"code\": \"FORBIDDEN\"\n  }\n}"
+                }
+              ]
+            },
+            {
+              "name": "Get My Reservation History",
+              "id": "a6666f2e-fce9-417a-9a26-1a70e6ec76ae",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/reservations/my/history?page=1&limit=20",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "reservations",
+                    "my",
+                    "history"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "Defaults to 1."
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "description": "Defaults to 20, max 100."
+                    },
+                    {
+                      "key": "restaurantId",
+                      "value": "{{restaurantId}}",
+                      "description": "Filter by restaurant.",
+                      "disabled": true
+                    },
+                    {
+                      "key": "branchId",
+                      "value": "{{branchId}}",
+                      "description": "Filter by branch.",
+                      "disabled": true
+                    },
+                    {
+                      "key": "dateFrom",
+                      "value": "2026-08-01",
+                      "description": "Inclusive lower bound against reservationDate.",
+                      "disabled": true
+                    },
+                    {
+                      "key": "dateTo",
+                      "value": "2026-12-31",
+                      "description": "Inclusive upper bound against reservationDate.",
+                      "disabled": true
+                    },
+                    {
+                      "key": "sort",
+                      "value": "reservationDate",
+                      "description": "reservationDate | createdAt. Defaults to reservationDate.",
+                      "disabled": true
+                    },
+                    {
+                      "key": "order",
+                      "value": "desc",
+                      "description": "asc | desc. Defaults to desc.",
+                      "disabled": true
+                    }
+                  ]
+                },
+                "description": "## Purpose\nReturns only the authenticated Customer's completed/cancelled/expired/past reservations - derived automatically server-side. The exact complement of Get My Upcoming Reservations (every terminal status - Rejected/Cancelled/Completed/Expired/NoShow - plus any still-active reservation whose scheduled time has already passed).\n## Authorization\nBearer `{{customerAccessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nCustomer (User actor only)\n## Headers\n- `Authorization: Bearer <token>`\n## Path Params\n_None_\n## Query Params\n- `page`, `limit` - pagination\n- `restaurantId`, `branchId` - filter by restaurant/branch\n- `dateFrom`, `dateTo` - inclusive reservationDate range\n- `sort` (reservationDate | createdAt), `order` (asc | desc)\n- No `status` filter - status is implied by the scope\n## Body\n_None_\n## Success Response\nEnvelope message: \"Your reservation history retrieved successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR (invalid page/limit/date/sort/order)\n- **401**: AUTH_INVALID_TOKEN, AUTH_EXPIRED_TOKEN\n- **403**: FORBIDDEN (caller is not a Customer)\n## Notes\n- Controller: `ReservationsController.myReservationHistory`\n- Full path: `/api/v1/reservations/my/history`\n- A soft-deleted or suspended restaurant's past reservations remain visible with their last-known name/image.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{customerAccessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [
+                {
+                  "name": "200 OK - get my reservation history",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "",
+                      "host": [],
+                      "path": []
+                    }
+                  },
+                  "status": "OK",
+                  "code": 200,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n  \"success\": true,\n  \"message\": \"Your reservation history retrieved successfully.\",\n  \"data\": {\n    \"items\": [\n      {\n        \"reservationId\": \"1a2b3c4d-5e6f-4708-8b9c-0d1e2f3a4b5c\",\n        \"restaurantId\": \"{{restaurantId}}\",\n        \"restaurantName\": \"The Old Mill\",\n        \"restaurantImage\": \"9f8e7d6c-5b4a-3928-1706-f5e4d3c2b1a0\",\n        \"branchId\": \"{{branchId}}\",\n        \"branchName\": \"123 Main St\",\n        \"reservationDate\": \"2026-06-02\",\n        \"reservationStartTime\": \"2026-06-02T19:00:00.000Z\",\n        \"reservationEndTime\": \"2026-06-02T20:30:00.000Z\",\n        \"partySize\": 4,\n        \"status\": \"Completed\",\n        \"reservationSource\": \"Online\",\n        \"createdAt\": \"2026-08-20T09:15:00.000Z\",\n        \"updatedAt\": \"2026-08-20T09:15:05.000Z\",\n        \"specialRequest\": null,\n        \"table\": {\n          \"tableId\": \"{{tableId}}\",\n          \"tableNumber\": \"T04\",\n          \"capacity\": 4\n        }\n      },\n      {\n        \"reservationId\": \"2b3c4d5e-6f70-4819-9c0d-1e2f3a4b5c6d\",\n        \"restaurantId\": \"{{restaurantId}}\",\n        \"restaurantName\": \"The Old Mill\",\n        \"restaurantImage\": \"9f8e7d6c-5b4a-3928-1706-f5e4d3c2b1a0\",\n        \"branchId\": \"{{branchId}}\",\n        \"branchName\": \"123 Main St\",\n        \"reservationDate\": \"2026-04-18\",\n        \"reservationStartTime\": \"2026-04-18T18:30:00.000Z\",\n        \"reservationEndTime\": \"2026-04-18T20:00:00.000Z\",\n        \"partySize\": 2,\n        \"status\": \"Cancelled\",\n        \"reservationSource\": \"Online\",\n        \"createdAt\": \"2026-08-20T09:15:00.000Z\",\n        \"updatedAt\": \"2026-08-20T09:15:05.000Z\",\n        \"specialRequest\": null,\n        \"table\": {\n          \"tableId\": \"{{tableId}}\",\n          \"tableNumber\": \"T12\",\n          \"capacity\": 4\n        }\n      }\n    ],\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 2\n  }\n}"
+                },
+                {
+                  "name": "401 Unauthorized - missing/expired access token",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "",
+                      "host": [],
+                      "path": []
+                    }
+                  },
+                  "status": "Unauthorized",
+                  "code": 401,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n  \"success\": false,\n  \"message\": \"Access token is missing, invalid, or expired.\",\n  \"error\": {\n    \"code\": \"AUTH_INVALID_TOKEN\"\n  }\n}"
+                },
+                {
+                  "name": "403 Forbidden - actor is not a Customer",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "",
+                      "host": [],
+                      "path": []
+                    }
+                  },
+                  "status": "Forbidden",
+                  "code": 403,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n  \"success\": false,\n  \"message\": \"You do not have permission to perform this action.\",\n  \"error\": {\n    \"code\": \"FORBIDDEN\"\n  }\n}"
+                }
+              ]
+            },
+            {
+              "name": "Get My Reservation Details",
+              "id": "6b633917-b869-41d3-b062-49ac3d3dac7a",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/reservations/my/{{reservationId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "reservations",
+                    "my",
+                    "{{reservationId}}"
+                  ]
+                },
+                "description": "## Purpose\nGet one of the authenticated Customer's own reservations by id - the complete flat Reservation shape (all Reservation aggregate fields), reusing the existing reservation response mapper (toReservationResponse) - not the enriched restaurant/branch/table projection the other three GET /reservations/my* routes return.\n## Authorization\nBearer `{{customerAccessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nCustomer (User actor only - an Employee or OrganizationMember token is rejected with 403, even if it happens to own the reservation)\n## Headers\n- `Authorization: Bearer <token>`\n## Path Params\n- `reservationId` (uuid, required)\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Reservation retrieved successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR (reservationId is not a valid UUID)\n- **401**: AUTH_INVALID_TOKEN, AUTH_EXPIRED_TOKEN\n- **403**: FORBIDDEN (caller is not a Customer)\n- **404**: NOT_FOUND (reservation not found, or does not belong to the caller - IDOR-safe, never a distinguishing 403)\n## Notes\n- Controller: `ReservationsController.myReservationDetails`\n- Full path: `/api/v1/reservations/my/:reservationId`\n- Reuses GetMyReservationUseCase (ownership-only, IDOR-safe 404 collapse) verbatim, wrapped with the same Customer-only actor-type gate as the other three GET /reservations/my* routes.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{customerAccessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [
+                {
+                  "name": "200 OK - reservation details retrieved",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "",
+                      "host": [],
+                      "path": []
+                    }
+                  },
+                  "status": "OK",
+                  "code": 200,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n  \"success\": true,\n  \"message\": \"Reservation retrieved successfully.\",\n  \"data\": {\n    \"reservationId\": \"{{reservationId}}\",\n    \"userId\": \"{{customerUserId}}\",\n    \"reservationGuestId\": null,\n    \"restaurantId\": \"{{restaurantId}}\",\n    \"branchId\": \"{{branchId}}\",\n    \"tableId\": \"{{tableId}}\",\n    \"reservationDate\": \"2026-09-12\",\n    \"reservationStartTime\": \"2026-09-12T18:00:00.000Z\",\n    \"reservationEndTime\": \"2026-09-12T19:30:00.000Z\",\n    \"guests\": 2,\n    \"status\": \"Approved\",\n    \"source\": \"Online\",\n    \"notes\": \"Window seat please\",\n    \"approvedBy\": null,\n    \"approvedAt\": \"2026-08-20T09:15:05.000Z\",\n    \"cancelledAt\": null,\n    \"completedAt\": null,\n    \"noShowAt\": null,\n    \"createdAt\": \"2026-08-20T09:15:00.000Z\",\n    \"updatedAt\": \"2026-08-20T09:15:05.000Z\"\n  }\n}"
+                },
+                {
+                  "name": "401 Unauthorized - missing/expired access token",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "",
+                      "host": [],
+                      "path": []
+                    }
+                  },
+                  "status": "Unauthorized",
+                  "code": 401,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n  \"success\": false,\n  \"message\": \"Access token is missing, invalid, or expired.\",\n  \"error\": {\n    \"code\": \"AUTH_INVALID_TOKEN\"\n  }\n}"
+                },
+                {
+                  "name": "403 Forbidden - actor is not a Customer",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "",
+                      "host": [],
+                      "path": []
+                    }
+                  },
+                  "status": "Forbidden",
+                  "code": 403,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n  \"success\": false,\n  \"message\": \"You do not have permission to perform this action.\",\n  \"error\": {\n    \"code\": \"FORBIDDEN\"\n  }\n}"
+                },
+                {
+                  "name": "404 Not Found - unknown or another Customer’s reservation",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "",
+                      "host": [],
+                      "path": []
+                    }
+                  },
+                  "status": "Not Found",
+                  "code": 404,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n  \"success\": false,\n  \"message\": \"Reservation not found.\",\n  \"error\": {\n    \"code\": \"NOT_FOUND\"\n  }\n}"
+                }
+              ]
+            }
+          ]
         }
       ]
     },

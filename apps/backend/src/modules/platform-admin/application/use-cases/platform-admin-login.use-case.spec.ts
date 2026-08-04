@@ -1,7 +1,13 @@
 import { ConfigService } from '@nestjs/config';
 import { PlatformAdminLoginUseCase } from './platform-admin-login.use-case';
 import { InvalidPlatformAdminCredentialsException } from '../../domain/exceptions/invalid-platform-admin-credentials.exception';
-import { PlatformAdminRepository } from '../../domain/repositories/platform-admin.repository';
+import {
+  PlatformAdminAuthContext,
+  PlatformAdminListPage,
+  PlatformAdminRecord,
+  PlatformAdminRepository,
+} from '../../domain/repositories/platform-admin.repository';
+import { PlatformAdminRole } from '../../domain/enums/platform-admin.enums';
 import { JwtPlatformAdminTokenService } from '../../infrastructure/security/jwt-platform-admin-token.service';
 import { RegistrationPolicy } from '@modules/authentication/domain/services/registration-policy';
 import { Email } from '@shared/domain/value-objects/email.vo';
@@ -24,8 +30,29 @@ describe('PlatformAdminLoginUseCase', () => {
 
   class FakePlatformAdminRepository implements PlatformAdminRepository {
     constructor(private readonly activeAdminIds: Set<string>) {}
-    async isActiveAdmin(id: string): Promise<boolean> {
-      return this.activeAdminIds.has(id);
+    async findActiveAdminContext(id: string): Promise<PlatformAdminAuthContext | null> {
+      return this.activeAdminIds.has(id) ? { role: PlatformAdminRole.PlatformAdmin } : null;
+    }
+    findById(): Promise<PlatformAdminRecord | null> {
+      throw new Error('Not needed by this suite.');
+    }
+    findByUserId(): Promise<PlatformAdminRecord | null> {
+      throw new Error('Not needed by this suite.');
+    }
+    list(): Promise<PlatformAdminListPage> {
+      throw new Error('Not needed by this suite.');
+    }
+    create(): Promise<void> {
+      throw new Error('Not needed by this suite.');
+    }
+    updateRole(): Promise<void> {
+      throw new Error('Not needed by this suite.');
+    }
+    revoke(): Promise<void> {
+      throw new Error('Not needed by this suite.');
+    }
+    reactivate(): Promise<void> {
+      throw new Error('Not needed by this suite.');
     }
   }
 

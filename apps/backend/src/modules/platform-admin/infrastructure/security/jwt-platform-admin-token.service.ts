@@ -32,7 +32,7 @@ export class JwtPlatformAdminTokenService implements PlatformAdminTokenService {
   }
 
   signAccessToken(claims: PlatformAdminClaims): string {
-    return jwt.sign({ sub: claims.sub }, this.config.jwtSecret, {
+    return jwt.sign({ sub: claims.sub, role: claims.role }, this.config.jwtSecret, {
       algorithm: 'HS256',
       expiresIn: this.config.jwtExpirySeconds,
       issuer: this.config.jwtIssuer,
@@ -52,10 +52,15 @@ export class JwtPlatformAdminTokenService implements PlatformAdminTokenService {
       throw new UnauthorizedException('Invalid Platform Admin access token.', { cause: error });
     }
 
-    if (typeof payload === 'string' || !payload.sub) {
+    if (typeof payload === 'string' || !payload.sub || !payload.role) {
       throw new UnauthorizedException('Invalid Platform Admin access token payload.');
     }
 
-    return { sub: payload.sub, iat: payload.iat, exp: payload.exp };
+    return {
+      sub: payload.sub,
+      role: payload.role as PlatformAdminClaims['role'],
+      iat: payload.iat,
+      exp: payload.exp,
+    };
   }
 }

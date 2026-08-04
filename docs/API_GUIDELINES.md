@@ -112,6 +112,26 @@ Cursor pagination for large datasets.
 
 ---
 
+# Platform Back Office Route Ownership (Phase 19, architecture frozen 2026-08-04, ADR-033/034/035; Phase 19.1 subset implemented 2026-08-04)
+
+All routes remain under the existing `/platform-admin` prefix, guarded by `PlatformAdminGuard` (or the two-tier `@RequirePlatformAdminRole` variant, ADR-034 §11-12), never a new top-level prefix. Ownership is mostly existing modules gaining new PlatformAdmin-facing controllers, not one new monolithic module:
+
+| Route family | Owning module | Mechanism (ADR-035) | Status |
+|---|---|---|---|
+| `/platform-admin/restaurants/:id/{suspend,reactivate,delete,restore}` | Restaurants (new PlatformAdmin controller) | Pattern 1 (via an internal Pattern 2 resolve — `PrismaPlatformAdminRestaurantLookupReader`) | **Implemented** |
+| `/platform-admin/organizations/:id/{suspend,reactivate,transfer-ownership}` | Organizations (module's first real use-case layer) | Pattern 1 | **Implemented** |
+| `/platform-admin/organizations/:id/{delete,restore}` | Organizations | Pattern 1 | Not implemented — out of Phase 19.1 scope ("complete Organization Management") |
+| `/platform-admin/accounts/:userId/{force-logout,reset-credentials,disable-login,enable-login}` | Authentication | Pattern 1 | **Implemented** |
+| `/platform-admin/admins` (CRUD) | Platform Admin | Pattern 1 | **Implemented** (create/list/get/update-role/deactivate/reactivate — reactivate and role-update are implementation-scope additions beyond ADR-034 §10's literal text) |
+| `/platform-admin/acquisitions*`, `/platform-admin/pricing*` | New `customer-acquisition` module (ADR-033) | Pattern 1 (mutation) | Not implemented |
+| `/platform-admin/revenue*`, `/platform-admin/dashboard` | New `customer-acquisition` module (revenue) + Platform Admin module (dashboard composition) | Pattern 2 | Not implemented |
+| `/platform-admin/audit-logs` | Platform Admin, reading via a new `AuditLogReaderPort` | Pattern 2 | Not implemented |
+| `/platform-admin/search` | Platform Admin (thin composition delegating to each target module's own query ports — no new search infrastructure) | Pattern 1/2 per target | Not implemented |
+
+`/organizations/subscription*` and `/platform-admin/organizations/:id/subscription*` (Subscriptions, ADR-027) are unaffected.
+
+---
+
 # Filtering
 
 Example

@@ -39,8 +39,11 @@ Every event should include:
 * OrganizationMemberInvited
 * OrganizationMemberRoleChanged
 * OrganizationMemberRemoved
-* OrganizationOwnershipTransferred
-* OrganizationSuspended
+* OrganizationOwnershipTransferred — documented since Phase 0; gains its first real producer under ADR-034 §6, implemented Phase 19.1 (narrow, PlatformAdmin-only emergency transfer; full self-service Organization management remains unbuilt and explicitly out of scope)
+* OrganizationSuspended — documented since Phase 0; gains its first real producer under ADR-034 §4, implemented Phase 19.1 (PlatformAdmin-authorized; never cascades to `Restaurant.status`, ADR-034 §5)
+* OrganizationReactivated (new, ADR-034 §4, implemented Phase 19.1)
+* OrganizationDeleted (new, ADR-034 §4 — soft delete, reuses `Organization.deletedAt` — not implemented, out of Phase 19.1's scope)
+* OrganizationRestored (new, ADR-034 §4 — not implemented, out of Phase 19.1's scope)
 
 ---
 
@@ -137,8 +140,9 @@ Security events span Authentication and Authorization. Each includes: **producer
 * RestaurantCreated
 * RestaurantUpdated
 * RestaurantDeleted
-* RestaurantActivated
-* RestaurantSuspended
+* RestaurantActivated — Owner/Admin-authorized since Phase 4; also PlatformAdmin-authorized under ADR-034 §3
+* RestaurantSuspended — Owner/Admin-authorized since Phase 4; also PlatformAdmin-authorized under ADR-034 §3
+* RestaurantRestored (new, ADR-034 §3 — no actor, Owner/Admin or PlatformAdmin, has ever had a restore capability before this; `RestaurantStatus` remains exactly `{Active, Suspended}`, no third "Archived" status introduced)
 
 ---
 
@@ -405,6 +409,34 @@ The only Notification-specific **domain event** Phase 9 v1 defines is `Notificat
 * SubscriptionExpired — `{ subscriptionId, organizationId }`. System-initiated (BullMQ-scheduled, CAS-guarded on `endsAt`, mirroring the Offer expiration precedent — Phase 11), `actorType: 'System'`.
 
 No `PlanCreated`/`PlanUpdated` events — `SubscriptionPlan` rows are seed-managed (ADR-027), not dynamically created/edited through a runtime API in Phase 12.
+
+---
+
+# Customer Acquisition Events
+
+**Architecture frozen 2026-08-04 (ADR-033) — financial source of truth, not billing.**
+
+* CustomerAcquisitionRecorded — `{ acquisitionId, restaurantId, customerIdentityKey, feeAmount, feeCurrency, pricingRuleId, sourceReservationId }`. System-initiated, published in the same transaction as the triggering `Reservation`'s transition into `Approved` (§3, ADR-033).
+* CustomerAcquisitionReversed — `{ acquisitionId, restaurantId, reversedBy, reversalReason }`. PlatformAdmin-initiated only, never automatic.
+* CustomerAcquisitionManuallyRecorded — `{ acquisitionId, restaurantId, customerIdentityKey, feeAmount, feeCurrency, recordedBy, reason }`. PlatformAdmin-initiated, symmetric to Reversal — corrects an under-count (ADR-033 §11).
+* AcquisitionPricingRuleActivated — `{ ruleId, scopeType, scopeId, feeType, effectiveFrom }`. PlatformAdmin-initiated. No `PricingRuleUpdated` event — rules are never edited in place (ADR-033 §15); a change is always a new `AcquisitionPricingRuleActivated` plus the superseded rule's `archivedAt` being set (no event for archiving alone — `archivedAt` is queryable directly on the row, the same "the row is the audit trail" precedent Notification push-tracking already established).
+
+No `PaymentX`/`InvoiceX` event is introduced by this section, consistent with the Payment / Invoice Events section below.
+
+---
+
+# Platform Back Office Events
+
+**Architecture frozen 2026-08-04 (ADR-034). Phase 19.1 subset implemented 2026-08-04** — Restaurant Suspend/Reactivate/Delete/Restore, Organization Suspend/Reactivate/Emergency Ownership Transfer, Account access control, Platform Admin account CRUD. `OrganizationDeleted`/`OrganizationRestored` remain frozen-but-not-yet-implemented — "complete Organization Management" was explicitly out of this phase's scope.
+
+* RestaurantRestored (implemented), OrganizationReactivated (implemented), OrganizationDeleted (not implemented), OrganizationRestored (not implemented) — see Restaurant Events / Organization Events above.
+* OrganizationOwnershipTransferred (implemented, Phase 19.1) — `{ organizationId, actorId, previousOwnerUserId, newOwnerUserId }`. First real producer, ADR-034 §6.
+* PlatformAdminCredentialReset — `{ targetUserId, resetBy }`. PlatformAdmin-initiated; distinct from self-service `PasswordResetCompleted` — no OTP step, direct set by the admin, mirroring the trust model already established for Restaurant Owner provisioning (ADR-022 Decision #15).
+* AccountLoginDisabled / AccountLoginEnabled — `{ targetUserId, actorId }`. PlatformAdmin-initiated; reuses the existing `User.status` field.
+* PlatformAdminAccountCreated / PlatformAdminAccountRevoked — `{ platformAdminId, role, actorId }`. PlatformAdmin-initiated (finally makes `PlatformAdmin.revokedAt` reachable via an API — ADR-034 §10, FR-19.1).
+* PlatformAdminAccountReactivated / PlatformAdminRoleChanged (implementation-scope additions, not in ADR-034's literal event list) — `{ platformAdminId, role, actorId }` (RoleChanged additionally carries `previousRole`). Symmetric with the Reactivate/Update capabilities this phase adds to the CRUD surface (see DATABASE_SCHEMA.md's Platform Admins note).
+
+Force Logout reuses the existing `SessionFamilyRevoked` event unchanged in shape (already documented under Security Events) — no new event. `payload` gained one optional field, `actorId` (Phase 19.1) — set only when `reason = 'admin'`, since Force Logout is the first producer where the acting PlatformAdmin is a different identity than the target account; every existing self-service producer leaves it unset and is unaffected. The audit row, now correctly attributed via `actorType = PlatformAdmin` (ADR-034 §1, disambiguated by `reason`), is sufficient to distinguish an admin-forced logout from self-service.
 
 ---
 

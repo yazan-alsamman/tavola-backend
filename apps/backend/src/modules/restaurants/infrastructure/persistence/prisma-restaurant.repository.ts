@@ -27,6 +27,13 @@ export class PrismaRestaurantRepository implements RestaurantRepository {
     return row ? RestaurantPrismaMapper.toDomain(row) : null;
   }
 
+  async findByIdIncludingDeleted(id: RestaurantId): Promise<Restaurant | null> {
+    const row = await this.prismaContext.client.restaurant.findUnique({
+      where: { id: id.value },
+    });
+    return row ? RestaurantPrismaMapper.toDomain(row) : null;
+  }
+
   async existsBySlug(slug: RestaurantSlug): Promise<boolean> {
     const count = await this.prismaContext.client.restaurant.count({
       where: { slug: slug.value, deletedAt: null },

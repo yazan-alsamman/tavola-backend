@@ -21,14 +21,30 @@ import {
   UserLoggedInEvent,
   UserLoggedOutEvent,
   UserRegisteredEvent,
+  PlatformAdminCredentialResetEvent,
+  AccountLoginDisabledEvent,
+  AccountLoginEnabledEvent,
 } from '../../domain/events/authentication.events';
+import { SessionRevokeReason } from '../../domain/enums/authentication.enums';
 import {
   RestaurantActivatedEvent,
   RestaurantCreatedEvent,
   RestaurantDeletedEvent,
+  RestaurantRestoredEvent,
   RestaurantSuspendedEvent,
   RestaurantUpdatedEvent,
 } from '@modules/restaurants/domain/events/restaurant.events';
+import {
+  OrganizationOwnershipTransferredEvent,
+  OrganizationReactivatedEvent,
+  OrganizationSuspendedEvent,
+} from '@modules/organizations/domain/events/organization.events';
+import {
+  PlatformAdminAccountCreatedEvent,
+  PlatformAdminAccountReactivatedEvent,
+  PlatformAdminAccountRevokedEvent,
+  PlatformAdminRoleChangedEvent,
+} from '@modules/platform-admin/domain/events/platform-admin.events';
 import {
   BranchCreatedEvent,
   BranchDeletedEvent,
@@ -232,13 +248,147 @@ export class AuditingEventPublisher implements EventPublisherPort {
     }
 
     if (event instanceof SessionFamilyRevokedEvent) {
+      // Phase 19.1 (ADR-034 §8): Force Logout is a new, PlatformAdmin-initiated
+      // producer of this same event class, targeting a DIFFERENT identity
+      // than itself (unlike every existing self-service producer, where
+      // `payload.userId` already IS the actor, reflexively). Disambiguated
+      // via `reason` (already a discriminating field on this event, no
+      // TenantContext needed - Account operations aren't tenant-scoped
+      // models). `actorId` falls back to `payload.userId` for every existing
+      // producer, which never sets the new optional field.
+      const isAdminInitiated = event.payload.reason === SessionRevokeReason.Admin;
       return {
         ...base,
-        actorId: event.payload.userId,
-        actorType: 'User',
+        actorId: event.payload.actorId ?? event.payload.userId,
+        actorType: isAdminInitiated ? 'PlatformAdmin' : 'User',
         action: 'auth.session_family.revoked',
         targetType: 'TokenFamily',
         targetId: event.payload.tokenFamilyId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof PlatformAdminCredentialResetEvent) {
+      return {
+        ...base,
+        actorId: event.payload.resetBy,
+        actorType: 'PlatformAdmin',
+        action: 'platform_admin.account.credentials_reset',
+        targetType: 'User',
+        targetId: event.payload.targetUserId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof AccountLoginDisabledEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'PlatformAdmin',
+        action: 'platform_admin.account.login_disabled',
+        targetType: 'User',
+        targetId: event.payload.targetUserId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof AccountLoginEnabledEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'PlatformAdmin',
+        action: 'platform_admin.account.login_enabled',
+        targetType: 'User',
+        targetId: event.payload.targetUserId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof OrganizationSuspendedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType:
+          this.tenantContextService.getActorType() === 'PlatformAdmin' ? 'PlatformAdmin' : 'User',
+        action: 'organization.suspended',
+        targetType: 'Organization',
+        targetId: event.payload.organizationId,
+        organizationId: event.payload.organizationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof OrganizationReactivatedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType:
+          this.tenantContextService.getActorType() === 'PlatformAdmin' ? 'PlatformAdmin' : 'User',
+        action: 'organization.reactivated',
+        targetType: 'Organization',
+        targetId: event.payload.organizationId,
+        organizationId: event.payload.organizationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof OrganizationOwnershipTransferredEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'PlatformAdmin',
+        action: 'organization.ownership_transferred',
+        targetType: 'Organization',
+        targetId: event.payload.organizationId,
+        organizationId: event.payload.organizationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof PlatformAdminAccountCreatedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'PlatformAdmin',
+        action: 'platform_admin.admin_account.created',
+        targetType: 'PlatformAdmin',
+        targetId: event.payload.platformAdminId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof PlatformAdminAccountRevokedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'PlatformAdmin',
+        action: 'platform_admin.admin_account.revoked',
+        targetType: 'PlatformAdmin',
+        targetId: event.payload.platformAdminId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof PlatformAdminAccountReactivatedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'PlatformAdmin',
+        action: 'platform_admin.admin_account.reactivated',
+        targetType: 'PlatformAdmin',
+        targetId: event.payload.platformAdminId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof PlatformAdminRoleChangedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'PlatformAdmin',
+        action: 'platform_admin.admin_account.role_changed',
+        targetType: 'PlatformAdmin',
+        targetId: event.payload.platformAdminId,
         ipAddress: null,
       };
     }
@@ -319,8 +469,26 @@ export class AuditingEventPublisher implements EventPublisherPort {
       return {
         ...base,
         actorId: event.payload.actorId,
-        actorType: 'User',
+        // Phase 19.1 (ADR-034 §3): PlatformAdmin can now also produce this
+        // exact event class (Owner/Admin's existing path is unaffected,
+        // still resolves to 'User') - disambiguated via the same
+        // ambiguous-actor TenantContext mechanism TableMerged/ReservationCancelled
+        // already use, extended with one more value (Phase 19.1).
+        actorType:
+          this.tenantContextService.getActorType() === 'PlatformAdmin' ? 'PlatformAdmin' : 'User',
         action: 'restaurant.deleted',
+        targetType: 'Restaurant',
+        targetId: event.payload.restaurantId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof RestaurantRestoredEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'PlatformAdmin',
+        action: 'restaurant.restored',
         targetType: 'Restaurant',
         targetId: event.payload.restaurantId,
         ipAddress: null,
@@ -331,7 +499,8 @@ export class AuditingEventPublisher implements EventPublisherPort {
       return {
         ...base,
         actorId: event.payload.actorId,
-        actorType: 'User',
+        actorType:
+          this.tenantContextService.getActorType() === 'PlatformAdmin' ? 'PlatformAdmin' : 'User',
         action: 'restaurant.activated',
         targetType: 'Restaurant',
         targetId: event.payload.restaurantId,
@@ -343,7 +512,8 @@ export class AuditingEventPublisher implements EventPublisherPort {
       return {
         ...base,
         actorId: event.payload.actorId,
-        actorType: 'User',
+        actorType:
+          this.tenantContextService.getActorType() === 'PlatformAdmin' ? 'PlatformAdmin' : 'User',
         action: 'restaurant.suspended',
         targetType: 'Restaurant',
         targetId: event.payload.restaurantId,

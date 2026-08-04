@@ -259,6 +259,15 @@ export class InMemoryOrganizationMemberRepository implements OrganizationMemberR
     return count;
   }
 
+  async findOwner(organizationId: OrganizationId): Promise<OrganizationMember | null> {
+    for (const member of this.members.values()) {
+      if (member.organizationId.value === organizationId.value && member.isOwner()) {
+        return member;
+      }
+    }
+    return null;
+  }
+
   async save(member: OrganizationMember): Promise<void> {
     this.members.set(member.toProps().id, member);
   }

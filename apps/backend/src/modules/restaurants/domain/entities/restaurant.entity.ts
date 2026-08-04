@@ -155,6 +155,15 @@ export class Restaurant extends Entity<RestaurantProps> {
     });
   }
 
+  /** ADR-034 §3 (Phase 19.1) - closes a standing gap: no actor, Owner/Admin or PlatformAdmin, has ever had a restore capability before this. */
+  restore(at: Date): Restaurant {
+    return Restaurant.reconstitute({
+      ...this.props,
+      deletedAt: null,
+      updatedAt: at,
+    });
+  }
+
   toProps(): Readonly<RestaurantProps> {
     return { ...this.props };
   }

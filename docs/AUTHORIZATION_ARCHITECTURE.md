@@ -87,7 +87,7 @@ Policies answer: *given business context, is this specific action allowed?*
 
 | Role source | Examples | Hierarchy |
 |---|---|---|
-| Platform | `PlatformAdmin` | Above all tenants |
+| Platform | `PlatformAdmin`, `PlatformSupport` (ADR-034 §11 — two-tier, `PlatformAdminClaims.role`; `PlatformSupport` is read-only, no mutation authority) | Above all tenants |
 | Organization member | `Owner` > `Admin` > `Billing` > `Staff` | Org-wide admin |
 | Employee (operational) | `Manager` > `Receptionist`, `Cashier` | Restaurant ops (flat permission sets per role, not inheritance tree in Phase 2) |
 | Implicit customer | `Customer` | No Employee record; resource-owner rules only |
@@ -144,7 +144,7 @@ allowed = ResourceOwnershipPolicy OR public-action whitelist
 # 4. Role Hierarchy
 
 ```
-PlatformAdmin                    (platform scope — $systemContext only)
+PlatformAdmin / PlatformSupport  (platform scope — Explicit Tenant Rebind / Tenant-Agnostic Raw Reader, ADR-035; two-tier role, ADR-034)
     │
 OrganizationMember.Owner         (tenant admin — billing, members, restaurants)
     │
@@ -298,6 +298,7 @@ Guards are thin: they read decorators + JWT claims and delegate to `PermissionRe
 | `@RequireAnyPermission(['a', 'b'])` | One of set | Read endpoints |
 | `@RequireOrgRole('Owner', 'Admin')` | Organization admin role | Invite member |
 | `@RequirePolicy(ReservationPolicy, 'approve')` | Domain policy | Complex rules |
+| `@RequirePlatformAdminRole('PlatformAdmin')` | Platform two-tier role check (ADR-034 §11/§12, implemented Phase 19.1 via `PlatformAdminRoleGuard`) — clones the `@RequireOrgRole`/`OrganizationMemberGuard` pattern against `PlatformAdminClaims.role` instead of `AUTHENTICATED_ACTOR_KEY`; **not** an ADR-026/028-style dual-actor OR-composition | Restaurant/Organization Suspend/Reactivate/Delete/Restore, Ownership Transfer, Account access control, Platform Admin CRUD mutations (Acquisition Reversal/pricing mutation remain unimplemented, ADR-033) |
 | `@Public()` | Skip auth (login, register) | Auth controller |
 | `@SkipAuthorization()` | Authenticated but no permission check | `/auth/me` |
 
@@ -309,7 +310,8 @@ Decorators set metadata only; guards enforce.
 
 | Principal | Owns / may access | Mechanism |
 |---|---|---|
-| **Platform Admin** | Cross-tenant read/write (audited) | `PlatformAdmin` + `$systemContext` |
+| **Platform Admin** | Cross-tenant read/write (audited) | `PlatformAdmin` role via Explicit Tenant Rebind (writes/single-tenant reads) or Tenant-Agnostic Raw Reader (platform-wide reads) — ADR-035 |
+| **Platform Support** | Cross-tenant read only, no mutation (audited) | `PlatformSupport` role, same two mechanisms, read paths only — ADR-034 §11 |
 | **Organization Owner** | Organization, all restaurants under org, billing, members | `OrganizationMember.role = Owner` |
 | **Organization Admin** | Members, restaurants; not ownership transfer alone | Org role matrix |
 | **Restaurant Manager** (Employee) | Restaurant ops per role permissions + branch scope | RBAC + branch assignments |
@@ -339,7 +341,7 @@ Handled by **TENANCY.md** (Prisma extension), not duplicated here.
 Authorization assumes tenant context is already bound. Authorization adds:
 
 * Verify JWT `organizationId` matches resource's organization (defense in depth).
-* `PlatformAdmin` bypasses tenant scope only via `$systemContext`.
+* `PlatformAdmin`/`PlatformSupport` bypass tenant scope only via the two named patterns in TENANCY.md (ADR-035): Explicit Tenant Rebind (one known target tenant) or Tenant-Agnostic Raw Reader (genuinely cross-tenant reads). Neither is the default client injected into a feature-module repository.
 
 ---
 

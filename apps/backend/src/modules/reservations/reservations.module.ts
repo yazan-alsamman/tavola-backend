@@ -9,7 +9,9 @@ import { WAITLIST_RECHECK_QUEUE_NAME } from '@shared/infrastructure/bullmq/waitl
 import { SearchAvailabilityUseCase } from './application/use-cases/search-availability.use-case';
 import { CreateReservationUseCase } from './application/use-cases/create-reservation.use-case';
 import { ListMyReservationsUseCase } from './application/use-cases/list-my-reservations.use-case';
+import { SearchMyReservationsUseCase } from './application/use-cases/search-my-reservations.use-case';
 import { GetMyReservationUseCase } from './application/use-cases/get-my-reservation.use-case';
+import { GetMyReservationDetailsUseCase } from './application/use-cases/get-my-reservation-details.use-case';
 import { ApproveReservationUseCase } from './application/use-cases/approve-reservation.use-case';
 import { RejectReservationUseCase } from './application/use-cases/reject-reservation.use-case';
 import { CancelReservationUseCase } from './application/use-cases/cancel-reservation.use-case';
@@ -24,11 +26,13 @@ import { AutoRejectOverlappingPendingReservationsService } from './application/s
 import { ScheduleApprovedReservationSignalsService } from './application/services/schedule-approved-reservation-signals.service';
 import { RESERVATION_REPOSITORY } from './domain/repositories/reservation.repository';
 import { RESERVATION_HISTORY_REPOSITORY } from './domain/repositories/reservation-history.repository';
+import { MY_RESERVATIONS_READER } from './application/ports/my-reservations-reader.port';
 import { RESERVATION_GUEST_REPOSITORY } from './domain/repositories/reservation-guest.repository';
 import { RESERVATION_EXPIRATION_SCHEDULER } from './application/ports/reservation-expiration-scheduler.port';
 import { WAITLIST_RECHECK_SCHEDULER } from './application/ports/waitlist-recheck-scheduler.port';
 import { APPROVED_RESERVATION_OPERATIONAL_SCHEDULER } from './application/ports/approved-reservation-operational-scheduler.port';
 import { PrismaReservationRepository } from './infrastructure/persistence/prisma-reservation.repository';
+import { PrismaMyReservationsReader } from './infrastructure/persistence/prisma-my-reservations.reader';
 import { PrismaReservationHistoryRepository } from './infrastructure/persistence/prisma-reservation-history.repository';
 import { PrismaReservationGuestRepository } from './infrastructure/persistence/prisma-reservation-guest.repository';
 import { RESERVATION_QUEUE_NAME } from './infrastructure/bullmq/reservation-queue.constants';
@@ -131,7 +135,9 @@ import { ReservationsController } from './presentation/controllers/reservations.
     SearchAvailabilityUseCase,
     CreateReservationUseCase,
     ListMyReservationsUseCase,
+    SearchMyReservationsUseCase,
     GetMyReservationUseCase,
+    GetMyReservationDetailsUseCase,
     ApproveReservationUseCase,
     RejectReservationUseCase,
     CancelReservationUseCase,
@@ -149,6 +155,8 @@ import { ReservationsController } from './presentation/controllers/reservations.
     LateArrivalProcessor,
     PrismaReservationRepository,
     { provide: RESERVATION_REPOSITORY, useExisting: PrismaReservationRepository },
+    PrismaMyReservationsReader,
+    { provide: MY_RESERVATIONS_READER, useExisting: PrismaMyReservationsReader },
     PrismaReservationHistoryRepository,
     { provide: RESERVATION_HISTORY_REPOSITORY, useExisting: PrismaReservationHistoryRepository },
     PrismaReservationGuestRepository,

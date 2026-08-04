@@ -5,6 +5,7 @@ import { SubscriptionPlanNotFoundException } from '../../domain/exceptions/subsc
 import { ArchivedPlanNotAssignableException } from '../../domain/exceptions/archived-plan-not-assignable.exception';
 import { InvalidSubscriptionStatusTransitionException } from '../../domain/exceptions/invalid-subscription-status-transition.exception';
 import { PlanDowngradeRejectedException } from '../../domain/exceptions/plan-downgrade-rejected.exception';
+import { PlatformAdminRole } from '@modules/platform-admin/domain/enums/platform-admin.enums';
 import {
   SubscriptionAssignedEvent,
   SubscriptionPlanChangedEvent,
@@ -28,7 +29,7 @@ describe('AssignSubscriptionUseCase', () => {
   const platformAdminUserId = 'platform-admin-1';
 
   function actor() {
-    return { userId: platformAdminUserId };
+    return { userId: platformAdminUserId, role: PlatformAdminRole.PlatformAdmin };
   }
 
   function build() {

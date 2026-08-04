@@ -17,6 +17,14 @@ export interface RestaurantListPage {
  */
 export interface RestaurantRepository {
   findById(id: RestaurantId): Promise<Restaurant | null>;
+  /**
+   * Phase 19.1 (ADR-034 §3) - `findById` deliberately excludes soft-deleted
+   * rows (every other caller treats a soft-deleted Restaurant as "not
+   * found", the existing convention this repository already follows). Only
+   * `PlatformAdminRestoreRestaurantUseCase` needs to see a soft-deleted row
+   * at all, to restore it - the one legitimate exception to that convention.
+   */
+  findByIdIncludingDeleted(id: RestaurantId): Promise<Restaurant | null>;
   existsBySlug(slug: RestaurantSlug): Promise<boolean>;
   findMany(page: number, limit: number): Promise<RestaurantListPage>;
   save(restaurant: Restaurant): Promise<void>;

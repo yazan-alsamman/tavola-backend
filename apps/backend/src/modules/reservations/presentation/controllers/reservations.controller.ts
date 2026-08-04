@@ -35,7 +35,9 @@ import { RequirePermission } from '@modules/authorization/presentation/decorator
 import { SearchAvailabilityUseCase } from '../../application/use-cases/search-availability.use-case';
 import { CreateReservationUseCase } from '../../application/use-cases/create-reservation.use-case';
 import { ListMyReservationsUseCase } from '../../application/use-cases/list-my-reservations.use-case';
+import { SearchMyReservationsUseCase } from '../../application/use-cases/search-my-reservations.use-case';
 import { GetMyReservationUseCase } from '../../application/use-cases/get-my-reservation.use-case';
+import { GetMyReservationDetailsUseCase } from '../../application/use-cases/get-my-reservation-details.use-case';
 import { ApproveReservationUseCase } from '../../application/use-cases/approve-reservation.use-case';
 import { RejectReservationUseCase } from '../../application/use-cases/reject-reservation.use-case';
 import { CancelReservationUseCase } from '../../application/use-cases/cancel-reservation.use-case';
@@ -48,10 +50,17 @@ import { CreateReservationRequestDto } from '../dto/create-reservation.request.d
 import { CancelReservationRequestDto } from '../dto/cancel-reservation.request.dto';
 import { RescheduleReservationRequestDto } from '../dto/reschedule-reservation.request.dto';
 import { ListReservationsQueryDto } from '../dto/list-reservations.query.dto';
+import { MyReservationsQueryDto } from '../dto/my-reservations.query.dto';
+import { MyReservationsBaseQueryDto } from '../dto/my-reservations-base.query.dto';
 import { ReservationResponseDto } from '../dto/reservation.response.dto';
 import { ReservationListResponseDto } from '../dto/reservation-list.response.dto';
+import { MyReservationsListResponseDto } from '../dto/my-reservations-list.response.dto';
 import { TableAvailabilityResponseDto } from '../dto/table-availability.response.dto';
-import { toReservationResponse, toTableAvailabilityResponse } from './reservation-response.mapper';
+import {
+  toReservationResponse,
+  toMyReservationItemResponse,
+  toTableAvailabilityResponse,
+} from './reservation-response.mapper';
 
 /**
  * Phase 7.1 (Reservation Core) - customer-facing, flat `reservations`
@@ -72,7 +81,9 @@ export class ReservationsController {
     private readonly searchAvailabilityUseCase: SearchAvailabilityUseCase,
     private readonly createReservationUseCase: CreateReservationUseCase,
     private readonly listMyReservationsUseCase: ListMyReservationsUseCase,
+    private readonly searchMyReservationsUseCase: SearchMyReservationsUseCase,
     private readonly getMyReservationUseCase: GetMyReservationUseCase,
+    private readonly getMyReservationDetailsUseCase: GetMyReservationDetailsUseCase,
     private readonly approveReservationUseCase: ApproveReservationUseCase,
     private readonly rejectReservationUseCase: RejectReservationUseCase,
     private readonly cancelReservationUseCase: CancelReservationUseCase,
@@ -152,6 +163,156 @@ export class ReservationsController {
       partySize: query.partySize,
     });
     return results.map(toTableAvailabilityResponse);
+  }
+
+  @Get('my')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Your reservations retrieved successfully.')
+  @ApiOperation({
+    operationId: 'reservationsGetMyAll',
+    summary: "Get the authenticated Customer's complete reservation set (Phase 18.x)",
+    description:
+      "Mobile-facing. Always resolves reservations from the caller's own JWT userId - never a client-supplied id. Customer actor only (`AccessTokenActorType.User`); an Employee or OrganizationMember actor is rejected with 403, even though every actor type's JWT userId is technically a valid User id (see SearchMyReservationsUseCase's own doc comment) - unlike GET /reservations (mine), which is ownership-only with no actor-type gate. Enriches each reservation with its Restaurant/Branch/Table display fields in one joined query (no N+1). A soft-deleted or suspended restaurant's past reservations remain visible with their last-known name/image - this is the Customer's own record, not a discovery listing. The only one of the three GET /reservations/my* routes that accepts an explicit status filter - GET /reservations/my/upcoming and GET /reservations/my/history derive their own status/time scope automatically instead.",
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Reservations retrieved',
+    type: MyReservationsListResponseDto,
+  })
+  @ApiErrorResponse(400, 'Invalid page/limit/status/date/sort/order', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller is not a Customer (User) actor', ['FORBIDDEN'])
+  async myReservations(
+    @Query() query: MyReservationsQueryDto,
+    @CurrentActor() actor: AuthenticatedActor,
+  ): Promise<MyReservationsListResponseDto> {
+    return this.searchMyReservations(query, actor, 'all', query.status);
+  }
+
+  @Get('my/upcoming')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Your upcoming reservations retrieved successfully.')
+  @ApiOperation({
+    operationId: 'reservationsGetMyUpcoming',
+    summary: "Get the authenticated Customer's future reservations (Phase 18.x)",
+    description:
+      "Mobile-facing. Derived automatically, server-side, from the reservation lifecycle and the current time - Pending/Approved AND reservationStartTime in the future - the client never filters the full dataset itself. Shares SearchMyReservationsUseCase and MyReservationsReaderPort with GET /reservations/my and GET /reservations/my/history verbatim (only the scope differs); see MyReservationsReaderPort's own doc comment for the exact upcoming/history complement definition. Same Customer-only actor-type gate as GET /reservations/my. Does not accept a status filter - status is implied by the scope.",
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Upcoming reservations retrieved',
+    type: MyReservationsListResponseDto,
+  })
+  @ApiErrorResponse(400, 'Invalid page/limit/date/sort/order', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller is not a Customer (User) actor', ['FORBIDDEN'])
+  async myUpcomingReservations(
+    @Query() query: MyReservationsBaseQueryDto,
+    @CurrentActor() actor: AuthenticatedActor,
+  ): Promise<MyReservationsListResponseDto> {
+    return this.searchMyReservations(query, actor, 'upcoming');
+  }
+
+  @Get('my/history')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Your reservation history retrieved successfully.')
+  @ApiOperation({
+    operationId: 'reservationsGetMyHistory',
+    summary:
+      "Get the authenticated Customer's completed/cancelled/expired/past reservations (Phase 18.x)",
+    description:
+      "Mobile-facing. Derived automatically, server-side, from the reservation lifecycle and the current time - the exact complement of GET /reservations/my/upcoming within the caller's own reservations (every terminal status - Rejected/Cancelled/Completed/Expired/NoShow - plus any still-active reservation whose scheduled time has already passed) - the client never filters the full dataset itself. Shares SearchMyReservationsUseCase and MyReservationsReaderPort with GET /reservations/my and GET /reservations/my/upcoming verbatim (only the scope differs). Same Customer-only actor-type gate as GET /reservations/my. Does not accept a status filter - status is implied by the scope.",
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Reservation history retrieved',
+    type: MyReservationsListResponseDto,
+  })
+  @ApiErrorResponse(400, 'Invalid page/limit/date/sort/order', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller is not a Customer (User) actor', ['FORBIDDEN'])
+  async myReservationHistory(
+    @Query() query: MyReservationsBaseQueryDto,
+    @CurrentActor() actor: AuthenticatedActor,
+  ): Promise<MyReservationsListResponseDto> {
+    return this.searchMyReservations(query, actor, 'history');
+  }
+
+  /**
+   * Shared by all three `GET /reservations/my*` handlers above - the one
+   * place that builds a `SearchMyReservationsCommand` and maps its result,
+   * so `scope` is the only thing that ever varies between them (phase
+   * spec's own "reuse the same repository and query logic... avoid code
+   * duplication" instruction, applied at the controller layer too).
+   */
+  private async searchMyReservations(
+    query: MyReservationsBaseQueryDto,
+    actor: AuthenticatedActor,
+    scope: 'all' | 'upcoming' | 'history',
+    status?: MyReservationsQueryDto['status'],
+  ): Promise<MyReservationsListResponseDto> {
+    const result = await this.searchMyReservationsUseCase.execute({
+      actor,
+      scope,
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+      status,
+      restaurantId: query.restaurantId,
+      branchId: query.branchId,
+      dateFrom: query.dateFrom ? new Date(query.dateFrom) : undefined,
+      dateTo: query.dateTo ? new Date(query.dateTo) : undefined,
+      sort: query.sort ?? 'reservationDate',
+      order: query.order ?? 'desc',
+    });
+    return {
+      items: result.items.map(toMyReservationItemResponse),
+      page: result.page,
+      limit: result.limit,
+      total: result.total,
+    };
+  }
+
+  @Get('my/:reservationId')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Reservation retrieved successfully.')
+  @ApiOperation({
+    operationId: 'reservationsGetMyDetails',
+    summary: "Get one of the authenticated Customer's own reservations by id (Phase 18.x)",
+    description:
+      'Mobile-facing. Reuses GetMyReservationUseCase (and its ownership-only, IDOR-safe 404 collapse) verbatim - the only difference from GET /reservations/:id is the same Customer-only actor-type gate as the other three GET /reservations/my* routes (an Employee/OrganizationMember actor is rejected with 403 even if it happens to own the reservation). Returns the complete flat Reservation shape via the existing reservation response mapper (toReservationResponse) - not the enriched restaurant/branch/table projection GET /reservations/my/upcoming and /my/history return.',
+  })
+  @ApiParam({ name: 'reservationId', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Reservation retrieved', type: ReservationResponseDto })
+  @ApiErrorResponse(400, 'reservationId is not a valid UUID', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller is not a Customer (User) actor', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Reservation not found, or does not belong to the caller', ['NOT_FOUND'])
+  async myReservationDetails(
+    @Param('reservationId', ParseUUIDPipe) reservationId: string,
+    @CurrentActor() actor: AuthenticatedActor,
+  ): Promise<ReservationResponseDto> {
+    const result = await this.getMyReservationDetailsUseCase.execute({ actor, reservationId });
+    return toReservationResponse(result);
   }
 
   @Get(':id')

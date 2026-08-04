@@ -15,5 +15,7 @@ export interface OrganizationMemberRepository {
     userId: UserId,
   ): Promise<OrganizationMember | null>;
   countActiveOwners(organizationId: OrganizationId): Promise<number>;
+  /** Phase 19.1 (ADR-034 §6) - resolves the current Active Owner for Emergency Ownership Transfer. */
+  findOwner(organizationId: OrganizationId): Promise<OrganizationMember | null>;
   save(member: OrganizationMember): Promise<void>;
 }

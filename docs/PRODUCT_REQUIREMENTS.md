@@ -38,7 +38,7 @@ TAVLA does not process payments inside the platform. Reservation payments, depos
 | **Walk-in / Phone guest** | Unregistered person represented by `ReservationGuest` |
 | **Restaurant Employee** | Staff with RBAC permissions scoped to organization/branches |
 | **Organization Owner / Admin** | Organization-level administration and billing |
-| **Platform Administrator** | Cross-tenant operations via `PlatformAdmin` + `$systemContext` |
+| **Platform Administrator** | Cross-tenant operations via `PlatformAdmin`/`PlatformSupport`, using Explicit Tenant Rebind or Tenant-Agnostic Raw Reader (ADR-035) |
 
 ---
 
@@ -76,7 +76,7 @@ TAVLA does not process payments inside the platform. Reservation payments, depos
 | FR-03.1 | Organization as tenant boundary | ADR-011 |
 | FR-03.2 | Organization membership and ownership invariants | `Organization`, `OrganizationMember` |
 | FR-03.3 | Automatic tenant isolation on all tenant-scoped data | ADR-012, `TENANCY.md` |
-| FR-03.4 | Platform administration across tenants | `PlatformAdmin`, `$systemContext` |
+| FR-03.4 | Platform administration across tenants | `PlatformAdmin`/`PlatformSupport`, Explicit Tenant Rebind / Tenant-Agnostic Raw Reader (ADR-035) |
 
 ## FR-04 — Restaurants & Branches
 
@@ -84,7 +84,7 @@ TAVLA does not process payments inside the platform. Reservation payments, depos
 |---|---|---|
 | FR-04.1 | Restaurant CRUD, settings, working hours, gallery, social links | Phase 4, `RestaurantSettings`, `WorkingHours` |
 | FR-04.2 | Branch CRUD with address, geo coordinates, timezone, currency | Phase 5, `Branches` |
-| FR-04.3 | Restaurant suspension and status lifecycle | `Restaurant.status` |
+| FR-04.3 | Restaurant suspension and status lifecycle | `Restaurant.status` (Owner/Admin, and PlatformAdmin — ADR-034 §3) |
 | FR-04.4 | Multi-branch per restaurant under one organization | ADR-011 |
 
 ## FR-05 — Tables & Floor Plans
@@ -235,9 +235,12 @@ TAVLA does not process payments inside the platform. Reservation payments, depos
 
 | ID | Requirement | Architecture reference |
 |---|---|---|
-| FR-19.1 | Platform admin user management | `PlatformAdmins` |
-| FR-19.2 | Cross-tenant reporting and support tooling | `$systemContext` |
-| FR-19.3 | Security alert aggregation | `SecurityAlertRaised` event |
+| FR-19.1 | Platform admin user management | `PlatformAdmins` (create/list/revoke CRUD, two-tier `PlatformAdmin`/`PlatformSupport` role) — ADR-034 §10-11 |
+| FR-19.2 | Cross-tenant reporting and support tooling | Explicit Tenant Rebind / Tenant-Agnostic Raw Reader (ADR-035, corrects the prior `$systemContext` reference, which was never implemented) |
+| FR-19.3 | Security alert aggregation | `SecurityAlertRaised` event — **still open**: the event is documented but has zero producer anywhere in the codebase; not addressed by ADR-034/035, tracked as a remaining gap |
+| FR-19.4 | Customer acquisition tracking (financial source of truth, not billing) | `CustomerAcquisition` — ADR-033 |
+| FR-19.5 | Acquisition pricing engine | `AcquisitionPricingRule` — ADR-033 |
+| FR-19.6 | Platform operational authority over Restaurant/Organization lifecycle, account access control, audit visibility | ADR-034 |
 
 ---
 

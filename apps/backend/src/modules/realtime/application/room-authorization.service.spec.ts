@@ -56,6 +56,10 @@ class TenantScopedFakeRestaurantRepository implements RestaurantRepository {
     return restaurant;
   }
 
+  async findByIdIncludingDeleted(id: RestaurantId): Promise<Restaurant | null> {
+    return this.rows.get(id.value) ?? null;
+  }
+
   async existsBySlug(): Promise<boolean> {
     return false;
   }

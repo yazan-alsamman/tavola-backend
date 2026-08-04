@@ -236,6 +236,33 @@ export class User extends Entity<UserProps> {
     });
   }
 
+  /**
+   * ADR-034 §8 (Phase 19.1) - PlatformAdmin Disable Login. Reuses the
+   * existing `User.status` field (no new column) - `canLogin()` already
+   * rejects `UserStatus.Suspended` via `AccountSuspendedException`. Blunt by
+   * design (like Force Logout/Credential Reset): always sets Suspended
+   * regardless of prior status, idempotent if already Suspended.
+   */
+  disableLogin(at: Date): User {
+    if (this.props.status === UserStatus.Suspended) {
+      return this;
+    }
+    return User.reconstitute({ ...this.props, status: UserStatus.Suspended, updatedAt: at });
+  }
+
+  /**
+   * ADR-034 §8 - the symmetric Enable Login. Deliberately NOT idempotent
+   * across every status (unlike `disableLogin`): only `Suspended -> Active`
+   * is valid here - flipping a `Locked`/`Deleted`/`Anonymized` account to
+   * Active via this specific action would silently bypass those states' own
+   * distinct semantics (lock expiry, soft-delete, anonymization). Caller
+   * (`PlatformAdminEnableLoginUseCase`) is responsible for rejecting any
+   * other current status before calling this.
+   */
+  enableLogin(at: Date): User {
+    return User.reconstitute({ ...this.props, status: UserStatus.Active, updatedAt: at });
+  }
+
   changePasswordHash(newHash: PasswordHash, at: Date): User {
     return User.reconstitute({
       ...this.props,

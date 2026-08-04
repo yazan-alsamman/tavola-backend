@@ -74,9 +74,10 @@ Supporting cross-cutting infrastructure (not owned by the Authentication module)
 
 ```
 apps/backend/src/infrastructure/
-├── tenancy/                # TenantContextService, TenantContextInterceptor (ADR-012)
-└── platform-admin/         # PlatformAdminGuard, $systemContext access (future)
+└── tenancy/                # TenantContextService, TenantContextInterceptor (ADR-012)
 ```
+
+`PlatformAdminGuard` and the rest of PlatformAdmin authentication/authorization live in `apps/backend/src/modules/platform-admin/` — implemented and live since Phase 2.23, not `infrastructure/` and not "(future)" (correcting a stale annotation from before that phase shipped). Cross-tenant access for PlatformAdmin/PlatformSupport uses Explicit Tenant Rebind or Tenant-Agnostic Raw Reader, not `$systemContext` — see TENANCY.md and ADR-035.
 
 ---
 
@@ -1180,7 +1181,7 @@ sequenceDiagram
 | IDOR on sessions | Revoke only own sessions | — |
 | Email verification bypass | Hashed single-use tokens | — |
 | Reset token brute force | High-entropy token, rate limit, short TTL | — |
-| Insider (platform admin) | Audited $systemContext; least privilege | Operational trust |
+| Insider (platform admin) | Audited Explicit Tenant Rebind / Tenant-Agnostic Raw Reader (ADR-035); two-tier `PlatformAdmin`/`PlatformSupport` role (ADR-034 §11) | Operational trust |
 
 ## 12.2 Remaining Risks
 

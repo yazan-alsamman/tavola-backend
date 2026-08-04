@@ -49,9 +49,30 @@ export class Organization extends Entity<OrganizationProps> {
   }
 
   suspend(at: Date): Organization {
+    if (this.props.status === OrganizationStatus.Suspended) {
+      return this;
+    }
     return Organization.reconstitute({
       ...this.props,
       status: OrganizationStatus.Suspended,
+      updatedAt: at,
+    });
+  }
+
+  /**
+   * ADR-034 §4 (Phase 19.1). Idempotent, mirroring `Restaurant.activate()`/
+   * `suspend()`'s own no-op-if-already-that-state convention. Never touches
+   * `Restaurant.status` (§5 - no cascade, ever; a second writer of that field
+   * is the exact dual-writer hazard ADR-027 already eliminated for the
+   * identical shape of problem).
+   */
+  reactivate(at: Date): Organization {
+    if (this.props.status === OrganizationStatus.Active) {
+      return this;
+    }
+    return Organization.reconstitute({
+      ...this.props,
+      status: OrganizationStatus.Active,
       updatedAt: at,
     });
   }

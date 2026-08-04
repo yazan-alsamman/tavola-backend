@@ -6,11 +6,16 @@ import { AuthenticationModule } from '@modules/authentication/authentication.mod
 import { AuthorizationModule } from '@modules/authorization/authorization.module';
 import { FilesModule } from '@modules/files/files.module';
 import { SubscriptionsModule } from '@modules/subscriptions/subscriptions.module';
+import { PlatformAdminModule } from '@modules/platform-admin/platform-admin.module';
 import { CreateRestaurantUseCase } from './application/use-cases/create-restaurant.use-case';
 import { GetRestaurantUseCase } from './application/use-cases/get-restaurant.use-case';
 import { ListRestaurantsUseCase } from './application/use-cases/list-restaurants.use-case';
 import { UpdateRestaurantUseCase } from './application/use-cases/update-restaurant.use-case';
 import { DeleteRestaurantUseCase } from './application/use-cases/delete-restaurant.use-case';
+import { PlatformAdminSuspendRestaurantUseCase } from './application/use-cases/platform-admin-suspend-restaurant.use-case';
+import { PlatformAdminReactivateRestaurantUseCase } from './application/use-cases/platform-admin-reactivate-restaurant.use-case';
+import { PlatformAdminDeleteRestaurantUseCase } from './application/use-cases/platform-admin-delete-restaurant.use-case';
+import { PlatformAdminRestoreRestaurantUseCase } from './application/use-cases/platform-admin-restore-restaurant.use-case';
 import { GetRestaurantSettingsUseCase } from './application/use-cases/get-restaurant-settings.use-case';
 import { UpdateRestaurantSettingsUseCase } from './application/use-cases/update-restaurant-settings.use-case';
 import { GetWorkingHoursUseCase } from './application/use-cases/get-working-hours.use-case';
@@ -42,9 +47,12 @@ import { PrismaOccasionCategoryRepository } from './infrastructure/persistence/p
 import { PrismaRestaurantCuisineCategoryRepository } from './infrastructure/persistence/prisma-restaurant-cuisine-category.repository';
 import { PrismaRestaurantOccasionCategoryRepository } from './infrastructure/persistence/prisma-restaurant-occasion-category.repository';
 import { PrismaRestaurantUsageRepository } from './infrastructure/persistence/prisma-restaurant-usage.repository';
+import { PrismaPlatformAdminRestaurantLookupReader } from './infrastructure/persistence/prisma-platform-admin-restaurant-lookup.reader';
+import { PLATFORM_ADMIN_RESTAURANT_LOOKUP_READER } from './application/ports/platform-admin-restaurant-lookup-reader.port';
 import { GALLERY_BUCKET } from './application/tokens/restaurants.tokens';
 import { RestaurantsController } from './presentation/controllers/restaurants.controller';
 import { TaxonomyCategoriesController } from './presentation/controllers/taxonomy-categories.controller';
+import { PlatformAdminRestaurantsController } from './presentation/controllers/platform-admin-restaurants.controller';
 
 /**
  * Phase 4.1 (Restaurant CRUD) + Phase 4.2 (Restaurant Settings) + Phase 4.3
@@ -105,10 +113,19 @@ import { TaxonomyCategoriesController } from './presentation/controllers/taxonom
     FilesModule,
     PrismaModule,
     ConfigModule,
+    PlatformAdminModule,
   ],
-  controllers: [RestaurantsController, TaxonomyCategoriesController],
+  controllers: [
+    RestaurantsController,
+    TaxonomyCategoriesController,
+    PlatformAdminRestaurantsController,
+  ],
   providers: [
     CreateRestaurantUseCase,
+    PlatformAdminSuspendRestaurantUseCase,
+    PlatformAdminReactivateRestaurantUseCase,
+    PlatformAdminDeleteRestaurantUseCase,
+    PlatformAdminRestoreRestaurantUseCase,
     GetRestaurantUseCase,
     ListRestaurantsUseCase,
     UpdateRestaurantUseCase,
@@ -135,6 +152,11 @@ import { TaxonomyCategoriesController } from './presentation/controllers/taxonom
     PrismaRestaurantCuisineCategoryRepository,
     PrismaRestaurantOccasionCategoryRepository,
     PrismaRestaurantUsageRepository,
+    PrismaPlatformAdminRestaurantLookupReader,
+    {
+      provide: PLATFORM_ADMIN_RESTAURANT_LOOKUP_READER,
+      useExisting: PrismaPlatformAdminRestaurantLookupReader,
+    },
     { provide: RESTAURANT_REPOSITORY, useExisting: PrismaRestaurantRepository },
     { provide: RESTAURANT_USAGE_REPOSITORY, useExisting: PrismaRestaurantUsageRepository },
     { provide: RESTAURANT_SETTINGS_REPOSITORY, useExisting: PrismaRestaurantSettingsRepository },

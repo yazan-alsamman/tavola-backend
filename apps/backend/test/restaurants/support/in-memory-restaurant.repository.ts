@@ -58,6 +58,10 @@ export class InMemoryRestaurantRepository implements RestaurantRepository {
     return restaurant;
   }
 
+  async findByIdIncludingDeleted(id: RestaurantId): Promise<Restaurant | null> {
+    return this.rows.get(id.value) ?? null;
+  }
+
   async existsPubliclyById(id: RestaurantId): Promise<boolean> {
     const restaurant = this.rows.get(id.value);
     return restaurant !== undefined && !restaurant.isSoftDeleted();

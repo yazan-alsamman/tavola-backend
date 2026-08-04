@@ -13,10 +13,18 @@
  * scope as a request (e.g. `AuditingEventPublisher`, Phase 8 audit-hygiene
  * fix) can recover which actor type is currently acting without threading it
  * through every domain event payload — see `TenantContextService.getActorType()`.
+ *
+ * `'PlatformAdmin'` (Phase 19.1, ADR-034 §1/§3-4) is set only by the new
+ * PlatformAdmin Restaurant/Organization lifecycle use cases when they
+ * Explicit-Tenant-Rebind (ADR-035 Pattern 1) via `TenantContextPort.runAsync`
+ * — the same mechanism that already disambiguates `TableMerged`/
+ * `ReservationCancelled`, extended with one more value rather than a new
+ * mechanism, so events Owner/Admin and PlatformAdmin can both now produce
+ * (`RestaurantSuspended`, `OrganizationSuspended`, …) attribute correctly.
  */
 export interface TenantContext {
   readonly organizationId: string | null;
   readonly userId: string | null;
   readonly correlationId: string;
-  readonly actorType?: 'User' | 'Employee' | 'OrganizationMember' | null;
+  readonly actorType?: 'User' | 'Employee' | 'OrganizationMember' | 'PlatformAdmin' | null;
 }

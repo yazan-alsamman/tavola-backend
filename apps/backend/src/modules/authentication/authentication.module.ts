@@ -3,6 +3,7 @@ import { PrismaModule } from '@infrastructure/prisma/prisma.module';
 import { AuthorizationModule } from '@modules/authorization/authorization.module';
 import { OrganizationsModule } from '@modules/organizations/organizations.module';
 import { SubscriptionsModule } from '@modules/subscriptions/subscriptions.module';
+import { PlatformAdminModule } from '@modules/platform-admin/platform-admin.module';
 import { LoginUseCase } from './application/use-cases/login.use-case';
 import { RefreshSessionUseCase } from './application/use-cases/refresh-session.use-case';
 import { LogoutCurrentSessionUseCase } from './application/use-cases/logout-current-session.use-case';
@@ -22,8 +23,13 @@ import { ResendCustomerPasswordResetUseCase } from './application/use-cases/rese
 import { VerifyCustomerPasswordResetUseCase } from './application/use-cases/verify-customer-password-reset.use-case';
 import { CompleteCustomerPasswordResetUseCase } from './application/use-cases/complete-customer-password-reset.use-case';
 import { ProvisionRestaurantOwnerUseCase } from './application/use-cases/provision-restaurant-owner.use-case';
+import { PlatformAdminForceLogoutUseCase } from './application/use-cases/platform-admin-force-logout.use-case';
+import { PlatformAdminResetCredentialsUseCase } from './application/use-cases/platform-admin-reset-credentials.use-case';
+import { PlatformAdminDisableLoginUseCase } from './application/use-cases/platform-admin-disable-login.use-case';
+import { PlatformAdminEnableLoginUseCase } from './application/use-cases/platform-admin-enable-login.use-case';
 import { AuthController } from './presentation/controllers/auth.controller';
 import { CustomerAuthController } from './presentation/controllers/customer-auth.controller';
+import { PlatformAdminAccountAccessController } from './presentation/controllers/platform-admin-account-access.controller';
 import { JwtAuthGuard } from './presentation/guards/jwt-auth.guard';
 import { SessionVersionGuard } from './presentation/guards/session-version.guard';
 import { RateLimitGuard } from './presentation/guards/rate-limit.guard';
@@ -103,15 +109,28 @@ import { UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
  * a genuine circular pair, resolved with `forwardRef` on both sides, the
  * same established pattern already used for `BranchesModule`↔`TablesModule`
  * and `TablesModule`↔`ReservationsModule`.
+ *
+ * Phase 19.1 (ADR-034 §4/§6): `OrganizationsModule` now needs `CLOCK`/
+ * `ID_GENERATOR`/`UNIT_OF_WORK` from this module for its first real
+ * use-case layer (PlatformAdmin Suspend/Reactivate/Ownership-Transfer) - the
+ * same circular-pair shape as `SubscriptionsModule` above, `OrganizationsModule`'s
+ * own plain import here converted to `forwardRef` on both sides.
+ *
+ * Phase 19.1 (ADR-034 §8): `PlatformAdminAccountAccessController`'s routes
+ * need `PlatformAdminGuard`/`PlatformAdminRoleGuard` from `PlatformAdminModule`,
+ * which itself already imports this module (via `forwardRef`) for `CLOCK`/
+ * `ID_GENERATOR`/`EVENT_PUBLISHER`/etc - another genuine circular pair,
+ * `forwardRef` on both sides, same established shape as the two pairs above.
  */
 @Module({
   imports: [
     PrismaModule,
     AuthorizationModule,
-    OrganizationsModule,
+    forwardRef(() => OrganizationsModule),
     forwardRef(() => SubscriptionsModule),
+    forwardRef(() => PlatformAdminModule),
   ],
-  controllers: [AuthController, CustomerAuthController],
+  controllers: [AuthController, CustomerAuthController, PlatformAdminAccountAccessController],
   providers: [
     LoginUseCase,
     RefreshSessionUseCase,
@@ -132,6 +151,10 @@ import { UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
     VerifyCustomerPasswordResetUseCase,
     CompleteCustomerPasswordResetUseCase,
     ProvisionRestaurantOwnerUseCase,
+    PlatformAdminForceLogoutUseCase,
+    PlatformAdminResetCredentialsUseCase,
+    PlatformAdminDisableLoginUseCase,
+    PlatformAdminEnableLoginUseCase,
     JwtAuthGuard,
     SessionVersionGuard,
     RateLimitGuard,

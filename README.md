@@ -333,7 +333,6 @@ BullMQ handles:
 
 - Reservation Reminders
 - Notification Delivery
-- Report Generation
 - Scheduled Tasks
 - Cleanup Jobs
 

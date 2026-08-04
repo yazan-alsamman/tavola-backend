@@ -87,15 +87,17 @@ export class PlatformAdminLoginUseCase {
     const ipAddress = command.ipAddress?.trim() || 'unknown';
 
     const user = await this.userRepository.findByEmail(email);
-    const isActiveAdmin =
-      user !== null && (await this.platformAdminRepository.isActiveAdmin(user.userId.value));
+    const authContext =
+      user !== null
+        ? await this.platformAdminRepository.findActiveAdminContext(user.userId.value)
+        : null;
 
     const passwordMatches = await this.passwordHasher.verify(
       password,
       PasswordHash.create(user?.passwordHash.value ?? TIMING_SAFE_DUMMY_PASSWORD_HASH),
     );
 
-    if (user === null || !isActiveAdmin || !passwordMatches) {
+    if (user === null || authContext === null || !passwordMatches) {
       if (user !== null) {
         const maxFailedLoginAttempts = await this.systemConfiguration.getNumber(
           SYSTEM_CONFIG_KEYS.maxFailedLoginAttempts,
@@ -164,7 +166,11 @@ export class PlatformAdminLoginUseCase {
       occurredAt: now,
     });
 
-    const accessToken = this.platformAdminTokenService.signAccessToken({ sub: user.userId.value });
+    // Non-null: the failure branch above already returned for a null authContext.
+    const accessToken = this.platformAdminTokenService.signAccessToken({
+      sub: user.userId.value,
+      role: authContext.role,
+    });
 
     return {
       accessToken,

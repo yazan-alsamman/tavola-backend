@@ -60,14 +60,18 @@ export class PlatformAdminGuard implements CanActivate {
 
     // Live revocation/existence check - a still-unexpired token for an
     // admin whose PlatformAdmin row was later revoked (or never existed)
-    // must not keep working.
-    const isActive = await this.platformAdminRepository.isActiveAdmin(claims.sub);
-    if (!isActive) {
+    // must not keep working. Phase 19.1 (ADR-034 §11-12): also re-verifies
+    // `role` against the live row on every request rather than trusting the
+    // JWT claim alone, so a role demotion (or revocation) takes effect
+    // immediately, not merely on next login.
+    const authContext = await this.platformAdminRepository.findActiveAdminContext(claims.sub);
+    if (!authContext) {
       throw new ForbiddenException('Platform Admin access required.');
     }
 
     (request as unknown as Record<string, unknown>)[PLATFORM_ADMIN_ACTOR_KEY] = {
       userId: claims.sub,
+      role: authContext.role,
     };
 
     return true;

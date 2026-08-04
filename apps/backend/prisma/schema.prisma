@@ -115,6 +115,17 @@ enum AuditActorType {
   User
   Employee
   System
+  PlatformAdmin
+}
+
+/**
+ * ADR-034 §11 — two-tier Platform role. `PlatformSupport` is read-only
+ * (no Suspend/Delete/Restore/Reversal/Manual-Record/Credential-Reset/
+ * pricing-mutation authority anywhere this enum is checked).
+ */
+enum PlatformAdminRole {
+  PlatformAdmin
+  PlatformSupport
 }
 
 enum ConsentType {
@@ -407,10 +418,11 @@ model UserConsent {
 }
 
 model PlatformAdmin {
-  id        String    @id @default(uuid()) @db.Uuid
-  userId    String    @unique @map("user_id") @db.Uuid
-  createdAt DateTime  @default(now()) @map("created_at")
-  revokedAt DateTime? @map("revoked_at")
+  id        String            @id @default(uuid()) @db.Uuid
+  userId    String            @unique @map("user_id") @db.Uuid
+  role      PlatformAdminRole @default(PlatformAdmin)
+  createdAt DateTime          @default(now()) @map("created_at")
+  revokedAt DateTime?         @map("revoked_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

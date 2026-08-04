@@ -67,7 +67,7 @@ export class TenantContextService implements TenantContextPort {
    * stored context (bootstrap/`TenantBootstrapContext` callers) collapses to
    * `null`, same as `getOrganizationId()`.
    */
-  getActorType(): 'User' | 'Employee' | 'OrganizationMember' | null {
+  getActorType(): 'User' | 'Employee' | 'OrganizationMember' | 'PlatformAdmin' | null {
     return this.storage.getStore()?.actorType ?? null;
   }
 }

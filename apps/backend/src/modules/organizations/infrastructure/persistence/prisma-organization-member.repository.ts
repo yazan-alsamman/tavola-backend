@@ -38,6 +38,17 @@ export class PrismaOrganizationMemberRepository implements OrganizationMemberRep
     });
   }
 
+  async findOwner(organizationId: OrganizationId): Promise<OrganizationMember | null> {
+    const row = await this.prismaContext.client.organizationMember.findFirst({
+      where: {
+        organizationId: organizationId.value,
+        role: OrganizationMemberRole.Owner,
+        status: OrganizationMemberStatus.Active,
+      },
+    });
+    return row ? OrganizationMemberPrismaMapper.toDomain(row) : null;
+  }
+
   async save(member: OrganizationMember): Promise<void> {
     const data = OrganizationMemberPrismaMapper.toPersistence(member);
     await this.prismaContext.client.organizationMember.upsert({

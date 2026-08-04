@@ -28,15 +28,20 @@ module.exports = {
       // Raw-client bypass prevention (TENANCY.md, ADR-012, Phase 2.13.1):
       // repositories must inject `PrismaContext` (the tenant-scoped,
       // transaction-aware client) so tenant-owned queries can never
-      // accidentally skip enforcement. `PrismaLoginOrganizationReader` and
-      // `PrismaRestaurantDirectoryReader` are the two architecturally
-      // justified exceptions - see each file's own doc comment for why its
-      // query must run without a bound tenant identity.
+      // accidentally skip enforcement. `PrismaLoginOrganizationReader`,
+      // `PrismaRestaurantDirectoryReader`, and `PrismaDiscoveryReader` are
+      // architecturally justified exceptions - see each file's own doc
+      // comment for why its query must run without a bound tenant identity.
+      // `PrismaPlatformAdminRestaurantLookupReader` (Phase 19.1, ADR-035
+      // Pattern 2) is the Platform Back Office case: same "no single tenant
+      // bound yet" justification, but deliberately INCLUDES `organizationId`
+      // in its response, unlike the three customer-facing readers above.
       files: ['src/modules/**/infrastructure/persistence/**/*.ts'],
       excludedFiles: [
         '**/prisma-login-organization-reader.ts',
         '**/prisma-restaurant-directory-reader.ts',
         '**/prisma-discovery-reader.ts',
+        '**/prisma-platform-admin-restaurant-lookup.reader.ts',
       ],
       rules: {
         'no-restricted-imports': [

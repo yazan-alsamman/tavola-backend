@@ -65,14 +65,18 @@ Phase numbers below match TASKS.md exactly.
 | 7     | Reservation Engine       | ✅ Completed | 100%     |
 | 8     | WebSocket                | ✅ Completed | 100%     |
 | 9     | Notification System      | 🟢 Complete, live + strict-E2E verified (not production-verified) | ~95% |
-| 10    | Reviews                  | ⏳ Pending    | 0%       |
+| 10    | Reviews                  | ✅ Completed | 100%     |
 | 11    | Offers                   | ✅ Completed | 100%     |
-| 12    | Subscription System      | 🟡 Architecture frozen (ADR-027, 2026-07-28), not implemented | 0%       |
+| 12    | Subscription System      | ✅ Completed (ADR-027, architecture frozen and implemented 2026-07-28) | 100%     |
 | 13    | Payments                 | ❌ Removed from product scope (Owner Decision, 2026-07-28) — not implemented, not planned | N/A |
-| 14    | Analytics                | ⏳ Pending    | 0%       |
+| 14    | Analytics                | ✅ Completed (ADR-028, architecture frozen and implemented 2026-07-28) | 100%     |
 | 15    | Optimization             | ✅ Complete   | 100%     |
 | 16    | Testing                  | ⏳ Pending    | 0%       |
 | 17    | Deployment               | ⏳ Pending    | 0%       |
+| 18    | Menu Management           | 🟡 Architecture frozen (ADR-031, 2026-08-02; corrected by ADR-032, 2026-08-03), not implemented | 0%       |
+| 19    | Platform Back Office       | 🟡 Architecture frozen (ADR-033/034/035, 2026-08-04), not implemented | 0%       |
+
+**Correction (2026-08-04):** rows 10 (Reviews), 12 (Subscription System), and 14 (Analytics) above previously showed stale statuses ("Pending"/"Architecture frozen, not implemented") from before these phases were actually completed; corrected to match `TASKS.md` and `README.md`, which have been authoritative on their real status since 2026-07-28. Rows 18 and 19 were previously absent from this table entirely — added for completeness. Per the Phase Numbering rule above, `TASKS.md` remains authoritative if this table ever drifts again.
 
 Phase 6 is now COMPLETE: Merge Tables / Split Tables (architecture-frozen ADR-026, 2026-07-25) are implemented and live-verified (2026-07-26) — see TASKS.md's "Phase 6 — Merge/Split Implementation & Verification Report". Phase 8 is implemented, live-verified, and E2E verification-closed (2026-07-25) — see TASKS.md's Phase 8 Implementation & Verification Report and its Verification Closure Addendum. Phase 11 (Offers) is now COMPLETE and LIVE VERIFIED (2026-07-28 — architecture frozen and implemented the same day) — see TASKS.md's "Phase 11 — Offers: Pre-implementation architecture decisions" and "Phase 11 — Offers: Implementation & Verification Report". A phase-independent Customer Restaurant Discovery & Public Read Surface (public restaurant/branch/floor-plan/table-topology browsing, plus Customer own-reservation read endpoints) was implemented and live-verified the same day — see TASKS.md's "Customer Restaurant Discovery & Public Read Surface — Implementation & Verification Report".
 
@@ -574,6 +578,14 @@ Minimum target coverage: **90%** (see TESTING_STRATEGY.md)
 * Discovery `hasMenu` boolean (no search, no indexing, no recommendation engine)
 
 Explicitly out of Phase 18: Reservations/Reviews/Offers/Messaging/Analytics/Notifications/Realtime integration (Offer→MenuItem reference documented for a future phase only, not implemented); `MenuItem.sku` explicitly evaluated and deferred pending a future POS/Inventory/ERP integration ADR (ADR-032).
+
+---
+
+# Phase 19 — Platform Back Office
+
+**Architecture frozen 2026-08-04 (DECISIONS.md ADR-033/ADR-034/ADR-035). Phase 19.1 — a curated subset of ADR-034 — implemented 2026-08-04**: Platform Roles/RBAC (`PlatformAdmin`/`PlatformSupport`), Platform Admin account CRUD, Restaurant Suspend/Reactivate/Delete/Restore, Organization Suspend/Reactivate/Emergency Ownership Transfer, and Account access control (Force Logout/Reset Credentials/Disable/Enable Login). See TASKS.md's Phase 19 section for the full checklist and Phase 19.1 Implementation Report.
+
+**Not yet authorized/implemented**: ADR-033 (Customer Acquisition & Pricing Engine) in full; ADR-034's Audit Log Read API, narrow per-entity lookup, Platform Dashboard composition, Notification delivery-status aggregation; complete Organization Management (Delete/Restore).
 
 ---
 

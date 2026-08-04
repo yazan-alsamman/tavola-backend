@@ -150,6 +150,16 @@ export class SessionFamilyRevokedEvent extends DomainEvent {
   public readonly payload: AuthEventPayload & {
     tokenFamilyId: string;
     reason: string;
+    /**
+     * Phase 19.1 (ADR-034 §8) - optional, set only by
+     * `PlatformAdminForceLogoutUseCase` (`reason: SessionRevokeReason.Admin`),
+     * where `userId` is the TARGET account and the acting PlatformAdmin is a
+     * different identity. Every existing self-service producer (reuse-detected,
+     * session-version-bump) leaves this unset - `payload.userId` already IS
+     * the actor in those cases (reflexive), preserving `AuditingEventPublisher`'s
+     * existing `actorId: event.payload.userId` fallback unchanged for them.
+     */
+    actorId?: string;
   };
 
   constructor(
@@ -157,6 +167,7 @@ export class SessionFamilyRevokedEvent extends DomainEvent {
     payload: AuthEventPayload & {
       tokenFamilyId: string;
       reason: string;
+      actorId?: string;
     },
     occurredAt: Date = new Date(),
     correlationId?: string,
@@ -322,5 +333,61 @@ export class CustomerPasswordResetCompletedEvent extends DomainEvent {
     correlationId?: string,
   ) {
     super(eventId, occurredAt, correlationId);
+  }
+}
+
+/**
+ * ADR-034 §8 (Phase 19.1) - PlatformAdmin Credential Reset. `payload.userId`
+ * is the TARGET account; distinct from self-service `PasswordResetCompletedEvent`
+ * - no OTP step, direct set by the admin, mirroring the trust model already
+ * established for Restaurant Owner provisioning (ADR-022 Decision #15).
+ */
+export class PlatformAdminCredentialResetEvent extends DomainEvent {
+  public readonly eventName = 'PlatformAdminCredentialReset';
+  public readonly payload: { targetUserId: string; resetBy: string };
+
+  constructor(
+    eventId: string,
+    payload: { targetUserId: string; resetBy: string },
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+    this.payload = payload;
+    this.seal();
+  }
+}
+
+/** ADR-034 §8 - reuses the existing `User.status` field, no new column. */
+export class AccountLoginDisabledEvent extends DomainEvent {
+  public readonly eventName = 'AccountLoginDisabled';
+  public readonly payload: { targetUserId: string; actorId: string };
+
+  constructor(
+    eventId: string,
+    payload: { targetUserId: string; actorId: string },
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+    this.payload = payload;
+    this.seal();
+  }
+}
+
+/** ADR-034 §8 - the symmetric Enable Login. */
+export class AccountLoginEnabledEvent extends DomainEvent {
+  public readonly eventName = 'AccountLoginEnabled';
+  public readonly payload: { targetUserId: string; actorId: string };
+
+  constructor(
+    eventId: string,
+    payload: { targetUserId: string; actorId: string },
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+    this.payload = payload;
+    this.seal();
   }
 }

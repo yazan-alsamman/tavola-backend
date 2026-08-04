@@ -77,12 +77,16 @@ Legend: **Supported** = full architectural specification exists | **Partial** = 
 | Localization | **Supported** | LOCALIZATION.md, UserPreferences |
 | Currency Management | **Supported** | Country, Currency, Branch.currency |
 | Timezone Handling | **Supported** | Branch.timezone, UTC storage policy |
-| Platform Administration | **Supported** | PlatformAdmins, $systemContext |
+| Platform Administration | **Supported** | PlatformAdmins, $systemContext *(see 2026-08-04 addendum below — corrected by ADR-035)* |
 | Coupons | **Partial** | Phase 11 Offers (coupon type in offers) |
 | Loyalty / Gift Cards / QR / Delivery | **Partial** | NON_FUNCTIONAL_REQUIREMENTS extensibility; no schema yet (by design) |
 | White-label | **Partial** | SystemConfiguration branding; deployment ADR open |
 | GraphQL / Partner APIs | **Partial** | REST canonical; partner API keys future ADR |
 | Microservices / Offline / AI | **Partial** | ARCHITECTURE.md future evolution paths |
+
+---
+
+**Addendum (2026-08-04, ADR-035) — historical table row above not rewritten.** Direct source inspection during the Phase 19 Final Decision session found `$systemContext`, as referenced in the "Platform Administration" row above, was never implemented. ADR-035 retires it and formalizes the two mechanisms that actually shipped in production instead: Explicit Tenant Rebind and Tenant-Agnostic Raw Reader (see TENANCY.md). This note is an addendum, not a correction of the original 2026-07-07 audit's findings at the time it was written.
 
 ---
 

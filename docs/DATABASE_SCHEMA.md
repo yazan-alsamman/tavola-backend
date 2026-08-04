@@ -342,18 +342,103 @@ Indexes
 
 Purpose
 
-Users with platform-wide administration access; never tenant-scoped. Uses `$systemContext` per TENANCY.md.
+Users with platform-wide administration access; never tenant-scoped. Cross-tenant access uses one of the two named patterns in TENANCY.md — Explicit Tenant Rebind or Tenant-Agnostic Raw Reader — per ADR-035 (corrects this section's prior reference to an unimplemented `$systemContext`).
 
 Fields
 
 * id (UUID)
 * userId (unique)
+* role (`PlatformAdmin`, `PlatformSupport` — added ADR-034 §11; `PlatformSupport` is read-only, no mutation authority)
 * createdAt
 * revokedAt (nullable)
 
 Indexes
 
 * userId (unique)
+
+Notes (ADR-034)
+
+* PlatformAdmin account create/list/revoke is a PlatformAdmin-only capability (§10) — at least one account must remain operationally seeded (bootstrap); API-driven creation applies only to accounts created after that seed.
+* `role` is embedded in `PlatformAdminClaims` at token issuance, mirroring how `OrganizationMember.role`/`Employee.roleId` are embedded in their own JWT claims — never re-resolved from a long-lived cache. `PlatformAdminGuard` still re-verifies the live row on every request, so a role change or revocation takes effect immediately.
+
+**Implemented (Phase 19.1, 2026-08-04):** migration `20260804150000_phase_19_1_platform_back_office_foundation` adds the `role` column (`PlatformAdminRole` enum, default `PlatformAdmin` for pre-existing rows) and the `AuditActorType.PlatformAdmin` enum value below. Reactivate (clearing `revokedAt`) and Update (role change) are implementation-scope additions beyond ADR-034 §10's literal "create/list/revoke" text — symmetric with the Restaurant/Organization Reactivate capabilities this same phase adds, requiring no schema beyond what's listed here. No hard-delete endpoint exists — no precedent anywhere in this codebase for hard-deleting an audit-relevant entity.
+
+---
+
+## Customer Acquisitions (Phase 19, architecture frozen 2026-08-04, ADR-033 — not implemented, no Prisma model or migration exists)
+
+Purpose
+
+The platform's financial source of truth: one immutable row per `(Restaurant, Customer-Identity)` relationship the platform has delivered. Never computed from `Reservations` at read time — see ADR-033's Context for why. Deliberately not a payment/invoice record — see Notes.
+
+Fields
+
+* id (UUID)
+* restaurantId (FK Restaurant, RESTRICT)
+* userId (nullable, XOR with reservationGuestId — same party invariant as `Reservations`)
+* reservationGuestId (nullable, XOR with userId)
+* sourceReservationId (FK Reservation — the reservation whose transition into `Approved` triggered this row; nullable when `createdVia = ManualPlatformAdminCorrection`)
+* reservationSource (snapshot of `Reservation.source` at trigger time; nullable when manually recorded)
+* createdVia (`Automatic`, `ManualPlatformAdminCorrection` — ADR-033 §11)
+* status (`Recorded`, `Reversed`)
+* feeAmount (decimal, snapshotted at creation — never recomputed from a live `AcquisitionPricingRule` join)
+* feeCurrency
+* pricingRuleId (FK Acquisition Pricing Rules — the rule applied at creation time)
+* recordedAt
+* reversedAt (nullable)
+* reversedBy (nullable — PlatformAdmin id)
+* reversalReason (nullable, required together with reversedAt/reversedBy)
+* createdAt
+* updatedAt
+
+Indexes
+
+* partial unique (restaurantId, userId) WHERE status != 'Reversed' AND userId IS NOT NULL
+* partial unique (restaurantId, reservationGuestId) WHERE status != 'Reversed' AND reservationGuestId IS NOT NULL
+* restaurantId
+* recordedAt
+
+Notes
+
+* Never hard-deleted. Correcting an over-count is always a `Reversed` compensating record (PlatformAdmin-only); correcting an under-count is always a new `ManualPlatformAdminCorrection` row — both governed by the same partial unique indexes above (ADR-033 §§9–11).
+* Transitively tenant-owned via `restaurantId → Restaurant.organizationId`, identical shape to `RestaurantUsage` (ADR-027 §12) — no `organizationId` column, not registered in `DIRECT_TENANT_OWNED_MODELS`. Created inside the ordinary tenant-scoped transaction that approves the triggering Reservation — no cross-tenant mechanism needed for creation (ADR-033 §13).
+* No `Payment`/`PaymentTransaction`/`Invoice`/`BillingAccount` field exists or may be added without a separate future owner decision explicitly reversing the payment-removal decision (ADR-033 §21).
+
+---
+
+## Acquisition Pricing Rules (Phase 19, architecture frozen 2026-08-04, ADR-033 — not implemented, no Prisma model or migration exists)
+
+Purpose
+
+The Pricing Engine's single source of truth. Flat fee, restaurant-specific override, organization-wide override, and campaign pricing are all the same primitive at different scope levels — one table, not four (ADR-033 §14).
+
+Fields
+
+* id (UUID)
+* scopeType (`Platform`, `Organization`, `Restaurant`)
+* scopeId (nullable — null only when scopeType = `Platform`)
+* feeType (`Flat`, `Percentage` — `Percentage` is structurally defined but application-layer-rejected until a future ADR introduces a monetary base value; ADR-033 §16)
+* flatAmount (decimal, nullable)
+* flatCurrency (nullable — exact-match resolution only, no FX conversion; ADR-033 §17)
+* percentageValue (decimal, nullable — reserved, unused)
+* effectiveFrom
+* effectiveTo (nullable — null = open-ended; a time-boxed row with both bounds set is how a "campaign" is expressed, no separate campaign concept)
+* label (human-readable, e.g. "Ramadan 2026 Free Acquisition Campaign")
+* createdBy (PlatformAdmin id)
+* archivedAt (nullable — stops future selection; archiving a mistaken rule is how "rollback" works, no separate mechanism)
+* createdAt
+* updatedAt
+
+Indexes
+
+* composite (scopeType, scopeId, effectiveFrom)
+* archivedAt
+
+Notes
+
+* Never edited in place once created (ADR-033 §15, mirrors ADR-027 §10's plan-immutability). A pricing change always creates a new row.
+* Resolution at acquisition time: most specific matching `scopeType` (Restaurant > Organization > Platform) whose currency matches the target Restaurant's operating currency, tie-broken by latest active `effectiveFrom`; falls back to the seeded Platform default (1000 SYP) if nothing else resolves; fails closed (explicit error) if no matching-currency rule exists at any scope (ADR-033 §17).
+* `AcquisitionPricingRule` at `Platform` scope is platform-global reference data, alongside `SubscriptionPlan`; at `Organization`/`Restaurant` scope it is transitively tenant-owned the same way `AcquisitionPricingRule`'s parent `CustomerAcquisitions` table is.
 
 ---
 
@@ -1667,7 +1752,7 @@ Fields
 
 * id (UUID)
 * actorId
-* actorType (`User`, `Employee`, `System`)
+* actorType (`User`, `Employee`, `System`, `PlatformAdmin` — added ADR-034 §1, implemented Phase 19.1; `OrganizationMember` actions remain mapped onto `User`, no proven need yet for a finer distinction)
 * action
 * targetType
 * targetId

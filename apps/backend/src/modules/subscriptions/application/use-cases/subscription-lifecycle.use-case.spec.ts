@@ -10,6 +10,7 @@ import {
   SubscriptionReactivatedEvent,
   SubscriptionCancelledEvent,
 } from '../../domain/events/subscription.events';
+import { PlatformAdminRole } from '@modules/platform-admin/domain/enums/platform-admin.enums';
 import { InMemorySubscriptionRepository } from '../../../../../test/subscriptions/support/in-memory-subscription.repository';
 import {
   CollectingEventPublisher,
@@ -23,7 +24,7 @@ describe('Subscription lifecycle use cases (Suspend/Reactivate/Cancel)', () => {
   const now = new Date('2026-07-28T12:00:00.000Z');
   const organizationId = '11111111-1111-4111-8111-111111111111';
   const planId = '22222222-2222-4222-8222-222222222222';
-  const actor = { userId: 'platform-admin-1' };
+  const actor = { userId: 'platform-admin-1', role: PlatformAdminRole.PlatformAdmin };
 
   function seedRepository(status: SubscriptionStatus): InMemorySubscriptionRepository {
     const repository = new InMemorySubscriptionRepository(organizationId);
