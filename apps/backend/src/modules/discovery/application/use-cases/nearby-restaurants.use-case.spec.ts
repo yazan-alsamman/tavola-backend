@@ -1,10 +1,12 @@
 import { NearbyRestaurantsUseCase } from './nearby-restaurants.use-case';
 import { ListRestaurantIdsWithActiveOfferUseCase } from '@modules/offers/application/use-cases/list-restaurant-ids-with-active-offer.use-case';
 import { ListRestaurantIdsWithMenuUseCase } from '@modules/menus/application/use-cases/list-restaurant-ids-with-menu.use-case';
+import { ListWorkingHoursByRestaurantIdsUseCase } from '@modules/restaurants/application/use-cases/list-working-hours-by-restaurant-ids.use-case';
 import { FakeDiscoveryReader } from '../../../../../test/discovery/support/fake-discovery-reader';
 import { FixedClock } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryOfferRepository } from '../../../../../test/offers/support/in-memory-offer.repository';
 import { InMemoryMenuRepository } from '../../../../../test/menus/support/in-memory-menu.repository';
+import { InMemoryWorkingHoursRepository } from '../../../../../test/restaurants/support/in-memory-working-hours.repository';
 import { RestaurantResult } from '@modules/restaurants/application/dto/restaurant.result';
 import { BranchResult } from '@modules/branches/application/dto/branch.result';
 
@@ -66,10 +68,14 @@ function buildUseCase(reader: FakeDiscoveryReader) {
   const listRestaurantIdsWithMenuUseCase = new ListRestaurantIdsWithMenuUseCase(
     new InMemoryMenuRepository(),
   );
+  const listWorkingHoursByRestaurantIdsUseCase = new ListWorkingHoursByRestaurantIdsUseCase(
+    new InMemoryWorkingHoursRepository(),
+  );
   return new NearbyRestaurantsUseCase(
     reader,
     listRestaurantIdsWithActiveOfferUseCase,
     listRestaurantIdsWithMenuUseCase,
+    listWorkingHoursByRestaurantIdsUseCase,
   );
 }
 
@@ -224,5 +230,30 @@ describe('NearbyRestaurantsUseCase (D2-D4)', () => {
     });
 
     expect(result.items.map((r) => r.restaurantId)).toEqual([matching.restaurantId]);
+  });
+
+  it('annotates every result with workingHours (Public Working Hours, empty array when unconfigured)', async () => {
+    const reader = new FakeDiscoveryReader();
+    const inside = restaurant('11111111-1111-4111-8111-111111111111', 'Inside');
+    reader.restaurants = [inside];
+    reader.branches = [
+      branch(
+        '22222222-2222-4222-8222-222222222221',
+        inside.restaurantId,
+        DAMASCUS.lat,
+        DAMASCUS.lng,
+      ),
+    ];
+
+    const useCase = buildUseCase(reader);
+    const result = await useCase.execute({
+      lat: DAMASCUS.lat,
+      lng: DAMASCUS.lng,
+      radiusKm: 5,
+      page: 1,
+      limit: 20,
+    });
+
+    expect(result.items[0].workingHours).toEqual([]);
   });
 });

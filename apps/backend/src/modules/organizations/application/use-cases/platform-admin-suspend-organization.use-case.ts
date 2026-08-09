@@ -28,7 +28,9 @@ import { toPlatformAdminOrganizationResult } from '../mappers/platform-admin-org
  * `AuditingEventPublisher` can correctly attribute this event via
  * `actorType: 'PlatformAdmin'`. Idempotent (`Organization.suspend()`'s own
  * no-op-if-already-Suspended invariant). Never mutates `Restaurant.status` -
- * no cascade, ever (§5).
+ * no cascade, ever (§5). M1 remediation: `suspend()` returns the same
+ * instance (reference-equal) when no transition occurred - that case skips
+ * both the save and the event/audit write below.
  */
 @Injectable()
 export class PlatformAdminSuspendOrganizationUseCase {
@@ -61,16 +63,20 @@ export class PlatformAdminSuspendOrganizationUseCase {
 
         const now = this.clock.now();
         const suspended = organization.suspend(now);
-        await this.organizationRepository.save(suspended);
+        const stateChanged = suspended !== organization;
 
-        await this.eventPublisher.publish(
-          new OrganizationSuspendedEvent(
-            this.idGenerator.generate(),
-            { organizationId: command.organizationId, actorId: command.actorId },
-            now,
-            command.correlationId,
-          ),
-        );
+        if (stateChanged) {
+          await this.organizationRepository.save(suspended);
+
+          await this.eventPublisher.publish(
+            new OrganizationSuspendedEvent(
+              this.idGenerator.generate(),
+              { organizationId: command.organizationId, actorId: command.actorId },
+              now,
+              command.correlationId,
+            ),
+          );
+        }
 
         return toPlatformAdminOrganizationResult(suspended);
       },

@@ -38,6 +38,11 @@ export interface UserProps {
   passwordChangedAt: Date | null;
   lastLoginAt: Date | null;
   anonymizedAt: Date | null;
+  // Phase 20.X (ADR-014 execution) - see schema.prisma's own comment on
+  // these two columns for why they're flat fields here rather than a
+  // separate request aggregate.
+  deletionRequestedAt: Date | null;
+  scheduledAnonymizationAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
@@ -150,12 +155,28 @@ export class User extends Entity<UserProps> {
     return this.props.deletedAt ? new Date(this.props.deletedAt.getTime()) : null;
   }
 
+  get deletionRequestedAt(): Date | null {
+    return this.props.deletionRequestedAt
+      ? new Date(this.props.deletionRequestedAt.getTime())
+      : null;
+  }
+
+  get scheduledAnonymizationAt(): Date | null {
+    return this.props.scheduledAnonymizationAt
+      ? new Date(this.props.scheduledAnonymizationAt.getTime())
+      : null;
+  }
+
   isSoftDeleted(): boolean {
     return this.props.deletedAt !== null;
   }
 
   isAnonymized(): boolean {
     return this.props.status === UserStatus.Anonymized;
+  }
+
+  hasPendingDeletionRequest(): boolean {
+    return this.props.scheduledAnonymizationAt !== null;
   }
 
   canLogin(now: Date = new Date()): void {
@@ -343,6 +364,40 @@ export class User extends Entity<UserProps> {
       ...this.props,
       notificationOptIn: props.notificationOptIn,
       marketingOptIn: props.marketingOptIn,
+      updatedAt: at,
+    });
+  }
+
+  /**
+   * Phase 20.X (ADR-014 execution) - `RequestAccountDeletionUseCase`.
+   * Deliberately does NOT change `status` - the account stays `Active`
+   * (loggable-in) throughout the grace period; only these two timestamps
+   * mark the pending request. Idempotent - a second request while one is
+   * already pending returns `this` unchanged (existing schedule wins, no
+   * reschedule), mirroring `disableLogin()`'s no-op-if-already-that-state
+   * convention (M1, Phase 19.1 audit).
+   */
+  requestDeletion(scheduledAnonymizationAt: Date, at: Date): User {
+    if (this.hasPendingDeletionRequest()) {
+      return this;
+    }
+    return User.reconstitute({
+      ...this.props,
+      deletionRequestedAt: at,
+      scheduledAnonymizationAt,
+      updatedAt: at,
+    });
+  }
+
+  /** Symmetric to `requestDeletion()`. Idempotent - a no-op if nothing is pending. */
+  cancelDeletionRequest(at: Date): User {
+    if (!this.hasPendingDeletionRequest()) {
+      return this;
+    }
+    return User.reconstitute({
+      ...this.props,
+      deletionRequestedAt: null,
+      scheduledAnonymizationAt: null,
       updatedAt: at,
     });
   }

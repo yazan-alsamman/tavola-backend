@@ -403,6 +403,195 @@ describe('/api/v1/discovery/restaurants (e2e)', () => {
     expect(table).toHaveProperty('shape');
   });
 
+  /**
+   * Public Working Hours & Restaurant Phone Privacy (customer-facing
+   * correction). Every assertion below inspects the actual serialized HTTP
+   * JSON (never just a TypeScript type) for both requirements: workingHours
+   * present where a customer browses a restaurant/branch, and phone genuinely
+   * absent - checked recursively so it cannot leak through a nested object.
+   */
+  describe('Public Working Hours & Restaurant Phone Privacy', () => {
+    function assertNoPhoneField(value: unknown): void {
+      if (Array.isArray(value)) {
+        value.forEach(assertNoPhoneField);
+        return;
+      }
+      if (value !== null && typeof value === 'object') {
+        for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+          expect(key.toLowerCase()).not.toContain('phone');
+          assertNoPhoneField(nested);
+        }
+      }
+    }
+
+    async function setUpRestaurantWithHoursAndPhone(
+      ownerAccessToken: string,
+      namePrefix: string,
+    ): Promise<{ restaurantId: string; branchId: string; branchPhone: string }> {
+      const restaurantResponse = await request(app!.getHttpServer())
+        .post('/api/v1/restaurants')
+        .set('Authorization', `Bearer ${ownerAccessToken}`)
+        .send({ name: `${namePrefix} Bistro`, slug: `${TEST_PREFIX}${uniqueId()}` })
+        .expect(201);
+      const restaurantId = restaurantResponse.body.data.restaurantId as string;
+
+      const branchPhone = '+963900000111';
+      const branchResponse = await request(app!.getHttpServer())
+        .post(`/api/v1/restaurants/${restaurantId}/branches`)
+        .set('Authorization', `Bearer ${ownerAccessToken}`)
+        .send({
+          city: 'Damascus',
+          address: '123 Main St',
+          countryCode: 'SY',
+          timezone: 'Asia/Damascus',
+          phone: branchPhone,
+        })
+        .expect(201);
+      const branchId = branchResponse.body.data.branchId as string;
+
+      await request(app!.getHttpServer())
+        .patch(`/api/v1/restaurants/${restaurantId}/working-hours`)
+        .set('Authorization', `Bearer ${ownerAccessToken}`)
+        .send({
+          entries: [
+            { dayOfWeek: 1, openingTime: '09:00', closingTime: '17:00' },
+            { dayOfWeek: 3, openingTime: '09:00', closingTime: '17:00' },
+          ],
+        })
+        .expect(200);
+
+      await request(app!.getHttpServer())
+        .patch(`/api/v1/restaurants/${restaurantId}/branches/${branchId}/working-hours`)
+        .set('Authorization', `Bearer ${ownerAccessToken}`)
+        .send({
+          entries: [
+            {
+              dayOfWeek: 5,
+              openingTime: '17:00',
+              closingTime: '23:30',
+              breakStartTime: null,
+              breakEndTime: null,
+            },
+          ],
+        })
+        .expect(200);
+
+      return { restaurantId, branchId, branchPhone };
+    }
+
+    it('public restaurant detail includes workingHours and never a phone field', async () => {
+      if (!dbAvailable) return;
+      const owner = await registerAndLoginOwner('wh-restaurant');
+      const { restaurantId } = await setUpRestaurantWithHoursAndPhone(
+        owner.accessToken,
+        'Working Hours Restaurant',
+      );
+
+      const response = await request(app!.getHttpServer())
+        .get(`/api/v1/discovery/restaurants/${restaurantId}`)
+        .expect(200);
+
+      expect(response.body.data.workingHours).toEqual([
+        expect.objectContaining({ dayOfWeek: 1, openingTime: '09:00', closingTime: '17:00' }),
+        expect.objectContaining({ dayOfWeek: 3, openingTime: '09:00', closingTime: '17:00' }),
+      ]);
+      assertNoPhoneField(response.body.data);
+    });
+
+    it('public branch detail includes its own workingHours and never a phone field', async () => {
+      if (!dbAvailable) return;
+      const owner = await registerAndLoginOwner('wh-branch');
+      const { restaurantId, branchId, branchPhone } = await setUpRestaurantWithHoursAndPhone(
+        owner.accessToken,
+        'Working Hours Branch',
+      );
+
+      const response = await request(app!.getHttpServer())
+        .get(`/api/v1/discovery/restaurants/${restaurantId}/branches/${branchId}`)
+        .expect(200);
+
+      expect(response.body.data.workingHours).toEqual([
+        expect.objectContaining({ dayOfWeek: 5, openingTime: '17:00', closingTime: '23:30' }),
+      ]);
+      assertNoPhoneField(response.body.data);
+      expect(JSON.stringify(response.body.data)).not.toContain(branchPhone);
+
+      // Sanity check the phone was genuinely persisted (proves this is a
+      // privacy correction, not merely a branch that never had one).
+      const managementResponse = await request(app!.getHttpServer())
+        .get(`/api/v1/restaurants/${restaurantId}/branches/${branchId}`)
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .expect(200);
+      expect(managementResponse.body.data.phone).toBe(branchPhone);
+    });
+
+    it('public branch list includes workingHours per branch and never a phone field', async () => {
+      if (!dbAvailable) return;
+      const owner = await registerAndLoginOwner('wh-branch-list');
+      const { restaurantId, branchPhone } = await setUpRestaurantWithHoursAndPhone(
+        owner.accessToken,
+        'Working Hours Branch List',
+      );
+
+      const response = await request(app!.getHttpServer())
+        .get(`/api/v1/discovery/restaurants/${restaurantId}/branches`)
+        .expect(200);
+
+      expect(response.body.data.items).toHaveLength(1);
+      expect(response.body.data.items[0].workingHours).toEqual([
+        expect.objectContaining({ dayOfWeek: 5 }),
+      ]);
+      assertNoPhoneField(response.body.data);
+      expect(JSON.stringify(response.body.data)).not.toContain(branchPhone);
+    });
+
+    it('public restaurant list, nearby, and compare all annotate workingHours (empty array default) and never a phone field', async () => {
+      if (!dbAvailable) return;
+      const owner = await registerAndLoginOwner('wh-search');
+      const { restaurantId } = await setUpRestaurantWithHoursAndPhone(
+        owner.accessToken,
+        'Working Hours Search',
+      );
+
+      const listResponse = await request(app!.getHttpServer())
+        .get('/api/v1/discovery/restaurants')
+        .query({ limit: 100 })
+        .expect(200);
+      const listItem = listResponse.body.data.items.find(
+        (item: { restaurantId: string }) => item.restaurantId === restaurantId,
+      );
+      expect(listItem).toHaveProperty('workingHours');
+      assertNoPhoneField(listResponse.body.data);
+
+      const compareResponse = await request(app!.getHttpServer())
+        .post('/api/v1/discovery/restaurants/compare')
+        .send({ restaurantIds: [restaurantId, randomUUID()] })
+        .expect(200);
+      expect(compareResponse.body.data.items[0]).toHaveProperty('workingHours');
+      assertNoPhoneField(compareResponse.body.data);
+    });
+
+    it('a restaurant/branch with no configured working hours returns an empty workingHours array, not an error', async () => {
+      if (!dbAvailable) return;
+      const owner = await registerAndLoginOwner('wh-empty');
+      const { restaurantId, branchId } = await setUpRestaurantBranchTable(
+        owner.accessToken,
+        'No Hours',
+      );
+
+      const restaurantResponse = await request(app!.getHttpServer())
+        .get(`/api/v1/discovery/restaurants/${restaurantId}`)
+        .expect(200);
+      expect(restaurantResponse.body.data.workingHours).toEqual([]);
+
+      const branchResponse = await request(app!.getHttpServer())
+        .get(`/api/v1/discovery/restaurants/${restaurantId}/branches/${branchId}`)
+        .expect(200);
+      expect(branchResponse.body.data.workingHours).toEqual([]);
+      assertNoPhoneField(branchResponse.body.data);
+    });
+  });
+
   it('D12: rate-limits the public Discovery surface at 60 requests/60s per client IP, returning 429 past the limit', async () => {
     if (!dbAvailable) return;
     // A fresh, distinguishing header so this test's own bucket cannot collide

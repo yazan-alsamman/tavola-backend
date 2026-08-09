@@ -280,4 +280,15 @@ export class PrismaReservationRepository implements ReservationRepository {
     ]);
     return { items: rows.map((row) => ReservationPrismaMapper.toDomain(row)), total };
   }
+
+  async hasOpenReservationsByUserId(userId: UserId, now: Date): Promise<boolean> {
+    const count = await this.prismaContext.client.reservation.count({
+      where: {
+        userId: userId.value,
+        status: { in: [ReservationStatus.Pending, ReservationStatus.Approved] },
+        reservationEndTime: { gt: now },
+      },
+    });
+    return count > 0;
+  }
 }

@@ -111,6 +111,17 @@ describe('PlatformAdminSuspendRestaurantUseCase', () => {
     });
   });
 
+  it('M1: a no-op repeat call publishes no second RestaurantSuspendedEvent and writes no second audit row', async () => {
+    const { useCase, restaurantRepository, eventPublisher } = build();
+    await seedRestaurant(restaurantRepository);
+
+    await useCase.execute({ restaurantId, actorId });
+    expect(eventPublisher.events).toHaveLength(1);
+
+    await useCase.execute({ restaurantId, actorId });
+    expect(eventPublisher.events).toHaveLength(1);
+  });
+
   it('rejects (404) when the lookup cannot resolve the restaurant id at all - no organizationId is ever bound (IDOR-safe)', async () => {
     const { useCase, tenantContext } = build(false);
 

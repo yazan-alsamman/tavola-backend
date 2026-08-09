@@ -48,6 +48,8 @@ describe('User entity', () => {
     passwordChangedAt: null,
     lastLoginAt: null,
     anonymizedAt: null,
+    deletionRequestedAt: null,
+    scheduledAnonymizationAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,

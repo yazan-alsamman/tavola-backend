@@ -179,6 +179,13 @@ import { ReservationsController } from './presentation/controllers/reservations.
     RESERVATION_GUEST_REPOSITORY,
     APPROVED_RESERVATION_OPERATIONAL_SCHEDULER,
     ScheduleApprovedReservationSignalsService,
+    // Phase 20.X: RESERVATION_REPOSITORY already covers
+    // RequestAccountDeletionUseCase's open-reservations gate;
+    // ListMyReservationsUseCase is additionally exported so
+    // ExportUserDataUseCase can reuse it verbatim rather than re-deriving
+    // the same pagination/mapping logic - UsersModule imports this module
+    // one-directionally, ReservationsModule never imports UsersModule back.
+    ListMyReservationsUseCase,
   ],
 })
 export class ReservationsModule {}

@@ -9,6 +9,10 @@ export class InMemoryWorkingHoursRepository implements WorkingHoursRepository {
     return [...(this.rowsByRestaurantId.get(restaurantId.value) ?? [])];
   }
 
+  async findAllByRestaurantIds(restaurantIds: RestaurantId[]): Promise<WorkingHours[]> {
+    return restaurantIds.flatMap((id) => [...(this.rowsByRestaurantId.get(id.value) ?? [])]);
+  }
+
   async replaceAllForRestaurant(
     restaurantId: RestaurantId,
     entries: WorkingHours[],

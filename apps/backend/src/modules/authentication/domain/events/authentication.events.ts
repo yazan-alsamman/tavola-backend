@@ -391,3 +391,87 @@ export class AccountLoginEnabledEvent extends DomainEvent {
     this.seal();
   }
 }
+
+/**
+ * Phase 20.X (ADR-014 execution) - `ExportUserDataUseCase`. The one
+ * read-flow event in this codebase (EVENTS.md's Privacy Events section
+ * names it explicitly, unlike every other plain `GET`) - exporting a
+ * customer's full data trove is sensitive enough to warrant an audit
+ * trail on its own.
+ */
+export class UserDataExportRequestedEvent extends DomainEvent {
+  public readonly eventName = 'UserDataExportRequested';
+  public readonly payload: { userId: string };
+
+  constructor(
+    eventId: string,
+    payload: { userId: string },
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+    this.payload = payload;
+    this.seal();
+  }
+}
+
+/**
+ * Phase 20.X (ADR-014 execution) - `RequestAccountDeletionUseCase`. Does
+ * NOT fire again for an idempotent repeat request while one is already
+ * pending (`User.requestDeletion()`'s own no-op-if-already-pending guard).
+ */
+export class UserAccountDeletionRequestedEvent extends DomainEvent {
+  public readonly eventName = 'UserAccountDeletionRequested';
+  public readonly payload: { userId: string; scheduledAnonymizationAt: string };
+
+  constructor(
+    eventId: string,
+    payload: { userId: string; scheduledAnonymizationAt: string },
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+    this.payload = payload;
+    this.seal();
+  }
+}
+
+/** Phase 20.X (ADR-014 execution) - `CancelAccountDeletionUseCase`, within the grace period. */
+export class UserAccountDeletionCancelledEvent extends DomainEvent {
+  public readonly eventName = 'UserAccountDeletionCancelled';
+  public readonly payload: { userId: string };
+
+  constructor(
+    eventId: string,
+    payload: { userId: string },
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+    this.payload = payload;
+    this.seal();
+  }
+}
+
+/**
+ * Phase 20.X (ADR-014 execution) - `AnonymizeUserAccountUseCase`, fired
+ * once the grace period has elapsed and the irreversible PII scrub has
+ * run. `payload.userId` still resolves the row (the id itself is never
+ * anonymized) - only the caller must remember every other field on that
+ * row is now scrubbed placeholder data.
+ */
+export class UserAccountAnonymizedEvent extends DomainEvent {
+  public readonly eventName = 'UserAccountAnonymized';
+  public readonly payload: { userId: string };
+
+  constructor(
+    eventId: string,
+    payload: { userId: string },
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+    this.payload = payload;
+    this.seal();
+  }
+}

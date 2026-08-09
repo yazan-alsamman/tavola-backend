@@ -1,10 +1,12 @@
 import { CompareRestaurantsUseCase } from './compare-restaurants.use-case';
 import { ListRestaurantIdsWithActiveOfferUseCase } from '@modules/offers/application/use-cases/list-restaurant-ids-with-active-offer.use-case';
 import { ListRestaurantIdsWithMenuUseCase } from '@modules/menus/application/use-cases/list-restaurant-ids-with-menu.use-case';
+import { ListWorkingHoursByRestaurantIdsUseCase } from '@modules/restaurants/application/use-cases/list-working-hours-by-restaurant-ids.use-case';
 import { FakeDiscoveryReader } from '../../../../../test/discovery/support/fake-discovery-reader';
 import { FixedClock } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryOfferRepository } from '../../../../../test/offers/support/in-memory-offer.repository';
 import { InMemoryMenuRepository } from '../../../../../test/menus/support/in-memory-menu.repository';
+import { InMemoryWorkingHoursRepository } from '../../../../../test/restaurants/support/in-memory-working-hours.repository';
 import { RestaurantResult } from '@modules/restaurants/application/dto/restaurant.result';
 
 function restaurant(
@@ -38,10 +40,14 @@ function buildUseCase(reader: FakeDiscoveryReader) {
   const listRestaurantIdsWithMenuUseCase = new ListRestaurantIdsWithMenuUseCase(
     new InMemoryMenuRepository(),
   );
+  const listWorkingHoursByRestaurantIdsUseCase = new ListWorkingHoursByRestaurantIdsUseCase(
+    new InMemoryWorkingHoursRepository(),
+  );
   return new CompareRestaurantsUseCase(
     reader,
     listRestaurantIdsWithActiveOfferUseCase,
     listRestaurantIdsWithMenuUseCase,
+    listWorkingHoursByRestaurantIdsUseCase,
   );
 }
 
@@ -103,5 +109,16 @@ describe('CompareRestaurantsUseCase (D15/D18/D19)', () => {
     });
 
     expect(result.items).toEqual([]);
+  });
+
+  it('annotates every result with workingHours (Public Working Hours, empty array when unconfigured)', async () => {
+    const reader = new FakeDiscoveryReader();
+    reader.restaurants = [a, b];
+
+    const useCase = buildUseCase(reader);
+    const result = await useCase.execute({ restaurantIds: [a.restaurantId, b.restaurantId] });
+
+    expect(result.items.every((item) => Array.isArray(item.workingHours))).toBe(true);
+    expect(result.items.every((item) => item.workingHours.length === 0)).toBe(true);
   });
 });

@@ -8,7 +8,7 @@ import {
 } from '@modules/reservations/domain/enums/reservation.enums';
 import { ReservationConflictException } from '@modules/reservations/domain/exceptions/reservation-conflict.exception';
 import { ReservationAvailabilityService } from '@modules/reservations/domain/services/reservation-availability.service';
-import { ReservationId, TableId } from '@shared/domain/value-objects/identifiers.vo';
+import { ReservationId, TableId, UserId } from '@shared/domain/value-objects/identifiers.vo';
 import { isDatabaseReachable, skipUnlessDatabaseAvailable } from '../support/live-database';
 import { createPrismaIntegrationModule } from '../support/prisma-integration-testing';
 
@@ -158,6 +158,102 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
     );
     expect(overlapping).toHaveLength(1);
     expect(overlapping[0].reservationId.value).toBe(reservation.reservationId.value);
+  });
+
+  it('hasOpenReservationsByUserId (Phase 20.X, account deletion gate) returns true for a Pending reservation not yet ended', async () => {
+    if (!dbAvailable) return;
+
+    const { restaurantId, branchId, tableId } = await seedRestaurantBranchTable();
+    const user = await seedUser();
+    const reservation = buildReservation(restaurantId, branchId, tableId, user.id, {
+      startTime: new Date('2026-09-04T18:00:00.000Z'),
+      endTime: new Date('2026-09-04T19:30:00.000Z'),
+    });
+    await repository.createWithLock(reservation, `lock-${randomUUID()}`);
+
+    const hasOpen = await repository.hasOpenReservationsByUserId(
+      UserId.create(user.id),
+      new Date('2026-09-01T00:00:00.000Z'),
+    );
+
+    expect(hasOpen).toBe(true);
+  });
+
+  it('hasOpenReservationsByUserId returns true for an Approved reservation not yet ended', async () => {
+    if (!dbAvailable) return;
+
+    const { restaurantId, branchId, tableId } = await seedRestaurantBranchTable();
+    const user = await seedUser();
+    const reservation = buildReservation(restaurantId, branchId, tableId, user.id, {
+      startTime: new Date('2026-09-05T18:00:00.000Z'),
+      endTime: new Date('2026-09-05T19:30:00.000Z'),
+    });
+    await repository.createWithLock(reservation, `lock-${randomUUID()}`);
+    await rawPrisma.reservation.update({
+      where: { id: reservation.reservationId.value },
+      data: { status: 'Approved' },
+    });
+
+    const hasOpen = await repository.hasOpenReservationsByUserId(
+      UserId.create(user.id),
+      new Date('2026-09-01T00:00:00.000Z'),
+    );
+
+    expect(hasOpen).toBe(true);
+  });
+
+  it('hasOpenReservationsByUserId returns false once the reservation has ended, and false for Cancelled/Completed/NoShow', async () => {
+    if (!dbAvailable) return;
+
+    const { restaurantId, branchId, tableId } = await seedRestaurantBranchTable();
+    const user = await seedUser();
+    const pastReservation = buildReservation(restaurantId, branchId, tableId, user.id, {
+      startTime: new Date('2026-09-06T18:00:00.000Z'),
+      endTime: new Date('2026-09-06T19:30:00.000Z'),
+    });
+    await repository.createWithLock(pastReservation, `lock-${randomUUID()}`);
+
+    const hasOpenAfterEnd = await repository.hasOpenReservationsByUserId(
+      UserId.create(user.id),
+      new Date('2026-09-07T00:00:00.000Z'),
+    );
+    expect(hasOpenAfterEnd).toBe(false);
+
+    await rawPrisma.reservation.update({
+      where: { id: pastReservation.reservationId.value },
+      data: { status: 'Cancelled' },
+    });
+    const hasOpenCancelled = await repository.hasOpenReservationsByUserId(
+      UserId.create(user.id),
+      new Date('2026-09-01T00:00:00.000Z'),
+    );
+    expect(hasOpenCancelled).toBe(false);
+  });
+
+  it('hasOpenReservationsByUserId is scoped to the given user only', async () => {
+    if (!dbAvailable) return;
+
+    const { restaurantId, branchId, tableId } = await seedRestaurantBranchTable();
+    const userA = await seedUser();
+    const userB = await seedUser();
+    const reservation = buildReservation(restaurantId, branchId, tableId, userA.id, {
+      startTime: new Date('2026-09-08T18:00:00.000Z'),
+      endTime: new Date('2026-09-08T19:30:00.000Z'),
+    });
+    await repository.createWithLock(reservation, `lock-${randomUUID()}`);
+
+    expect(
+      await repository.hasOpenReservationsByUserId(
+        UserId.create(userA.id),
+        new Date('2026-09-01T00:00:00.000Z'),
+      ),
+    ).toBe(true);
+    expect(
+      await repository.hasOpenReservationsByUserId(
+        UserId.create(userB.id),
+        new Date('2026-09-01T00:00:00.000Z'),
+      ),
+    ).toBe(false);
   });
 
   it('two overlapping Pending reservations for the same table both persist (business rule)', async () => {

@@ -155,6 +155,53 @@ describe('Platform Back Office (e2e, Phase 19.1)', () => {
     await authed(supportToken, 'get', '/api/v1/platform-admin/admins').expect(200);
   });
 
+  it('M6: denies PlatformSupport on an Organization mutation route (403), allows PlatformAdmin', async () => {
+    if (!dbAvailable || !app) return;
+    const { organizationId } = await seedOrgWithRestaurant('rbac-org');
+    const { email: supportEmail } = await seedPlatformAdmin('rbac-org-support', 'PlatformSupport');
+    const supportToken = await loginPlatformAdmin(supportEmail);
+
+    await authed(
+      supportToken,
+      'post',
+      `/api/v1/platform-admin/organizations/${organizationId}/suspend`,
+    )
+      .send({})
+      .expect(403);
+
+    const { email: adminEmail } = await seedPlatformAdmin('rbac-org-admin', 'PlatformAdmin');
+    const adminToken = await loginPlatformAdmin(adminEmail);
+
+    await authed(
+      adminToken,
+      'post',
+      `/api/v1/platform-admin/organizations/${organizationId}/suspend`,
+    )
+      .send({})
+      .expect(200);
+  });
+
+  it('M6: denies PlatformSupport on an Account-access mutation route (403), allows PlatformAdmin', async () => {
+    if (!dbAvailable || !app) return;
+    const { ownerId } = await seedOrgWithRestaurant('rbac-account');
+    const { email: supportEmail } = await seedPlatformAdmin(
+      'rbac-account-support',
+      'PlatformSupport',
+    );
+    const supportToken = await loginPlatformAdmin(supportEmail);
+
+    await authed(supportToken, 'post', `/api/v1/platform-admin/accounts/${ownerId}/disable-login`)
+      .send({})
+      .expect(403);
+
+    const { email: adminEmail } = await seedPlatformAdmin('rbac-account-admin', 'PlatformAdmin');
+    const adminToken = await loginPlatformAdmin(adminEmail);
+
+    await authed(adminToken, 'post', `/api/v1/platform-admin/accounts/${ownerId}/disable-login`)
+      .send({})
+      .expect(200);
+  });
+
   // ---------------------------------------------------------------------
   // Restaurant lifecycle (ADR-034 §3) + audit + IDOR
   // ---------------------------------------------------------------------

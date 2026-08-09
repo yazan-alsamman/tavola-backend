@@ -28,6 +28,22 @@ export class PrismaBranchWorkingHoursRepository implements BranchWorkingHoursRep
   }
 
   /**
+   * One batched `IN (...)` query for every requested branch, not one query
+   * per branch - the caller (`ListBranchWorkingHoursByBranchIdsUseCase`)
+   * groups the flat result by `branchId` itself.
+   */
+  async findAllByBranchIds(branchIds: BranchId[]): Promise<BranchWorkingHours[]> {
+    if (branchIds.length === 0) {
+      return [];
+    }
+    const rows = await this.prismaContext.client.branchWorkingHours.findMany({
+      where: { branchId: { in: branchIds.map((id) => id.value) } },
+      orderBy: [{ branchId: 'asc' }, { dayOfWeek: 'asc' }],
+    });
+    return rows.map(BranchWorkingHoursPrismaMapper.toDomain);
+  }
+
+  /**
    * Full-replace of the entire week for one branch: deletes every existing
    * row for `branchId` and inserts `entries` in a single transaction, so a
    * caller never observes a partially-replaced week.

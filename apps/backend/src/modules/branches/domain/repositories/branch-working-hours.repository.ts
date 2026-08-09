@@ -14,6 +14,8 @@ import { BranchId } from '@shared/domain/value-objects/identifiers.vo';
  */
 export interface BranchWorkingHoursRepository {
   findAllByBranchId(branchId: BranchId): Promise<BranchWorkingHours[]>;
+  /** Batched lookup across many branches in one query - avoids N+1 (see `ListBranchWorkingHoursByBranchIdsUseCase`). */
+  findAllByBranchIds(branchIds: BranchId[]): Promise<BranchWorkingHours[]>;
   replaceAllForBranch(branchId: BranchId, entries: BranchWorkingHours[]): Promise<void>;
 }
 

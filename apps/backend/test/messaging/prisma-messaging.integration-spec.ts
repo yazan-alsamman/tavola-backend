@@ -313,6 +313,92 @@ describe('Messaging repositories (integration)', () => {
     expect(secondPage.hasMore).toBe(false);
   });
 
+  it("anonymizeAllBySenderUserId (Phase 20.X, account deletion) replaces this sender's message bodies and sets anonymizedAt, leaving other senders in the same conversation untouched", async () => {
+    if (!dbAvailable) return;
+    const restaurant = await createRestaurant();
+    const customer = await createUser();
+    const employee = await seedEmployee(restaurant.id);
+    const conversation = Conversation.start({
+      id: randomUUID(),
+      restaurantId: restaurant.id,
+      branchId: null,
+      reservationId: null,
+      subject: null,
+      now: new Date(),
+    });
+    await conversationRepository.create(conversation);
+
+    const customerMessage = Message.create({
+      id: randomUUID(),
+      conversationId: conversation.conversationId.value,
+      senderType: MessageSenderType.Customer,
+      senderUserId: customer.id,
+      senderEmployeeId: null,
+      body: 'call me at 555-1234',
+      now: new Date('2026-07-30T10:00:00.000Z'),
+    });
+    await messageRepository.create(customerMessage);
+
+    const staffMessage = Message.create({
+      id: randomUUID(),
+      conversationId: conversation.conversationId.value,
+      senderType: MessageSenderType.Employee,
+      senderUserId: null,
+      senderEmployeeId: employee.id,
+      body: 'sure, see you at 7',
+      now: new Date('2026-07-30T10:01:00.000Z'),
+    });
+    await messageRepository.create(staffMessage);
+
+    const at = new Date('2026-09-06T12:00:00.000Z');
+    await messageRepository.anonymizeAllBySenderUserId(UserId.create(customer.id), at);
+
+    const anonymized = await rawPrisma.message.findUnique({
+      where: { id: customerMessage.messageId.value },
+    });
+    expect(anonymized?.body).toBe('[removed]');
+    expect(anonymized?.anonymizedAt).toEqual(at);
+
+    const untouched = await rawPrisma.message.findUnique({
+      where: { id: staffMessage.messageId.value },
+    });
+    expect(untouched?.body).toBe('sure, see you at 7');
+    expect(untouched?.anonymizedAt).toBeNull();
+  });
+
+  it('anonymizeAllBySenderUserId is idempotent - re-running only matches rows still missing anonymizedAt', async () => {
+    if (!dbAvailable) return;
+    const restaurant = await createRestaurant();
+    const customer = await createUser();
+    const conversation = Conversation.start({
+      id: randomUUID(),
+      restaurantId: restaurant.id,
+      branchId: null,
+      reservationId: null,
+      subject: null,
+      now: new Date(),
+    });
+    await conversationRepository.create(conversation);
+    const message = Message.create({
+      id: randomUUID(),
+      conversationId: conversation.conversationId.value,
+      senderType: MessageSenderType.Customer,
+      senderUserId: customer.id,
+      senderEmployeeId: null,
+      body: 'original body',
+      now: new Date('2026-07-30T10:00:00.000Z'),
+    });
+    await messageRepository.create(message);
+
+    const firstAt = new Date('2026-09-06T12:00:00.000Z');
+    await messageRepository.anonymizeAllBySenderUserId(UserId.create(customer.id), firstAt);
+    const secondAt = new Date('2026-09-07T12:00:00.000Z');
+    await messageRepository.anonymizeAllBySenderUserId(UserId.create(customer.id), secondAt);
+
+    const row = await rawPrisma.message.findUnique({ where: { id: message.messageId.value } });
+    expect(row?.anonymizedAt).toEqual(firstAt);
+  });
+
   it('ConversationParticipant round-trips and findCustomerParticipant resolves the Customer row (D6 dependency)', async () => {
     if (!dbAvailable) return;
     const restaurant = await createRestaurant();

@@ -63,4 +63,22 @@ export class PrismaOrganizationMemberRepository implements OrganizationMemberRep
       },
     });
   }
+
+  async updateRoleIfRole(
+    member: OrganizationMember,
+    expectedRole: OrganizationMemberRole,
+  ): Promise<boolean> {
+    const data = OrganizationMemberPrismaMapper.toPersistence(member);
+    const result = await this.prismaContext.client.organizationMember.updateMany({
+      where: { id: data.id, role: expectedRole },
+      data: {
+        role: data.role,
+        invitedAt: data.invitedAt,
+        joinedAt: data.joinedAt,
+        status: data.status,
+        updatedAt: data.updatedAt,
+      },
+    });
+    return result.count > 0;
+  }
 }

@@ -15,12 +15,12 @@ import { ResponseMessage } from '@common/decorators/response-message.decorator';
 import { ApiErrorResponse } from '@common/decorators/api-error-response.decorator';
 import { ErrorResponseDto } from '@common/dto/error-response.dto';
 import { ListBranchesQueryDto } from '@modules/branches/presentation/dto/list-branches.query.dto';
-import { BranchResponseDto } from '@modules/branches/presentation/dto/branch.response.dto';
-import { BranchListResponseDto } from '@modules/branches/presentation/dto/branch-list.response.dto';
 import { ListOffersQueryDto } from '@modules/offers/presentation/dto/list-offers.query.dto';
 import { OfferListResponseDto } from '@modules/offers/presentation/dto/offer-list.response.dto';
 import { toOfferListResponse } from '@modules/offers/presentation/controllers/offer-response.mapper';
-import { RestaurantResponseDto } from '@modules/restaurants/presentation/dto/restaurant.response.dto';
+import { RestaurantPublicResponseDto } from '../dto/restaurant-public.response.dto';
+import { BranchPublicResponseDto } from '../dto/branch-public.response.dto';
+import { BranchPublicListResponseDto } from '../dto/branch-public-list.response.dto';
 import { ListDiscoverableRestaurantsUseCase } from '../../application/use-cases/list-discoverable-restaurants.use-case';
 import { GetDiscoverableRestaurantUseCase } from '../../application/use-cases/get-discoverable-restaurant.use-case';
 import { ListDiscoverableBranchesUseCase } from '../../application/use-cases/list-discoverable-branches.use-case';
@@ -192,16 +192,21 @@ export class DiscoveryController {
   @ApiOperation({
     operationId: 'discoveryGetRestaurant',
     summary: 'Get a restaurant by id (public, unauthenticated)',
-    description: 'Unknown, soft-deleted, or non-Active (e.g. Suspended) restaurants 404.',
+    description:
+      'Unknown, soft-deleted, or non-Active (e.g. Suspended) restaurants 404. Includes workingHours (the Restaurant-level default weekly schedule, Phase 4.3) - Public Working Hours, customer-facing correction.',
   })
   @ApiParam({ name: 'restaurantId', format: 'uuid' })
-  @ApiResponse({ status: 200, description: 'Restaurant retrieved', type: RestaurantResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Restaurant retrieved',
+    type: RestaurantPublicResponseDto,
+  })
   @ApiErrorResponse(400, 'restaurantId is not a valid UUID', ['VALIDATION_ERROR'])
   @ApiErrorResponse(404, 'Restaurant not found', ['NOT_FOUND'])
   @ApiErrorResponse(429, 'Rate limit exceeded', ['RATE_LIMIT_EXCEEDED'])
   async getRestaurant(
     @Param('restaurantId', ParseUUIDPipe) restaurantId: string,
-  ): Promise<RestaurantResponseDto> {
+  ): Promise<RestaurantPublicResponseDto> {
     const result = await this.getDiscoverableRestaurantUseCase.execute({ restaurantId });
     return toDiscoveryRestaurantResponse(result);
   }
@@ -212,17 +217,22 @@ export class DiscoveryController {
   @ApiOperation({
     operationId: 'discoveryListBranches',
     summary: 'Browse branches of a restaurant (public, unauthenticated)',
-    description: 'Paginated, ordered most-recently-created first.',
+    description:
+      'Paginated, ordered most-recently-created first. Each branch includes workingHours (its own weekly override schedule, Phase 5.2) and never a phone number - Public Working Hours & Restaurant Phone Privacy, customer-facing correction.',
   })
   @ApiParam({ name: 'restaurantId', format: 'uuid' })
-  @ApiResponse({ status: 200, description: 'Branches retrieved', type: BranchListResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Branches retrieved',
+    type: BranchPublicListResponseDto,
+  })
   @ApiErrorResponse(400, 'Invalid page/limit or restaurantId', ['VALIDATION_ERROR'])
   @ApiErrorResponse(404, 'Restaurant not found', ['NOT_FOUND'])
   @ApiErrorResponse(429, 'Rate limit exceeded', ['RATE_LIMIT_EXCEEDED'])
   async listBranches(
     @Param('restaurantId', ParseUUIDPipe) restaurantId: string,
     @Query() query: ListBranchesQueryDto,
-  ): Promise<BranchListResponseDto> {
+  ): Promise<BranchPublicListResponseDto> {
     const result = await this.listDiscoverableBranchesUseCase.execute({
       restaurantId,
       page: query.page ?? 1,
@@ -242,11 +252,12 @@ export class DiscoveryController {
   @ApiOperation({
     operationId: 'discoveryGetBranch',
     summary: 'Get a branch by id (public, unauthenticated)',
-    description: 'A branch belonging to a different restaurant, or unknown/soft-deleted, 404s.',
+    description:
+      "A branch belonging to a different restaurant, or unknown/soft-deleted, 404s. Includes workingHours (this branch's own weekly override schedule, Phase 5.2) and never a phone number - Public Working Hours & Restaurant Phone Privacy, customer-facing correction.",
   })
   @ApiParam({ name: 'restaurantId', format: 'uuid' })
   @ApiParam({ name: 'branchId', format: 'uuid' })
-  @ApiResponse({ status: 200, description: 'Branch retrieved', type: BranchResponseDto })
+  @ApiResponse({ status: 200, description: 'Branch retrieved', type: BranchPublicResponseDto })
   @ApiErrorResponse(400, 'restaurantId or branchId is not a valid UUID', ['VALIDATION_ERROR'])
   @ApiErrorResponse(
     404,
@@ -257,7 +268,7 @@ export class DiscoveryController {
   async getBranch(
     @Param('restaurantId', ParseUUIDPipe) restaurantId: string,
     @Param('branchId', ParseUUIDPipe) branchId: string,
-  ): Promise<BranchResponseDto> {
+  ): Promise<BranchPublicResponseDto> {
     const result = await this.getDiscoverableBranchUseCase.execute({ restaurantId, branchId });
     return toDiscoveryBranchResponse(result);
   }

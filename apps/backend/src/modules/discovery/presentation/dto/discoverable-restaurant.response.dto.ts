@@ -1,17 +1,18 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { RestaurantResponseDto } from '@modules/restaurants/presentation/dto/restaurant.response.dto';
+import { RestaurantPublicResponseDto } from './restaurant-public.response.dto';
 
 /**
  * Phase 15.5 (Discovery Module, architecture frozen 2026-07-29, D9): every
- * field `RestaurantResponseDto` already carries, plus `hasActiveOffer`.
- * Used by the search/nearby/comparison result families only - the plain
- * `GET /discovery/restaurants/:id` detail route keeps returning the
- * unmodified `RestaurantResponseDto` (task instructions: "preserve all
- * existing Discovery browsing/detail behavior except where D11 intentionally
- * narrows" - `hasActiveOffer` is new search-family scope, not a change to
- * the pre-existing detail response).
+ * field `RestaurantPublicResponseDto` already carries (which itself already
+ * includes `workingHours` - Public Working Hours, customer-facing
+ * correction), plus `hasActiveOffer`. Used by the search/nearby/comparison
+ * result families - the plain `GET /discovery/restaurants/:id` detail route
+ * returns `RestaurantPublicResponseDto` directly (task instructions:
+ * "preserve all existing Discovery browsing/detail behavior except where
+ * D11 intentionally narrows" - `hasActiveOffer` is search-family-only scope,
+ * not a change to the pre-existing detail response's own field set).
  */
-export class DiscoverableRestaurantResponseDto extends RestaurantResponseDto {
+export class DiscoverableRestaurantResponseDto extends RestaurantPublicResponseDto {
   @ApiProperty({
     example: false,
     description:

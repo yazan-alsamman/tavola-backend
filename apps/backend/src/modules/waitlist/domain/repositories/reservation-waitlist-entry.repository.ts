@@ -1,6 +1,6 @@
 import { ReservationWaitlistEntry } from '../entities/reservation-waitlist-entry.entity';
 import { WaitlistStatus } from '../enums/waitlist.enums';
-import { BranchId } from '@shared/domain/value-objects/identifiers.vo';
+import { BranchId, UserId } from '@shared/domain/value-objects/identifiers.vo';
 
 /**
  * `ReservationWaitlistEntry` carries a direct `organizationId` column but is
@@ -89,6 +89,14 @@ export interface ReservationWaitlistEntryRepository {
     expectedCurrentStatus: WaitlistStatus,
     updatedAt: Date,
   ): Promise<boolean>;
+
+  /**
+   * Phase 20.X (ADR-014 execution) - `RequestAccountDeletionUseCase`'s
+   * auto-cancel-on-delete pass. Same active-status definition as
+   * `findActiveByBranchAndDateOrderedByPosition` (`Waiting`/`Notified`,
+   * non-deleted) - order is irrelevant here, every result is cancelled.
+   */
+  findActiveByUserId(userId: UserId): Promise<ReservationWaitlistEntry[]>;
 }
 
 export const RESERVATION_WAITLIST_ENTRY_REPOSITORY = Symbol(

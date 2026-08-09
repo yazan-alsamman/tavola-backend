@@ -82,6 +82,13 @@ import { WaitlistController } from './presentation/controllers/waitlist.controll
   // one-directionally - WaitlistModule never imports NotificationsModule
   // back) can resolve a promoted entry's recipient User and activate
   // WaitlistEntryNotified after push acceptance (decision item 7).
-  exports: [RESERVATION_WAITLIST_ENTRY_REPOSITORY],
+  //
+  // Phase 20.X: CancelWaitlistEntryUseCase is additionally exported so
+  // UsersModule's RequestAccountDeletionUseCase can reuse it verbatim for
+  // the auto-cancel-active-waitlist-entries-on-delete step, rather than
+  // re-deriving its CAS/event/scheduler-cancellation logic inline -
+  // WaitlistModule never imports UsersModule back (one-directional, same
+  // shape as the NotificationsModule relationship above).
+  exports: [RESERVATION_WAITLIST_ENTRY_REPOSITORY, CancelWaitlistEntryUseCase],
 })
 export class WaitlistModule {}

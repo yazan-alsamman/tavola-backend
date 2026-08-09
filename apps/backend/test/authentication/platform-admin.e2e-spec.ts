@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { PrismaClient } from '@prisma/client';
+import { PlatformAdminRole, PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
 import { createTestApp } from '../helpers/test-app.factory';
@@ -90,7 +90,7 @@ describe('Platform Admin authentication + provisioning (e2e)', () => {
       },
     });
     await prisma.platformAdmin.create({
-      data: { id: randomUUID(), userId, revokedAt: null },
+      data: { id: randomUUID(), userId, role: PlatformAdminRole.PlatformAdmin, revokedAt: null },
     });
     return { userId, email };
   }

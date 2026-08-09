@@ -20,7 +20,12 @@ import {
 } from '../dto/platform-admin-organization.dto';
 import { toPlatformAdminOrganizationResult } from '../mappers/platform-admin-organization.mapper';
 
-/** ADR-034 §4 - see `PlatformAdminSuspendOrganizationUseCase`'s doc comment. */
+/**
+ * ADR-034 §4 - see `PlatformAdminSuspendOrganizationUseCase`'s doc comment.
+ * M1 remediation: `reactivate()` returns the same instance (reference-equal)
+ * when no transition occurred - that case skips both the save and the
+ * event/audit write below.
+ */
 @Injectable()
 export class PlatformAdminReactivateOrganizationUseCase {
   constructor(
@@ -52,16 +57,20 @@ export class PlatformAdminReactivateOrganizationUseCase {
 
         const now = this.clock.now();
         const reactivated = organization.reactivate(now);
-        await this.organizationRepository.save(reactivated);
+        const stateChanged = reactivated !== organization;
 
-        await this.eventPublisher.publish(
-          new OrganizationReactivatedEvent(
-            this.idGenerator.generate(),
-            { organizationId: command.organizationId, actorId: command.actorId },
-            now,
-            command.correlationId,
-          ),
-        );
+        if (stateChanged) {
+          await this.organizationRepository.save(reactivated);
+
+          await this.eventPublisher.publish(
+            new OrganizationReactivatedEvent(
+              this.idGenerator.generate(),
+              { organizationId: command.organizationId, actorId: command.actorId },
+              now,
+              command.correlationId,
+            ),
+          );
+        }
 
         return toPlatformAdminOrganizationResult(reactivated);
       },

@@ -26,7 +26,12 @@ import {
   PlatformAdminRestaurantResult,
 } from '../dto/platform-admin-restaurant-lifecycle.command';
 
-/** ADR-034 §3 - see `PlatformAdminSuspendRestaurantUseCase`'s doc comment for the Pattern 2 -> Pattern 1 shape. */
+/**
+ * ADR-034 §3 - see `PlatformAdminSuspendRestaurantUseCase`'s doc comment for
+ * the Pattern 2 -> Pattern 1 shape. M1 remediation: `activate()` returns the
+ * same instance (reference-equal) when no transition occurred - that case
+ * skips both the save and the event/audit write below.
+ */
 @Injectable()
 export class PlatformAdminReactivateRestaurantUseCase {
   constructor(
@@ -64,20 +69,24 @@ export class PlatformAdminReactivateRestaurantUseCase {
 
         const now = this.clock.now();
         const activated = restaurant.activate(now);
-        await this.restaurantRepository.save(activated);
+        const stateChanged = activated !== restaurant;
 
-        await this.eventPublisher.publish(
-          new RestaurantActivatedEvent(
-            this.idGenerator.generate(),
-            {
-              restaurantId: activated.restaurantId.value,
-              organizationId: activated.organizationId.value,
-              actorId: command.actorId,
-            },
-            now,
-            command.correlationId,
-          ),
-        );
+        if (stateChanged) {
+          await this.restaurantRepository.save(activated);
+
+          await this.eventPublisher.publish(
+            new RestaurantActivatedEvent(
+              this.idGenerator.generate(),
+              {
+                restaurantId: activated.restaurantId.value,
+                organizationId: activated.organizationId.value,
+                actorId: command.actorId,
+              },
+              now,
+              command.correlationId,
+            ),
+          );
+        }
 
         return toPlatformAdminRestaurantResult(activated);
       },

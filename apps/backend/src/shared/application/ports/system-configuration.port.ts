@@ -26,4 +26,7 @@ export const SYSTEM_CONFIG_KEYS = {
   // creation (D7). SubscriptionPlan itself remains the authoritative source
   // of plan data (limits, entitlements) — this key never duplicates that.
   defaultSubscriptionPlanSlug: 'defaultSubscriptionPlanSlug',
+  // Phase 20.X (ADR-014 execution) - the account-deletion grace period, in
+  // days, before AnonymizeUserAccountUseCase's BullMQ job runs.
+  anonymizationGracePeriodDays: 'anonymizationGracePeriodDays',
 } as const;

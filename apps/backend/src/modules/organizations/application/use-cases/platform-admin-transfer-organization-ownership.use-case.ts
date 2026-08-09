@@ -13,7 +13,9 @@ import {
 import { OrganizationId, UserId } from '@shared/domain/value-objects/identifiers.vo';
 import { OrganizationMemberRepository } from '../../domain/repositories/organization.repository';
 import { ORGANIZATION_MEMBER_REPOSITORY } from '../tokens/organizations.tokens';
+import { OrganizationMemberRole } from '../../domain/enums/organization.enums';
 import { OrganizationMemberNotFoundException } from '../../domain/exceptions/organization-member-not-found.exception';
+import { OwnershipTransferConflictException } from '../../domain/exceptions/ownership-transfer-conflict.exception';
 import { OrganizationMembershipPolicy } from '../../domain/services/organization-membership-policy';
 import { OrganizationOwnershipTransferredEvent } from '../../domain/events/organization.events';
 import {
@@ -28,7 +30,12 @@ import {
  * codebase before this). Reuses `OrganizationMembershipPolicy.assertSingleActiveOwner`'s
  * invariant unchanged, via the new `transferOwnership` policy method - see
  * that method's own doc comment for why this deliberately does not go
- * through `OrganizationMember.changeRole()`.
+ * through `OrganizationMember.changeRole()`. M2 remediation: the previous
+ * owner's demotion is written through `updateRoleIfRole`'s CAS guard
+ * (`SubscriptionRepository.updateIfStatus`'s precedent) so a concurrent
+ * transfer that already moved this member away from Owner between this
+ * use case's read and write aborts with `OwnershipTransferConflictException`
+ * (409) instead of both transfers succeeding and leaving two Active Owners.
  */
 @Injectable()
 export class PlatformAdminTransferOrganizationOwnershipUseCase {
@@ -71,10 +78,21 @@ export class PlatformAdminTransferOrganizationOwnershipUseCase {
           now,
         );
 
+        let applied = false;
         await this.unitOfWork.execute(async () => {
-          await this.organizationMemberRepository.save(previousOwner);
-          await this.organizationMemberRepository.save(newOwner);
+          applied = await this.organizationMemberRepository.updateRoleIfRole(
+            previousOwner,
+            OrganizationMemberRole.Owner,
+          );
+          if (applied) {
+            await this.organizationMemberRepository.save(newOwner);
+          }
         });
+        if (!applied) {
+          throw new OwnershipTransferConflictException(
+            'Organization ownership changed concurrently - retry.',
+          );
+        }
 
         await this.eventPublisher.publish(
           new OrganizationOwnershipTransferredEvent(

@@ -102,6 +102,8 @@ Fields
 * passwordChangedAt (nullable)
 * lastLoginAt
 * anonymizedAt
+* deletionRequestedAt (nullable) — Phase 20.X (ADR-014 execution). Set by `RequestAccountDeletionUseCase`, cleared by `CancelAccountDeletionUseCase`. `status` is deliberately unchanged while this is set — the account remains `Active`/loggable-in for the duration of the grace period.
+* scheduledAnonymizationAt (nullable) — Phase 20.X. `now() + SystemConfiguration.anonymizationGracePeriodDays` at request time; the BullMQ delay target for `AnonymizeUserAccountUseCase`. Non-null exactly when `deletionRequestedAt` is non-null.
 * createdAt
 * updatedAt
 * deletedAt
@@ -214,7 +216,7 @@ Fields
 * permissionsVersion (snapshot at issue — see AUTHORIZATION_ARCHITECTURE.md)
 * lastUsedAt
 * revokedAt
-* revokedReason (nullable — `logout`, `reuse_detected`, `password_change`, `admin`, `expired`, `session_version_bump`)
+* revokedReason (nullable — `logout`, `reuse_detected`, `password_change`, `admin`, `expired`, `session_version_bump`, `account_deletion` — Phase 20.X, `RequestAccountDeletionUseCase`'s immediate revoke-everything call)
 * expiresAt
 * createdAt
 
@@ -609,6 +611,8 @@ Indexes
 
 **Resolved in Phase 5.2**: branch-level override was delivered as a separate table, `BranchWorkingHours` (see "Branch Working Hours" below), not as a nullable `branchId` column added to this table - each aggregate owns its own child entity, avoiding the dual-parent design this section originally anticipated.
 
+**Public Working Hours (customer-facing correction)**: `GET /api/v1/discovery/restaurants[/:restaurantId]` (list, detail, nearby, compare) now include a `workingHours` array sourced directly from this table, batched via `ListWorkingHoursByRestaurantIdsUseCase` (one `IN (...)` query per response, no N+1) - no schema change, no new table.
+
 ---
 
 ## Restaurant Gallery
@@ -694,6 +698,7 @@ Notes
 * `countryCode` and `currency` are owned at this level, not the Restaurant level (see DOMAIN_MODEL.md Money/Currency Ownership). If `currency` is null, the application falls back to `Restaurant Settings.defaultCurrency`.
 * Geo coordinates are authoritative for **nearby restaurant** queries at branch granularity (a restaurant with multiple branches appears once per qualifying branch).
 * **Phase 5.1 (Branch CRUD) scope**: `id`, `restaurantId`, `city`, `district`, `address`, `countryCode`, `currency`, `timezone`, `phone` are exposed and mutable via `POST`/`GET`/`PATCH`/`DELETE /api/v1/restaurants/:restaurantId/branches[/:branchId]`. `Branch` carries no direct `organizationId` column and is deliberately not registered in the tenant-scoping Prisma extension's `DIRECT_TENANT_OWNED_MODELS`; tenant isolation is enforced by resolving the parent Restaurant first (see TENANCY.md and TASKS.md's "Phase 5.1" report).
+* **Restaurant Phone Privacy (customer-facing correction)**: `phone` is private operational data - it is exposed on the authorized management endpoint above (Owner/Admin only), but the public/unauthenticated `GET /api/v1/discovery/restaurants/:restaurantId/branches[/:branchId]` responses structurally exclude it (a dedicated `BranchPublicResponseDto`, not `BranchResponseDto` with a field hidden - see API_GUIDELINES.md). `Restaurant` itself carries no phone/contact field of its own.
 * **Phase 5.3 (Geo Coordinates for Nearby Search, ADR-018) scope**: `latitude`/`longitude` are now also exposed and mutable via the same `POST`/`PATCH` routes above - both must be set together or both omitted (`InvalidBranchCoordinatesException`, 400), and range-validated (-90..90 / -180..180) at both the DTO and domain layers. The actual bounding-box/nearby-search query that reads these columns was out of this scope, delivered by the Discovery module (TASKS.md Phase 15.5, complete/live-verified/production-verified 2026-07-30) per ADR-018's own attribution. See TASKS.md's "Phase 5.3" report and Phase 15.5's Implementation & Verification Report.
 * **Phase 5.2 (Working Schedule) resolution**: the branch-level working-hours override was delivered as a separate table, `BranchWorkingHours` (see below), not via this row's own `openingHours` Json column. `openingHours` remains `NULL`/unused by any code - it is pre-existing technical debt from the Phase 2.1 foundation migration (flagged, not removed, since no phase owns cleaning it up yet), structurally superseded by `BranchWorkingHours` for any future consumer.
 * **Phase 15.5 (Discovery Module, architecture frozen 2026-07-29, complete/live-verified/production-verified 2026-07-30) index plan**: the existing composite `(latitude, longitude)` B-tree index (above) is reused unchanged as a bounding-box prefilter; exact-radius/ordering distance is computed via Haversine at query time, not via a spatial index type. No GiST, PostGIS, or `earthdistance`/`cube` extension was added (GiST upgrade remains deferred to Phase 15 — Optimization, unchanged from the note above). `Restaurant.status`, `Restaurant.priceLevel`, and `Restaurant.averageRating` were evaluated as candidate additive indexes against a real 20,000-restaurant `EXPLAIN (ANALYZE, BUFFERS)` benchmark during implementation verification (2026-07-30) - current query plans proved comfortably within `NON_FUNCTIONAL_REQUIREMENTS.md`'s p95 budget using only existing indexes, so **no index was added**; see TASKS.md's Phase 15.5 Implementation & Verification Report for the before/after evidence. Remains a Phase 15 (Optimization) candidate only if real production query volume later proves otherwise.
@@ -727,6 +732,7 @@ Notes
 
 * Tenant-owned transitively via `branchId -> Branch.restaurantId -> Restaurant.organizationId` (two hops), not directly - not registered in the tenant-scoping Prisma extension's `DIRECT_TENANT_OWNED_MODELS`, same pattern as `WorkingHours`/`RestaurantSettings`. Every use case resolves the parent Restaurant, then the parent Branch, via their already-tenant-scoped repositories first (see TASKS.md's "Phase 5.2" report).
 * No precedence/fallback logic exists yet between a Branch's override here and its Restaurant's default in `WorkingHours` - out of Phase 5.2's CRUD-only scope; a future consumer (most likely the Reservation Engine, Phase 7) will need to define that resolution.
+* **Public Working Hours (customer-facing correction)**: `GET /api/v1/discovery/restaurants/:restaurantId/branches[/:branchId]` now include a `workingHours` array sourced directly from this table (empty array when a branch has no override configured), batched via `ListBranchWorkingHoursByBranchIdsUseCase` (one `IN (...)` query per response, no N+1). This consumer still does not define Branch-vs-Restaurant precedence/fallback (the open question above remains unresolved) - it surfaces each level's own schedule independently, at its own endpoint.
 
 ---
 

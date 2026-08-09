@@ -7,7 +7,7 @@ import {
   OrganizationMemberRole,
   OrganizationMemberStatus,
 } from '../../domain/enums/organization.enums';
-import { OrganizationId } from '@shared/domain/value-objects/identifiers.vo';
+import { OrganizationId, UserId } from '@shared/domain/value-objects/identifiers.vo';
 import {
   CollectingEventPublisher,
   FixedClock,
@@ -16,6 +16,38 @@ import {
   RecordingTenantContextPort,
   SequentialIdGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
+
+/**
+ * M2 remediation coverage - simulates a concurrent transfer winning the race
+ * between this use case's `findOwner` read and its CAS write, by demoting
+ * the current Owner (as `OrganizationMembershipPolicy.transferOwnership`
+ * itself would) the moment the use case makes its *second* read
+ * (`findByOrganizationAndUser` for the target member). The use case's own
+ * `updateRoleIfRole` CAS guard is exercised completely unmodified.
+ */
+class RaceConditionMemberRepository extends InMemoryOrganizationMemberRepository {
+  private raceTriggered = false;
+
+  async findByOrganizationAndUser(
+    organizationId: OrganizationId,
+    userId: UserId,
+  ): Promise<OrganizationMember | null> {
+    const result = await super.findByOrganizationAndUser(organizationId, userId);
+    if (!this.raceTriggered) {
+      this.raceTriggered = true;
+      const owner = await super.findOwner(organizationId);
+      if (owner) {
+        await super.save(
+          OrganizationMember.reconstitute({
+            ...owner.toProps(),
+            role: OrganizationMemberRole.Admin,
+          }),
+        );
+      }
+    }
+    return result;
+  }
+}
 
 describe('PlatformAdminTransferOrganizationOwnershipUseCase', () => {
   const now = new Date('2026-08-04T12:00:00.000Z');
@@ -127,5 +159,32 @@ describe('PlatformAdminTransferOrganizationOwnershipUseCase', () => {
     await expect(useCase.execute({ organizationId, newOwnerUserId, actorId })).rejects.toThrow(
       OrganizationMemberNotFoundException,
     );
+  });
+
+  it('M2: rejects (409) when a concurrent transfer already moved the current Owner away from Owner between read and write - preserves the single-Owner invariant instead of creating two Active Owners', async () => {
+    const memberRepository = new RaceConditionMemberRepository();
+    const tenantContext = new RecordingTenantContextPort();
+    const eventPublisher = new CollectingEventPublisher();
+    const useCase = new PlatformAdminTransferOrganizationOwnershipUseCase(
+      memberRepository,
+      tenantContext,
+      new ImmediateUnitOfWork(),
+      new FixedClock(now),
+      new SequentialIdGenerator(['eeeeeeee-1111-4111-8111-111111111111']),
+      eventPublisher,
+    );
+    await seedMembers(memberRepository);
+
+    await expect(useCase.execute({ organizationId, newOwnerUserId, actorId })).rejects.toThrow(
+      OwnershipTransferConflictException,
+    );
+
+    // The target member was never promoted - no second Active Owner exists.
+    const target = await memberRepository.findByOrganizationAndUser(
+      OrganizationId.create(organizationId),
+      UserId.create(newOwnerUserId),
+    );
+    expect(target?.role).toBe(OrganizationMemberRole.Admin);
+    expect(eventPublisher.events).toHaveLength(0);
   });
 });

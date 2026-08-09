@@ -44,6 +44,8 @@ export class CustomerRegistrationPolicy {
       passwordChangedAt: null,
       lastLoginAt: null,
       anonymizedAt: null,
+      deletionRequestedAt: null,
+      scheduledAnonymizationAt: null,
       createdAt: input.at,
       updatedAt: input.at,
       deletedAt: null,

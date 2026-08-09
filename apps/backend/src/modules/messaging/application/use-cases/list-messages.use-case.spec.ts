@@ -55,6 +55,10 @@ class InMemoryMessageRepository implements MessageRepository {
     const hasMore = filtered.length > limit;
     return { items: filtered.slice(0, limit), hasMore };
   }
+
+  async anonymizeAllBySenderUserId(): Promise<void> {
+    throw new Error('Not needed by this suite.');
+  }
 }
 
 function customerActor(overrides: Partial<AuthenticatedUserActor> = {}): AuthenticatedUserActor {

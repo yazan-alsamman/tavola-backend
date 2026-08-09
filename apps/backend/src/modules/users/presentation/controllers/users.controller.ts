@@ -44,11 +44,15 @@ import { RemoveFavoriteUseCase } from '../../application/use-cases/remove-favori
 import { ListCurrentUserFavoritesUseCase } from '../../application/use-cases/list-current-user-favorites.use-case';
 import { GetCurrentUserPreferencesUseCase } from '../../application/use-cases/get-current-user-preferences.use-case';
 import { UpdateUserPreferencesUseCase } from '../../application/use-cases/update-user-preferences.use-case';
+import { RequestAccountDeletionUseCase } from '../../application/use-cases/request-account-deletion.use-case';
+import { CancelAccountDeletionUseCase } from '../../application/use-cases/cancel-account-deletion.use-case';
+import { ExportUserDataUseCase } from '../../application/use-cases/export-user-data.use-case';
 import { UserProfileResult } from '../../application/dto/user-profile.result';
 import { UploadCurrentUserAvatarResult } from '../../application/dto/upload-current-user-avatar.result';
 import { FavoriteResult } from '../../application/dto/favorite.result';
 import { FavoriteListResult } from '../../application/dto/favorite-list.result';
 import { UserPreferencesResult } from '../../application/dto/user-preferences.result';
+import { ExportUserDataResult } from '../../application/dto/export-user-data.result';
 import { AVATAR_MAX_SIZE_BYTES } from '../../application/policies/avatar-upload.policy';
 import { UpdateUserProfileRequestDto } from '../dto/update-user-profile.request.dto';
 import { UserProfileResponseDto } from '../dto/user-profile.response.dto';
@@ -58,6 +62,11 @@ import { FavoriteResponseDto } from '../dto/favorite.response.dto';
 import { FavoriteListResponseDto } from '../dto/favorite-list.response.dto';
 import { UpdateUserPreferencesRequestDto } from '../dto/update-user-preferences.request.dto';
 import { UserPreferencesResponseDto } from '../dto/user-preferences.response.dto';
+import { DeleteAccountRequestDto } from '../dto/delete-account.request.dto';
+import { DeleteAccountResponseDto } from '../dto/delete-account.response.dto';
+import { ExportUserDataResponseDto } from '../dto/export-user-data.response.dto';
+import { toReservationResponse } from '@modules/reservations/presentation/controllers/reservation-response.mapper';
+import { toReviewResponse } from '@modules/reviews/presentation/controllers/review-response.mapper';
 
 @ApiTags('Users')
 @ApiExtraModels(ErrorResponseDto)
@@ -72,6 +81,9 @@ export class UsersController {
     private readonly listCurrentUserFavoritesUseCase: ListCurrentUserFavoritesUseCase,
     private readonly getCurrentUserPreferencesUseCase: GetCurrentUserPreferencesUseCase,
     private readonly updateUserPreferencesUseCase: UpdateUserPreferencesUseCase,
+    private readonly requestAccountDeletionUseCase: RequestAccountDeletionUseCase,
+    private readonly cancelAccountDeletionUseCase: CancelAccountDeletionUseCase,
+    private readonly exportUserDataUseCase: ExportUserDataUseCase,
   ) {}
 
   @Get('me')
@@ -387,6 +399,113 @@ export class UsersController {
     return this.toFavoriteListResponse(result);
   }
 
+  @Delete('me')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Account deletion requested. You have until the grace period ends to cancel.')
+  @ApiOperation({
+    operationId: 'usersDeleteCurrentAccount',
+    summary: "Request deletion of the authenticated Customer's own account",
+    description:
+      'ADR-014: anonymization-in-place, never immediate physical deletion. Requires the current password. Immediately revokes every DeviceSession/TokenFamily (logs out every device) and auto-cancels any active waitlist entries. Rejected (409) while any Pending/Approved reservation exists - cancel it first via the existing reservation cancellation flow, then retry. Irreversible anonymization executes automatically after SystemConfiguration.anonymizationGracePeriodDays (default 30) unless cancelled first via POST /users/me/cancel-deletion. Customer-only - never reachable by Employee/OrganizationMember/PlatformAdmin actors. Idempotent: repeating this call while a request is already pending re-verifies the password but does not reschedule.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Deletion requested; anonymization scheduled',
+    type: DeleteAccountResponseDto,
+  })
+  @ApiErrorResponse(400, 'Validation failure (missing/too-short password)', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing/invalid/expired, or the password is incorrect', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+    'AUTH_INVALID_CREDENTIALS',
+  ])
+  @ApiErrorResponse(403, 'Account locked/suspended, or the actor is not a Customer', [
+    'AUTH_ACCOUNT_LOCKED',
+    'AUTH_ACCOUNT_SUSPENDED',
+    'AUTH_EMAIL_NOT_VERIFIED',
+    'FORBIDDEN',
+  ])
+  @ApiErrorResponse(409, 'An upcoming reservation is blocking deletion', [
+    'OPEN_RESERVATIONS_BLOCK_DELETION',
+  ])
+  async deleteCurrentAccount(
+    @Body() body: DeleteAccountRequestDto,
+    @CurrentActor() actor: AuthenticatedActor,
+    @Req() request: Request,
+  ): Promise<DeleteAccountResponseDto> {
+    const result = await this.requestAccountDeletionUseCase.execute({
+      actor,
+      password: body.password,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return { scheduledAnonymizationAt: result.scheduledAnonymizationAt.toISOString() };
+  }
+
+  @Post('me/cancel-deletion')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @SkipResponseEnvelope()
+  @ApiOperation({
+    operationId: 'usersCancelCurrentAccountDeletion',
+    summary: 'Cancel a pending account deletion request within the grace period',
+    description:
+      'No password required - a freshly-issued JWT (obtained by logging back in, since requesting deletion already revoked every prior session) is already proof of credential possession. Idempotent: calling this with no pending request is a silent success.',
+  })
+  @ApiResponse({ status: 204, description: 'Deletion request cancelled (or none was pending)' })
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'The actor is not a Customer', ['FORBIDDEN'])
+  async cancelCurrentAccountDeletion(
+    @CurrentActor() actor: AuthenticatedActor,
+    @Req() request: Request,
+  ): Promise<void> {
+    await this.cancelAccountDeletionUseCase.execute({
+      actor,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+  }
+
+  @Get('me/export')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Data export generated successfully.')
+  @ApiOperation({
+    operationId: 'usersExportCurrentUserData',
+    summary: "Export the authenticated user's own data (GDPR right to portability)",
+    description:
+      'ADR-014 §5: offered before/during the account deletion flow, never only after. Aggregates Profile, Preferences, Reservations, Reviews, and Favorites via the same use cases their own dedicated endpoints already use - MVP scope, capped at 1000 records per category.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Data export generated',
+    type: ExportUserDataResponseDto,
+  })
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Account locked, suspended, or email not verified', [
+    'AUTH_ACCOUNT_LOCKED',
+    'AUTH_ACCOUNT_SUSPENDED',
+    'AUTH_EMAIL_NOT_VERIFIED',
+  ])
+  async exportCurrentUserData(
+    @CurrentActor() actor: AuthenticatedActor,
+    @Req() request: Request,
+  ): Promise<ExportUserDataResponseDto> {
+    const result = await this.exportUserDataUseCase.execute({
+      actor,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return this.toExportResponse(result);
+  }
+
   private toFavoriteResponse(result: FavoriteResult): FavoriteResponseDto {
     return {
       restaurantId: result.restaurantId,
@@ -428,6 +547,35 @@ export class UsersController {
       mimeType: result.mimeType,
       sizeBytes: result.sizeBytes,
       uploadedAt: result.uploadedAt.toISOString(),
+    };
+  }
+
+  private toExportResponse(result: ExportUserDataResult): ExportUserDataResponseDto {
+    return {
+      exportedAt: result.exportedAt.toISOString(),
+      profile: this.toResponse(result.profile),
+      preferences: this.toPreferencesResponse(result.preferences),
+      reservations: {
+        items: result.reservations.items.map(toReservationResponse),
+        total: result.reservations.total,
+      },
+      reviews: {
+        items: result.reviews.items.map(toReviewResponse),
+        total: result.reviews.total,
+      },
+      favorites: {
+        items: result.favorites.items.map((item) => ({
+          restaurantId: item.restaurantId,
+          name: item.name,
+          slug: item.slug,
+          cuisineType: item.cuisineType,
+          priceLevel: item.priceLevel,
+          averageRating: item.averageRating,
+          status: item.status,
+          favoritedAt: item.favoritedAt.toISOString(),
+        })),
+        total: result.favorites.total,
+      },
     };
   }
 

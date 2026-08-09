@@ -60,6 +60,14 @@ export class InMemoryFavoriteRestaurantRepository implements FavoriteRestaurantR
     };
   }
 
+  async deleteAllByUserId(userId: UserId): Promise<void> {
+    for (let i = this.favorites.length - 1; i >= 0; i -= 1) {
+      if (this.favorites[i].userId === userId.value) {
+        this.favorites.splice(i, 1);
+      }
+    }
+  }
+
   seed(favorite: FavoriteRestaurant): void {
     this.favorites.push(favorite);
   }

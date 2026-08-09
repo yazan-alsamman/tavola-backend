@@ -1,6 +1,8 @@
 import { Injectable, Inject } from '@nestjs/common';
+import { WorkingHoursEntryResult } from '@modules/restaurants/application/dto/working-hours.result';
 import { ListRestaurantIdsWithActiveOfferUseCase } from '@modules/offers/application/use-cases/list-restaurant-ids-with-active-offer.use-case';
 import { ListRestaurantIdsWithMenuUseCase } from '@modules/menus/application/use-cases/list-restaurant-ids-with-menu.use-case';
+import { ListWorkingHoursByRestaurantIdsUseCase } from '@modules/restaurants/application/use-cases/list-working-hours-by-restaurant-ids.use-case';
 import {
   NearbyRestaurantResult,
   DiscoveryReaderPort,
@@ -23,6 +25,7 @@ export interface NearbyRestaurantsCommand {
 export type NearbyDiscoverableRestaurant = NearbyRestaurantResult & {
   hasActiveOffer: boolean;
   hasMenu: boolean;
+  workingHours: WorkingHoursEntryResult[];
 };
 
 export interface NearbyRestaurantListResult {
@@ -49,6 +52,7 @@ export class NearbyRestaurantsUseCase {
     @Inject(DISCOVERY_READER) private readonly discoveryReader: DiscoveryReaderPort,
     private readonly listRestaurantIdsWithActiveOfferUseCase: ListRestaurantIdsWithActiveOfferUseCase,
     private readonly listRestaurantIdsWithMenuUseCase: ListRestaurantIdsWithMenuUseCase,
+    private readonly listWorkingHoursByRestaurantIdsUseCase: ListWorkingHoursByRestaurantIdsUseCase,
   ) {}
 
   async execute(command: NearbyRestaurantsCommand): Promise<NearbyRestaurantListResult> {
@@ -66,16 +70,19 @@ export class NearbyRestaurantsUseCase {
     });
 
     const restaurantIds = page.items.map((item) => item.restaurantId);
-    const [restaurantsWithActiveOffer, restaurantsWithMenu] = await Promise.all([
-      this.listRestaurantIdsWithActiveOfferUseCase.execute({ restaurantIds }),
-      this.listRestaurantIdsWithMenuUseCase.execute({ restaurantIds }),
-    ]);
+    const [restaurantsWithActiveOffer, restaurantsWithMenu, workingHoursByRestaurantId] =
+      await Promise.all([
+        this.listRestaurantIdsWithActiveOfferUseCase.execute({ restaurantIds }),
+        this.listRestaurantIdsWithMenuUseCase.execute({ restaurantIds }),
+        this.listWorkingHoursByRestaurantIdsUseCase.execute({ restaurantIds }),
+      ]);
 
     return {
       items: page.items.map((item) => ({
         ...item,
         hasActiveOffer: restaurantsWithActiveOffer.has(item.restaurantId),
         hasMenu: restaurantsWithMenu.has(item.restaurantId),
+        workingHours: workingHoursByRestaurantId.get(item.restaurantId) ?? [],
       })),
       page: command.page,
       limit: command.limit,

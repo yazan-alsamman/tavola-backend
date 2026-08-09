@@ -77,6 +77,17 @@ describe('PlatformAdminDisableLoginUseCase', () => {
     await expect(useCase.execute({ targetUserId, actorId: adminActorId })).resolves.toBeUndefined();
   });
 
+  it('M1: a no-op repeat call publishes no second AccountLoginDisabledEvent and writes no second audit row', async () => {
+    const { useCase, userRepository, eventPublisher } = build();
+    await seedTargetUser(userRepository);
+
+    await useCase.execute({ targetUserId, actorId: adminActorId });
+    expect(eventPublisher.events).toHaveLength(1);
+
+    await useCase.execute({ targetUserId, actorId: adminActorId });
+    expect(eventPublisher.events).toHaveLength(1);
+  });
+
   it('rejects an unknown target account (IDOR-safe)', async () => {
     const { useCase } = build();
 

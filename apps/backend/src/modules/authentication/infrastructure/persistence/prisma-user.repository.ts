@@ -109,6 +109,8 @@ export class PrismaUserRepository implements UserRepository {
           passwordChangedAt: data.passwordChangedAt,
           lastLoginAt: data.lastLoginAt,
           anonymizedAt: data.anonymizedAt,
+          deletionRequestedAt: data.deletionRequestedAt,
+          scheduledAnonymizationAt: data.scheduledAnonymizationAt,
           updatedAt: data.updatedAt,
           deletedAt: data.deletedAt,
         },

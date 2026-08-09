@@ -153,4 +153,34 @@ describe('BranchWorkingHours round-trip via PrismaBranchWorkingHoursRepository (
     const found = await repository.findAllByBranchId(BranchId.create(branch.id));
     expect(found).toHaveLength(1);
   });
+
+  it('findAllByBranchIds returns the union across every requested branch in one call (Public Working Hours)', async () => {
+    if (!dbAvailable) return;
+
+    const branchA = await createBranch();
+    const branchB = await createBranch();
+    await repository.replaceAllForBranch(BranchId.create(branchA.id), [
+      buildEntry(branchA.id, 4),
+      buildEntry(branchA.id, 0),
+    ]);
+    await repository.replaceAllForBranch(BranchId.create(branchB.id), [buildEntry(branchB.id, 6)]);
+
+    const found = await repository.findAllByBranchIds([
+      BranchId.create(branchA.id),
+      BranchId.create(branchB.id),
+    ]);
+
+    expect(found).toHaveLength(3);
+    const forA = found.filter((entry) => entry.branchId.value === branchA.id);
+    const forB = found.filter((entry) => entry.branchId.value === branchB.id);
+    expect(forA.map((entry) => entry.dayOfWeek)).toEqual([0, 4]);
+    expect(forB.map((entry) => entry.dayOfWeek)).toEqual([6]);
+  });
+
+  it('findAllByBranchIds returns an empty array for an empty input, without querying', async () => {
+    if (!dbAvailable) return;
+
+    const found = await repository.findAllByBranchIds([]);
+    expect(found).toEqual([]);
+  });
 });

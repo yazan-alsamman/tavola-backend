@@ -213,6 +213,52 @@ describe('Favorites round-trip via real PostgreSQL (integration)', () => {
     expect(page.items.map((item) => item.restaurantId)).toEqual([restaurantNew, restaurantOld]);
   });
 
+  it('deleteAllByUserId (Phase 20.X, account deletion) removes every favorite for that user, leaving other users untouched', async () => {
+    if (!dbAvailable) return;
+    const userA = await seedUser();
+    const userB = await seedUser();
+    const restaurant1 = await seedRestaurant();
+    const restaurant2 = await seedRestaurant();
+    await favoriteRepository.add(
+      FavoriteRestaurant.create({
+        id: randomUUID(),
+        userId: userA,
+        restaurantId: restaurant1,
+        createdAt: new Date(),
+      }),
+    );
+    await favoriteRepository.add(
+      FavoriteRestaurant.create({
+        id: randomUUID(),
+        userId: userA,
+        restaurantId: restaurant2,
+        createdAt: new Date(),
+      }),
+    );
+    await favoriteRepository.add(
+      FavoriteRestaurant.create({
+        id: randomUUID(),
+        userId: userB,
+        restaurantId: restaurant1,
+        createdAt: new Date(),
+      }),
+    );
+
+    await favoriteRepository.deleteAllByUserId(UserId.create(userA));
+
+    expect((await prisma.favorite.findMany({ where: { userId: userA } })).length).toBe(0);
+    expect((await prisma.favorite.findMany({ where: { userId: userB } })).length).toBe(1);
+  });
+
+  it('deleteAllByUserId is idempotent - deleting an already-empty set is a no-op', async () => {
+    if (!dbAvailable) return;
+    const userId = await seedUser();
+
+    await expect(
+      favoriteRepository.deleteAllByUserId(UserId.create(userId)),
+    ).resolves.toBeUndefined();
+  });
+
   it('PrismaRestaurantDirectoryReader finds an existing restaurant and excludes organizationId', async () => {
     if (!dbAvailable) return;
     const restaurantId = await seedRestaurant();

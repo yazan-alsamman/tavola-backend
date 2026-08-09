@@ -81,5 +81,9 @@ import { ReviewsController } from './presentation/controllers/reviews.controller
         configService.getOrThrow<StorageConfig>('storage').publicBucket,
     },
   ],
+  // Phase 20.X: ListMyReviewsUseCase exported so UsersModule's
+  // ExportUserDataUseCase can reuse it verbatim - one-directional,
+  // ReviewsModule never imports UsersModule back.
+  exports: [ListMyReviewsUseCase],
 })
 export class ReviewsModule {}

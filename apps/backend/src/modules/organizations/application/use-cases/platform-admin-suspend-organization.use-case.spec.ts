@@ -114,6 +114,17 @@ describe('PlatformAdminSuspendOrganizationUseCase', () => {
     });
   });
 
+  it('M1: a no-op repeat call publishes no second OrganizationSuspendedEvent and writes no second audit row', async () => {
+    const { useCase, organizationRepository, eventPublisher } = build();
+    await seedOrganization(organizationRepository);
+
+    await useCase.execute({ organizationId, actorId });
+    expect(eventPublisher.events).toHaveLength(1);
+
+    await useCase.execute({ organizationId, actorId });
+    expect(eventPublisher.events).toHaveLength(1);
+  });
+
   it('rejects an unknown Organization id (IDOR-safe)', async () => {
     const { useCase } = build();
 

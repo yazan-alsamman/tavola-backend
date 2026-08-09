@@ -221,6 +221,15 @@ export interface ReservationRepository {
    * ownership rule (`resource.userId === principal.userId`).
    */
   findManyByUserId(userId: UserId, page: number, limit: number): Promise<ReservationListPage>;
+
+  /**
+   * Phase 20.X (ADR-014 execution) - `RequestAccountDeletionUseCase`'s
+   * open-reservations gate. Same "blocking" definition as
+   * `hasBlockingReservation` above (`Pending`/`Approved`, not yet ended) -
+   * a restaurant is still expecting this guest. `Rejected`/`Cancelled`/
+   * `Expired`/`Completed`/`NoShow` never block.
+   */
+  hasOpenReservationsByUserId(userId: UserId, now: Date): Promise<boolean>;
 }
 
 export const RESERVATION_REPOSITORY = Symbol('RESERVATION_REPOSITORY');

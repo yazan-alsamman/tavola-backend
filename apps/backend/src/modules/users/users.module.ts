@@ -1,9 +1,14 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { BullModule } from '@nestjs/bullmq';
 import type { StorageConfig } from '@config/storage.config';
 import { PrismaModule } from '@infrastructure/prisma/prisma.module';
 import { AuthenticationModule } from '@modules/authentication/authentication.module';
 import { FilesModule } from '@modules/files/files.module';
+import { MessagingModule } from '@modules/messaging/messaging.module';
+import { WaitlistModule } from '@modules/waitlist/waitlist.module';
+import { ReservationsModule } from '@modules/reservations/reservations.module';
+import { ReviewsModule } from '@modules/reviews/reviews.module';
 import { GetCurrentUserProfileUseCase } from './application/use-cases/get-current-user-profile.use-case';
 import { UpdateUserProfileUseCase } from './application/use-cases/update-user-profile.use-case';
 import { UploadCurrentUserAvatarUseCase } from './application/use-cases/upload-current-user-avatar.use-case';
@@ -12,11 +17,19 @@ import { RemoveFavoriteUseCase } from './application/use-cases/remove-favorite.u
 import { ListCurrentUserFavoritesUseCase } from './application/use-cases/list-current-user-favorites.use-case';
 import { GetCurrentUserPreferencesUseCase } from './application/use-cases/get-current-user-preferences.use-case';
 import { UpdateUserPreferencesUseCase } from './application/use-cases/update-user-preferences.use-case';
+import { RequestAccountDeletionUseCase } from './application/use-cases/request-account-deletion.use-case';
+import { CancelAccountDeletionUseCase } from './application/use-cases/cancel-account-deletion.use-case';
+import { AnonymizeUserAccountUseCase } from './application/use-cases/anonymize-user-account.use-case';
+import { ExportUserDataUseCase } from './application/use-cases/export-user-data.use-case';
 import { AVATAR_BUCKET } from './application/tokens/users.tokens';
 import { RESTAURANT_DIRECTORY_READER } from './application/ports/restaurant-directory-reader.port';
+import { ACCOUNT_DELETION_SCHEDULER } from './application/ports/account-deletion-scheduler.port';
 import { FAVORITE_RESTAURANT_REPOSITORY } from './domain/repositories/favorite-restaurant.repository';
 import { PrismaFavoriteRestaurantRepository } from './infrastructure/persistence/prisma-favorite-restaurant.repository';
 import { PrismaRestaurantDirectoryReader } from './infrastructure/persistence/prisma-restaurant-directory-reader';
+import { ACCOUNT_DELETION_QUEUE_NAME } from './infrastructure/bullmq/account-deletion-queue.constants';
+import { BullMqAccountDeletionScheduler } from './infrastructure/bullmq/bullmq-account-deletion.scheduler';
+import { AnonymizeUserAccountProcessor } from './infrastructure/bullmq/anonymize-user-account.processor';
 import { UsersController } from './presentation/controllers/users.controller';
 
 /**
@@ -48,9 +61,30 @@ import { UsersController } from './presentation/controllers/users.controller';
  * corrected in documentation rather than built (see DECISIONS.md). No new
  * repository/port was needed - `USER_REPOSITORY` (from AuthenticationModule)
  * already covers the whole `User` row.
+ *
+ * Phase 20.X (Account Deletion, ADR-014 execution) adds three new one-
+ * directional imports, none of which import this module back:
+ * `MessagingModule` (MESSAGE_REPOSITORY, for anonymizing this user's own
+ * messages), `WaitlistModule` (RESERVATION_WAITLIST_ENTRY_REPOSITORY +
+ * the exported CancelWaitlistEntryUseCase, reused verbatim rather than
+ * re-derived), `ReservationsModule` (RESERVATION_REPOSITORY for the open-
+ * reservations gate, plus the exported ListMyReservationsUseCase) and
+ * `ReviewsModule` (the exported ListMyReviewsUseCase) - the latter two
+ * reused by ExportUserDataUseCase. A dedicated `AccountDeletionQueue`
+ * mirrors `SubscriptionExpirationQueue`'s registration shape exactly.
  */
 @Module({
-  imports: [AuthenticationModule, FilesModule, PrismaModule, ConfigModule],
+  imports: [
+    AuthenticationModule,
+    FilesModule,
+    MessagingModule,
+    WaitlistModule,
+    ReservationsModule,
+    ReviewsModule,
+    PrismaModule,
+    ConfigModule,
+    BullModule.registerQueue({ name: ACCOUNT_DELETION_QUEUE_NAME }),
+  ],
   controllers: [UsersController],
   providers: [
     GetCurrentUserProfileUseCase,
@@ -61,10 +95,17 @@ import { UsersController } from './presentation/controllers/users.controller';
     ListCurrentUserFavoritesUseCase,
     GetCurrentUserPreferencesUseCase,
     UpdateUserPreferencesUseCase,
+    RequestAccountDeletionUseCase,
+    CancelAccountDeletionUseCase,
+    AnonymizeUserAccountUseCase,
+    ExportUserDataUseCase,
+    AnonymizeUserAccountProcessor,
     PrismaFavoriteRestaurantRepository,
     PrismaRestaurantDirectoryReader,
     { provide: FAVORITE_RESTAURANT_REPOSITORY, useExisting: PrismaFavoriteRestaurantRepository },
     { provide: RESTAURANT_DIRECTORY_READER, useExisting: PrismaRestaurantDirectoryReader },
+    BullMqAccountDeletionScheduler,
+    { provide: ACCOUNT_DELETION_SCHEDULER, useExisting: BullMqAccountDeletionScheduler },
     {
       provide: AVATAR_BUCKET,
       inject: [ConfigService],

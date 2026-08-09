@@ -86,4 +86,8 @@ export class PrismaFavoriteRestaurantRepository implements FavoriteRestaurantRep
       total,
     };
   }
+
+  async deleteAllByUserId(userId: UserId): Promise<void> {
+    await this.prismaContext.client.favorite.deleteMany({ where: { userId: userId.value } });
+  }
 }

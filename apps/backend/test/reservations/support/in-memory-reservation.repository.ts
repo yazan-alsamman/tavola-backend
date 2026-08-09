@@ -212,6 +212,15 @@ export class InMemoryReservationRepository implements ReservationRepository {
     return { items: all.slice(start, start + limit), total: all.length };
   }
 
+  async hasOpenReservationsByUserId(userId: UserId, now: Date): Promise<boolean> {
+    return [...this.rows.values()].some(
+      (row) =>
+        row.userId?.value === userId.value &&
+        (row.status === ReservationStatus.Pending || row.status === ReservationStatus.Approved) &&
+        row.reservationEndTime.getTime() > now.getTime(),
+    );
+  }
+
   /** Test-only helper: seeds a row directly, bypassing createWithLock's conflict check. */
   seed(reservation: Reservation): void {
     this.rows.set(reservation.reservationId.value, reservation);

@@ -1,10 +1,14 @@
 import { ListDiscoverableRestaurantsUseCase } from './list-discoverable-restaurants.use-case';
 import { ListRestaurantIdsWithActiveOfferUseCase } from '@modules/offers/application/use-cases/list-restaurant-ids-with-active-offer.use-case';
 import { ListRestaurantIdsWithMenuUseCase } from '@modules/menus/application/use-cases/list-restaurant-ids-with-menu.use-case';
+import { ListWorkingHoursByRestaurantIdsUseCase } from '@modules/restaurants/application/use-cases/list-working-hours-by-restaurant-ids.use-case';
+import { WorkingHours } from '@modules/restaurants/domain/entities/working-hours.entity';
+import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import { FakeDiscoveryReader } from '../../../../../test/discovery/support/fake-discovery-reader';
 import { FixedClock } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryOfferRepository } from '../../../../../test/offers/support/in-memory-offer.repository';
 import { InMemoryMenuRepository } from '../../../../../test/menus/support/in-memory-menu.repository';
+import { InMemoryWorkingHoursRepository } from '../../../../../test/restaurants/support/in-memory-working-hours.repository';
 import {
   testOffer,
   testOfferContent,
@@ -42,13 +46,19 @@ function buildUseCase(reader: FakeDiscoveryReader, now = new Date('2026-08-15T00
   const listRestaurantIdsWithMenuUseCase = new ListRestaurantIdsWithMenuUseCase(
     new InMemoryMenuRepository(),
   );
+  const workingHoursRepository = new InMemoryWorkingHoursRepository();
+  const listWorkingHoursByRestaurantIdsUseCase = new ListWorkingHoursByRestaurantIdsUseCase(
+    workingHoursRepository,
+  );
   return {
     useCase: new ListDiscoverableRestaurantsUseCase(
       reader,
       listRestaurantIdsWithActiveOfferUseCase,
       listRestaurantIdsWithMenuUseCase,
+      listWorkingHoursByRestaurantIdsUseCase,
     ),
     offerRepository,
+    workingHoursRepository,
   };
 }
 
@@ -172,6 +182,51 @@ describe('ListDiscoverableRestaurantsUseCase', () => {
     );
     expect(withOfferResult?.hasActiveOffer).toBe(true);
     expect(withoutOfferResult?.hasActiveOffer).toBe(false);
+  });
+
+  it('annotates workingHours from WorkingHours, ordered by dayOfWeek, empty array when unconfigured', async () => {
+    const reader = new FakeDiscoveryReader();
+    const withHours = restaurant('11111111-1111-4111-8111-111111111111', 'WithHours');
+    const withoutHours = restaurant('11111111-1111-4111-8111-111111111112', 'WithoutHours');
+    reader.restaurants = [withHours, withoutHours];
+
+    const { useCase, workingHoursRepository } = buildUseCase(reader);
+    await workingHoursRepository.replaceAllForRestaurant(
+      RestaurantId.create(withHours.restaurantId),
+      [
+        WorkingHours.create({
+          id: '33333333-3333-4333-8333-333333333332',
+          restaurantId: withHours.restaurantId,
+          dayOfWeek: 3,
+          openingTime: '09:00',
+          closingTime: '22:00',
+          breakStartTime: null,
+          breakEndTime: null,
+          createdAt: new Date('2026-08-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-08-01T00:00:00.000Z'),
+        }),
+        WorkingHours.create({
+          id: '33333333-3333-4333-8333-333333333331',
+          restaurantId: withHours.restaurantId,
+          dayOfWeek: 1,
+          openingTime: '10:00',
+          closingTime: '14:00',
+          breakStartTime: null,
+          breakEndTime: null,
+          createdAt: new Date('2026-08-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-08-01T00:00:00.000Z'),
+        }),
+      ],
+    );
+
+    const result = await useCase.execute({ page: 1, limit: 20 });
+
+    const withHoursResult = result.items.find((r) => r.restaurantId === withHours.restaurantId);
+    const withoutHoursResult = result.items.find(
+      (r) => r.restaurantId === withoutHours.restaurantId,
+    );
+    expect(withHoursResult?.workingHours.map((e) => e.dayOfWeek)).toEqual([1, 3]);
+    expect(withoutHoursResult?.workingHours).toEqual([]);
   });
 
   it('returns zero results without error for a filter combination that matches nothing', async () => {

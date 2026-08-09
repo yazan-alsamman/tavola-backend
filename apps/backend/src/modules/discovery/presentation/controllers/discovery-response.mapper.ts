@@ -1,9 +1,12 @@
 import { RestaurantResult } from '@modules/restaurants/application/dto/restaurant.result';
+import { WorkingHoursEntryResult } from '@modules/restaurants/application/dto/working-hours.result';
 import { BranchResult } from '@modules/branches/application/dto/branch.result';
+import { BranchWorkingHoursEntryResult } from '@modules/branches/application/dto/branch-working-hours.result';
 import { FloorPlanResult } from '@modules/tables/application/dto/floor-plan.result';
 import { TableResult } from '@modules/tables/application/dto/table.result';
-import { RestaurantResponseDto } from '@modules/restaurants/presentation/dto/restaurant.response.dto';
-import { BranchResponseDto } from '@modules/branches/presentation/dto/branch.response.dto';
+import { RestaurantPublicResponseDto } from '../dto/restaurant-public.response.dto';
+import { BranchPublicResponseDto } from '../dto/branch-public.response.dto';
+import { WorkingHoursEntryPublicResponseDto } from '../dto/working-hours-entry-public.response.dto';
 import { DiscoverableRestaurant } from '../../application/use-cases/list-discoverable-restaurants.use-case';
 import { NearbyDiscoverableRestaurant } from '../../application/use-cases/nearby-restaurants.use-case';
 import { FloorPlanPublicResponseDto } from '../dto/floor-plan-public.response.dto';
@@ -21,8 +24,30 @@ import { NearbyRestaurantResponseDto } from '../dto/nearby-restaurant.response.d
  * `FloorPlanResponseDto` shapes - see `toFloorPlanPublicResponse`/
  * `toTablePublicResponse` below and their target DTOs' own doc comments for
  * the customer-safe projection correction.
+ *
+ * Public Working Hours & Restaurant Phone Privacy (customer-facing
+ * correction): `toDiscoveryRestaurantResponse`/`toDiscoveryBranchResponse`
+ * now target the dedicated `RestaurantPublicResponseDto`/
+ * `BranchPublicResponseDto` (not the shared private `RestaurantResponseDto`/
+ * `BranchResponseDto`) - `toDiscoveryBranchResponse` structurally excludes
+ * `phone` (never copied from `BranchResult` into the response object, not
+ * merely omitted from a TypeScript type) and both now include `workingHours`.
  */
-export function toDiscoveryRestaurantResponse(result: RestaurantResult): RestaurantResponseDto {
+function toWorkingHoursEntryPublicResponse(
+  entry: WorkingHoursEntryResult | BranchWorkingHoursEntryResult,
+): WorkingHoursEntryPublicResponseDto {
+  return {
+    dayOfWeek: entry.dayOfWeek,
+    openingTime: entry.openingTime,
+    closingTime: entry.closingTime,
+    breakStartTime: entry.breakStartTime,
+    breakEndTime: entry.breakEndTime,
+  };
+}
+
+export function toDiscoveryRestaurantResponse(
+  result: RestaurantResult & { workingHours: WorkingHoursEntryResult[] },
+): RestaurantPublicResponseDto {
   return {
     restaurantId: result.restaurantId,
     name: result.name,
@@ -36,10 +61,13 @@ export function toDiscoveryRestaurantResponse(result: RestaurantResult): Restaur
     status: result.status,
     createdAt: result.createdAt.toISOString(),
     updatedAt: result.updatedAt.toISOString(),
+    workingHours: result.workingHours.map(toWorkingHoursEntryPublicResponse),
   };
 }
 
-export function toDiscoveryBranchResponse(result: BranchResult): BranchResponseDto {
+export function toDiscoveryBranchResponse(
+  result: BranchResult & { workingHours: BranchWorkingHoursEntryResult[] },
+): BranchPublicResponseDto {
   return {
     branchId: result.branchId,
     restaurantId: result.restaurantId,
@@ -51,13 +79,13 @@ export function toDiscoveryBranchResponse(result: BranchResult): BranchResponseD
     countryCode: result.countryCode,
     currency: result.currency,
     timezone: result.timezone,
-    phone: result.phone,
     createdAt: result.createdAt.toISOString(),
     updatedAt: result.updatedAt.toISOString(),
+    workingHours: result.workingHours.map(toWorkingHoursEntryPublicResponse),
   };
 }
 
-/** D9: adds `hasActiveOffer` to the plain restaurant response - used by search/nearby/comparison results, never the plain detail route. */
+/** D9: adds `hasActiveOffer`/`hasMenu` to the plain restaurant response - used by search/nearby/comparison results, never the plain detail route. */
 export function toDiscoverableRestaurantResponse(
   result: DiscoverableRestaurant,
 ): DiscoverableRestaurantResponseDto {

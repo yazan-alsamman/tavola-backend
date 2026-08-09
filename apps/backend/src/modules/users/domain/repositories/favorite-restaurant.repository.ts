@@ -25,6 +25,15 @@ export interface FavoriteRestaurantRepository {
   ): Promise<FavoriteRestaurant | null>;
 
   listByUser(userId: UserId, page: number, limit: number): Promise<FavoriteRestaurantPage>;
+
+  /**
+   * Phase 20.X (ADR-014 execution) - `AnonymizeUserAccountUseCase`.
+   * Favorites are pure preference data with no legal retention reason once
+   * the owning account is anonymized - hard-deleted, not anonymized in
+   * place (unlike Reservations/Reviews/AuditLog, which ADR-014 forbids
+   * modifying). Idempotent: deleting an already-empty set is a no-op.
+   */
+  deleteAllByUserId(userId: UserId): Promise<void>;
 }
 
 export const FAVORITE_RESTAURANT_REPOSITORY = Symbol('FAVORITE_RESTAURANT_REPOSITORY');

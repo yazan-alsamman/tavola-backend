@@ -9,9 +9,19 @@
  * @see docs/AUTHORIZATION_ARCHITECTURE.md §5
  */
 
-import { NotificationChannel, PrismaClient, RolePermissionType, RoleScope } from '@prisma/client';
+import * as argon2 from 'argon2';
+import {
+  NotificationChannel,
+  PlatformAdminRole,
+  PrismaClient,
+  RolePermissionType,
+  RoleScope,
+  UserStatus,
+} from '@prisma/client';
 
 const prisma = new PrismaClient();
+
+const PLATFORM_ADMIN_BOOTSTRAP_MIN_PASSWORD_LENGTH = 12;
 
 /**
  * Phase 9 (Notification System, architecture frozen 2026-07-25) - one
@@ -175,6 +185,12 @@ const SYSTEM_CONFIGURATION: Array<{
     key: 'otpResendCooldownSeconds',
     value: 60,
     description: 'ADR-022: minimum seconds between OTP resend requests for the same phone',
+  },
+  {
+    key: 'anonymizationGracePeriodDays',
+    value: 30,
+    description:
+      'ADR-014: days between a verified Request Account Deletion and irreversible anonymization; cancellable within this window',
   },
 ];
 
@@ -486,6 +502,73 @@ async function seedSubscriptionPlans(): Promise<void> {
   });
 }
 
+/**
+ * ADR-034 §10 (FR-19.1) operational bootstrap for the very first
+ * PlatformAdmin account (`CreatePlatformAdminUseCase`'s own doc comment
+ * references this exact `PLATFORM_ADMIN_BOOTSTRAP_*` row).
+ * AUTHENTICATION_ARCHITECTURE.md §7.12: PlatformAdmin accounts are
+ * provisioned operationally, seeded directly, never via any API — this is
+ * that seed path, not a new API surface.
+ *
+ * Only runs when every `PLATFORM_ADMIN_BOOTSTRAP_*` variable is set. Unset
+ * in every already-provisioned environment's env file, so re-running this
+ * seed there is a pure no-op — existing installations are unaffected.
+ * Idempotent by email: if a User with this email already exists, its
+ * password/name are left untouched and a PlatformAdmin row is created for
+ * it only if one doesn't already exist yet — never a second PlatformAdmin
+ * row for the same account.
+ */
+async function seedPlatformAdminBootstrap(): Promise<void> {
+  const email = process.env.PLATFORM_ADMIN_BOOTSTRAP_EMAIL;
+  const password = process.env.PLATFORM_ADMIN_BOOTSTRAP_PASSWORD;
+  const firstName = process.env.PLATFORM_ADMIN_BOOTSTRAP_FIRST_NAME;
+  const lastName = process.env.PLATFORM_ADMIN_BOOTSTRAP_LAST_NAME;
+
+  if (!email || !password || !firstName || !lastName) {
+    return;
+  }
+
+  if (password.length < PLATFORM_ADMIN_BOOTSTRAP_MIN_PASSWORD_LENGTH) {
+    throw new Error(
+      `PLATFORM_ADMIN_BOOTSTRAP_PASSWORD must be at least ${PLATFORM_ADMIN_BOOTSTRAP_MIN_PASSWORD_LENGTH} characters (matches PasswordPolicy).`,
+    );
+  }
+
+  const existingUser = await prisma.user.findUnique({
+    where: { email },
+    include: { platformAdmin: true },
+  });
+
+  if (existingUser) {
+    if (!existingUser.platformAdmin) {
+      await prisma.platformAdmin.create({
+        data: { userId: existingUser.id, role: PlatformAdminRole.PlatformAdmin, revokedAt: null },
+      });
+    }
+    return;
+  }
+
+  const passwordHash = await argon2.hash(password, {
+    type: argon2.argon2id,
+    memoryCost: Number(process.env.ARGON2_MEMORY_COST ?? 65536),
+    timeCost: Number(process.env.ARGON2_TIME_COST ?? 3),
+    parallelism: Number(process.env.ARGON2_PARALLELISM ?? 1),
+  });
+
+  await prisma.user.create({
+    data: {
+      firstName,
+      lastName,
+      email,
+      passwordHash,
+      language: 'en',
+      status: UserStatus.Active,
+      emailVerified: true,
+      platformAdmin: { create: { role: PlatformAdminRole.PlatformAdmin, revokedAt: null } },
+    },
+  });
+}
+
 async function main(): Promise<void> {
   await seedSystemConfiguration();
   const permissionIds = await seedPermissions();
@@ -494,6 +577,7 @@ async function main(): Promise<void> {
   await seedOccasionCategories();
   await seedNotificationTemplates();
   await seedSubscriptionPlans();
+  await seedPlatformAdminBootstrap();
 }
 
 main()

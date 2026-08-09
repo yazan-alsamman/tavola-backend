@@ -29,11 +29,19 @@ import { PlatformAdminOrganizationsController } from './presentation/controllers
  * circular pair, resolved with `forwardRef` on both sides (that module's own
  * import of this one converted accordingly), matching the established
  * `RestaurantsModule`↔`SubscriptionsModule`↔`AuthenticationModule` precedent.
- * `PlatformAdminModule` (for `PlatformAdminGuard`/`PlatformAdminRoleGuard`) is
- * imported plainly - it does not depend back on this module.
+ * `PlatformAdminModule` (for `PlatformAdminGuard`/`PlatformAdminRoleGuard`) DOES
+ * depend back on this module transitively - `PlatformAdminModule` imports
+ * `AuthenticationModule` (`forwardRef`), which imports this module
+ * (`forwardRef`), closing a genuine three-module cycle
+ * (`OrganizationsModule` -> `PlatformAdminModule` -> `AuthenticationModule` ->
+ * `OrganizationsModule`). M3 remediation: per `RestaurantsModule`'s own doc
+ * comment ("`forwardRef` closing only one edge is not sufficient once a
+ * third module sits in the same cycle"), this module's `PlatformAdminModule`
+ * import is wrapped in `forwardRef` too, closing all three edges of this
+ * cycle instead of two.
  */
 @Module({
-  imports: [forwardRef(() => AuthenticationModule), PlatformAdminModule],
+  imports: [forwardRef(() => AuthenticationModule), forwardRef(() => PlatformAdminModule)],
   controllers: [PlatformAdminOrganizationsController],
   providers: [
     PlatformAdminSuspendOrganizationUseCase,

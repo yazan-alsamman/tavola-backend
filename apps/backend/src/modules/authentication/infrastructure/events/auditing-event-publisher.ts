@@ -24,6 +24,10 @@ import {
   PlatformAdminCredentialResetEvent,
   AccountLoginDisabledEvent,
   AccountLoginEnabledEvent,
+  UserDataExportRequestedEvent,
+  UserAccountDeletionRequestedEvent,
+  UserAccountDeletionCancelledEvent,
+  UserAccountAnonymizedEvent,
 } from '../../domain/events/authentication.events';
 import { SessionRevokeReason } from '../../domain/enums/authentication.enums';
 import {
@@ -435,6 +439,58 @@ export class AuditingEventPublisher implements EventPublisherPort {
         actorId: event.payload.userId,
         actorType: 'User',
         action: 'auth.password_reset.success',
+        targetType: 'User',
+        targetId: event.payload.userId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof UserDataExportRequestedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.userId,
+        actorType: 'User',
+        action: 'auth.data_export.requested',
+        targetType: 'User',
+        targetId: event.payload.userId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof UserAccountDeletionRequestedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.userId,
+        actorType: 'User',
+        action: 'auth.account_deletion.requested',
+        targetType: 'User',
+        targetId: event.payload.userId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof UserAccountDeletionCancelledEvent) {
+      return {
+        ...base,
+        actorId: event.payload.userId,
+        actorType: 'User',
+        action: 'auth.account_deletion.cancelled',
+        targetType: 'User',
+        targetId: event.payload.userId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof UserAccountAnonymizedEvent) {
+      return {
+        ...base,
+        // The account being anonymized IS the actor - this is always a
+        // self-service action that already completed a grace period, never
+        // PlatformAdmin-initiated (that remains a separate, unrelated
+        // capability - ADR-034 §8's Suspend/Disable Login family).
+        actorId: event.payload.userId,
+        actorType: 'User',
+        action: 'auth.account_deletion.anonymized',
         targetType: 'User',
         targetId: event.payload.userId,
         ipAddress: null,

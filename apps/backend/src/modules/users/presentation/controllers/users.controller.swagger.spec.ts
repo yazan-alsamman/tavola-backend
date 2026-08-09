@@ -12,6 +12,9 @@ import { RemoveFavoriteUseCase } from '../../application/use-cases/remove-favori
 import { ListCurrentUserFavoritesUseCase } from '../../application/use-cases/list-current-user-favorites.use-case';
 import { GetCurrentUserPreferencesUseCase } from '../../application/use-cases/get-current-user-preferences.use-case';
 import { UpdateUserPreferencesUseCase } from '../../application/use-cases/update-user-preferences.use-case';
+import { RequestAccountDeletionUseCase } from '../../application/use-cases/request-account-deletion.use-case';
+import { CancelAccountDeletionUseCase } from '../../application/use-cases/cancel-account-deletion.use-case';
+import { ExportUserDataUseCase } from '../../application/use-cases/export-user-data.use-case';
 
 /**
  * Boots only UsersController against the real @nestjs/swagger document
@@ -28,11 +31,13 @@ describe('UsersController Swagger document', () => {
     path: string;
     methods: Array<'get' | 'patch' | 'post' | 'delete'>;
   }> = [
-    { path: '/users/me', methods: ['get', 'patch'] },
+    { path: '/users/me', methods: ['get', 'patch', 'delete'] },
     { path: '/users/me/avatar', methods: ['post'] },
     { path: '/users/me/favorites/{restaurantId}', methods: ['post', 'delete'] },
     { path: '/users/me/favorites', methods: ['get'] },
     { path: '/users/me/preferences', methods: ['get', 'patch'] },
+    { path: '/users/me/cancel-deletion', methods: ['post'] },
+    { path: '/users/me/export', methods: ['get'] },
   ];
 
   beforeAll(async () => {
@@ -47,6 +52,9 @@ describe('UsersController Swagger document', () => {
         { provide: ListCurrentUserFavoritesUseCase, useValue: {} },
         { provide: GetCurrentUserPreferencesUseCase, useValue: {} },
         { provide: UpdateUserPreferencesUseCase, useValue: {} },
+        { provide: RequestAccountDeletionUseCase, useValue: {} },
+        { provide: CancelAccountDeletionUseCase, useValue: {} },
+        { provide: ExportUserDataUseCase, useValue: {} },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -109,6 +117,24 @@ describe('UsersController Swagger document', () => {
     expect(pathItem).toBeDefined();
     expect(pathItem.get).toBeDefined();
     expect(pathItem.patch).toBeDefined();
+  });
+
+  it('documents DELETE /users/me (account deletion)', () => {
+    const pathItem = document.paths['/users/me'];
+    expect(pathItem).toBeDefined();
+    expect(pathItem.delete).toBeDefined();
+  });
+
+  it('documents POST /users/me/cancel-deletion', () => {
+    const pathItem = document.paths['/users/me/cancel-deletion'];
+    expect(pathItem).toBeDefined();
+    expect(pathItem.post).toBeDefined();
+  });
+
+  it('documents GET /users/me/export', () => {
+    const pathItem = document.paths['/users/me/export'];
+    expect(pathItem).toBeDefined();
+    expect(pathItem.get).toBeDefined();
   });
 
   it('has no duplicate operationIds', () => {

@@ -47,6 +47,9 @@ class InMemoryMessageRepository implements MessageRepository {
   ): Promise<MessagePage> {
     return { items: [], hasMore: false };
   }
+  async anonymizeAllBySenderUserId(): Promise<void> {
+    throw new Error('Not needed by this suite.');
+  }
 }
 
 function customerActor(overrides: Partial<AuthenticatedUserActor> = {}): AuthenticatedUserActor {

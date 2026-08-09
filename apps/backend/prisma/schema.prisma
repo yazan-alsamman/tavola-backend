@@ -98,6 +98,10 @@ enum SessionRevokeReason {
   admin
   expired
   session_version_bump
+  // Phase 20.X - RequestAccountDeletionUseCase's immediate revoke-everything
+  // call. Distinct from `admin` (PlatformAdmin-initiated) and
+  // `password_change` (self-service but not deletion-related).
+  account_deletion
 }
 
 enum RoleScope {
@@ -194,47 +198,57 @@ model OrganizationMember {
 }
 
 model User {
-  id                 String     @id @default(uuid()) @db.Uuid
+  id                       String     @id @default(uuid()) @db.Uuid
   // ADR-022: nullable — Customer registration never collects a name (the
   // frozen identity is username + phone + password only); mechanically the
   // same nullable-per-actor-field pattern already approved for
   // email/phone/username, extended here since ADR-022 never enumerated
   // firstName/lastName explicitly but the shared-User-table constraint is
   // identical.
-  firstName          String?    @map("first_name")
-  lastName           String?    @map("last_name")
+  firstName                String?    @map("first_name")
+  lastName                 String?    @map("last_name")
   // ADR-022: nullable — required in practice only for administratively-
   // provisioned Restaurant Owner/staff accounts; never collected for
   // customer registration. Plain @unique on a nullable column already
   // permits multiple NULLs in PostgreSQL, so no actor discriminator or
   // partial index is needed (DECISIONS.md ADR-022 Decision #9).
-  email              String?
+  email                    String?
   // ADR-022: canonical E.164, required in practice only for customer
   // accounts; unique-where-not-null for the same reason as email above.
-  phone              String?
+  phone                    String?
   // ADR-022 Decision #9/#14: customer identity attribute, stored lowercased
   // (mirrors the existing OrganizationSlug normalize-then-unique-index
   // precedent, application-layer.util.ts) so the plain unique index below
   // enforces case-insensitive uniqueness without a citext extension.
-  username           String?    @map("username")
-  passwordHash       String     @map("password_hash")
-  avatarId           String?    @map("avatar_id") @db.Uuid
-  language           String
-  preferredCurrency  String?    @map("preferred_currency")
-  notificationOptIn  Boolean    @default(true) @map("notification_opt_in")
-  marketingOptIn     Boolean    @default(false) @map("marketing_opt_in")
-  status             UserStatus @default(Pending)
-  emailVerified      Boolean    @default(false) @map("email_verified")
-  failedLoginCount   Int        @default(0) @map("failed_login_count")
-  lockedUntil        DateTime?  @map("locked_until")
-  permissionsVersion Int        @default(1) @map("permissions_version")
-  sessionVersion     Int        @default(1) @map("session_version")
-  passwordChangedAt  DateTime?  @map("password_changed_at")
-  lastLoginAt        DateTime?  @map("last_login_at")
-  anonymizedAt       DateTime?  @map("anonymized_at")
-  createdAt          DateTime   @default(now()) @map("created_at")
-  updatedAt          DateTime   @updatedAt @map("updated_at")
-  deletedAt          DateTime?  @map("deleted_at")
+  username                 String?    @map("username")
+  passwordHash             String     @map("password_hash")
+  avatarId                 String?    @map("avatar_id") @db.Uuid
+  language                 String
+  preferredCurrency        String?    @map("preferred_currency")
+  notificationOptIn        Boolean    @default(true) @map("notification_opt_in")
+  marketingOptIn           Boolean    @default(false) @map("marketing_opt_in")
+  status                   UserStatus @default(Pending)
+  emailVerified            Boolean    @default(false) @map("email_verified")
+  failedLoginCount         Int        @default(0) @map("failed_login_count")
+  lockedUntil              DateTime?  @map("locked_until")
+  permissionsVersion       Int        @default(1) @map("permissions_version")
+  sessionVersion           Int        @default(1) @map("session_version")
+  passwordChangedAt        DateTime?  @map("password_changed_at")
+  lastLoginAt              DateTime?  @map("last_login_at")
+  anonymizedAt             DateTime?  @map("anonymized_at")
+  // Phase 20.X (ADR-014 execution) - set together by RequestAccountDeletion,
+  // cleared together by CancelAccountDeletion. Deliberately flat columns on
+  // User rather than a separate request table, mirroring how every other
+  // scheduled-future-transition already lives directly on its owning
+  // aggregate (Subscription.endsAt). `status` stays Active throughout the
+  // grace period - only these two timestamps track a pending request - so
+  // the account remains loggable-in (required to reach Cancel, since
+  // requesting deletion already revokes every session/token immediately).
+  deletionRequestedAt      DateTime?  @map("deletion_requested_at")
+  scheduledAnonymizationAt DateTime?  @map("scheduled_anonymization_at")
+  createdAt                DateTime   @default(now()) @map("created_at")
+  updatedAt                DateTime   @updatedAt @map("updated_at")
+  deletedAt                DateTime?  @map("deleted_at")
 
   organizationMembers         OrganizationMember[]
   deviceSessions              DeviceSession[]
@@ -420,7 +434,12 @@ model UserConsent {
 model PlatformAdmin {
   id        String            @id @default(uuid()) @db.Uuid
   userId    String            @unique @map("user_id") @db.Uuid
-  role      PlatformAdminRole @default(PlatformAdmin)
+  // M5 remediation: no column default (fail closed, least privilege) - every
+  // INSERT must set this explicitly. Pre-existing rows were backfilled to
+  // PlatformAdmin by the migration that first added this column (see that
+  // migration's own comment); the default was dropped in a second, later
+  // migration once the backfill had already applied.
+  role      PlatformAdminRole
   createdAt DateTime          @default(now()) @map("created_at")
   revokedAt DateTime?         @map("revoked_at")
 

@@ -21,6 +21,7 @@ export enum SessionRevokeReason {
   Admin = 'admin',
   Expired = 'expired',
   SessionVersionBump = 'session_version_bump',
+  AccountDeletion = 'account_deletion',
 }
 
 export enum DeviceSessionStatus {

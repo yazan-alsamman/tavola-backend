@@ -2,13 +2,19 @@ import { Injectable, Inject } from '@nestjs/common';
 import { ListRestaurantIdsWithActiveOfferUseCase } from '@modules/offers/application/use-cases/list-restaurant-ids-with-active-offer.use-case';
 import { ListRestaurantIdsWithMenuUseCase } from '@modules/menus/application/use-cases/list-restaurant-ids-with-menu.use-case';
 import { RestaurantResult } from '@modules/restaurants/application/dto/restaurant.result';
+import { WorkingHoursEntryResult } from '@modules/restaurants/application/dto/working-hours.result';
+import { ListWorkingHoursByRestaurantIdsUseCase } from '@modules/restaurants/application/use-cases/list-working-hours-by-restaurant-ids.use-case';
 import { DiscoveryReaderPort, DISCOVERY_READER } from '../ports/discovery-reader.port';
 
 export interface CompareRestaurantsCommand {
   restaurantIds: string[];
 }
 
-export type ComparableRestaurant = RestaurantResult & { hasActiveOffer: boolean; hasMenu: boolean };
+export type ComparableRestaurant = RestaurantResult & {
+  hasActiveOffer: boolean;
+  hasMenu: boolean;
+  workingHours: WorkingHoursEntryResult[];
+};
 
 export interface CompareRestaurantsResult {
   items: ComparableRestaurant[];
@@ -42,6 +48,7 @@ export class CompareRestaurantsUseCase {
     @Inject(DISCOVERY_READER) private readonly discoveryReader: DiscoveryReaderPort,
     private readonly listRestaurantIdsWithActiveOfferUseCase: ListRestaurantIdsWithActiveOfferUseCase,
     private readonly listRestaurantIdsWithMenuUseCase: ListRestaurantIdsWithMenuUseCase,
+    private readonly listWorkingHoursByRestaurantIdsUseCase: ListWorkingHoursByRestaurantIdsUseCase,
   ) {}
 
   async execute(command: CompareRestaurantsCommand): Promise<CompareRestaurantsResult> {
@@ -57,16 +64,19 @@ export class CompareRestaurantsUseCase {
       .filter((restaurant): restaurant is RestaurantResult => restaurant !== undefined);
 
     const restaurantIds = orderedVisible.map((restaurant) => restaurant.restaurantId);
-    const [restaurantsWithActiveOffer, restaurantsWithMenu] = await Promise.all([
-      this.listRestaurantIdsWithActiveOfferUseCase.execute({ restaurantIds }),
-      this.listRestaurantIdsWithMenuUseCase.execute({ restaurantIds }),
-    ]);
+    const [restaurantsWithActiveOffer, restaurantsWithMenu, workingHoursByRestaurantId] =
+      await Promise.all([
+        this.listRestaurantIdsWithActiveOfferUseCase.execute({ restaurantIds }),
+        this.listRestaurantIdsWithMenuUseCase.execute({ restaurantIds }),
+        this.listWorkingHoursByRestaurantIdsUseCase.execute({ restaurantIds }),
+      ]);
 
     return {
       items: orderedVisible.map((restaurant) => ({
         ...restaurant,
         hasActiveOffer: restaurantsWithActiveOffer.has(restaurant.restaurantId),
         hasMenu: restaurantsWithMenu.has(restaurant.restaurantId),
+        workingHours: workingHoursByRestaurantId.get(restaurant.restaurantId) ?? [],
       })),
     };
   }

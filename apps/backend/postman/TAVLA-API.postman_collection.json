@@ -1282,6 +1282,275 @@
           "response": []
         },
         {
+          "name": "Request Account Deletion",
+          "id": "539119a3-f0ba-4488-a1a0-709b42189832",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "description": "## Purpose\nRequest deletion of the authenticated Customer's own account\n## Authorization\nBearer `{{customerAccessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nCustomer only - never reachable by Employee/OrganizationMember/PlatformAdmin actors, even though they are also User rows underneath.\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json`\n## Path Params\n_None_\n## Query Params\n_None_\n## Body\nJSON body — DTO: `DeleteAccountRequestDto`\n## Success Response\nEnvelope message: \"Account deletion requested. You have until the grace period ends to cancel.\"\nBody: `DeleteAccountResponseDto` — `scheduledAnonymizationAt` (ISO 8601).\n## Behavior (ADR-014)\n- Anonymization-in-place, never immediate physical deletion.\n- Immediately revokes every DeviceSession/TokenFamily and bumps `sessionVersion` — every already-issued access token on every device is rejected on its very next request, not just on refresh.\n- Auto-cancels any active waitlist entries.\n- Rejected with 409 while any Pending/Approved reservation exists — cancel it first via the existing reservation cancellation flow, then retry.\n- Irreversible anonymization executes automatically once `SystemConfiguration.anonymizationGracePeriodDays` (default 30) elapses, unless cancelled first via `POST /users/me/cancel-deletion`.\n- Idempotent: repeating this call while a request is already pending re-verifies the password (so a stale/malicious caller can't probe schedule state without credentials) but does not reschedule, re-publish the event, or write a duplicate audit row.\n## Error Responses\n- **400**: VALIDATION_ERROR (missing/too-short password)\n- **401**: AUTH_INVALID_TOKEN, AUTH_EXPIRED_TOKEN, AUTH_INVALID_CREDENTIALS (wrong password)\n- **403**: AUTH_ACCOUNT_LOCKED, AUTH_ACCOUNT_SUSPENDED, AUTH_EMAIL_NOT_VERIFIED, FORBIDDEN (actor is not a Customer)\n- **409**: OPEN_RESERVATIONS_BLOCK_DELETION\n## Notes\n- Controller: `UsersController`.`deleteCurrentAccount`\n- Full path: `/api/v1/users/me`\n- Callers: Customer only (actor-type gate enforced in the use case)",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"{{customerPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Deletion requested (200)",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/users/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "users",
+                    "me"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"password\": \"{{customerPassword}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Account deletion requested. You have until the grace period ends to cancel.\",\n  \"data\": {\n    \"scheduledAnonymizationAt\": \"2026-09-06T12:00:00.000Z\"\n  }\n}"
+            },
+            {
+              "name": "Wrong password (401)",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/users/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "users",
+                    "me"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"password\": \"WrongPassword123!\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Invalid credentials.\",\n  \"error\": {\n    \"code\": \"AUTH_INVALID_CREDENTIALS\"\n  }\n}"
+            },
+            {
+              "name": "Open reservations block deletion (409)",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/users/me",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "users",
+                    "me"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"password\": \"{{customerPassword}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"message\": \"An upcoming reservation is blocking deletion.\",\n  \"error\": {\n    \"code\": \"OPEN_RESERVATIONS_BLOCK_DELETION\"\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Account deletion requested (200)', function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.code === 200) {",
+                  "    const jsonData = pm.response.json();",
+                  "    pm.test('scheduledAnonymizationAt is present', function () {",
+                  "        pm.expect(jsonData.data.scheduledAnonymizationAt).to.be.a('string');",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cancel Account Deletion",
+          "id": "a958c8d1-f840-492b-ad03-0b86f635acb4",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/me/cancel-deletion",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me",
+                "cancel-deletion"
+              ]
+            },
+            "description": "## Purpose\nCancel a pending account deletion request within the grace period\n## Authorization\nBearer `{{customerAccessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nCustomer\n## Headers\n- `Authorization: Bearer <token>`\n## Path Params\n_None_\n## Query Params\n_None_\n## Body\n_None_ — no password required. A freshly-issued JWT (obtained by logging back in, since requesting deletion already revoked every prior session) is already proof of credential possession.\n## Success Response\n204 No Content (envelope skipped).\n## Behavior\nIdempotent: calling this with no pending deletion request is a silent success (still 204).\n## Error Responses\n- **401**: AUTH_INVALID_TOKEN, AUTH_EXPIRED_TOKEN\n- **403**: FORBIDDEN (actor is not a Customer)\n## Notes\n- Controller: `UsersController`.`cancelCurrentAccountDeletion`\n- Full path: `/api/v1/users/me/cancel-deletion`\n- Callers: Customer only (actor-type gate enforced in the use case)",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Deletion request cancelled (204)', function () { pm.response.to.have.status(204); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Export My Data",
+          "id": "9174e53c-4a91-4161-9ca3-85a83e7a7427",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/me/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me",
+                "export"
+              ]
+            },
+            "description": "## Purpose\nExport the authenticated user's own data (GDPR right to portability)\n## Authorization\nBearer `{{customerAccessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nCustomer\n## Headers\n- `Authorization: Bearer <token>`\n## Path Params\n_None_\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Data export generated successfully.\"\nBody: `ExportUserDataResponseDto` — `exportedAt`, `profile`, `preferences`, `reservations` (`{items, total}`), `reviews` (`{items, total}`), `favorites` (`{items, total}`).\n## Behavior (ADR-014 §5)\nOffered before/during the account deletion flow, never only after. Aggregates Profile, Preferences, Reservations, Reviews, and Favorites via the same use cases their own dedicated endpoints already use — MVP scope, capped at 1000 records per category.\n## Error Responses\n- **401**: AUTH_INVALID_TOKEN, AUTH_EXPIRED_TOKEN\n- **403**: AUTH_ACCOUNT_LOCKED, AUTH_ACCOUNT_SUSPENDED, AUTH_EMAIL_NOT_VERIFIED\n## Notes\n- Controller: `UsersController`.`exportCurrentUserData`\n- Full path: `/api/v1/users/me/export`\n- Callers: Authenticated (actor resolved in use-case)",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Data export generated (200)', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Remove Favorite",
           "id": "2a22ec29-0882-4a73-ab44-6753569a20a5",
           "request": {
@@ -2101,7 +2370,7 @@
                 "compare"
               ]
             },
-            "description": "## Purpose\nCompare 2-5 restaurants side-by-side (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n_None_\n## Query Params\n_None_\n## Body\nJSON body — DTO: `CompareRestaurantsRequestDto`\n## Success Response\nEnvelope message: \"Restaurants compared successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/compare`\n- Callers (from source): Public",
+            "description": "## Purpose\nCompare 2-5 restaurants side-by-side (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n_None_\n## Query Params\n_None_\n## Body\nJSON body — DTO: `CompareRestaurantsRequestDto`\n## Success Response\nEnvelope message: \"Restaurants compared successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Public Working Hours\nEach item now includes `workingHours` (the Restaurant-level default weekly schedule, `WorkingHours` - empty array when unconfigured).\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/compare`\n- Callers (from source): Public",
             "auth": {
               "type": "noauth"
             },
@@ -2115,7 +2384,55 @@
               }
             }
           },
-          "response": [],
+          "response": [
+            {
+              "name": "OK - workingHours present, no phone leak",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/discovery/restaurants/compare",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "discovery",
+                    "restaurants",
+                    "compare"
+                  ]
+                },
+                "description": "## Purpose\nCompare 2-5 restaurants side-by-side (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n_None_\n## Query Params\n_None_\n## Body\nJSON body — DTO: `CompareRestaurantsRequestDto`\n## Success Response\nEnvelope message: \"Restaurants compared successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Public Working Hours\nEach item now includes `workingHours` (the Restaurant-level default weekly schedule, `WorkingHours` - empty array when unconfigured).\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/compare`\n- Callers (from source): Public",
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"restaurantIds\": [\"{{restaurantId}}\", \"{{secondRestaurantId}}\"]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Restaurants compared successfully.\",\n  \"data\": {\n    \"items\": [\n      {\n        \"restaurantId\": \"11111111-1111-4111-8111-111111111111\",\n        \"name\": \"The Old Mill\",\n        \"slug\": \"the-old-mill\",\n        \"logoId\": null,\n        \"coverImageId\": null,\n        \"description\": \"A cozy neighborhood restaurant.\",\n        \"cuisineType\": \"Italian\",\n        \"averageRating\": 4.5,\n        \"priceLevel\": 2,\n        \"status\": \"Active\",\n        \"createdAt\": \"2026-07-16T12:00:00.000Z\",\n        \"updatedAt\": \"2026-07-16T12:00:00.000Z\",\n        \"workingHours\": [\n          {\n            \"dayOfWeek\": 1,\n            \"openingTime\": \"09:00\",\n            \"closingTime\": \"17:00\",\n            \"breakStartTime\": null,\n            \"breakEndTime\": null\n          },\n          {\n            \"dayOfWeek\": 3,\n            \"openingTime\": \"10:00\",\n            \"closingTime\": \"18:00\",\n            \"breakStartTime\": \"13:00\",\n            \"breakEndTime\": \"14:00\"\n          }\n        ],\n        \"hasActiveOffer\": false,\n        \"hasMenu\": false\n      }\n    ]\n  }\n}"
+            }
+          ],
           "event": [
             {
               "listen": "test",
@@ -2267,12 +2584,94 @@
                 }
               ]
             },
-            "description": "## Purpose\nSearch restaurants near a location (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n_None_\n## Query Params\nQuery DTO: `NearbyRestaurantsQueryDto` (see schema / examples in query params).\n## Body\n_None_\n## Success Response\nEnvelope message: \"Nearby restaurants retrieved successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/nearby`\n- Callers (from source): Public",
+            "description": "## Purpose\nSearch restaurants near a location (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n_None_\n## Query Params\nQuery DTO: `NearbyRestaurantsQueryDto` (see schema / examples in query params).\n## Body\n_None_\n## Success Response\nEnvelope message: \"Nearby restaurants retrieved successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Public Working Hours\nEach item now includes `workingHours` (the Restaurant-level default weekly schedule, `WorkingHours` - empty array when unconfigured).\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/nearby`\n- Callers (from source): Public",
             "auth": {
               "type": "noauth"
             }
           },
-          "response": [],
+          "response": [
+            {
+              "name": "OK - workingHours present, no phone leak",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/discovery/restaurants/nearby?lat=33.5138&lng=36.2765",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "discovery",
+                    "restaurants",
+                    "nearby"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "Page number (1-based)",
+                      "disabled": true
+                    },
+                    {
+                      "key": "pageSize",
+                      "value": "20",
+                      "description": "Page size",
+                      "disabled": true
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "description": "Cursor page size",
+                      "disabled": true
+                    },
+                    {
+                      "key": "cursor",
+                      "value": "",
+                      "description": "Opaque cursor",
+                      "disabled": true
+                    },
+                    {
+                      "key": "lat",
+                      "value": "33.5138",
+                      "description": "Latitude"
+                    },
+                    {
+                      "key": "lng",
+                      "value": "36.2765",
+                      "description": "Longitude"
+                    },
+                    {
+                      "key": "radiusKm",
+                      "value": "5",
+                      "description": "Search radius km",
+                      "disabled": true
+                    },
+                    {
+                      "key": "q",
+                      "value": "",
+                      "description": "Free-text query",
+                      "disabled": true
+                    }
+                  ]
+                },
+                "description": "## Purpose\nSearch restaurants near a location (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n_None_\n## Query Params\nQuery DTO: `NearbyRestaurantsQueryDto` (see schema / examples in query params).\n## Body\n_None_\n## Success Response\nEnvelope message: \"Nearby restaurants retrieved successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Public Working Hours\nEach item now includes `workingHours` (the Restaurant-level default weekly schedule, `WorkingHours` - empty array when unconfigured).\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/nearby`\n- Callers (from source): Public",
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Nearby restaurants retrieved successfully.\",\n  \"data\": {\n    \"items\": [\n      {\n        \"restaurantId\": \"11111111-1111-4111-8111-111111111111\",\n        \"name\": \"The Old Mill\",\n        \"slug\": \"the-old-mill\",\n        \"logoId\": null,\n        \"coverImageId\": null,\n        \"description\": \"A cozy neighborhood restaurant.\",\n        \"cuisineType\": \"Italian\",\n        \"averageRating\": 4.5,\n        \"priceLevel\": 2,\n        \"status\": \"Active\",\n        \"createdAt\": \"2026-07-16T12:00:00.000Z\",\n        \"updatedAt\": \"2026-07-16T12:00:00.000Z\",\n        \"workingHours\": [\n          {\n            \"dayOfWeek\": 1,\n            \"openingTime\": \"09:00\",\n            \"closingTime\": \"17:00\",\n            \"breakStartTime\": null,\n            \"breakEndTime\": null\n          },\n          {\n            \"dayOfWeek\": 3,\n            \"openingTime\": \"10:00\",\n            \"closingTime\": \"18:00\",\n            \"breakStartTime\": \"13:00\",\n            \"breakEndTime\": \"14:00\"\n          }\n        ],\n        \"hasActiveOffer\": false,\n        \"hasMenu\": false,\n        \"nearestBranchId\": \"22222222-2222-4222-8222-222222222221\",\n        \"distanceKm\": 0.42\n      }\n    ],\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 1\n  }\n}"
+            }
+          ],
           "event": [
             {
               "listen": "test",
@@ -2349,12 +2748,93 @@
                 }
               ]
             },
-            "description": "## Purpose\nSearch/browse restaurants (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n_None_\n## Query Params\nQuery DTO: `SearchRestaurantsQueryDto` (see schema / examples in query params).\n## Body\n_None_\n## Success Response\nEnvelope message: \"Restaurants retrieved successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants`\n- Callers (from source): Public",
+            "description": "## Purpose\nSearch/browse restaurants (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n_None_\n## Query Params\nQuery DTO: `SearchRestaurantsQueryDto` (see schema / examples in query params).\n## Body\n_None_\n## Success Response\nEnvelope message: \"Restaurants retrieved successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Public Working Hours\nEach item now includes `workingHours` (the Restaurant-level default weekly schedule, `WorkingHours` - empty array when unconfigured).\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants`\n- Callers (from source): Public",
             "auth": {
               "type": "noauth"
             }
           },
-          "response": []
+          "response": [
+            {
+              "name": "OK - workingHours present, no phone leak",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/discovery/restaurants?page=1&pageSize=20&lat=33.5138&lng=36.2765",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "discovery",
+                    "restaurants"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "Page number (1-based)",
+                      "disabled": false
+                    },
+                    {
+                      "key": "pageSize",
+                      "value": "20",
+                      "description": "Page size",
+                      "disabled": false
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "description": "Cursor page size",
+                      "disabled": true
+                    },
+                    {
+                      "key": "cursor",
+                      "value": "",
+                      "description": "Opaque cursor",
+                      "disabled": true
+                    },
+                    {
+                      "key": "lat",
+                      "value": "33.5138",
+                      "description": "Latitude"
+                    },
+                    {
+                      "key": "lng",
+                      "value": "36.2765",
+                      "description": "Longitude"
+                    },
+                    {
+                      "key": "radiusKm",
+                      "value": "5",
+                      "description": "Search radius km",
+                      "disabled": true
+                    },
+                    {
+                      "key": "q",
+                      "value": "",
+                      "description": "Free-text query",
+                      "disabled": true
+                    }
+                  ]
+                },
+                "description": "## Purpose\nSearch/browse restaurants (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n_None_\n## Query Params\nQuery DTO: `SearchRestaurantsQueryDto` (see schema / examples in query params).\n## Body\n_None_\n## Success Response\nEnvelope message: \"Restaurants retrieved successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Public Working Hours\nEach item now includes `workingHours` (the Restaurant-level default weekly schedule, `WorkingHours` - empty array when unconfigured).\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants`\n- Callers (from source): Public",
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Restaurants retrieved successfully.\",\n  \"data\": {\n    \"items\": [\n      {\n        \"restaurantId\": \"11111111-1111-4111-8111-111111111111\",\n        \"name\": \"The Old Mill\",\n        \"slug\": \"the-old-mill\",\n        \"logoId\": null,\n        \"coverImageId\": null,\n        \"description\": \"A cozy neighborhood restaurant.\",\n        \"cuisineType\": \"Italian\",\n        \"averageRating\": 4.5,\n        \"priceLevel\": 2,\n        \"status\": \"Active\",\n        \"createdAt\": \"2026-07-16T12:00:00.000Z\",\n        \"updatedAt\": \"2026-07-16T12:00:00.000Z\",\n        \"workingHours\": [\n          {\n            \"dayOfWeek\": 1,\n            \"openingTime\": \"09:00\",\n            \"closingTime\": \"17:00\",\n            \"breakStartTime\": null,\n            \"breakEndTime\": null\n          },\n          {\n            \"dayOfWeek\": 3,\n            \"openingTime\": \"10:00\",\n            \"closingTime\": \"18:00\",\n            \"breakStartTime\": \"13:00\",\n            \"breakEndTime\": \"14:00\"\n          }\n        ],\n        \"hasActiveOffer\": false,\n        \"hasMenu\": false\n      }\n    ],\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 1\n  }\n}"
+            }
+          ]
         },
         {
           "name": "Get a branch",
@@ -2402,12 +2882,48 @@
                 "{{branchId}}"
               ]
             },
-            "description": "## Purpose\nGet a branch by id (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `branchId` | `{{branchId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Branch retrieved successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/:restaurantId/branches/:branchId`\n- Callers (from source): Public",
+            "description": "## Purpose\nGet a branch by id (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `branchId` | `{{branchId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Branch retrieved successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Public Working Hours & Restaurant Phone Privacy\nResponse now includes `workingHours` (this branch's own weekly override schedule, `BranchWorkingHours` - empty array when unconfigured). `phone` is never present in this response, even though the same branch's authorized management endpoint (`GET /restaurants/:restaurantId/branches/:branchId`) still returns it.\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/:restaurantId/branches/:branchId`\n- Callers (from source): Public",
             "auth": {
               "type": "noauth"
             }
           },
-          "response": []
+          "response": [
+            {
+              "name": "OK - workingHours present, phone absent",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/discovery/restaurants/{{restaurantId}}/branches/{{branchId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "discovery",
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "branches",
+                    "{{branchId}}"
+                  ]
+                },
+                "description": "## Purpose\nGet a branch by id (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `branchId` | `{{branchId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Branch retrieved successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Public Working Hours & Restaurant Phone Privacy\nResponse now includes `workingHours` (this branch's own weekly override schedule, `BranchWorkingHours` - empty array when unconfigured). `phone` is never present in this response, even though the same branch's authorized management endpoint (`GET /restaurants/:restaurantId/branches/:branchId`) still returns it.\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/:restaurantId/branches/:branchId`\n- Callers (from source): Public",
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Branch retrieved successfully.\",\n  \"data\": {\n    \"branchId\": \"22222222-2222-4222-8222-222222222221\",\n    \"restaurantId\": \"11111111-1111-4111-8111-111111111111\",\n    \"city\": \"Damascus\",\n    \"district\": \"Malki\",\n    \"address\": \"123 Main St\",\n    \"latitude\": 33.5138,\n    \"longitude\": 36.2765,\n    \"countryCode\": \"SY\",\n    \"currency\": \"SYP\",\n    \"timezone\": \"Asia/Damascus\",\n    \"createdAt\": \"2026-07-16T12:00:00.000Z\",\n    \"updatedAt\": \"2026-07-16T12:00:00.000Z\",\n    \"workingHours\": [\n      {\n        \"dayOfWeek\": 5,\n        \"openingTime\": \"17:00\",\n        \"closingTime\": \"23:30\",\n        \"breakStartTime\": null,\n        \"breakEndTime\": null\n      }\n    ]\n  }\n}"
+            }
+          ]
         },
         {
           "name": "Get a restaurant by id (public, unauthenticated)",
@@ -2426,12 +2942,46 @@
                 "{{restaurantId}}"
               ]
             },
-            "description": "## Purpose\nGet a restaurant by id (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Restaurant retrieved successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **404**: NOT_FOUND\n- **429**: RATE_LIMIT_EXCEEDED\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/:restaurantId`\n- Callers (from source): Public",
+            "description": "## Purpose\nGet a restaurant by id (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Restaurant retrieved successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **404**: NOT_FOUND\n- **429**: RATE_LIMIT_EXCEEDED\n## Public Working Hours\nResponse now includes `workingHours` (the Restaurant-level default weekly schedule, `WorkingHours` - empty array when unconfigured).\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/:restaurantId`\n- Callers (from source): Public",
             "auth": {
               "type": "noauth"
             }
           },
-          "response": []
+          "response": [
+            {
+              "name": "OK - workingHours present",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/discovery/restaurants/{{restaurantId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "discovery",
+                    "restaurants",
+                    "{{restaurantId}}"
+                  ]
+                },
+                "description": "## Purpose\nGet a restaurant by id (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Restaurant retrieved successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **404**: NOT_FOUND\n- **429**: RATE_LIMIT_EXCEEDED\n## Public Working Hours\nResponse now includes `workingHours` (the Restaurant-level default weekly schedule, `WorkingHours` - empty array when unconfigured).\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/:restaurantId`\n- Callers (from source): Public",
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Restaurant retrieved successfully.\",\n  \"data\": {\n    \"restaurantId\": \"11111111-1111-4111-8111-111111111111\",\n    \"name\": \"The Old Mill\",\n    \"slug\": \"the-old-mill\",\n    \"logoId\": null,\n    \"coverImageId\": null,\n    \"description\": \"A cozy neighborhood restaurant.\",\n    \"cuisineType\": \"Italian\",\n    \"averageRating\": 4.5,\n    \"priceLevel\": 2,\n    \"status\": \"Active\",\n    \"createdAt\": \"2026-07-16T12:00:00.000Z\",\n    \"updatedAt\": \"2026-07-16T12:00:00.000Z\",\n    \"workingHours\": [\n      {\n        \"dayOfWeek\": 1,\n        \"openingTime\": \"09:00\",\n        \"closingTime\": \"17:00\",\n        \"breakStartTime\": null,\n        \"breakEndTime\": null\n      },\n      {\n        \"dayOfWeek\": 3,\n        \"openingTime\": \"10:00\",\n        \"closingTime\": \"18:00\",\n        \"breakStartTime\": \"13:00\",\n        \"breakEndTime\": \"14:00\"\n      }\n    ]\n  }\n}"
+            }
+          ]
         },
         {
           "name": "Browse a restaurant",
@@ -2551,12 +3101,73 @@
                 }
               ]
             },
-            "description": "## Purpose\nBrowse branches of a restaurant (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n## Query Params\nQuery DTO: `ListBranchesQueryDto` (see schema / examples in query params).\n## Body\n_None_\n## Success Response\nEnvelope message: \"Branches retrieved successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **404**: NOT_FOUND\n- **429**: RATE_LIMIT_EXCEEDED\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/:restaurantId/branches`\n- Callers (from source): Public",
+            "description": "## Purpose\nBrowse branches of a restaurant (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n## Query Params\nQuery DTO: `ListBranchesQueryDto` (see schema / examples in query params).\n## Body\n_None_\n## Success Response\nEnvelope message: \"Branches retrieved successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **404**: NOT_FOUND\n- **429**: RATE_LIMIT_EXCEEDED\n## Public Working Hours & Restaurant Phone Privacy\nEach item now includes `workingHours` (that branch's own weekly override schedule, `BranchWorkingHours` - empty array when unconfigured). `phone` is never present on any item, even though the same branches' authorized management endpoint still returns it.\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/:restaurantId/branches`\n- Callers (from source): Public",
             "auth": {
               "type": "noauth"
             }
           },
-          "response": []
+          "response": [
+            {
+              "name": "OK - workingHours present per branch, phone absent",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/discovery/restaurants/{{restaurantId}}/branches?page=1&pageSize=20",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "discovery",
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "branches"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "Page number (1-based)",
+                      "disabled": false
+                    },
+                    {
+                      "key": "pageSize",
+                      "value": "20",
+                      "description": "Page size",
+                      "disabled": false
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20",
+                      "description": "Cursor page size",
+                      "disabled": true
+                    },
+                    {
+                      "key": "cursor",
+                      "value": "",
+                      "description": "Opaque cursor",
+                      "disabled": true
+                    }
+                  ]
+                },
+                "description": "## Purpose\nBrowse branches of a restaurant (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n## Query Params\nQuery DTO: `ListBranchesQueryDto` (see schema / examples in query params).\n## Body\n_None_\n## Success Response\nEnvelope message: \"Branches retrieved successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **404**: NOT_FOUND\n- **429**: RATE_LIMIT_EXCEEDED\n## Public Working Hours & Restaurant Phone Privacy\nEach item now includes `workingHours` (that branch's own weekly override schedule, `BranchWorkingHours` - empty array when unconfigured). `phone` is never present on any item, even though the same branches' authorized management endpoint still returns it.\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/:restaurantId/branches`\n- Callers (from source): Public",
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Branches retrieved successfully.\",\n  \"data\": {\n    \"items\": [\n      {\n        \"branchId\": \"22222222-2222-4222-8222-222222222221\",\n        \"restaurantId\": \"11111111-1111-4111-8111-111111111111\",\n        \"city\": \"Damascus\",\n        \"district\": \"Malki\",\n        \"address\": \"123 Main St\",\n        \"latitude\": 33.5138,\n        \"longitude\": 36.2765,\n        \"countryCode\": \"SY\",\n        \"currency\": \"SYP\",\n        \"timezone\": \"Asia/Damascus\",\n        \"createdAt\": \"2026-07-16T12:00:00.000Z\",\n        \"updatedAt\": \"2026-07-16T12:00:00.000Z\",\n        \"workingHours\": [\n          {\n            \"dayOfWeek\": 5,\n            \"openingTime\": \"17:00\",\n            \"closingTime\": \"23:30\",\n            \"breakStartTime\": null,\n            \"breakEndTime\": null\n          }\n        ]\n      }\n    ],\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 1\n  }\n}"
+            }
+          ]
         }
       ]
     },

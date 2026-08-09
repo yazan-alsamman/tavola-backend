@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaContext } from '@infrastructure/prisma/prisma-context.service';
-import { ConversationId } from '@shared/domain/value-objects/identifiers.vo';
+import { ConversationId, UserId } from '@shared/domain/value-objects/identifiers.vo';
 import { Message } from '../../domain/entities/message.entity';
 import {
   MessageCursor,
@@ -46,5 +46,12 @@ export class PrismaMessageRepository implements MessageRepository {
     const hasMore = rows.length > limit;
     const items = rows.slice(0, limit).map(MessagePrismaMapper.toDomain);
     return { items, hasMore };
+  }
+
+  async anonymizeAllBySenderUserId(userId: UserId, at: Date): Promise<void> {
+    await this.prismaContext.client.message.updateMany({
+      where: { senderUserId: userId.value, anonymizedAt: null },
+      data: { body: '[removed]', anonymizedAt: at, updatedAt: at },
+    });
   }
 }

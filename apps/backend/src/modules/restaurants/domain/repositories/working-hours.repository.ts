@@ -12,6 +12,8 @@ import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
  */
 export interface WorkingHoursRepository {
   findAllByRestaurantId(restaurantId: RestaurantId): Promise<WorkingHours[]>;
+  /** Batched lookup across many restaurants in one query - avoids N+1 (see `ListWorkingHoursByRestaurantIdsUseCase`). */
+  findAllByRestaurantIds(restaurantIds: RestaurantId[]): Promise<WorkingHours[]>;
   replaceAllForRestaurant(restaurantId: RestaurantId, entries: WorkingHours[]): Promise<void>;
 }
 

@@ -32,6 +32,8 @@ export function testUser(overrides: { id: string; username?: string | null }): U
     passwordChangedAt: null,
     lastLoginAt: null,
     anonymizedAt: null,
+    deletionRequestedAt: null,
+    scheduledAnonymizationAt: null,
     createdAt: FIXED_NOW,
     updatedAt: FIXED_NOW,
     deletedAt: null,

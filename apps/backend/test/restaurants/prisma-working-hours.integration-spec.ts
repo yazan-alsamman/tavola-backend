@@ -147,4 +147,36 @@ describe('WorkingHours round-trip via PrismaWorkingHoursRepository (integration)
     const found = await repository.findAllByRestaurantId(RestaurantId.create(restaurant.id));
     expect(found).toHaveLength(1);
   });
+
+  it('findAllByRestaurantIds returns the union across every requested restaurant in one call (Public Working Hours)', async () => {
+    if (!dbAvailable) return;
+
+    const restaurantA = await createRestaurant();
+    const restaurantB = await createRestaurant();
+    await repository.replaceAllForRestaurant(RestaurantId.create(restaurantA.id), [
+      buildEntry(restaurantA.id, 3),
+      buildEntry(restaurantA.id, 1),
+    ]);
+    await repository.replaceAllForRestaurant(RestaurantId.create(restaurantB.id), [
+      buildEntry(restaurantB.id, 5),
+    ]);
+
+    const found = await repository.findAllByRestaurantIds([
+      RestaurantId.create(restaurantA.id),
+      RestaurantId.create(restaurantB.id),
+    ]);
+
+    expect(found).toHaveLength(3);
+    const forA = found.filter((entry) => entry.restaurantId.value === restaurantA.id);
+    const forB = found.filter((entry) => entry.restaurantId.value === restaurantB.id);
+    expect(forA.map((entry) => entry.dayOfWeek)).toEqual([1, 3]);
+    expect(forB.map((entry) => entry.dayOfWeek)).toEqual([5]);
+  });
+
+  it('findAllByRestaurantIds returns an empty array for an empty input, without querying', async () => {
+    if (!dbAvailable) return;
+
+    const found = await repository.findAllByRestaurantIds([]);
+    expect(found).toEqual([]);
+  });
 });

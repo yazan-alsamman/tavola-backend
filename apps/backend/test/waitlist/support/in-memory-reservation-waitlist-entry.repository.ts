@@ -2,7 +2,7 @@ import { ReservationWaitlistEntry } from '@modules/waitlist/domain/entities/rese
 import { WaitlistStatus } from '@modules/waitlist/domain/enums/waitlist.enums';
 import { WaitlistPositionConflictException } from '@modules/waitlist/domain/exceptions/waitlist-position-conflict.exception';
 import { ReservationWaitlistEntryRepository } from '@modules/waitlist/domain/repositories/reservation-waitlist-entry.repository';
-import { BranchId } from '@shared/domain/value-objects/identifiers.vo';
+import { BranchId, UserId } from '@shared/domain/value-objects/identifiers.vo';
 
 function sameDate(a: Date, b: Date): boolean {
   return a.getTime() === b.getTime();
@@ -98,6 +98,15 @@ export class InMemoryReservationWaitlistEntryRepository implements ReservationWa
       }),
     );
     return true;
+  }
+
+  async findActiveByUserId(userId: UserId): Promise<ReservationWaitlistEntry[]> {
+    return [...this.rows.values()].filter(
+      (row) =>
+        row.userId?.value === userId.value &&
+        row.deletedAt === null &&
+        (row.status === WaitlistStatus.Waiting || row.status === WaitlistStatus.Notified),
+    );
   }
 
   /** Test-only helper: seeds a row directly. */

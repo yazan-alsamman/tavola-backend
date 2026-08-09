@@ -128,10 +128,16 @@ Security events span Authentication and Authorization. Each includes: **producer
 
 # Privacy Events
 
-* UserDataExportRequested
-* UserAccountDeletionRequested
-* UserAccountDeletionCancelled
-* UserAccountAnonymized
+Phase 20.X (ADR-014 execution) — all four implemented via `src/modules/users/application/use-cases/`, published through the existing `AuditingEventPublisher` mechanism like every other event in this document (no second pipeline).
+
+| Event | Producer | Consumers | Trigger | Key payload fields |
+|---|---|---|---|---|
+| `UserDataExportRequested` | `ExportUserDataUseCase` | Audit | Customer requests `GET /users/me/export` | `userId` |
+| `UserAccountDeletionRequested` | `RequestAccountDeletionUseCase` | Audit | Customer requests `DELETE /users/me` (password-verified); no-op republish while a request is already pending (`User.requestDeletion()`'s idempotency guard, mirrors the Phase 19.1 M1 pattern) | `userId`, `scheduledAnonymizationAt` |
+| `UserAccountDeletionCancelled` | `CancelAccountDeletionUseCase` | Audit | Customer calls `POST /users/me/cancel-deletion` within the grace period | `userId` |
+| `UserAccountAnonymized` | `AnonymizeUserAccountUseCase` (BullMQ `AccountDeletionQueue`, fired when `scheduledAnonymizationAt` elapses) | Audit | Grace period (`SystemConfiguration.anonymizationGracePeriodDays`, default 30) elapsed without cancellation — irreversible | `userId` |
+
+`UserAccountDeletionRequested` also, in the same use case, triggers (not separate events, direct side effects per ADR-014's mechanics): immediate revocation of every `DeviceSession`/`TokenFamily` (`SessionRevokeReason.AccountDeletion`), auto-cancellation of the customer's active `ReservationWaitlistEntry` rows, and rejection (409, no event) if any `Reservation` is `Pending`/`Approved`. See `DECISIONS.md` ADR-014 and `DOMAIN_MODEL.md`'s GDPR/Privacy business rules for the full retention policy this implements.
 
 ---
 

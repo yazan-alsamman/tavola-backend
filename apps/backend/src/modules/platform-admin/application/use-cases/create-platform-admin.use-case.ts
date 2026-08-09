@@ -80,6 +80,8 @@ export class CreatePlatformAdminUseCase {
       passwordChangedAt: null,
       lastLoginAt: null,
       anonymizedAt: null,
+      deletionRequestedAt: null,
+      scheduledAnonymizationAt: null,
       createdAt: now,
       updatedAt: now,
       deletedAt: null,

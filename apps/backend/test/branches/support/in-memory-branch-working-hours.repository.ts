@@ -9,6 +9,10 @@ export class InMemoryBranchWorkingHoursRepository implements BranchWorkingHoursR
     return this.rows.get(branchId.value) ?? [];
   }
 
+  async findAllByBranchIds(branchIds: BranchId[]): Promise<BranchWorkingHours[]> {
+    return branchIds.flatMap((id) => this.rows.get(id.value) ?? []);
+  }
+
   async replaceAllForBranch(branchId: BranchId, entries: BranchWorkingHours[]): Promise<void> {
     this.rows.set(branchId.value, entries);
   }

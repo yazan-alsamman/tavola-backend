@@ -23,6 +23,8 @@ describe('User entity — updateProfile', () => {
     passwordChangedAt: null,
     lastLoginAt: null,
     anonymizedAt: null,
+    deletionRequestedAt: null,
+    scheduledAnonymizationAt: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     deletedAt: null,
@@ -128,6 +130,8 @@ describe('User entity — updatePreferences', () => {
     passwordChangedAt: null,
     lastLoginAt: null,
     anonymizedAt: null,
+    deletionRequestedAt: null,
+    scheduledAnonymizationAt: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     deletedAt: null,
@@ -187,5 +191,86 @@ describe('User entity — updatePreferences', () => {
 
     expect(updated.notificationOptIn).toBe(true);
     expect(updated.marketingOptIn).toBe(false);
+  });
+});
+
+describe('User entity — requestDeletion / cancelDeletionRequest (Phase 20.X, ADR-014)', () => {
+  const baseProps = {
+    id: '11111111-1111-4111-8111-111111111111',
+    firstName: 'Jane',
+    lastName: 'Doe',
+    email: 'jane@example.com',
+    phone: null,
+    username: null,
+    passwordHash: 'argon2id$fake$SecurePass123!',
+    language: 'en',
+    preferredCurrency: null,
+    notificationOptIn: true,
+    marketingOptIn: false,
+    status: UserStatus.Active,
+    emailVerified: true,
+    failedLoginCount: 0,
+    lockedUntil: null,
+    permissionsVersion: 1,
+    sessionVersion: 1,
+    passwordChangedAt: null,
+    lastLoginAt: null,
+    anonymizedAt: null,
+    deletionRequestedAt: null,
+    scheduledAnonymizationAt: null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    deletedAt: null,
+  };
+
+  function createUser(): User {
+    return User.reconstitute({ ...baseProps });
+  }
+
+  const now = new Date('2026-08-07T12:00:00.000Z');
+  const scheduledAt = new Date('2026-09-06T12:00:00.000Z');
+
+  it('requestDeletion sets both timestamps, leaves status untouched, and hasPendingDeletionRequest becomes true', () => {
+    const user = createUser();
+
+    const requested = user.requestDeletion(scheduledAt, now);
+
+    expect(requested.deletionRequestedAt).toEqual(now);
+    expect(requested.scheduledAnonymizationAt).toEqual(scheduledAt);
+    expect(requested.status).toBe(UserStatus.Active);
+    expect(requested.hasPendingDeletionRequest()).toBe(true);
+  });
+
+  it('requestDeletion is idempotent - a second call while already pending returns the same instance unchanged', () => {
+    const user = createUser();
+    const requested = user.requestDeletion(scheduledAt, now);
+
+    const secondCall = requested.requestDeletion(
+      new Date('2026-10-01T00:00:00.000Z'),
+      new Date('2026-08-08T00:00:00.000Z'),
+    );
+
+    expect(secondCall).toBe(requested);
+    expect(secondCall.scheduledAnonymizationAt).toEqual(scheduledAt);
+  });
+
+  it('cancelDeletionRequest clears both timestamps', () => {
+    const user = createUser();
+    const requested = user.requestDeletion(scheduledAt, now);
+    const cancelledAt = new Date('2026-08-08T00:00:00.000Z');
+
+    const cancelled = requested.cancelDeletionRequest(cancelledAt);
+
+    expect(cancelled.deletionRequestedAt).toBeNull();
+    expect(cancelled.scheduledAnonymizationAt).toBeNull();
+    expect(cancelled.hasPendingDeletionRequest()).toBe(false);
+  });
+
+  it('cancelDeletionRequest is idempotent - a no-op when nothing is pending, returns the same instance', () => {
+    const user = createUser();
+
+    const cancelled = user.cancelDeletionRequest(now);
+
+    expect(cancelled).toBe(user);
   });
 });

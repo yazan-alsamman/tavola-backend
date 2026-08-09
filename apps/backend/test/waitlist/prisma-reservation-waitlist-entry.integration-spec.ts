@@ -4,7 +4,7 @@ import { PrismaReservationWaitlistEntryRepository } from '@modules/waitlist/infr
 import { ReservationWaitlistEntry } from '@modules/waitlist/domain/entities/reservation-waitlist-entry.entity';
 import { WaitlistStatus } from '@modules/waitlist/domain/enums/waitlist.enums';
 import { WaitlistPositionConflictException } from '@modules/waitlist/domain/exceptions/waitlist-position-conflict.exception';
-import { BranchId } from '@shared/domain/value-objects/identifiers.vo';
+import { BranchId, UserId } from '@shared/domain/value-objects/identifiers.vo';
 import { isDatabaseReachable, skipUnlessDatabaseAvailable } from '../support/live-database';
 import { createPrismaIntegrationModule } from '../support/prisma-integration-testing';
 
@@ -137,6 +137,55 @@ describe('ReservationWaitlistEntry round-trip via PrismaReservationWaitlistEntry
       entry.preferredDate,
     );
     expect(active.map((e) => e.entryId)).toContain(entry.entryId);
+  });
+
+  it('findActiveByUserId (Phase 20.X, account deletion auto-cancel) finds Waiting/Notified entries for the given user, excluding other users, Cancelled/Expired, and soft-deleted rows', async () => {
+    if (!dbAvailable) return;
+
+    const { restaurantId, branchId } = await seedRestaurantBranch();
+    const userA = await seedUser();
+    const userB = await seedUser();
+    const preferredDate = new Date('2026-09-03T00:00:00.000Z');
+
+    const activeForA = buildEntry(restaurantId, branchId, userA.id, 1, preferredDate);
+    await repository.createInTransaction(activeForA);
+
+    const cancelledForA = buildEntry(restaurantId, branchId, userA.id, 2, preferredDate);
+    await repository.createInTransaction(cancelledForA);
+    await rawPrisma.reservationWaitlistEntry.update({
+      where: { id: cancelledForA.entryId },
+      data: { status: 'Cancelled' },
+    });
+
+    const activeForB = buildEntry(restaurantId, branchId, userB.id, 3, preferredDate);
+    await repository.createInTransaction(activeForB);
+
+    const results = await repository.findActiveByUserId(UserId.create(userA.id));
+
+    expect(results.map((entry) => entry.entryId)).toEqual([activeForA.entryId]);
+  });
+
+  it('findActiveByUserId includes Notified entries', async () => {
+    if (!dbAvailable) return;
+
+    const { restaurantId, branchId } = await seedRestaurantBranch();
+    const user = await seedUser();
+    const entry = buildEntry(
+      restaurantId,
+      branchId,
+      user.id,
+      1,
+      new Date('2026-09-04T00:00:00.000Z'),
+    );
+    await repository.createInTransaction(entry);
+    await rawPrisma.reservationWaitlistEntry.update({
+      where: { id: entry.entryId },
+      data: { status: 'Notified' },
+    });
+
+    const results = await repository.findActiveByUserId(UserId.create(user.id));
+
+    expect(results.map((e) => e.entryId)).toEqual([entry.entryId]);
   });
 
   it('the partial unique active-position index rejects a duplicate (branchId, preferredDate, position) among active rows', async () => {

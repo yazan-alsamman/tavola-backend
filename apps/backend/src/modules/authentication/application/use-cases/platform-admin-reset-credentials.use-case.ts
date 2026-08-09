@@ -7,9 +7,20 @@ import {
   EventPublisherPort,
   EVENT_PUBLISHER,
 } from '@shared/application/ports/event-publisher.port';
-import { UserRepository } from '../../domain/repositories/authentication.repositories';
+import { UnitOfWorkPort, UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
+import { SessionRevokeReason } from '../../domain/enums/authentication.enums';
+import {
+  DeviceSessionRepository,
+  TokenFamilyRepository,
+  UserRepository,
+} from '../../domain/repositories/authentication.repositories';
 import { PasswordHasher } from '../../domain/services/password-hasher.port';
-import { USER_REPOSITORY, PASSWORD_HASHER } from '../../domain/tokens/authentication.tokens';
+import {
+  USER_REPOSITORY,
+  PASSWORD_HASHER,
+  DEVICE_SESSION_REPOSITORY,
+  TOKEN_FAMILY_REPOSITORY,
+} from '../../domain/tokens/authentication.tokens';
 import { UserNotFoundException } from '../exceptions/user-not-found.exception';
 import { PlatformAdminCredentialResetEvent } from '../../domain/events/authentication.events';
 import { PlatformAdminResetCredentialsCommand } from '../dto/platform-admin-account-access.dto';
@@ -21,13 +32,23 @@ import { PlatformAdminResetCredentialsCommand } from '../dto/platform-admin-acco
  * ADR-022 Decision #15). Reuses `User.completePasswordReset()` unchanged -
  * bumps `sessionVersion` (forcing re-authentication everywhere) and clears
  * any lock/failed-attempt state, identical side effects to a self-service
- * reset, just without the token-verification precondition.
+ * reset, just without the token-verification precondition. M4 remediation:
+ * also reuses `ResetPasswordUseCase`'s `DeviceSessionRepository.revokeAllByUserId`/
+ * `TokenFamilyRepository.revokeAllByUserId` calls (same repository methods,
+ * `SessionRevokeReason.Admin` matching `PlatformAdminForceLogoutUseCase`'s
+ * precedent for a PlatformAdmin-triggered revocation) so `GET /auth/sessions`
+ * stops showing rows that can no longer produce a working token as "active".
  */
 @Injectable()
 export class PlatformAdminResetCredentialsUseCase {
   constructor(
     @Inject(USER_REPOSITORY) private readonly userRepository: UserRepository,
     @Inject(PASSWORD_HASHER) private readonly passwordHasher: PasswordHasher,
+    @Inject(DEVICE_SESSION_REPOSITORY)
+    private readonly deviceSessionRepository: DeviceSessionRepository,
+    @Inject(TOKEN_FAMILY_REPOSITORY)
+    private readonly tokenFamilyRepository: TokenFamilyRepository,
+    @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
@@ -42,7 +63,16 @@ export class PlatformAdminResetCredentialsUseCase {
     const now = this.clock.now();
     const newHash = await this.passwordHasher.hash(Password.create(command.newPassword));
     const updated = user.completePasswordReset(newHash, now);
-    await this.userRepository.save(updated);
+
+    await this.unitOfWork.execute(async () => {
+      await this.userRepository.save(updated);
+      await this.deviceSessionRepository.revokeAllByUserId(
+        updated.userId,
+        now,
+        SessionRevokeReason.Admin,
+      );
+      await this.tokenFamilyRepository.revokeAllByUserId(updated.userId, now);
+    });
 
     await this.eventPublisher.publish(
       new PlatformAdminCredentialResetEvent(

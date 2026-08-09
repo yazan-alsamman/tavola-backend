@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { OffersModule } from '@modules/offers/offers.module';
 import { MenusModule } from '@modules/menus/menus.module';
+import { RestaurantsModule } from '@modules/restaurants/restaurants.module';
+import { BranchesModule } from '@modules/branches/branches.module';
 import { RedisSlidingWindowRateLimiter } from '@modules/authentication/infrastructure/redis/redis-sliding-window-rate-limiter';
 import { DISCOVERY_READER } from './application/ports/discovery-reader.port';
 import { DISCOVERY_RATE_LIMITER } from './domain/tokens/discovery.tokens';
@@ -19,15 +21,21 @@ import { DiscoveryRateLimitGuard } from './presentation/guards/discovery-rate-li
 
 /**
  * Customer Restaurant Discovery & Public Read Surface, extended by Phase
- * 15.5 (Discovery Module, architecture frozen 2026-07-29). Imports only
- * `OffersModule` (Phase 11, plus Phase 15.5's `ListRestaurantIdsWithActiveOfferUseCase`)
- * - compositional reuse, never duplicated Offer business logic (see
+ * 15.5 (Discovery Module, architecture frozen 2026-07-29) and by Public
+ * Working Hours & Restaurant Phone Privacy. Imports `OffersModule`/
+ * `MenusModule` (Phase 15.5's `hasActiveOffer`/`hasMenu` annotations) - see
  * `ListDiscoverableOffersUseCase`/`ListRestaurantIdsWithActiveOfferUseCase`'s
- * own doc comments). `PrismaDiscoveryReader` still queries the raw
+ * own doc comments. `PrismaDiscoveryReader` still queries the raw
  * `PrismaService` directly for Restaurant/Branch/FloorPlan/Table (see its own
- * doc comment), so this module needs neither `RestaurantsModule`/
- * `BranchesModule`/`TablesModule`'s tenant-scoped repositories nor their
- * guards for those. Every route is public/unauthenticated (ADR-018 §4) - no
+ * doc comment), so this module still needs neither `RestaurantsModule`'s nor
+ * `BranchesModule`'s tenant-scoped `RESTAURANT_REPOSITORY`/`BRANCH_REPOSITORY`
+ * nor their guards. `RestaurantsModule`/`BranchesModule` are imported only for
+ * `ListWorkingHoursByRestaurantIdsUseCase`/`ListBranchWorkingHoursByBranchIdsUseCase`
+ * - the same batched-annotation pattern as the Offer/Menu use cases above,
+ * reusing `WorkingHoursRepository`/`BranchWorkingHoursRepository` (not
+ * tenant-enforced, passthrough-safe with no bound tenant context - see those
+ * use cases' own doc comments) rather than a second raw-Prisma bypass. Every
+ * route is public/unauthenticated (ADR-018 §4) - no
  * `AuthenticationModule`/`AuthorizationModule` import for guarding routes;
  * `DISCOVERY_RATE_LIMITER` reuses only the `RedisSlidingWindowRateLimiter`
  * *class* from Authentication's infrastructure (the algorithm/primitive, not
@@ -37,7 +45,7 @@ import { DiscoveryRateLimitGuard } from './presentation/guards/discovery-rate-li
  * not a coupling into Authentication's bounded context).
  */
 @Module({
-  imports: [OffersModule, MenusModule],
+  imports: [OffersModule, MenusModule, RestaurantsModule, BranchesModule],
   controllers: [DiscoveryController],
   providers: [
     ListDiscoverableRestaurantsUseCase,

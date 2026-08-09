@@ -162,6 +162,20 @@ describe('PrismaOrganizationMemberRepository tenant enforcement (integration)', 
     expect(countAsB).toBe(0);
   });
 
+  it('findOwner scopes to the bound tenant, not the requested organizationId parameter (M6 remediation)', async () => {
+    if (!dbAvailable) return;
+
+    // Called with orgB.id as the parameter in both cases - the bound
+    // context always wins. Org A has an Active Owner (memberA); Org B does
+    // not (memberB is Staff) - the two calls must differ for this to prove
+    // anything, exactly like the countActiveOwners case above.
+    const ownerAsA = await asOrgA(() => repository.findOwner(OrganizationId.create(orgB.id)));
+    expect(ownerAsA?.toProps().id).toBe(memberA.id);
+
+    const ownerAsB = await asOrgB(() => repository.findOwner(OrganizationId.create(orgB.id)));
+    expect(ownerAsB).toBeNull();
+  });
+
   it('save() cannot create or update a member row under another tenant even when the domain entity carries that organizationId', async () => {
     if (!dbAvailable) return;
 
@@ -219,6 +233,10 @@ describe('PrismaOrganizationMemberRepository tenant enforcement (integration)', 
     await expect(
       repository.countActiveOwners(OrganizationId.create(orgA.id)),
     ).rejects.toBeInstanceOf(TenantContextMissingException);
+
+    await expect(repository.findOwner(OrganizationId.create(orgA.id))).rejects.toBeInstanceOf(
+      TenantContextMissingException,
+    );
   });
 
   it('keeps concurrent Org A / Org B repository reads isolated under real concurrent DB I/O', async () => {

@@ -11,6 +11,9 @@ import { RemoveFavoriteUseCase } from '../../application/use-cases/remove-favori
 import { ListCurrentUserFavoritesUseCase } from '../../application/use-cases/list-current-user-favorites.use-case';
 import { GetCurrentUserPreferencesUseCase } from '../../application/use-cases/get-current-user-preferences.use-case';
 import { UpdateUserPreferencesUseCase } from '../../application/use-cases/update-user-preferences.use-case';
+import { RequestAccountDeletionUseCase } from '../../application/use-cases/request-account-deletion.use-case';
+import { CancelAccountDeletionUseCase } from '../../application/use-cases/cancel-account-deletion.use-case';
+import { ExportUserDataUseCase } from '../../application/use-cases/export-user-data.use-case';
 import { UserNotFoundException } from '@modules/authentication/application/exceptions/user-not-found.exception';
 import { RestaurantNotFoundException } from '../../application/exceptions/restaurant-not-found.exception';
 import { AuthenticatedUserActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
@@ -26,6 +29,9 @@ describe('UsersController', () => {
   const listFavoritesExecute = jest.fn();
   const getPreferencesExecute = jest.fn();
   const updatePreferencesExecute = jest.fn();
+  const requestAccountDeletionExecute = jest.fn();
+  const cancelAccountDeletionExecute = jest.fn();
+  const exportUserDataExecute = jest.fn();
 
   const actor: AuthenticatedUserActor = {
     actorType: AccessTokenActorType.User,
@@ -56,6 +62,9 @@ describe('UsersController', () => {
     listFavoritesExecute.mockReset();
     getPreferencesExecute.mockReset();
     updatePreferencesExecute.mockReset();
+    requestAccountDeletionExecute.mockReset();
+    cancelAccountDeletionExecute.mockReset();
+    exportUserDataExecute.mockReset();
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UsersController],
@@ -71,6 +80,15 @@ describe('UsersController', () => {
           provide: UpdateUserPreferencesUseCase,
           useValue: { execute: updatePreferencesExecute },
         },
+        {
+          provide: RequestAccountDeletionUseCase,
+          useValue: { execute: requestAccountDeletionExecute },
+        },
+        {
+          provide: CancelAccountDeletionUseCase,
+          useValue: { execute: cancelAccountDeletionExecute },
+        },
+        { provide: ExportUserDataUseCase, useValue: { execute: exportUserDataExecute } },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -466,6 +484,100 @@ describe('UsersController', () => {
       await controller.listFavorites({}, actor);
 
       expect(listFavoritesExecute).toHaveBeenCalledWith({ actor, page: 1, limit: 20 });
+    });
+  });
+
+  describe('deleteCurrentAccount', () => {
+    function buildRequest(headers: Record<string, string> = {}): Request {
+      return {
+        ip: '203.0.113.44',
+        socket: { remoteAddress: '127.0.0.1' },
+        headers,
+      } as unknown as Request;
+    }
+
+    it('delegates to the use case with the actor from the JWT and the request password, never a client-supplied userId', async () => {
+      requestAccountDeletionExecute.mockResolvedValue({
+        scheduledAnonymizationAt: new Date('2026-09-06T12:00:00.000Z'),
+      });
+
+      const response = await controller.deleteCurrentAccount(
+        { password: 'CurrentPass123!' },
+        actor,
+        buildRequest({ 'x-correlation-id': 'corr-del-1' }),
+      );
+
+      expect(requestAccountDeletionExecute).toHaveBeenCalledWith({
+        actor,
+        password: 'CurrentPass123!',
+        correlationId: 'corr-del-1',
+      });
+      expect(response).toEqual({ scheduledAnonymizationAt: '2026-09-06T12:00:00.000Z' });
+    });
+  });
+
+  describe('cancelCurrentAccountDeletion', () => {
+    function buildRequest(headers: Record<string, string> = {}): Request {
+      return {
+        ip: '203.0.113.44',
+        socket: { remoteAddress: '127.0.0.1' },
+        headers,
+      } as unknown as Request;
+    }
+
+    it('delegates to the use case with the actor from the JWT, no password required', async () => {
+      cancelAccountDeletionExecute.mockResolvedValue(undefined);
+
+      const response = await controller.cancelCurrentAccountDeletion(
+        actor,
+        buildRequest({ 'x-correlation-id': 'corr-cancel-1' }),
+      );
+
+      expect(cancelAccountDeletionExecute).toHaveBeenCalledWith({
+        actor,
+        correlationId: 'corr-cancel-1',
+      });
+      expect(response).toBeUndefined();
+    });
+  });
+
+  describe('exportCurrentUserData', () => {
+    function buildRequest(headers: Record<string, string> = {}): Request {
+      return {
+        ip: '203.0.113.44',
+        socket: { remoteAddress: '127.0.0.1' },
+        headers,
+      } as unknown as Request;
+    }
+
+    it('delegates to the use case with the actor from the JWT and maps the documented fields', async () => {
+      exportUserDataExecute.mockResolvedValue({
+        exportedAt: new Date('2026-08-07T12:00:00.000Z'),
+        profile: profileResult,
+        preferences: {
+          userId: actor.userId,
+          notificationOptIn: true,
+          marketingOptIn: false,
+          updatedAt: new Date('2026-08-01T00:00:00.000Z'),
+        },
+        reservations: { items: [], total: 0 },
+        reviews: { items: [], total: 0 },
+        favorites: { items: [], total: 0 },
+      });
+
+      const response = await controller.exportCurrentUserData(
+        actor,
+        buildRequest({ 'x-correlation-id': 'corr-export-1' }),
+      );
+
+      expect(exportUserDataExecute).toHaveBeenCalledWith({
+        actor,
+        correlationId: 'corr-export-1',
+      });
+      expect(response.exportedAt).toBe('2026-08-07T12:00:00.000Z');
+      expect(response.reservations).toEqual({ items: [], total: 0 });
+      expect(response.reviews).toEqual({ items: [], total: 0 });
+      expect(response.favorites).toEqual({ items: [], total: 0 });
     });
   });
 });

@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { PrismaClient } from '@prisma/client';
+import { PlatformAdminRole, PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { createTestApp } from '../helpers/test-app.factory';
 import { hashTestPassword, seedOwnerAndOrganization } from '../helpers/owner-fixture';
@@ -95,7 +95,9 @@ describe('Subscriptions (e2e)', () => {
         emailVerified: true,
       },
     });
-    await prisma.platformAdmin.create({ data: { id: randomUUID(), userId, revokedAt: null } });
+    await prisma.platformAdmin.create({
+      data: { id: randomUUID(), userId, role: PlatformAdminRole.PlatformAdmin, revokedAt: null },
+    });
     const response = await request(app!.getHttpServer())
       .post('/api/v1/platform-admin/login')
       .send({ email, password: PASSWORD })

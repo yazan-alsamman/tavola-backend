@@ -12,7 +12,13 @@ import { UserNotFoundException } from '../exceptions/user-not-found.exception';
 import { AccountLoginDisabledEvent } from '../../domain/events/authentication.events';
 import { PlatformAdminDisableLoginCommand } from '../dto/platform-admin-account-access.dto';
 
-/** ADR-034 §8 - reuses the existing `User.status` field, no new column. Idempotent (`User.disableLogin()`'s own no-op-if-already-Suspended invariant). */
+/**
+ * ADR-034 §8 - reuses the existing `User.status` field, no new column.
+ * Idempotent (`User.disableLogin()`'s own no-op-if-already-Suspended
+ * invariant). M1 remediation: `disableLogin()` returns the same instance
+ * (reference-equal) when no transition occurred - that case skips both the
+ * save and the event/audit write below.
+ */
 @Injectable()
 export class PlatformAdminDisableLoginUseCase {
   constructor(
@@ -30,15 +36,19 @@ export class PlatformAdminDisableLoginUseCase {
 
     const now = this.clock.now();
     const disabled = user.disableLogin(now);
-    await this.userRepository.save(disabled);
+    const stateChanged = disabled !== user;
 
-    await this.eventPublisher.publish(
-      new AccountLoginDisabledEvent(
-        this.idGenerator.generate(),
-        { targetUserId: command.targetUserId, actorId: command.actorId },
-        now,
-        command.correlationId,
-      ),
-    );
+    if (stateChanged) {
+      await this.userRepository.save(disabled);
+
+      await this.eventPublisher.publish(
+        new AccountLoginDisabledEvent(
+          this.idGenerator.generate(),
+          { targetUserId: command.targetUserId, actorId: command.actorId },
+          now,
+          command.correlationId,
+        ),
+      );
+    }
   }
 }

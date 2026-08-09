@@ -1,5 +1,5 @@
 import { Message } from '../entities/message.entity';
-import { ConversationId } from '@shared/domain/value-objects/identifiers.vo';
+import { ConversationId, UserId } from '@shared/domain/value-objects/identifiers.vo';
 
 export interface MessageCursor {
   createdAt: Date;
@@ -31,6 +31,19 @@ export interface MessageRepository {
     after: MessageCursor | null,
     limit: number,
   ): Promise<MessagePage>;
+
+  /**
+   * Phase 20.X (ADR-014 execution) - `AnonymizeUserAccountUseCase`. Bulk
+   * write matching `Message.anonymize()`'s own field-level transform
+   * (`body -> '[removed]'`, `anonymizedAt` set) for every message this
+   * user authored that isn't already anonymized - the entity method
+   * itself was doc-commented "no erasure job exists yet" since it was
+   * added; this is that job, applied in bulk rather than one entity
+   * round-trip per row. Never touches messages authored by anyone else in
+   * the same conversation. Idempotent: re-running only matches rows still
+   * missing `anonymizedAt`.
+   */
+  anonymizeAllBySenderUserId(userId: UserId, at: Date): Promise<void>;
 }
 
 export const MESSAGE_REPOSITORY = Symbol('MESSAGE_REPOSITORY');

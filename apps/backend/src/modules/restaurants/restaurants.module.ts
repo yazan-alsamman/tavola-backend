@@ -20,6 +20,7 @@ import { GetRestaurantSettingsUseCase } from './application/use-cases/get-restau
 import { UpdateRestaurantSettingsUseCase } from './application/use-cases/update-restaurant-settings.use-case';
 import { GetWorkingHoursUseCase } from './application/use-cases/get-working-hours.use-case';
 import { UpdateWorkingHoursUseCase } from './application/use-cases/update-working-hours.use-case';
+import { ListWorkingHoursByRestaurantIdsUseCase } from './application/use-cases/list-working-hours-by-restaurant-ids.use-case';
 import { AddRestaurantGalleryImageUseCase } from './application/use-cases/add-restaurant-gallery-image.use-case';
 import { ListRestaurantGalleryUseCase } from './application/use-cases/list-restaurant-gallery.use-case';
 import { RemoveRestaurantGalleryImageUseCase } from './application/use-cases/remove-restaurant-gallery-image.use-case';
@@ -134,6 +135,7 @@ import { PlatformAdminRestaurantsController } from './presentation/controllers/p
     UpdateRestaurantSettingsUseCase,
     GetWorkingHoursUseCase,
     UpdateWorkingHoursUseCase,
+    ListWorkingHoursByRestaurantIdsUseCase,
     AddRestaurantGalleryImageUseCase,
     ListRestaurantGalleryUseCase,
     RemoveRestaurantGalleryImageUseCase,
@@ -199,6 +201,17 @@ import { PlatformAdminRestaurantsController } from './presentation/controllers/p
   // usage-read use cases resolve it through this already-tenant-scoped
   // module boundary, exactly like RESTAURANT_SETTINGS_REPOSITORY is
   // exported for ReservationsModule above.
-  exports: [RESTAURANT_REPOSITORY, RESTAURANT_SETTINGS_REPOSITORY, RESTAURANT_USAGE_REPOSITORY],
+  // ListWorkingHoursByRestaurantIdsUseCase is exported for DiscoveryModule
+  // (Public Working Hours & Restaurant Phone Privacy): WorkingHours is not
+  // tenant-enforced (transitively tenant-owned only, same passthrough-safe
+  // shape as RestaurantSettings), so this is a safe batched lookup for
+  // Discovery's customer-facing (no-organizationId) callers, which have
+  // already resolved restaurant visibility themselves before calling it.
+  exports: [
+    RESTAURANT_REPOSITORY,
+    RESTAURANT_SETTINGS_REPOSITORY,
+    RESTAURANT_USAGE_REPOSITORY,
+    ListWorkingHoursByRestaurantIdsUseCase,
+  ],
 })
 export class RestaurantsModule {}

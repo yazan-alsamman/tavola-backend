@@ -3,6 +3,7 @@ import { User } from '@modules/authentication/domain/entities/user.entity';
 import { UserConsent } from '@modules/authentication/domain/entities/user-consent.entity';
 import { Organization } from '@modules/organizations/domain/entities/organization.entity';
 import { OrganizationMember } from '@modules/organizations/domain/entities/organization-member.entity';
+import { OrganizationMemberRole } from '@modules/organizations/domain/enums/organization.enums';
 import { UserConsentRepository } from '@modules/authentication/domain/repositories/user-consent.repository';
 import { EmailAlreadyExistsException } from '@modules/authentication/domain/exceptions/email-already-exists.exception';
 import { PhoneAlreadyExistsException } from '@modules/authentication/domain/exceptions/phone-already-exists.exception';
@@ -270,6 +271,18 @@ export class InMemoryOrganizationMemberRepository implements OrganizationMemberR
 
   async save(member: OrganizationMember): Promise<void> {
     this.members.set(member.toProps().id, member);
+  }
+
+  async updateRoleIfRole(
+    member: OrganizationMember,
+    expectedRole: OrganizationMemberRole,
+  ): Promise<boolean> {
+    const existing = this.members.get(member.toProps().id);
+    if (!existing || existing.toProps().role !== expectedRole) {
+      return false;
+    }
+    this.members.set(member.toProps().id, member);
+    return true;
   }
 
   snapshot(): OrganizationMember[] {

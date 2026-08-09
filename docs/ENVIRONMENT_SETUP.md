@@ -92,6 +92,15 @@ A genuinely separate JWT pipeline from the ordinary Customer/Owner/Employee toke
 
 There is no public Platform Admin self-registration endpoint — `PlatformAdmin` accounts are provisioned operationally (seeded directly), never via any API.
 
+**Bootstrap (ADR-034 §10, H1 remediation).** `prisma/seed.ts` provisions the first PlatformAdmin when, and only when, all four variables below are set:
+
+* `PLATFORM_ADMIN_BOOTSTRAP_EMAIL` — optional; unset in every already-provisioned environment.
+* `PLATFORM_ADMIN_BOOTSTRAP_PASSWORD` — optional; minimum 12 characters (`PasswordPolicy`). **Never hardcode, log, or commit its actual value.**
+* `PLATFORM_ADMIN_BOOTSTRAP_FIRST_NAME` — optional.
+* `PLATFORM_ADMIN_BOOTSTRAP_LAST_NAME` — optional.
+
+Idempotent by email: re-running `prisma db seed` against an environment that already has this User/PlatformAdmin is a no-op (existing password/name are never overwritten, and no duplicate `PlatformAdmin` row is created). Set all four only on a fresh database with no PlatformAdmin yet, run the seed once, then unset the variable and rotate the password out-of-band.
+
 ## Observability
 
 * `LOG_LEVEL`

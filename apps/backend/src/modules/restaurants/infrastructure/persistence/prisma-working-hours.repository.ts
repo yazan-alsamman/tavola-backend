@@ -28,6 +28,22 @@ export class PrismaWorkingHoursRepository implements WorkingHoursRepository {
   }
 
   /**
+   * One batched `IN (...)` query for every requested restaurant, not one
+   * query per restaurant - the caller (`ListWorkingHoursByRestaurantIdsUseCase`)
+   * groups the flat result by `restaurantId` itself.
+   */
+  async findAllByRestaurantIds(restaurantIds: RestaurantId[]): Promise<WorkingHours[]> {
+    if (restaurantIds.length === 0) {
+      return [];
+    }
+    const rows = await this.prismaContext.client.workingHours.findMany({
+      where: { restaurantId: { in: restaurantIds.map((id) => id.value) } },
+      orderBy: [{ restaurantId: 'asc' }, { dayOfWeek: 'asc' }],
+    });
+    return rows.map((row) => WorkingHoursPrismaMapper.toDomain(row));
+  }
+
+  /**
    * Full-replace of the entire week for one restaurant: deletes every
    * existing row for `restaurantId` and inserts `entries` in a single
    * transaction, so a caller never observes a partially-replaced week.

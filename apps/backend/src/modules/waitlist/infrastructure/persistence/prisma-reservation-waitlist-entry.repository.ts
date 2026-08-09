@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaContext } from '@infrastructure/prisma/prisma-context.service';
-import { BranchId } from '@shared/domain/value-objects/identifiers.vo';
+import { BranchId, UserId } from '@shared/domain/value-objects/identifiers.vo';
 import { ReservationWaitlistEntry } from '../../domain/entities/reservation-waitlist-entry.entity';
 import { WaitlistStatus } from '../../domain/enums/waitlist.enums';
 import { WaitlistPositionConflictException } from '../../domain/exceptions/waitlist-position-conflict.exception';
@@ -100,6 +100,17 @@ export class PrismaReservationWaitlistEntryRepository implements ReservationWait
         deletedAt: null,
       },
       orderBy: { position: 'asc' },
+    });
+    return rows.map((row) => ReservationWaitlistEntryPrismaMapper.toDomain(row));
+  }
+
+  async findActiveByUserId(userId: UserId): Promise<ReservationWaitlistEntry[]> {
+    const rows = await this.prismaContext.client.reservationWaitlistEntry.findMany({
+      where: {
+        userId: userId.value,
+        status: { in: [WaitlistStatus.Waiting, WaitlistStatus.Notified] },
+        deletedAt: null,
+      },
     });
     return rows.map((row) => ReservationWaitlistEntryPrismaMapper.toDomain(row));
   }

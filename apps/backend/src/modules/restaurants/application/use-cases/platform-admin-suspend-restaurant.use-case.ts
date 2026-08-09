@@ -37,7 +37,10 @@ import {
  * `RestaurantStatus` gains no new value and no dual-write path is
  * introduced. Idempotent - suspending an already-Suspended Restaurant is a
  * no-op (`Restaurant.suspend()`'s own existing invariant), matching
- * `UpdateRestaurantUseCase`'s behavior exactly.
+ * `UpdateRestaurantUseCase`'s behavior exactly. M1 remediation: `suspend()`
+ * returns the same instance (reference-equal) when no transition occurred -
+ * that case skips both the save and the event/audit write below, instead of
+ * re-asserting a transition that didn't happen.
  */
 @Injectable()
 export class PlatformAdminSuspendRestaurantUseCase {
@@ -76,20 +79,24 @@ export class PlatformAdminSuspendRestaurantUseCase {
 
         const now = this.clock.now();
         const suspended = restaurant.suspend(now);
-        await this.restaurantRepository.save(suspended);
+        const stateChanged = suspended !== restaurant;
 
-        await this.eventPublisher.publish(
-          new RestaurantSuspendedEvent(
-            this.idGenerator.generate(),
-            {
-              restaurantId: suspended.restaurantId.value,
-              organizationId: suspended.organizationId.value,
-              actorId: command.actorId,
-            },
-            now,
-            command.correlationId,
-          ),
-        );
+        if (stateChanged) {
+          await this.restaurantRepository.save(suspended);
+
+          await this.eventPublisher.publish(
+            new RestaurantSuspendedEvent(
+              this.idGenerator.generate(),
+              {
+                restaurantId: suspended.restaurantId.value,
+                organizationId: suspended.organizationId.value,
+                actorId: command.actorId,
+              },
+              now,
+              command.correlationId,
+            ),
+          );
+        }
 
         return toPlatformAdminRestaurantResult(suspended);
       },
