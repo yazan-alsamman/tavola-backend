@@ -39,3 +39,6 @@ Thumbs.db
 
 # Docker volumes (local dev)
 docker/volumes/
+
+# Backups (Postgres/MinIO dumps - may contain data/secrets)
+backups/
