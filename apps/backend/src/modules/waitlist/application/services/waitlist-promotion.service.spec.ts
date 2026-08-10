@@ -21,6 +21,8 @@ import { InMemoryReservationWaitlistEntryRepository } from '../../../../../test/
 import { InMemoryWaitlistExpirationScheduler } from '../../../../../test/waitlist/support/in-memory-waitlist-expiration-scheduler';
 import { InMemoryApprovedReservationOperationalScheduler } from '../../../../../test/reservations/support/in-memory-approved-reservation-operational-scheduler';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
+import { InMemoryAcquisitionRecordingService } from '../../../../../test/reservations/support/in-memory-acquisition-recording.service';
+import type { RecordCustomerAcquisitionOnApprovalService } from '@modules/customer-acquisition/application/services/record-customer-acquisition-on-approval.service';
 import { ScheduleApprovedReservationSignalsService } from '@modules/reservations/application/services/schedule-approved-reservation-signals.service';
 
 describe('WaitlistPromotionService', () => {
@@ -104,6 +106,7 @@ describe('WaitlistPromotionService', () => {
       new ImmediateUnitOfWork(),
       expirationScheduler,
       scheduleApprovedReservationSignals,
+      new InMemoryAcquisitionRecordingService() as unknown as RecordCustomerAcquisitionOnApprovalService,
     );
 
     return {

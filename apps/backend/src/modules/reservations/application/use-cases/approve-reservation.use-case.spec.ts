@@ -27,6 +27,8 @@ import {
 import { InMemoryTableRepository } from '../../../../../test/tables/support/in-memory-table.repository';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
 import { InMemoryReservationRepository } from '../../../../../test/reservations/support/in-memory-reservation.repository';
+import { InMemoryAcquisitionRecordingService } from '../../../../../test/reservations/support/in-memory-acquisition-recording.service';
+import type { RecordCustomerAcquisitionOnApprovalService } from '@modules/customer-acquisition/application/services/record-customer-acquisition-on-approval.service';
 
 describe('ApproveReservationUseCase', () => {
   const fixedNow = new Date('2026-08-01T10:00:00.000Z');
@@ -142,6 +144,7 @@ describe('ApproveReservationUseCase', () => {
       expirationScheduler,
       new AutoRejectOverlappingPendingReservationsService(reservationRepository),
       scheduleApprovedReservationSignals,
+      new InMemoryAcquisitionRecordingService() as unknown as RecordCustomerAcquisitionOnApprovalService,
     );
 
     return {

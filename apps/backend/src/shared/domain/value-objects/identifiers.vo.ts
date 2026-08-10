@@ -309,3 +309,23 @@ export class MenuItemAvailabilityId extends UuidId {
     return new MenuItemAvailabilityId(value);
   }
 }
+
+export class CustomerAcquisitionId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'CustomerAcquisitionId');
+  }
+
+  static create(value: string): CustomerAcquisitionId {
+    return new CustomerAcquisitionId(value);
+  }
+}
+
+export class AcquisitionPricingRuleId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'AcquisitionPricingRuleId');
+  }
+
+  static create(value: string): AcquisitionPricingRuleId {
+    return new AcquisitionPricingRuleId(value);
+  }
+}

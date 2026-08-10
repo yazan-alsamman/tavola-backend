@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class PlatformAdminOrganizationResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -12,6 +12,9 @@ export class PlatformAdminOrganizationResponseDto {
 
   @ApiProperty({ format: 'date-time' })
   updatedAt!: string;
+
+  @ApiPropertyOptional({ format: 'date-time', nullable: true })
+  deletedAt!: string | null;
 }
 
 export class OwnershipTransferResponseDto {

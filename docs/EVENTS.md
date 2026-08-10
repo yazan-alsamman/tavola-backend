@@ -42,8 +42,8 @@ Every event should include:
 * OrganizationOwnershipTransferred — documented since Phase 0; gains its first real producer under ADR-034 §6, implemented Phase 19.1 (narrow, PlatformAdmin-only emergency transfer; full self-service Organization management remains unbuilt and explicitly out of scope)
 * OrganizationSuspended — documented since Phase 0; gains its first real producer under ADR-034 §4, implemented Phase 19.1 (PlatformAdmin-authorized; never cascades to `Restaurant.status`, ADR-034 §5)
 * OrganizationReactivated (new, ADR-034 §4, implemented Phase 19.1)
-* OrganizationDeleted (new, ADR-034 §4 — soft delete, reuses `Organization.deletedAt` — not implemented, out of Phase 19.1's scope)
-* OrganizationRestored (new, ADR-034 §4 — not implemented, out of Phase 19.1's scope)
+* OrganizationDeleted — `{ organizationId, actorId }`. ADR-034 §4, implemented Phase 19.4 (2026-08-10) — soft delete only, reuses the existing `Organization.deletedAt` field, no new schema. Never cascades to Restaurant/Branch/Employee/Reservation data — no cascade, ever (§5).
+* OrganizationRestored — `{ organizationId, actorId }`. ADR-034 §4, implemented Phase 19.4 (2026-08-10) — closes the same standing "no restore capability" gap ADR-034 §3 already closed for Restaurant. Only clears `deletedAt`, never touches `status`.
 
 ---
 
@@ -420,12 +420,12 @@ No `PlanCreated`/`PlanUpdated` events — `SubscriptionPlan` rows are seed-manag
 
 # Customer Acquisition Events
 
-**Architecture frozen 2026-08-04 (ADR-033) — financial source of truth, not billing.**
+**Architecture frozen 2026-08-04, implemented 2026-08-09 (ADR-033, Phase 19.2) — financial source of truth, not billing.**
 
 * CustomerAcquisitionRecorded — `{ acquisitionId, restaurantId, customerIdentityKey, feeAmount, feeCurrency, pricingRuleId, sourceReservationId }`. System-initiated, published in the same transaction as the triggering `Reservation`'s transition into `Approved` (§3, ADR-033).
 * CustomerAcquisitionReversed — `{ acquisitionId, restaurantId, reversedBy, reversalReason }`. PlatformAdmin-initiated only, never automatic.
 * CustomerAcquisitionManuallyRecorded — `{ acquisitionId, restaurantId, customerIdentityKey, feeAmount, feeCurrency, recordedBy, reason }`. PlatformAdmin-initiated, symmetric to Reversal — corrects an under-count (ADR-033 §11).
-* AcquisitionPricingRuleActivated — `{ ruleId, scopeType, scopeId, feeType, effectiveFrom }`. PlatformAdmin-initiated. No `PricingRuleUpdated` event — rules are never edited in place (ADR-033 §15); a change is always a new `AcquisitionPricingRuleActivated` plus the superseded rule's `archivedAt` being set (no event for archiving alone — `archivedAt` is queryable directly on the row, the same "the row is the audit trail" precedent Notification push-tracking already established).
+* AcquisitionPricingRuleActivated — `{ ruleId, scopeType, scopeId, feeType, effectiveFrom, createdBy }`. PlatformAdmin-initiated. No `PricingRuleUpdated` event — rules are never edited in place (ADR-033 §15); a change is always a new `AcquisitionPricingRuleActivated` plus the superseded rule's `archivedAt` being set (no event for archiving alone — `archivedAt` is queryable directly on the row, the same "the row is the audit trail" precedent Notification push-tracking already established).
 
 No `PaymentX`/`InvoiceX` event is introduced by this section, consistent with the Payment / Invoice Events section below.
 
@@ -433,9 +433,9 @@ No `PaymentX`/`InvoiceX` event is introduced by this section, consistent with th
 
 # Platform Back Office Events
 
-**Architecture frozen 2026-08-04 (ADR-034). Phase 19.1 subset implemented 2026-08-04** — Restaurant Suspend/Reactivate/Delete/Restore, Organization Suspend/Reactivate/Emergency Ownership Transfer, Account access control, Platform Admin account CRUD. `OrganizationDeleted`/`OrganizationRestored` remain frozen-but-not-yet-implemented — "complete Organization Management" was explicitly out of this phase's scope.
+**Architecture frozen 2026-08-04 (ADR-034). Phase 19.1 subset implemented 2026-08-04** — Restaurant Suspend/Reactivate/Delete/Restore, Organization Suspend/Reactivate/Emergency Ownership Transfer, Account access control, Platform Admin account CRUD. **Phase 19.4 (2026-08-10)** — Organization Delete/Restore implemented, closing the one remaining gap from Phase 19.1's own scope note.
 
-* RestaurantRestored (implemented), OrganizationReactivated (implemented), OrganizationDeleted (not implemented), OrganizationRestored (not implemented) — see Restaurant Events / Organization Events above.
+* RestaurantRestored (implemented), OrganizationReactivated (implemented), OrganizationDeleted (implemented, Phase 19.4), OrganizationRestored (implemented, Phase 19.4) — see Restaurant Events / Organization Events above.
 * OrganizationOwnershipTransferred (implemented, Phase 19.1) — `{ organizationId, actorId, previousOwnerUserId, newOwnerUserId }`. First real producer, ADR-034 §6.
 * PlatformAdminCredentialReset — `{ targetUserId, resetBy }`. PlatformAdmin-initiated; distinct from self-service `PasswordResetCompleted` — no OTP step, direct set by the admin, mirroring the trust model already established for Restaurant Owner provisioning (ADR-022 Decision #15).
 * AccountLoginDisabled / AccountLoginEnabled — `{ targetUserId, actorId }`. PlatformAdmin-initiated; reuses the existing `User.status` field.

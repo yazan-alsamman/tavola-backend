@@ -34,6 +34,9 @@ import {
   WAITLIST_EXPIRATION_SCHEDULER,
 } from '../ports/waitlist-expiration-scheduler.port';
 import { ScheduleApprovedReservationSignalsService } from '@modules/reservations/application/services/schedule-approved-reservation-signals.service';
+import { RecordCustomerAcquisitionOnApprovalService } from '@modules/customer-acquisition/application/services/record-customer-acquisition-on-approval.service';
+import { RecordAcquisitionOnApprovalResult } from '@modules/customer-acquisition/application/dto/record-acquisition-on-approval.command';
+import { CustomerAcquisitionRecordedEvent } from '@modules/customer-acquisition/domain/events/customer-acquisition.events';
 
 export interface PromotionAttemptParams {
   entry: ReservationWaitlistEntry;
@@ -81,6 +84,7 @@ export class WaitlistPromotionService {
     @Inject(WAITLIST_EXPIRATION_SCHEDULER)
     private readonly expirationScheduler: WaitlistExpirationSchedulerPort,
     private readonly scheduleApprovedReservationSignals: ScheduleApprovedReservationSignalsService,
+    private readonly recordCustomerAcquisitionOnApproval: RecordCustomerAcquisitionOnApprovalService,
   ) {}
 
   async attemptPromotion(params: PromotionAttemptParams): Promise<PromotionOutcome> {
@@ -109,6 +113,7 @@ export class WaitlistPromotionService {
     const reservationId = this.idGenerator.generate();
     let claimApplied = false;
     let approvedReservation: Reservation | null = null;
+    let acquisitionResult: RecordAcquisitionOnApprovalResult = { recorded: false };
 
     try {
       await this.unitOfWork.execute(async () => {
@@ -204,6 +209,22 @@ export class WaitlistPromotionService {
           // only scheduled after the transaction commits below - mirrors
           // `CreateReservationUseCase`'s own auto-approve branch.
           approvedReservation = reservation;
+
+          // ADR-033 §3/§13: a Waitlist promotion that lands directly on
+          // Approved (never Pending) is still this Reservation's first
+          // transition into Approved - recorded inside this same
+          // transaction, mirroring `CreateReservationUseCase`'s own
+          // auto-approve branch exactly.
+          acquisitionResult = await this.recordCustomerAcquisitionOnApproval.recordIfEligible({
+            restaurantId: entry.restaurantId.value,
+            branchId: entry.branchId.value,
+            userId: entry.userId?.value ?? null,
+            reservationGuestId: entry.reservationGuestId,
+            source: ReservationSource.WaitlistConversion,
+            sourceReservationId: reservationId,
+            now: params.now,
+            correlationId: params.correlationId,
+          });
         }
 
         // Phase 2 of the two-phase claim: the Reservation row now exists
@@ -294,6 +315,25 @@ export class WaitlistPromotionService {
         params.correlationId,
       ),
     );
+
+    if (acquisitionResult.recorded) {
+      await this.eventPublisher.publish(
+        new CustomerAcquisitionRecordedEvent(
+          this.idGenerator.generate(),
+          {
+            acquisitionId: acquisitionResult.acquisitionId!,
+            restaurantId: entry.restaurantId.value,
+            customerIdentityKey: acquisitionResult.customerIdentityKey!,
+            feeAmount: acquisitionResult.feeAmount!,
+            feeCurrency: acquisitionResult.feeCurrency!,
+            pricingRuleId: acquisitionResult.pricingRuleId!,
+            sourceReservationId: reservationId,
+          },
+          params.now,
+          params.correlationId,
+        ),
+      );
+    }
 
     return { promoted: true, reservationId };
   }

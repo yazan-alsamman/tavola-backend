@@ -63,7 +63,7 @@ Legend: **Supported** = full architectural specification exists | **Partial** = 
 | Cuisine Categories | **Supported** *(audit fix)* | CuisineCategory taxonomy tables |
 | Occasion Categories | **Supported** *(audit fix)* | OccasionCategory taxonomy tables |
 | Price Categories | **Supported** | Restaurants.priceLevel |
-| Restaurant Dashboard | **Partial** | ActivityFeed + WebSocket; Phase 14 |
+| Restaurant Dashboard | **Partial** | ActivityFeed + WebSocket (Phase 14); Reservation Calendar - `GET /restaurants/:restaurantId/branches/:branchId/reservations` (TASKS.md Post-Audit Remediation, 2026-08-10) |
 | Employee Management | **Partial** | Schema + domain authz; Phase 3–6 |
 | Role Management | **Partial** | RBAC seed exists; app layer Phase 2.13+ |
 | Permissions | **Supported** | Permissions seed, PermissionResolver |

@@ -1,9 +1,11 @@
 import { ReservationResult } from '../../application/dto/reservation.result';
 import { TableAvailabilityResult } from '../../application/dto/table-availability.result';
 import { MyReservationItem } from '../../application/ports/my-reservations-reader.port';
+import { StaffReservationItem } from '../../application/ports/staff-reservations-reader.port';
 import { ReservationResponseDto } from '../dto/reservation.response.dto';
 import { TableAvailabilityResponseDto } from '../dto/table-availability.response.dto';
 import { MyReservationItemResponseDto } from '../dto/my-reservation-item.response.dto';
+import { BranchReservationItemResponseDto } from '../dto/branch-reservation-item.response.dto';
 
 export function toReservationResponse(result: ReservationResult): ReservationResponseDto {
   return {
@@ -54,6 +56,35 @@ export function toMyReservationItemResponse(item: MyReservationItem): MyReservat
           capacity: item.table.capacity,
         }
       : null,
+  };
+}
+
+export function toBranchReservationItemResponse(
+  item: StaffReservationItem,
+): BranchReservationItemResponseDto {
+  return {
+    reservationId: item.reservationId,
+    restaurantId: item.restaurantId,
+    branchId: item.branchId,
+    reservationDate: item.reservationDate.toISOString().slice(0, 10),
+    reservationStartTime: item.reservationStartTime.toISOString(),
+    reservationEndTime: item.reservationEndTime.toISOString(),
+    partySize: item.partySize,
+    status: item.status,
+    reservationSource: item.reservationSource,
+    createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+    specialRequest: item.specialRequest,
+    table: {
+      tableId: item.table.tableId,
+      tableNumber: item.table.tableNumber,
+      capacity: item.table.capacity,
+    },
+    customer: {
+      type: item.customer.type,
+      name: item.customer.name,
+      phone: item.customer.phone,
+    },
   };
 }
 

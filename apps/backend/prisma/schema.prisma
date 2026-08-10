@@ -267,6 +267,7 @@ model User {
   restaurantReplies           RestaurantReply[]
   conversationParticipants    ConversationParticipant[]
   sentMessages                Message[]
+  customerAcquisitions        CustomerAcquisition[]
 
   @@unique([email])
   @@unique([phone])
@@ -468,22 +469,23 @@ model Restaurant {
   updatedAt      DateTime  @updatedAt @map("updated_at")
   deletedAt      DateTime? @map("deleted_at")
 
-  organization       Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  branches           Branch[]
-  employees          Employee[]
-  favorites          Favorite[]
-  settings           RestaurantSettings?
-  workingHours       WorkingHours[]
-  gallery            RestaurantGallery[]
-  cuisineCategories  RestaurantCuisineCategory[]
-  occasionCategories RestaurantOccasionCategory[]
-  reservations       Reservation[]
-  waitlistEntries    ReservationWaitlistEntry[]
-  reviews            Review[]
-  offers             Offer[]
-  usage              RestaurantUsage?
-  conversations      Conversation[]
-  menus              Menu[]
+  organization         Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branches             Branch[]
+  employees            Employee[]
+  favorites            Favorite[]
+  settings             RestaurantSettings?
+  workingHours         WorkingHours[]
+  gallery              RestaurantGallery[]
+  cuisineCategories    RestaurantCuisineCategory[]
+  occasionCategories   RestaurantOccasionCategory[]
+  reservations         Reservation[]
+  waitlistEntries      ReservationWaitlistEntry[]
+  reviews              Review[]
+  offers               Offer[]
+  usage                RestaurantUsage?
+  conversations        Conversation[]
+  menus                Menu[]
+  customerAcquisitions CustomerAcquisition[]
 
   @@index([organizationId])
   @@index([slug])
@@ -914,15 +916,16 @@ model Reservation {
   createdAt                    DateTime          @default(now()) @map("created_at")
   updatedAt                    DateTime          @updatedAt @map("updated_at")
 
-  restaurant       Restaurant                @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
-  branch           Branch                    @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  table            Table                     @relation(fields: [tableId], references: [id], onDelete: Restrict)
-  user             User?                     @relation(fields: [userId], references: [id], onDelete: Restrict)
-  reservationGuest ReservationGuest?         @relation(fields: [reservationGuestId], references: [id], onDelete: Restrict)
-  history          ReservationHistory[]
-  waitlistEntry    ReservationWaitlistEntry?
-  review           Review?
-  conversations    Conversation[]
+  restaurant           Restaurant                @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  branch               Branch                    @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  table                Table                     @relation(fields: [tableId], references: [id], onDelete: Restrict)
+  user                 User?                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  reservationGuest     ReservationGuest?         @relation(fields: [reservationGuestId], references: [id], onDelete: Restrict)
+  history              ReservationHistory[]
+  waitlistEntry        ReservationWaitlistEntry?
+  review               Review?
+  conversations        Conversation[]
+  customerAcquisitions CustomerAcquisition[]
 
   @@index([reservationDate])
   @@index([tableId])
@@ -955,8 +958,9 @@ model ReservationGuest {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  reservations    Reservation[]
-  waitlistEntries ReservationWaitlistEntry[]
+  reservations         Reservation[]
+  waitlistEntries      ReservationWaitlistEntry[]
+  customerAcquisitions CustomerAcquisition[]
 
   @@index([phone])
   @@map("reservation_guests")
@@ -1858,4 +1862,94 @@ model Message {
   @@index([conversationId])
   @@index([conversationId, createdAt])
   @@map("messages")
+}
+
+// ---------------------------------------------------------------------------
+// Customer Acquisition & Pricing Engine (Phase 19.2, architecture frozen
+// 2026-08-04, ADR-033 — implemented 2026-08-09). The platform's financial
+// source of truth: one immutable row per (Restaurant, Customer-Identity)
+// relationship the platform has delivered. Never computed from Reservation
+// at read time. Deliberately not a payment/invoice record (ADR-033 §21) — no
+// Payment/Invoice/BillingAccount table exists or may be added here without a
+// separate future owner decision.
+//
+// `customer_acquisitions_party_xor_chk` and the two partial unique indexes
+// below (one per userId/reservationGuestId) cannot be expressed in this
+// schema DSL (partial WHERE clauses, same-column XOR) — hand-written in this
+// migration's SQL, mirroring reservations_party_xor_chk /
+// tables_merge_group_one_primary_key exactly (Phase 7.4/Phase 6 precedent).
+// ---------------------------------------------------------------------------
+
+enum AcquisitionCreatedVia {
+  Automatic
+  ManualPlatformAdminCorrection
+}
+
+enum AcquisitionStatus {
+  Recorded
+  Reversed
+}
+
+model CustomerAcquisition {
+  id                  String                @id @default(uuid()) @db.Uuid
+  restaurantId        String                @map("restaurant_id") @db.Uuid
+  userId              String?               @map("user_id") @db.Uuid
+  reservationGuestId  String?               @map("reservation_guest_id") @db.Uuid
+  sourceReservationId String?               @map("source_reservation_id") @db.Uuid
+  reservationSource   ReservationSource?    @map("reservation_source")
+  createdVia          AcquisitionCreatedVia @default(Automatic) @map("created_via")
+  status              AcquisitionStatus     @default(Recorded)
+  feeAmount           Decimal               @map("fee_amount") @db.Decimal(12, 2)
+  feeCurrency         String                @map("fee_currency")
+  pricingRuleId       String                @map("pricing_rule_id") @db.Uuid
+  recordedAt          DateTime              @default(now()) @map("recorded_at")
+  reversedAt          DateTime?             @map("reversed_at")
+  reversedBy          String?               @map("reversed_by") @db.Uuid
+  reversalReason      String?               @map("reversal_reason")
+  createdAt           DateTime              @default(now()) @map("created_at")
+  updatedAt           DateTime              @updatedAt @map("updated_at")
+
+  restaurant        Restaurant             @relation(fields: [restaurantId], references: [id], onDelete: Restrict)
+  user              User?                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  reservationGuest  ReservationGuest?      @relation(fields: [reservationGuestId], references: [id], onDelete: Restrict)
+  sourceReservation Reservation?           @relation(fields: [sourceReservationId], references: [id], onDelete: Restrict)
+  pricingRule       AcquisitionPricingRule @relation(fields: [pricingRuleId], references: [id], onDelete: Restrict)
+
+  @@index([restaurantId])
+  @@index([recordedAt])
+  @@map("customer_acquisitions")
+}
+
+enum PricingScopeType {
+  Platform
+  Organization
+  Restaurant
+}
+
+enum PricingFeeType {
+  Flat
+  Percentage
+}
+
+model AcquisitionPricingRule {
+  id              String           @id @default(uuid()) @db.Uuid
+  scopeType       PricingScopeType @map("scope_type")
+  scopeId         String?          @map("scope_id") @db.Uuid
+  feeType         PricingFeeType   @default(Flat) @map("fee_type")
+  flatAmount      Decimal?         @map("flat_amount") @db.Decimal(12, 2)
+  flatCurrency    String?          @map("flat_currency")
+  percentageValue Decimal?         @map("percentage_value") @db.Decimal(5, 2)
+  effectiveFrom   DateTime         @map("effective_from")
+  effectiveTo     DateTime?        @map("effective_to")
+  label           String
+  createdBy       String           @map("created_by") @db.Uuid
+  archivedAt      DateTime?        @map("archived_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  acquisitions CustomerAcquisition[]
+
+  @@index([scopeType, scopeId, effectiveFrom])
+  @@index([archivedAt])
+  @@map("acquisition_pricing_rules")
 }

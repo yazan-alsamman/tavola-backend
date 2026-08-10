@@ -212,6 +212,14 @@ import { PlatformAdminRestaurantsController } from './presentation/controllers/p
     RESTAURANT_SETTINGS_REPOSITORY,
     RESTAURANT_USAGE_REPOSITORY,
     ListWorkingHoursByRestaurantIdsUseCase,
+    // Phase 19.2 (ADR-033): the Customer Acquisition module reuses this
+    // exact reader for two purposes - the ordinary-tenant-context
+    // acquisition-recording service (restaurantId -> organizationId with no
+    // tenant context required, since a Customer's own booking request has
+    // none) and PlatformAdmin Reverse/ManuallyRecord's own Pattern-2-resolve
+    // -> Pattern-1-rebind, exactly like Phase 19.1's Restaurant lifecycle
+    // use cases already do - not a new reader for the same data.
+    PLATFORM_ADMIN_RESTAURANT_LOOKUP_READER,
   ],
 })
 export class RestaurantsModule {}

@@ -36,12 +36,22 @@ module.exports = {
       // Pattern 2) is the Platform Back Office case: same "no single tenant
       // bound yet" justification, but deliberately INCLUDES `organizationId`
       // in its response, unlike the three customer-facing readers above.
+      // `PrismaAcquisitionCrossTenantReader` (Phase 19.2, ADR-033/ADR-035)
+      // is the second Platform Back Office reader - Revenue Reporting/Export
+      // genuinely aggregate across every Restaurant/Organization at once.
+      // `PrismaAuditLogReader` (Phase 19.3, ADR-034 §2/ADR-035) is the third -
+      // the Audit Log Read API queries across every Organization at once
+      // (organizationId is an optional filter, never a required path
+      // parameter identifying one target tenant), so no single `organizationId`
+      // exists to Pattern-1-rebind to.
       files: ['src/modules/**/infrastructure/persistence/**/*.ts'],
       excludedFiles: [
         '**/prisma-login-organization-reader.ts',
         '**/prisma-restaurant-directory-reader.ts',
         '**/prisma-discovery-reader.ts',
         '**/prisma-platform-admin-restaurant-lookup.reader.ts',
+        '**/prisma-acquisition-cross-tenant.reader.ts',
+        '**/prisma-audit-log.reader.ts',
       ],
       rules: {
         'no-restricted-imports': [

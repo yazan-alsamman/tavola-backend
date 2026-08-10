@@ -45,6 +45,8 @@ Indexes
 
 * slug
 
+**Delete/Restore (ADR-034 §4, implemented Phase 19.4, 2026-08-10):** `PlatformAdmin` Delete sets `deletedAt` only — the same soft-delete mechanism `Restaurant` already uses, unchanged schema. `status`'s `Closed` value is not written by Delete/Restore and has no current producer anywhere in this codebase (a pre-existing, undocumented-elsewhere enum member predating this phase) — `status` and `deletedAt` are deliberately independent axes, mirroring `Restaurant`'s own `{Active, Suspended}` + `deletedAt` shape. Restoring a Suspended-and-deleted Organization clears `deletedAt` but leaves `status` at `Suspended`, not `Active` — a separate Reactivate call is required for that.
+
 ---
 
 ## Organization Members
@@ -367,7 +369,7 @@ Notes (ADR-034)
 
 ---
 
-## Customer Acquisitions (Phase 19, architecture frozen 2026-08-04, ADR-033 — not implemented, no Prisma model or migration exists)
+## Customer Acquisitions (Phase 19.2, architecture frozen 2026-08-04, implemented 2026-08-09, ADR-033 — migration `20260809123633_phase_19_2_customer_acquisition_pricing`)
 
 Purpose
 
@@ -405,10 +407,13 @@ Notes
 * Never hard-deleted. Correcting an over-count is always a `Reversed` compensating record (PlatformAdmin-only); correcting an under-count is always a new `ManualPlatformAdminCorrection` row — both governed by the same partial unique indexes above (ADR-033 §§9–11).
 * Transitively tenant-owned via `restaurantId → Restaurant.organizationId`, identical shape to `RestaurantUsage` (ADR-027 §12) — no `organizationId` column, not registered in `DIRECT_TENANT_OWNED_MODELS`. Created inside the ordinary tenant-scoped transaction that approves the triggering Reservation — no cross-tenant mechanism needed for creation (ADR-033 §13).
 * No `Payment`/`PaymentTransaction`/`Invoice`/`BillingAccount` field exists or may be added without a separate future owner decision explicitly reversing the payment-removal decision (ADR-033 §21).
+* Implementation note (2026-08-09): the `userId`/`reservationGuestId` XOR CHECK and both partial unique indexes are hand-written SQL in the migration (mirrors `reservations_party_xor_chk`/`tables_merge_group_one_primary_key` — Prisma's schema DSL cannot express either). Live-verified against real PostgreSQL: both indexes genuinely reject a duplicate active acquisition, the CHECK genuinely rejects a row bypassing the domain guard.
+* **No-configured-operating-currency case (2026-08-09 product/architecture decision, not an ADR-033 amendment):** ADR-033 §17's fail-closed rule ("if no rule exists in the matching currency, resolution fails closed") presupposes a currency is already known. When a Restaurant has **no** operating currency configured at all (`RestaurantSettings.defaultCurrency` **and** `Branch.currency` both `null` — the out-of-the-box default for every Restaurant), acquisition recording is a silent no-op: no `CustomerAcquisition` row, no fee, no event, no audit row — and, critically, the triggering Reservation's approval **still succeeds**. Customer Acquisition is a financial side-effect of a successful approval, never a precondition for it, mirroring ADR-027's own frozen principle ("a restaurant must never become unable to accept reservations because of its Organization's plan" — `PRODUCT_REQUIREMENTS.md` FR-12 note) extended to monetization configuration. Once a currency **is** configured but no rule matches it, ADR-033 §17's fail-closed behavior applies exactly as originally specified — this case is unchanged.
+* **Automatic vs. manual recording under a no-currency Restaurant (2026-08-09, same decision as above — scoped explicitly, not left ambiguous):** the silent-skip behavior above applies *only* to the automatic acquisition side-effect triggered by a Reservation reaching `Approved` (Decision Item 1). `ManuallyRecordCustomerAcquisitionUseCase` (ADR-033 §11) is a deliberate, explicit PlatformAdmin financial action, not a reservation-approval side-effect, and continues to throw `NoMatchingPricingRuleException` when the target Restaurant has no configured operating currency — a manual financial record has no valid monetary basis without a known currency, and an admin acting deliberately should receive a clear, actionable error rather than a silent no-op. The asymmetry is intentional: automatic + no currency → skip; manual + no currency → reject.
 
 ---
 
-## Acquisition Pricing Rules (Phase 19, architecture frozen 2026-08-04, ADR-033 — not implemented, no Prisma model or migration exists)
+## Acquisition Pricing Rules (Phase 19.2, architecture frozen 2026-08-04, implemented 2026-08-09, ADR-033 — migration `20260809123633_phase_19_2_customer_acquisition_pricing`)
 
 Purpose
 
@@ -441,6 +446,7 @@ Notes
 * Never edited in place once created (ADR-033 §15, mirrors ADR-027 §10's plan-immutability). A pricing change always creates a new row.
 * Resolution at acquisition time: most specific matching `scopeType` (Restaurant > Organization > Platform) whose currency matches the target Restaurant's operating currency, tie-broken by latest active `effectiveFrom`; falls back to the seeded Platform default (1000 SYP) if nothing else resolves; fails closed (explicit error) if no matching-currency rule exists at any scope (ADR-033 §17).
 * `AcquisitionPricingRule` at `Platform` scope is platform-global reference data, alongside `SubscriptionPlan`; at `Organization`/`Restaurant` scope it is transitively tenant-owned the same way `AcquisitionPricingRule`'s parent `CustomerAcquisitions` table is.
+* Implementation note (2026-08-09): not registered in `DIRECT_TENANT_OWNED_MODELS` at any scope (no `organizationId` column, `scopeId` is a polymorphic plain UUID, no FK) — `PrismaContext` is a safe passthrough regardless of bound tenant context, identical to `PrismaSubscriptionPlanRepository`'s own precedent. `createdBy`/`CustomerAcquisition.reversedBy` are plain audit-trail UUID columns with no FK constraint, matching `AuditLog.actorId`'s existing convention.
 
 ---
 
@@ -1772,6 +1778,8 @@ Indexes
 * composite (targetType, targetId)
 * organizationId
 * occurredAt
+
+**Read API (ADR-034 §2, implemented Phase 19.3, 2026-08-10):** `GET /platform-admin/audit-logs` reuses these three indexes exactly as designed — no new index, no schema change. See `API_GUIDELINES.md`'s Platform Back Office Route Ownership table and `TENANCY.md`'s Phase 19.3 note (ADR-035 Pattern 2).
 
 ---
 

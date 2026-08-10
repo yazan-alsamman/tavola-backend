@@ -39,8 +39,10 @@ import {
   RestaurantUpdatedEvent,
 } from '@modules/restaurants/domain/events/restaurant.events';
 import {
+  OrganizationDeletedEvent,
   OrganizationOwnershipTransferredEvent,
   OrganizationReactivatedEvent,
+  OrganizationRestoredEvent,
   OrganizationSuspendedEvent,
 } from '@modules/organizations/domain/events/organization.events';
 import {
@@ -105,6 +107,12 @@ import {
   SubscriptionCancelledEvent,
   SubscriptionExpiredEvent,
 } from '@modules/subscriptions/domain/events/subscription.events';
+import {
+  CustomerAcquisitionRecordedEvent,
+  CustomerAcquisitionReversedEvent,
+  CustomerAcquisitionManuallyRecordedEvent,
+  AcquisitionPricingRuleActivatedEvent,
+} from '@modules/customer-acquisition/domain/events/customer-acquisition.events';
 import { LoggingEventPublisher } from './logging-event-publisher';
 
 /**
@@ -329,6 +337,41 @@ export class AuditingEventPublisher implements EventPublisherPort {
         actorType:
           this.tenantContextService.getActorType() === 'PlatformAdmin' ? 'PlatformAdmin' : 'User',
         action: 'organization.reactivated',
+        targetType: 'Organization',
+        targetId: event.payload.organizationId,
+        organizationId: event.payload.organizationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof OrganizationDeletedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        // Phase 19.4 (ADR-034 §4): mirrors RestaurantDeletedEvent's own
+        // ambiguous-actor branching - PlatformAdmin is the only real
+        // producer today, but this leaves room for a hypothetical future
+        // Owner self-service delete without a mapping change, the same
+        // forward-compatible reasoning already applied there.
+        actorType:
+          this.tenantContextService.getActorType() === 'PlatformAdmin' ? 'PlatformAdmin' : 'User',
+        action: 'organization.deleted',
+        targetType: 'Organization',
+        targetId: event.payload.organizationId,
+        organizationId: event.payload.organizationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof OrganizationRestoredEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        // Phase 19.4 (ADR-034 §4): mirrors RestaurantRestoredEvent - no actor
+        // other than PlatformAdmin has ever had a restore capability, so no
+        // ambiguous-actor branch is needed here, unlike Suspend/Reactivate/Delete.
+        actorType: 'PlatformAdmin',
+        action: 'organization.restored',
         targetType: 'Organization',
         targetId: event.payload.organizationId,
         organizationId: event.payload.organizationId,
@@ -1109,6 +1152,67 @@ export class AuditingEventPublisher implements EventPublisherPort {
         targetType: 'Subscription',
         targetId: event.payload.subscriptionId,
         organizationId: event.payload.organizationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof CustomerAcquisitionRecordedEvent) {
+      // System-triggered side effect of a Reservation's transition into
+      // Approved (ADR-033 §3) - reachable from three different call sites
+      // (manual Approve, Create's auto-approve branch, Waitlist promotion's
+      // auto-approve branch), none of which this event's own payload
+      // distinguishes between, and no single actorId is carried on it
+      // (unlike Reverse/ManuallyRecord below, which are always
+      // PlatformAdmin-initiated). Attributed `System`/`null`, the same
+      // convention `NotificationCreatedEvent`/`ReservationExpiredEvent`
+      // already use for a derived, non-directly-actor-initiated event.
+      return {
+        ...base,
+        actorId: null,
+        actorType: 'System',
+        action: 'customer_acquisition.recorded',
+        targetType: 'CustomerAcquisition',
+        targetId: event.payload.acquisitionId,
+        organizationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof CustomerAcquisitionReversedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.reversedBy,
+        actorType: 'PlatformAdmin',
+        action: 'customer_acquisition.reversed',
+        targetType: 'CustomerAcquisition',
+        targetId: event.payload.acquisitionId,
+        organizationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof CustomerAcquisitionManuallyRecordedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.recordedBy,
+        actorType: 'PlatformAdmin',
+        action: 'customer_acquisition.manually_recorded',
+        targetType: 'CustomerAcquisition',
+        targetId: event.payload.acquisitionId,
+        organizationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof AcquisitionPricingRuleActivatedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.createdBy,
+        actorType: 'PlatformAdmin',
+        action: 'acquisition_pricing_rule.activated',
+        targetType: 'AcquisitionPricingRule',
+        targetId: event.payload.ruleId,
+        organizationId,
         ipAddress: null,
       };
     }

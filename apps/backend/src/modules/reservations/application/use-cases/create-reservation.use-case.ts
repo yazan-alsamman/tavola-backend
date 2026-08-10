@@ -51,6 +51,9 @@ import { ScheduleApprovedReservationSignalsService } from '../services/schedule-
 import { toReservationResult } from '../mappers/reservation-result.mapper';
 import { CreateReservationCommand } from '../dto/create-reservation.command';
 import { ReservationResult } from '../dto/reservation.result';
+import { RecordCustomerAcquisitionOnApprovalService } from '@modules/customer-acquisition/application/services/record-customer-acquisition-on-approval.service';
+import { RecordAcquisitionOnApprovalResult } from '@modules/customer-acquisition/application/dto/record-acquisition-on-approval.command';
+import { CustomerAcquisitionRecordedEvent } from '@modules/customer-acquisition/domain/events/customer-acquisition.events';
 
 /**
  * Phase 7.4 decision #3's authorization matrix, resolved once up front
@@ -115,6 +118,7 @@ export class CreateReservationUseCase {
     @Inject(RESERVATION_EXPIRATION_SCHEDULER)
     private readonly expirationScheduler: ReservationExpirationSchedulerPort,
     private readonly scheduleApprovedReservationSignals: ScheduleApprovedReservationSignalsService,
+    private readonly recordCustomerAcquisitionOnApproval: RecordCustomerAcquisitionOnApprovalService,
   ) {}
 
   async execute(command: CreateReservationCommand): Promise<ReservationResult> {
@@ -220,6 +224,8 @@ export class CreateReservationUseCase {
       ? Reservation.createAutoApproved(reservationProps)
       : Reservation.create(reservationProps);
 
+    let acquisitionResult: RecordAcquisitionOnApprovalResult = { recorded: false };
+
     if (autoApprove) {
       // TASKS.md Phase 7 decision note item 2 / item 6: Table.reserve() runs
       // in the SAME advisory-locked transaction as the insert - one atomic
@@ -251,6 +257,20 @@ export class CreateReservationUseCase {
         }
         const reservedTable = tableToReserve.reserve(reservation.reservationId.value, now);
         await this.tableRepository.save(reservedTable);
+
+        // ADR-033 §3/§13: a reservation born Approved directly (never
+        // Pending) is still its first transition into Approved - recorded
+        // inside this same transaction.
+        acquisitionResult = await this.recordCustomerAcquisitionOnApproval.recordIfEligible({
+          restaurantId: branch.restaurantId.value,
+          branchId: branchId.value,
+          userId: party.userId,
+          reservationGuestId: party.reservationGuestId,
+          source,
+          sourceReservationId: reservation.reservationId.value,
+          now,
+          correlationId: command.correlationId,
+        });
       });
 
       // Phase 7.6 (Operational Signals, ADR-019): an auto-approved
@@ -318,6 +338,25 @@ export class CreateReservationUseCase {
         command.correlationId,
       ),
     );
+
+    if (acquisitionResult.recorded) {
+      await this.eventPublisher.publish(
+        new CustomerAcquisitionRecordedEvent(
+          this.idGenerator.generate(),
+          {
+            acquisitionId: acquisitionResult.acquisitionId!,
+            restaurantId: branch.restaurantId.value,
+            customerIdentityKey: acquisitionResult.customerIdentityKey!,
+            feeAmount: acquisitionResult.feeAmount!,
+            feeCurrency: acquisitionResult.feeCurrency!,
+            pricingRuleId: acquisitionResult.pricingRuleId!,
+            sourceReservationId: reservation.reservationId.value,
+          },
+          now,
+          command.correlationId,
+        ),
+      );
+    }
 
     return toReservationResult(reservation);
   }

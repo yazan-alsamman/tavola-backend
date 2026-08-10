@@ -39,6 +39,9 @@ import { ScheduleApprovedReservationSignalsService } from '../services/schedule-
 import { toReservationResult } from '../mappers/reservation-result.mapper';
 import { ApproveReservationCommand } from '../dto/approve-reservation.command';
 import { ReservationResult } from '../dto/reservation.result';
+import { RecordCustomerAcquisitionOnApprovalService } from '@modules/customer-acquisition/application/services/record-customer-acquisition-on-approval.service';
+import { RecordAcquisitionOnApprovalResult } from '@modules/customer-acquisition/application/dto/record-acquisition-on-approval.command';
+import { CustomerAcquisitionRecordedEvent } from '@modules/customer-acquisition/domain/events/customer-acquisition.events';
 
 /**
  * Phase 7.2 (Approval Workflow, architecture frozen 2026-07-20). Manual
@@ -73,6 +76,7 @@ export class ApproveReservationUseCase {
     private readonly expirationScheduler: ReservationExpirationSchedulerPort,
     private readonly autoRejectOverlappingPendingReservations: AutoRejectOverlappingPendingReservationsService,
     private readonly scheduleApprovedReservationSignals: ScheduleApprovedReservationSignalsService,
+    private readonly recordCustomerAcquisitionOnApproval: RecordCustomerAcquisitionOnApprovalService,
   ) {}
 
   async execute(command: ApproveReservationCommand): Promise<ReservationResult> {
@@ -106,6 +110,7 @@ export class ApproveReservationUseCase {
     );
 
     let autoRejected: Reservation[] = [];
+    let acquisitionResult: RecordAcquisitionOnApprovalResult = { recorded: false };
 
     await this.unitOfWork.execute(async () => {
       // ADR-026 decision #7 "Compatibility with ADR-013/023": the topology
@@ -140,6 +145,20 @@ export class ApproveReservationUseCase {
       }
       const reservedTable = table.reserve(reservationId.value, now);
       await this.tableRepository.save(reservedTable);
+
+      // ADR-033 §3/§13: the Reservation's first transition into Approved is
+      // the acquisition trigger - recorded inside this same transaction, in
+      // the same UnitOfWorkPort.execute() the status write itself is in.
+      acquisitionResult = await this.recordCustomerAcquisitionOnApproval.recordIfEligible({
+        restaurantId: existing.restaurantId.value,
+        branchId: existing.branchId.value,
+        userId: existing.userId?.value ?? null,
+        reservationGuestId: existing.reservationGuestId,
+        source: existing.source,
+        sourceReservationId: reservationId.value,
+        now,
+        correlationId: command.correlationId,
+      });
 
       // DOMAIN_MODEL.md: "approving the first automatically rejects any
       // other pending reservation whose time window overlaps the same
@@ -186,6 +205,25 @@ export class ApproveReservationUseCase {
         command.correlationId,
       ),
     );
+
+    if (acquisitionResult.recorded) {
+      await this.eventPublisher.publish(
+        new CustomerAcquisitionRecordedEvent(
+          this.idGenerator.generate(),
+          {
+            acquisitionId: acquisitionResult.acquisitionId!,
+            restaurantId: existing.restaurantId.value,
+            customerIdentityKey: acquisitionResult.customerIdentityKey!,
+            feeAmount: acquisitionResult.feeAmount!,
+            feeCurrency: acquisitionResult.feeCurrency!,
+            pricingRuleId: acquisitionResult.pricingRuleId!,
+            sourceReservationId: reservationId.value,
+          },
+          now,
+          command.correlationId,
+        ),
+      );
+    }
 
     for (const rejected of autoRejected) {
       await this.expirationScheduler.cancelExpiration(rejected.reservationId.value);

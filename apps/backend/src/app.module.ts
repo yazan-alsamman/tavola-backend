@@ -29,6 +29,7 @@ import { SubscriptionsModule } from './modules/subscriptions/subscriptions.modul
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { MessagingModule } from './modules/messaging/messaging.module';
 import { MenusModule } from './modules/menus/menus.module';
+import { CustomerAcquisitionModule } from './modules/customer-acquisition/customer-acquisition.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { MenusModule } from './modules/menus/menus.module';
     AnalyticsModule,
     MessagingModule,
     MenusModule,
+    CustomerAcquisitionModule,
   ],
 })
 export class AppModule {}

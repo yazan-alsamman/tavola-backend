@@ -74,7 +74,7 @@ Phase numbers below match TASKS.md exactly.
 | 16    | Testing                  | ⏳ Pending    | 0%       |
 | 17    | Deployment               | ⏳ Pending    | 0%       |
 | 18    | Menu Management           | 🟡 Architecture frozen (ADR-031, 2026-08-02; corrected by ADR-032, 2026-08-03), not implemented | 0%       |
-| 19    | Platform Back Office       | 🟡 Architecture frozen (ADR-033/034/035, 2026-08-04), not implemented | 0%       |
+| 19    | Platform Back Office       | 🟢 Phase 19.1 (ADR-034 subset) implemented 2026-08-04; Phase 19.2 (ADR-033, Customer Acquisition & Pricing) implemented 2026-08-09; Phase 19.3 (ADR-034 §2, Audit Log Read API) implemented 2026-08-10; Phase 19.4 (Organization Delete/Restore) implemented 2026-08-10; remaining ADR-034 items (Dashboard, Search, full self-service Organization management) not authorized | ~80%     |
 
 **Correction (2026-08-04):** rows 10 (Reviews), 12 (Subscription System), and 14 (Analytics) above previously showed stale statuses ("Pending"/"Architecture frozen, not implemented") from before these phases were actually completed; corrected to match `TASKS.md` and `README.md`, which have been authoritative on their real status since 2026-07-28. Rows 18 and 19 were previously absent from this table entirely — added for completeness. Per the Phase Numbering rule above, `TASKS.md` remains authoritative if this table ever drifts again.
 
@@ -583,9 +583,9 @@ Explicitly out of Phase 18: Reservations/Reviews/Offers/Messaging/Analytics/Noti
 
 # Phase 19 — Platform Back Office
 
-**Architecture frozen 2026-08-04 (DECISIONS.md ADR-033/ADR-034/ADR-035). Phase 19.1 — a curated subset of ADR-034 — implemented 2026-08-04**: Platform Roles/RBAC (`PlatformAdmin`/`PlatformSupport`), Platform Admin account CRUD, Restaurant Suspend/Reactivate/Delete/Restore, Organization Suspend/Reactivate/Emergency Ownership Transfer, and Account access control (Force Logout/Reset Credentials/Disable/Enable Login). See TASKS.md's Phase 19 section for the full checklist and Phase 19.1 Implementation Report.
+**Architecture frozen 2026-08-04 (DECISIONS.md ADR-033/ADR-034/ADR-035). Phase 19.1 — a curated subset of ADR-034 — implemented 2026-08-04**: Platform Roles/RBAC (`PlatformAdmin`/`PlatformSupport`), Platform Admin account CRUD, Restaurant Suspend/Reactivate/Delete/Restore, Organization Suspend/Reactivate/Emergency Ownership Transfer, and Account access control (Force Logout/Reset Credentials/Disable/Enable Login). **Phase 19.2 — the full ADR-033 checklist — implemented 2026-08-09**: Customer Acquisition & Pricing Engine (acquisition-on-approval, Reversal, Manual Recording, Pricing Rule Activation/Simulation, Revenue Reporting, Export). **Phase 19.3 — the Audit Log Read API (ADR-034 §2) — implemented 2026-08-10**: `AuditLogReaderPort` + `PrismaAuditLogReader` (ADR-035 Pattern 2), `GET /platform-admin/audit-logs`, filterable by actorId/targetType/targetId/action/organizationId, required/bounded date range. **Phase 19.4 — Organization Delete/Restore (ADR-034 §4) — implemented 2026-08-10**: mirrors Restaurant Delete/Restore exactly (soft delete via the existing `Organization.deletedAt` field, no new schema; no cascade to Restaurant/Branch/Employee/Reservation data, ever). See TASKS.md's Phase 19 section for the full checklist and all four Implementation/Engineering Reports.
 
-**Not yet authorized/implemented**: ADR-033 (Customer Acquisition & Pricing Engine) in full; ADR-034's Audit Log Read API, narrow per-entity lookup, Platform Dashboard composition, Notification delivery-status aggregation; complete Organization Management (Delete/Restore).
+**Not yet authorized/implemented**: narrow per-entity lookup, Platform Dashboard composition, Notification delivery-status aggregation; full self-service Organization management (Owner-initiated Invite/Change-Role/Remove/Transfer — distinct from the PlatformAdmin Delete/Restore now implemented); the BullMQ-async branch of Export for date ranges exceeding the synchronous Heavy-Operations budget.
 
 ---
 

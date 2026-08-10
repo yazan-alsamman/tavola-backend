@@ -119,13 +119,13 @@ All routes remain under the existing `/platform-admin` prefix, guarded by `Platf
 | Route family | Owning module | Mechanism (ADR-035) | Status |
 |---|---|---|---|
 | `/platform-admin/restaurants/:id/{suspend,reactivate,delete,restore}` | Restaurants (new PlatformAdmin controller) | Pattern 1 (via an internal Pattern 2 resolve — `PrismaPlatformAdminRestaurantLookupReader`) | **Implemented** |
-| `/platform-admin/organizations/:id/{suspend,reactivate,transfer-ownership}` | Organizations (module's first real use-case layer) | Pattern 1 | **Implemented** |
-| `/platform-admin/organizations/:id/{delete,restore}` | Organizations | Pattern 1 | Not implemented — out of Phase 19.1 scope ("complete Organization Management") |
+| `/platform-admin/organizations/:id/{suspend,reactivate,delete,restore,transfer-ownership}` | Organizations (module's first real use-case layer) | Pattern 1 | **Implemented** (delete/restore added Phase 19.4, 2026-08-10) |
 | `/platform-admin/accounts/:userId/{force-logout,reset-credentials,disable-login,enable-login}` | Authentication | Pattern 1 | **Implemented** |
 | `/platform-admin/admins` (CRUD) | Platform Admin | Pattern 1 | **Implemented** (create/list/get/update-role/deactivate/reactivate — reactivate and role-update are implementation-scope additions beyond ADR-034 §10's literal text) |
-| `/platform-admin/acquisitions*`, `/platform-admin/pricing*` | New `customer-acquisition` module (ADR-033) | Pattern 1 (mutation) | Not implemented |
-| `/platform-admin/revenue*`, `/platform-admin/dashboard` | New `customer-acquisition` module (revenue) + Platform Admin module (dashboard composition) | Pattern 2 | Not implemented |
-| `/platform-admin/audit-logs` | Platform Admin, reading via a new `AuditLogReaderPort` | Pattern 2 | Not implemented |
+| `/platform-admin/acquisitions*`, `/platform-admin/pricing*` | New `customer-acquisition` module (ADR-033) | Pattern 1 (mutation); List/Simulate read-only, no rebind needed | **Implemented** (Phase 19.2, 2026-08-09) |
+| `/platform-admin/revenue*` | New `customer-acquisition` module (revenue) | Pattern 2 | **Implemented** (Phase 19.2) |
+| `/platform-admin/dashboard` | Platform Admin module (dashboard composition) | Pattern 2 | Not implemented — out of Phase 19.2 scope |
+| `/platform-admin/audit-logs` | Platform Admin, reading via a new `AuditLogReaderPort` | Pattern 2 | **Implemented** (Phase 19.3, 2026-08-10) |
 | `/platform-admin/search` | Platform Admin (thin composition delegating to each target module's own query ports — no new search infrastructure) | Pattern 1/2 per target | Not implemented |
 
 `/organizations/subscription*` and `/platform-admin/organizations/:id/subscription*` (Subscriptions, ADR-027) are unaffected.
@@ -344,6 +344,10 @@ NOT_FOUND
 UNKNOWN_ERROR
 
 FILE_TOO_LARGE
+
+NO_MATCHING_PRICING_RULE
+
+PERCENTAGE_PRICING_NOT_SUPPORTED
 
 UNSUPPORTED_FILE_TYPE
 

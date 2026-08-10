@@ -29,8 +29,10 @@ import {
   RestaurantUpdatedEvent,
 } from '@modules/restaurants/domain/events/restaurant.events';
 import {
+  OrganizationDeletedEvent,
   OrganizationOwnershipTransferredEvent,
   OrganizationReactivatedEvent,
+  OrganizationRestoredEvent,
   OrganizationSuspendedEvent,
 } from '@modules/organizations/domain/events/organization.events';
 import {
@@ -58,6 +60,12 @@ import {
   ReservationReminderSentEvent,
 } from '@modules/reservations/domain/events/reservation.events';
 import { WaitlistEntryNotifiedEvent } from '@modules/waitlist/domain/events/waitlist.events';
+import {
+  CustomerAcquisitionRecordedEvent,
+  CustomerAcquisitionReversedEvent,
+  CustomerAcquisitionManuallyRecordedEvent,
+  AcquisitionPricingRuleActivatedEvent,
+} from '@modules/customer-acquisition/domain/events/customer-acquisition.events';
 import { NotificationCreatedEvent } from '@modules/notifications/domain/events/notification.events';
 import { AuditingEventPublisher } from './auditing-event-publisher';
 import { LoggingEventPublisher } from './logging-event-publisher';
@@ -535,6 +543,45 @@ describe('AuditingEventPublisher', () => {
         actorType: 'PlatformAdmin',
         targetType: 'Organization',
         targetId: organizationId,
+      });
+    });
+
+    it('maps OrganizationDeletedEvent to organization.deleted, attributed User for the (currently unbuilt) Owner path', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId, null);
+      await publisher.publish(new OrganizationDeletedEvent('event-1', orgPayload(), now, 'corr-1'));
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'organization.deleted',
+        actorId: userId,
+        actorType: 'User',
+        targetType: 'Organization',
+        targetId: organizationId,
+        organizationId,
+        correlationId: 'corr-1',
+      });
+    });
+
+    it('maps OrganizationDeletedEvent to actorType PlatformAdmin for the real, only-existing PlatformAdmin-authorized producer (Phase 19.4)', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId, 'PlatformAdmin');
+      await publisher.publish(new OrganizationDeletedEvent('event-1', orgPayload(), now));
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'organization.deleted',
+        actorType: 'PlatformAdmin',
+      });
+    });
+
+    it('maps OrganizationRestoredEvent to organization.restored, always PlatformAdmin (Phase 19.4 - no other actor has ever had this capability)', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId, null);
+      await publisher.publish(new OrganizationRestoredEvent('event-1', orgPayload(), now));
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'organization.restored',
+        actorId: userId,
+        actorType: 'PlatformAdmin',
+        targetType: 'Organization',
+        targetId: organizationId,
+        organizationId,
       });
     });
 
@@ -1221,6 +1268,114 @@ describe('AuditingEventPublisher', () => {
         actorType: 'System',
         targetType: 'Notification',
         targetId: notificationId,
+      });
+    });
+  });
+
+  describe('Phase 19.2 — Customer Acquisition & Pricing events (ADR-033)', () => {
+    const acquisitionId = 'aaaaaaaa-1111-4111-8111-111111111111';
+    const ruleId = 'bbbbbbbb-2222-4222-8222-222222222222';
+    const restaurantId = 'cccccccc-3333-4333-8333-333333333333';
+    const organizationId = '77777777-7777-4777-8777-777777777777';
+    const reservationId = '88888888-8888-4888-8888-888888888888';
+
+    it('maps CustomerAcquisitionRecordedEvent to customer_acquisition.recorded, actorType System (no single directly-attributable actor - reachable from 3 call sites)', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId);
+      await publisher.publish(
+        new CustomerAcquisitionRecordedEvent(
+          'event-1',
+          {
+            acquisitionId,
+            restaurantId,
+            customerIdentityKey: userId,
+            feeAmount: 1000,
+            feeCurrency: 'SYP',
+            pricingRuleId: ruleId,
+            sourceReservationId: reservationId,
+          },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'customer_acquisition.recorded',
+        actorId: null,
+        actorType: 'System',
+        targetType: 'CustomerAcquisition',
+        targetId: acquisitionId,
+        organizationId,
+      });
+    });
+
+    it('maps CustomerAcquisitionReversedEvent to customer_acquisition.reversed, always PlatformAdmin (ADR-033 §10 - never automatic)', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId);
+      await publisher.publish(
+        new CustomerAcquisitionReversedEvent(
+          'event-1',
+          { acquisitionId, restaurantId, reversedBy: userId, reversalReason: 'Duplicate approval' },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'customer_acquisition.reversed',
+        actorId: userId,
+        actorType: 'PlatformAdmin',
+        targetType: 'CustomerAcquisition',
+        targetId: acquisitionId,
+      });
+    });
+
+    it('maps CustomerAcquisitionManuallyRecordedEvent to customer_acquisition.manually_recorded, always PlatformAdmin (ADR-033 §11)', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId);
+      await publisher.publish(
+        new CustomerAcquisitionManuallyRecordedEvent(
+          'event-1',
+          {
+            acquisitionId,
+            restaurantId,
+            customerIdentityKey: userId,
+            feeAmount: 1000,
+            feeCurrency: 'SYP',
+            recordedBy: userId,
+            reason: 'Source mislabeled as WalkIn',
+          },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'customer_acquisition.manually_recorded',
+        actorId: userId,
+        actorType: 'PlatformAdmin',
+        targetType: 'CustomerAcquisition',
+        targetId: acquisitionId,
+      });
+    });
+
+    it('maps AcquisitionPricingRuleActivatedEvent to acquisition_pricing_rule.activated, always PlatformAdmin (ADR-033 §14-15)', async () => {
+      const { publisher, auditLogWriter } = createPublisher();
+      await publisher.publish(
+        new AcquisitionPricingRuleActivatedEvent(
+          'event-1',
+          {
+            ruleId,
+            scopeType: 'Platform',
+            scopeId: null,
+            feeType: 'Flat',
+            effectiveFrom: now.toISOString(),
+            createdBy: userId,
+          },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'acquisition_pricing_rule.activated',
+        actorId: userId,
+        actorType: 'PlatformAdmin',
+        targetType: 'AcquisitionPricingRule',
+        targetId: ruleId,
       });
     });
   });

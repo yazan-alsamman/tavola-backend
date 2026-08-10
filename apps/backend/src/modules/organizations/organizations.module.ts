@@ -9,6 +9,8 @@ import {
 } from './application/tokens/organizations.tokens';
 import { PlatformAdminSuspendOrganizationUseCase } from './application/use-cases/platform-admin-suspend-organization.use-case';
 import { PlatformAdminReactivateOrganizationUseCase } from './application/use-cases/platform-admin-reactivate-organization.use-case';
+import { PlatformAdminDeleteOrganizationUseCase } from './application/use-cases/platform-admin-delete-organization.use-case';
+import { PlatformAdminRestoreOrganizationUseCase } from './application/use-cases/platform-admin-restore-organization.use-case';
 import { PlatformAdminTransferOrganizationOwnershipUseCase } from './application/use-cases/platform-admin-transfer-organization-ownership.use-case';
 import { PlatformAdminOrganizationsController } from './presentation/controllers/platform-admin-organizations.controller';
 
@@ -46,6 +48,8 @@ import { PlatformAdminOrganizationsController } from './presentation/controllers
   providers: [
     PlatformAdminSuspendOrganizationUseCase,
     PlatformAdminReactivateOrganizationUseCase,
+    PlatformAdminDeleteOrganizationUseCase,
+    PlatformAdminRestoreOrganizationUseCase,
     PlatformAdminTransferOrganizationOwnershipUseCase,
     PrismaOrganizationRepository,
     PrismaOrganizationMemberRepository,

@@ -15,6 +15,7 @@ export function toPlatformAdminOrganizationResponse(
     name: result.name,
     status: result.status,
     updatedAt: result.updatedAt.toISOString(),
+    deletedAt: result.deletedAt ? result.deletedAt.toISOString() : null,
   };
 }
 

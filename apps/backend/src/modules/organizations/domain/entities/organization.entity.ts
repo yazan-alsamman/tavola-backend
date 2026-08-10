@@ -77,10 +77,31 @@ export class Organization extends Entity<OrganizationProps> {
     });
   }
 
+  /**
+   * ADR-034 §4 (Phase 19.4). Mirrors `Restaurant.softDelete()` exactly: no
+   * precondition on current `deletedAt` state, never touches `status` (§5's
+   * "no cascade, ever" principle - status and deletedAt are independent
+   * axes). Works regardless of current Active/Suspended status.
+   */
   softDelete(at: Date): Organization {
     return Organization.reconstitute({
       ...this.props,
       deletedAt: at,
+      updatedAt: at,
+    });
+  }
+
+  /**
+   * ADR-034 §4 (Phase 19.4) - closes the same standing "no restore
+   * capability" gap ADR-034 §3 already closed for Restaurant. Mirrors
+   * `Restaurant.restore()` exactly: only clears `deletedAt`, never touches
+   * `status` - a Suspended-and-deleted Organization restores back to
+   * Suspended, not Active; a separate Reactivate call is required for that.
+   */
+  restore(at: Date): Organization {
+    return Organization.reconstitute({
+      ...this.props,
+      deletedAt: null,
       updatedAt: at,
     });
   }

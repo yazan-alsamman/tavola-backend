@@ -503,6 +503,55 @@ async function seedSubscriptionPlans(): Promise<void> {
 }
 
 /**
+ * ADR-033 §20 - the Platform default acquisition fee (1000 SYP), seeded as a
+ * single `Platform`-scope `AcquisitionPricingRule` row - never a hardcoded
+ * application constant (CLAUDE.md's "never hardcoded values" rule, the same
+ * way `DEFAULT_SUBSCRIPTION_PLAN` above satisfies it for Subscriptions).
+ * `AcquisitionPricingRule` rows are never edited in place (ADR-033 §15), so
+ * this is idempotent by existence check, not `upsert`-by-natural-key like
+ * `seedSubscriptionPlans` above (this entity intentionally has no natural
+ * unique business key - re-running this seed against an environment that
+ * already has ANY non-archived Platform-scope rule is a pure no-op, exactly
+ * like `seedPlatformAdminBootstrap` below).
+ */
+const DEFAULT_ACQUISITION_PRICING_RULE = {
+  scopeType: 'Platform',
+  feeType: 'Flat',
+  flatAmount: 1000,
+  flatCurrency: 'SYP',
+  label: 'Default Platform acquisition fee',
+  // No PlatformAdmin actor exists at first-deploy seed time (this seed can
+  // run before `PLATFORM_ADMIN_BOOTSTRAP_*` creates one) - `createdBy` on
+  // this table is a plain audit-trail UUID column with no FK constraint
+  // (mirrors `AuditLog.actorId`'s own precedent), so a fixed system
+  // sentinel is safe here, never a real user id.
+  createdBy: '00000000-0000-4000-8000-000000000000',
+} as const;
+
+async function seedDefaultAcquisitionPricingRule(): Promise<void> {
+  const existing = await prisma.acquisitionPricingRule.findFirst({
+    where: { scopeType: 'Platform', archivedAt: null },
+  });
+  if (existing) {
+    return;
+  }
+
+  await prisma.acquisitionPricingRule.create({
+    data: {
+      scopeType: DEFAULT_ACQUISITION_PRICING_RULE.scopeType,
+      scopeId: null,
+      feeType: DEFAULT_ACQUISITION_PRICING_RULE.feeType,
+      flatAmount: DEFAULT_ACQUISITION_PRICING_RULE.flatAmount,
+      flatCurrency: DEFAULT_ACQUISITION_PRICING_RULE.flatCurrency,
+      effectiveFrom: new Date(),
+      effectiveTo: null,
+      label: DEFAULT_ACQUISITION_PRICING_RULE.label,
+      createdBy: DEFAULT_ACQUISITION_PRICING_RULE.createdBy,
+    },
+  });
+}
+
+/**
  * ADR-034 §10 (FR-19.1) operational bootstrap for the very first
  * PlatformAdmin account (`CreatePlatformAdminUseCase`'s own doc comment
  * references this exact `PLATFORM_ADMIN_BOOTSTRAP_*` row).
@@ -577,6 +626,7 @@ async function main(): Promise<void> {
   await seedOccasionCategories();
   await seedNotificationTemplates();
   await seedSubscriptionPlans();
+  await seedDefaultAcquisitionPricingRule();
   await seedPlatformAdminBootstrap();
 }
 

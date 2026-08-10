@@ -29,6 +29,8 @@ import { PlatformAdminActor } from '@modules/platform-admin/application/dto/plat
 import { PlatformAdminRole } from '@modules/platform-admin/domain/enums/platform-admin.enums';
 import { PlatformAdminSuspendOrganizationUseCase } from '../../application/use-cases/platform-admin-suspend-organization.use-case';
 import { PlatformAdminReactivateOrganizationUseCase } from '../../application/use-cases/platform-admin-reactivate-organization.use-case';
+import { PlatformAdminDeleteOrganizationUseCase } from '../../application/use-cases/platform-admin-delete-organization.use-case';
+import { PlatformAdminRestoreOrganizationUseCase } from '../../application/use-cases/platform-admin-restore-organization.use-case';
 import { PlatformAdminTransferOrganizationOwnershipUseCase } from '../../application/use-cases/platform-admin-transfer-organization-ownership.use-case';
 import { TransferOrganizationOwnershipRequestDto } from '../dto/transfer-organization-ownership.request.dto';
 import {
@@ -42,11 +44,12 @@ import {
 
 /**
  * ADR-034 §4/§6, API_GUIDELINES.md's Platform Back Office Route Ownership
- * table: `/platform-admin/organizations/:id/{suspend,reactivate,transfer-ownership}`
- * (Delete/Restore explicitly out of this phase's scope - "full complete
- * Organization Management" was not authorized). `:id` IS the organizationId
- * directly (unlike Restaurants, no lookup step needed) - pure Pattern 1.
- * This is `OrganizationsModule`'s first real controller/use-case layer.
+ * table: `/platform-admin/organizations/:id/{suspend,reactivate,delete,restore,transfer-ownership}`.
+ * `:id` IS the organizationId directly (unlike Restaurants, no lookup step
+ * needed) - pure Pattern 1. This is `OrganizationsModule`'s first real
+ * controller/use-case layer. Delete/Restore added Phase 19.4, mirroring
+ * Restaurant Delete/Restore's exact route/verb/authorization shape
+ * (Phase 19.1).
  */
 @ApiTags('Platform Admin - Organizations')
 @ApiExtraModels(ErrorResponseDto)
@@ -55,6 +58,8 @@ export class PlatformAdminOrganizationsController {
   constructor(
     private readonly suspendOrganizationUseCase: PlatformAdminSuspendOrganizationUseCase,
     private readonly reactivateOrganizationUseCase: PlatformAdminReactivateOrganizationUseCase,
+    private readonly deleteOrganizationUseCase: PlatformAdminDeleteOrganizationUseCase,
+    private readonly restoreOrganizationUseCase: PlatformAdminRestoreOrganizationUseCase,
     private readonly transferOwnershipUseCase: PlatformAdminTransferOrganizationOwnershipUseCase,
   ) {}
 
@@ -114,6 +119,73 @@ export class PlatformAdminOrganizationsController {
     @Req() request: Request,
   ): Promise<PlatformAdminOrganizationResponseDto> {
     const result = await this.reactivateOrganizationUseCase.execute({
+      organizationId: id,
+      actorId: actor.userId,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return toPlatformAdminOrganizationResponse(result);
+  }
+
+  @Post(':id/delete')
+  @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)
+  @RequirePlatformAdminRole(PlatformAdminRole.PlatformAdmin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Organization deleted successfully.')
+  @ApiOperation({
+    operationId: 'platformAdminDeleteOrganization',
+    summary: 'Soft-delete an Organization (PlatformAdmin only)',
+    description:
+      'ADR-034 §4 - soft delete only (deletedAt), never a hard delete. Never cascades to Restaurant/Branch/Employee/Reservation data - no cascade, ever (§5). Works regardless of current Active/Suspended status; re-applies harmlessly if already deleted.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Organization id' })
+  @ApiResponse({
+    status: 200,
+    description: 'Organization deleted',
+    type: PlatformAdminOrganizationResponseDto,
+  })
+  @ApiErrorResponse(403, 'Caller is not an active PlatformAdmin', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Organization not found', ['NOT_FOUND'])
+  async delete(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentPlatformAdmin() actor: PlatformAdminActor,
+    @Req() request: Request,
+  ): Promise<PlatformAdminOrganizationResponseDto> {
+    const result = await this.deleteOrganizationUseCase.execute({
+      organizationId: id,
+      actorId: actor.userId,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return toPlatformAdminOrganizationResponse(result);
+  }
+
+  @Post(':id/restore')
+  @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)
+  @RequirePlatformAdminRole(PlatformAdminRole.PlatformAdmin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Organization restored successfully.')
+  @ApiOperation({
+    operationId: 'platformAdminRestoreOrganization',
+    summary: 'Restore a previously soft-deleted Organization (PlatformAdmin only)',
+    description:
+      'ADR-034 §4 - closes the same standing "no restore capability" gap ADR-034 §3 already closed for Restaurant. Only clears deletedAt - never touches status, so a Suspended-and-deleted Organization restores back to Suspended, not Active.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'Organization id' })
+  @ApiResponse({
+    status: 200,
+    description: 'Organization restored',
+    type: PlatformAdminOrganizationResponseDto,
+  })
+  @ApiErrorResponse(403, 'Caller is not an active PlatformAdmin', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Organization not found', ['NOT_FOUND'])
+  @ApiErrorResponse(409, 'Organization is not currently deleted', ['CONFLICT'])
+  async restore(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentPlatformAdmin() actor: PlatformAdminActor,
+    @Req() request: Request,
+  ): Promise<PlatformAdminOrganizationResponseDto> {
+    const result = await this.restoreOrganizationUseCase.execute({
       organizationId: id,
       actorId: actor.userId,
       correlationId: request.headers['x-correlation-id'] as string | undefined,

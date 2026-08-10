@@ -3297,6 +3297,207 @@
           "response": []
         },
         {
+          "name": "List Branch Reservations (Restaurant Dashboard Calendar)",
+          "id": "49a8931a-7e9c-4c3a-b63e-42b80cd650c5",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/branches/{{branchId}}/reservations?dateFrom=2026-08-01&dateTo=2026-08-31&page=1&limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "restaurants",
+                "{{restaurantId}}",
+                "branches",
+                "{{branchId}}",
+                "reservations"
+              ],
+              "query": [
+                {
+                  "key": "dateFrom",
+                  "value": "2026-08-01",
+                  "description": "REQUIRED. Inclusive lower bound against reservationDate (YYYY-MM-DD). Day view: dateFrom = dateTo = the selected day."
+                },
+                {
+                  "key": "dateTo",
+                  "value": "2026-08-31",
+                  "description": "REQUIRED. Inclusive upper bound against reservationDate (YYYY-MM-DD). Week view: dateFrom = week start, dateTo = week end. Month view: dateFrom = month start, dateTo = month end. Max span: 366 days."
+                },
+                {
+                  "key": "status",
+                  "value": "Approved",
+                  "description": "Pending | Approved | Rejected | Cancelled | Completed | Expired | NoShow.",
+                  "disabled": true
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Defaults to 1."
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "Defaults to 20, max 100."
+                }
+              ]
+            },
+            "description": "## Purpose\nRestaurant Dashboard Calendar. Returns a branch's reservations within a required, bounded `[dateFrom, dateTo]` date range (inclusive, against `reservationDate`), enriched with Table and Customer (User/Guest) display fields - one joined query, no N+1, served entirely by the existing `(branchId, reservationDate, status)` index. Ordered `reservationStartTime` ascending.\n\nOne endpoint serves all three calendar views - pick `dateFrom`/`dateTo` accordingly:\n- **Day**: `dateFrom` = `dateTo` = the selected day, e.g. `dateFrom=2026-08-15&dateTo=2026-08-15`\n- **Week**: `dateFrom` = week start, `dateTo` = week end, e.g. `dateFrom=2026-08-10&dateTo=2026-08-16`\n- **Month**: `dateFrom` = month start, `dateTo` = month end, e.g. `dateFrom=2026-08-01&dateTo=2026-08-31`\n## Authorization\nBearer `{{accessToken}}` (Employee actor).\nGuards: JwtAuthGuard, SessionVersionGuard (no PermissionsGuard - this is a read, not a `reservations:*` mutation; see Notes).\n## Required Role\nEmployee only, branch-scoped (empty `branchIds` on the JWT = restaurant-wide scope). A Customer or OrganizationMember actor is rejected with 403 - OrganizationMember has no direct REST read access to the Reservation resource in this API (mirrors every other `/reservations/*` route's own actor-type rule).\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `branchId` | `{{branchId}}` | UUID path parameter |\n## Query Params\n- `dateFrom`, `dateTo` - REQUIRED, inclusive `reservationDate` range (max span 366 days)\n- `status` - optional single-status filter\n- `page`, `limit` - pagination\n## Body\n_None_\n## Success Response\nEnvelope message: \"Branch reservations retrieved successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR (missing/invalid dateFrom/dateTo, dateFrom after dateTo, range exceeds 366 days, invalid page/limit)\n- **401**: AUTH_INVALID_TOKEN, AUTH_EXPIRED_TOKEN\n- **403**: FORBIDDEN (not an Employee), EMPLOYEE_BRANCH_NOT_ASSIGNED (Employee not assigned to this branch)\n- **404**: NOT_FOUND (restaurant not found, or branch not found / belongs to another restaurant - IDOR-safe collapse)\n## Notes\n- Controller: `BranchReservationsController.list`\n- Full path: `/api/v1/restaurants/:restaurantId/branches/:branchId/reservations`\n- No new `reservations:*` permission was introduced for this route (TASKS.md Phase 8 §9: existing mutation permissions remain REST-command-only) - any branch-authorized Employee may read the calendar.\n- Audit-driven addition (2026-08-10): a full repository audit found no existing restaurant-dashboard reservation list/calendar endpoint - every prior `GET /reservations*` route is Customer-ownership-scoped. This single date-range endpoint was added instead of three redundant `/calendar/day|week|month` routes."
+          },
+          "response": [
+            {
+              "name": "200 OK - day view",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "",
+                  "host": [],
+                  "path": []
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": true,\n  \"message\": \"Branch reservations retrieved successfully.\",\n  \"data\": {\n    \"items\": [\n      {\n        \"reservationId\": \"6f1c9f1e-6b1a-4b0a-8b0e-2c9f1e6b1a4b\",\n        \"restaurantId\": \"{{restaurantId}}\",\n        \"branchId\": \"{{branchId}}\",\n        \"reservationDate\": \"2026-08-15\",\n        \"reservationStartTime\": \"2026-08-15T18:00:00.000Z\",\n        \"reservationEndTime\": \"2026-08-15T19:30:00.000Z\",\n        \"partySize\": 2,\n        \"status\": \"Approved\",\n        \"reservationSource\": \"Online\",\n        \"createdAt\": \"2026-08-01T09:15:00.000Z\",\n        \"updatedAt\": \"2026-08-01T09:15:05.000Z\",\n        \"specialRequest\": \"Window seat please\",\n        \"table\": {\n          \"tableId\": \"{{tableId}}\",\n          \"tableNumber\": \"T12\",\n          \"capacity\": 4\n        },\n        \"customer\": {\n          \"type\": \"User\",\n          \"name\": \"Jane Doe\",\n          \"phone\": \"+963991234567\"\n        }\n      }\n    ],\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 1\n  }\n}"
+            },
+            {
+              "name": "401 Unauthorized - missing/expired access token",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "",
+                  "host": [],
+                  "path": []
+                }
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Access token is missing, invalid, or expired.\",\n  \"error\": {\n    \"code\": \"AUTH_INVALID_TOKEN\"\n  }\n}"
+            },
+            {
+              "name": "403 Forbidden - actor is not an Employee",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "",
+                  "host": [],
+                  "path": []
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"message\": \"You do not have permission to perform this action.\",\n  \"error\": {\n    \"code\": \"FORBIDDEN\"\n  }\n}"
+            },
+            {
+              "name": "403 Forbidden - Employee not assigned to this branch",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "",
+                  "host": [],
+                  "path": []
+                }
+              },
+              "status": "Forbidden",
+              "code": 403,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Employee is not assigned to this branch.\",\n  \"error\": {\n    \"code\": \"EMPLOYEE_BRANCH_NOT_ASSIGNED\"\n  }\n}"
+            },
+            {
+              "name": "404 Not Found - branch not found (or belongs to another restaurant)",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "",
+                  "host": [],
+                  "path": []
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"message\": \"Branch not found.\",\n  \"error\": {\n    \"code\": \"NOT_FOUND\"\n  }\n}"
+            },
+            {
+              "name": "400 Bad Request - dateFrom after dateTo",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "",
+                  "host": [],
+                  "path": []
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"success\": false,\n  \"message\": \"\\\"dateFrom\\\" must not be after \\\"dateTo\\\".\",\n  \"error\": {\n    \"code\": \"VALIDATION_ERROR\"\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Branch reservations retrieved (200)', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Get one of the authenticated Customer",
           "id": "d3149b48-86ff-4f21-aa94-23ebcd4df6b9",
           "request": {

@@ -5,6 +5,7 @@ import { AuthorizationModule } from '@modules/authorization/authorization.module
 import { RestaurantsModule } from '@modules/restaurants/restaurants.module';
 import { BranchesModule } from '@modules/branches/branches.module';
 import { TablesModule } from '@modules/tables/tables.module';
+import { CustomerAcquisitionModule } from '@modules/customer-acquisition/customer-acquisition.module';
 import { WAITLIST_RECHECK_QUEUE_NAME } from '@shared/infrastructure/bullmq/waitlist-recheck-queue.constants';
 import { SearchAvailabilityUseCase } from './application/use-cases/search-availability.use-case';
 import { CreateReservationUseCase } from './application/use-cases/create-reservation.use-case';
@@ -19,6 +20,7 @@ import { RescheduleReservationUseCase } from './application/use-cases/reschedule
 import { CompleteReservationUseCase } from './application/use-cases/complete-reservation.use-case';
 import { MarkNoShowReservationUseCase } from './application/use-cases/mark-no-show-reservation.use-case';
 import { MarkTableReadyReservationUseCase } from './application/use-cases/mark-table-ready-reservation.use-case';
+import { ListBranchReservationsUseCase } from './application/use-cases/list-branch-reservations.use-case';
 import { ExpirePendingReservationUseCase } from './application/use-cases/expire-pending-reservation.use-case';
 import { PublishReservationReminderUseCase } from './application/use-cases/publish-reservation-reminder.use-case';
 import { ProcessLateArrivalUseCase } from './application/use-cases/process-late-arrival.use-case';
@@ -27,12 +29,14 @@ import { ScheduleApprovedReservationSignalsService } from './application/service
 import { RESERVATION_REPOSITORY } from './domain/repositories/reservation.repository';
 import { RESERVATION_HISTORY_REPOSITORY } from './domain/repositories/reservation-history.repository';
 import { MY_RESERVATIONS_READER } from './application/ports/my-reservations-reader.port';
+import { STAFF_RESERVATIONS_READER } from './application/ports/staff-reservations-reader.port';
 import { RESERVATION_GUEST_REPOSITORY } from './domain/repositories/reservation-guest.repository';
 import { RESERVATION_EXPIRATION_SCHEDULER } from './application/ports/reservation-expiration-scheduler.port';
 import { WAITLIST_RECHECK_SCHEDULER } from './application/ports/waitlist-recheck-scheduler.port';
 import { APPROVED_RESERVATION_OPERATIONAL_SCHEDULER } from './application/ports/approved-reservation-operational-scheduler.port';
 import { PrismaReservationRepository } from './infrastructure/persistence/prisma-reservation.repository';
 import { PrismaMyReservationsReader } from './infrastructure/persistence/prisma-my-reservations.reader';
+import { PrismaStaffReservationsReader } from './infrastructure/persistence/prisma-staff-reservations.reader';
 import { PrismaReservationHistoryRepository } from './infrastructure/persistence/prisma-reservation-history.repository';
 import { PrismaReservationGuestRepository } from './infrastructure/persistence/prisma-reservation-guest.repository';
 import { RESERVATION_QUEUE_NAME } from './infrastructure/bullmq/reservation-queue.constants';
@@ -45,6 +49,7 @@ import { BullMqApprovedReservationOperationalScheduler } from './infrastructure/
 import { ReservationReminderProcessor } from './infrastructure/bullmq/reservation-reminder.processor';
 import { LateArrivalProcessor } from './infrastructure/bullmq/late-arrival.processor';
 import { ReservationsController } from './presentation/controllers/reservations.controller';
+import { BranchReservationsController } from './presentation/controllers/branch-reservations.controller';
 
 /**
  * Phase 7.1 (Reservation Core): Search Availability + Create Reservation,
@@ -99,12 +104,31 @@ import { ReservationsController } from './presentation/controllers/reservations.
  * duplicating the `RestaurantSettings` lookup-with-fallback logic. Adds the
  * staff-only Table Ready endpoint (`reservations:tableready`,
  * `MarkTableReadyReservationUseCase`) alongside Complete/No-Show.
+ *
+ * Restaurant Dashboard Calendar (audit-driven addition, 2026-08-10): adds
+ * `BranchReservationsController` (`GET /restaurants/:restaurantId/branches/
+ * :branchId/reservations`, nested - see that controller's own doc comment for
+ * why, unlike the flat `ReservationsController`), `ListBranchReservationsUseCase`,
+ * and `STAFF_RESERVATIONS_READER`/`PrismaStaffReservationsReader` (mirrors
+ * `MY_RESERVATIONS_READER`'s own "one joined query, no N+1" shape). Reuses
+ * `BRANCH_REPOSITORY` (already available via the `BranchesModule` `forwardRef`
+ * above) for the branch-existence check; no new module dependency, no schema
+ * migration (served entirely by the existing `(branchId, reservationDate,
+ * status)` index), and no new permission slug (TASKS.md Phase 8 §9 forbids
+ * inventing `reservations:read` - see the use case's own doc comment).
  */
 @Module({
   imports: [
     AuthenticationModule,
     AuthorizationModule,
     RestaurantsModule,
+    // Phase 19.2 (ADR-033): supplies RecordCustomerAcquisitionOnApprovalService,
+    // called from both ApproveReservationUseCase and CreateReservationUseCase's
+    // auto-approve branch, inside their own UnitOfWorkPort transaction.
+    // CustomerAcquisitionModule imports RestaurantsModule/BranchesModule/
+    // OrganizationsModule/AuthenticationModule, none of which import
+    // ReservationsModule back - a one-directional edge, no forwardRef needed.
+    CustomerAcquisitionModule,
     // `forwardRef` (Phase 6, ADR-026): this module has no DIRECT edge back to
     // `BranchesModule`, but adding `forwardRef(() => ReservationsModule)` to
     // `TablesModule` below closes a genuine 3-module cycle at the Node/CommonJS
@@ -130,7 +154,7 @@ import { ReservationsController } from './presentation/controllers/reservations.
     BullModule.registerQueue({ name: REMINDER_QUEUE_NAME }),
     BullModule.registerQueue({ name: LATE_ARRIVAL_QUEUE_NAME }),
   ],
-  controllers: [ReservationsController],
+  controllers: [ReservationsController, BranchReservationsController],
   providers: [
     SearchAvailabilityUseCase,
     CreateReservationUseCase,
@@ -145,6 +169,7 @@ import { ReservationsController } from './presentation/controllers/reservations.
     CompleteReservationUseCase,
     MarkNoShowReservationUseCase,
     MarkTableReadyReservationUseCase,
+    ListBranchReservationsUseCase,
     ExpirePendingReservationUseCase,
     PublishReservationReminderUseCase,
     ProcessLateArrivalUseCase,
@@ -157,6 +182,8 @@ import { ReservationsController } from './presentation/controllers/reservations.
     { provide: RESERVATION_REPOSITORY, useExisting: PrismaReservationRepository },
     PrismaMyReservationsReader,
     { provide: MY_RESERVATIONS_READER, useExisting: PrismaMyReservationsReader },
+    PrismaStaffReservationsReader,
+    { provide: STAFF_RESERVATIONS_READER, useExisting: PrismaStaffReservationsReader },
     PrismaReservationHistoryRepository,
     { provide: RESERVATION_HISTORY_REPOSITORY, useExisting: PrismaReservationHistoryRepository },
     PrismaReservationGuestRepository,

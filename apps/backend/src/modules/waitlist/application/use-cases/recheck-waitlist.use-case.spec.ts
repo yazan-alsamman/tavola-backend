@@ -21,6 +21,8 @@ import { InMemoryReservationRepository } from '../../../../../test/reservations/
 import { InMemoryReservationWaitlistEntryRepository } from '../../../../../test/waitlist/support/in-memory-reservation-waitlist-entry.repository';
 import { InMemoryWaitlistExpirationScheduler } from '../../../../../test/waitlist/support/in-memory-waitlist-expiration-scheduler';
 import { InMemoryApprovedReservationOperationalScheduler } from '../../../../../test/reservations/support/in-memory-approved-reservation-operational-scheduler';
+import { InMemoryAcquisitionRecordingService } from '../../../../../test/reservations/support/in-memory-acquisition-recording.service';
+import type { RecordCustomerAcquisitionOnApprovalService } from '@modules/customer-acquisition/application/services/record-customer-acquisition-on-approval.service';
 import { ScheduleApprovedReservationSignalsService } from '@modules/reservations/application/services/schedule-approved-reservation-signals.service';
 
 describe('RecheckWaitlistUseCase (FIFO-ordered first-serviceable)', () => {
@@ -127,6 +129,7 @@ describe('RecheckWaitlistUseCase (FIFO-ordered first-serviceable)', () => {
       new ImmediateUnitOfWork(),
       expirationScheduler,
       scheduleApprovedReservationSignals,
+      new InMemoryAcquisitionRecordingService() as unknown as RecordCustomerAcquisitionOnApprovalService,
     );
 
     const useCase = new RecheckWaitlistUseCase(

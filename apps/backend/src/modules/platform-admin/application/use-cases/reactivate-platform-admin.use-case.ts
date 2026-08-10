@@ -13,6 +13,17 @@ import { PlatformAdminNotFoundException } from '../../domain/exceptions/platform
 import { PlatformAdminAccountReactivatedEvent } from '../../domain/events/platform-admin.events';
 import { ReactivatePlatformAdminCommand } from '../dto/platform-admin-account.dto';
 
+/**
+ * Phase 19.1 targeted remediation: mirrors the reference-equality no-op guard
+ * `PlatformAdminSuspendRestaurantUseCase`/`PlatformAdminReactivateOrganizationUseCase`
+ * use ("stateChanged" check before the save + event/audit write) - this
+ * module has no rich domain entity to compare by reference (`PlatformAdminRecord`
+ * is a plain repository DTO, per `DeactivatePlatformAdminUseCase`'s own
+ * precondition-check style), so the equivalent guard reads `existing.revokedAt`
+ * directly: already-active is a no-op that skips the repository write and the
+ * event/audit publish entirely, instead of unconditionally re-reactivating and
+ * re-publishing on every call.
+ */
 @Injectable()
 export class ReactivatePlatformAdminUseCase {
   constructor(
@@ -27,6 +38,10 @@ export class ReactivatePlatformAdminUseCase {
     const existing = await this.platformAdminRepository.findById(command.platformAdminId);
     if (existing === null) {
       throw new PlatformAdminNotFoundException();
+    }
+
+    if (existing.revokedAt === null) {
+      return;
     }
 
     await this.platformAdminRepository.reactivate(command.platformAdminId);

@@ -10,5 +10,6 @@ export function toPlatformAdminOrganizationResult(
     name: props.name,
     status: organization.status,
     updatedAt: props.updatedAt,
+    deletedAt: props.deletedAt,
   };
 }

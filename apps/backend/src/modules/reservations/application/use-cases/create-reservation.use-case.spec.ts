@@ -23,6 +23,8 @@ import { InMemoryBranchRepository } from '../../../../../test/branches/support/i
 import { InMemoryTableRepository } from '../../../../../test/tables/support/in-memory-table.repository';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
 import { InMemoryReservationRepository } from '../../../../../test/reservations/support/in-memory-reservation.repository';
+import { InMemoryAcquisitionRecordingService } from '../../../../../test/reservations/support/in-memory-acquisition-recording.service';
+import type { RecordCustomerAcquisitionOnApprovalService } from '@modules/customer-acquisition/application/services/record-customer-acquisition-on-approval.service';
 import { InMemoryReservationGuestRepository } from '../../../../../test/reservations/support/in-memory-reservation-guest.repository';
 import { InMemoryReservationExpirationScheduler } from '../../../../../test/reservations/support/in-memory-reservation-expiration-scheduler';
 import { InMemoryApprovedReservationOperationalScheduler } from '../../../../../test/reservations/support/in-memory-approved-reservation-operational-scheduler';
@@ -169,6 +171,7 @@ describe('CreateReservationUseCase', () => {
       new ImmediateUnitOfWork(),
       expirationScheduler,
       scheduleApprovedReservationSignals,
+      new InMemoryAcquisitionRecordingService() as unknown as RecordCustomerAcquisitionOnApprovalService,
     );
 
     return {

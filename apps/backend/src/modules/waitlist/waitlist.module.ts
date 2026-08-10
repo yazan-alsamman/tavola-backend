@@ -6,6 +6,7 @@ import { RestaurantsModule } from '@modules/restaurants/restaurants.module';
 import { BranchesModule } from '@modules/branches/branches.module';
 import { TablesModule } from '@modules/tables/tables.module';
 import { ReservationsModule } from '@modules/reservations/reservations.module';
+import { CustomerAcquisitionModule } from '@modules/customer-acquisition/customer-acquisition.module';
 import { WAITLIST_RECHECK_QUEUE_NAME } from '@shared/infrastructure/bullmq/waitlist-recheck-queue.constants';
 import { JoinWaitlistUseCase } from './application/use-cases/join-waitlist.use-case';
 import { CancelWaitlistEntryUseCase } from './application/use-cases/cancel-waitlist-entry.use-case';
@@ -56,6 +57,12 @@ import { WaitlistController } from './presentation/controllers/waitlist.controll
     BranchesModule,
     TablesModule,
     ReservationsModule,
+    // Phase 19.2 (ADR-033): WaitlistPromotionService's auto-approval branch
+    // also records a Customer Acquisition, exactly like
+    // CreateReservationUseCase's own auto-approve branch (same shared
+    // service, imported one-directionally - CustomerAcquisitionModule never
+    // imports WaitlistModule back).
+    CustomerAcquisitionModule,
     BullModule.registerQueue({ name: WAITLIST_QUEUE_NAME }),
     BullModule.registerQueue({ name: WAITLIST_RECHECK_QUEUE_NAME }),
   ],

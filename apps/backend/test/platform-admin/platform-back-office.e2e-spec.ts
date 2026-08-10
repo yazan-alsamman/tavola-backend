@@ -277,6 +277,206 @@ describe('Platform Back Office (e2e, Phase 19.1)', () => {
       .expect(200);
   });
 
+  // ---------------------------------------------------------------------
+  // Organization Delete/Restore (ADR-034 §4, Phase 19.4)
+  // ---------------------------------------------------------------------
+
+  it('deletes an Organization (soft delete, no cascade), generates a correctly-attributed audit row, then restores it - dependent Restaurant/OrganizationMember data is preserved throughout', async () => {
+    if (!dbAvailable || !app) return;
+    const { organizationId, restaurantId, ownerId } = await seedOrgWithRestaurant('org-delete');
+    const { email } = await seedPlatformAdmin('org-delete-admin');
+    const token = await loginPlatformAdmin(email);
+    const correlationId = `${TEST_PREFIX}corr-${uniqueId()}`;
+
+    const deleteRes = await authed(
+      token,
+      'post',
+      `/api/v1/platform-admin/organizations/${organizationId}/delete`,
+    )
+      .set('x-correlation-id', correlationId)
+      .send({})
+      .expect(200);
+    expect(deleteRes.body).toMatchObject({ success: true, message: expect.any(String), meta: {} });
+    expect(deleteRes.body.data.deletedAt).not.toBeNull();
+
+    const deletedOrg = await prisma.organization.findUnique({ where: { id: organizationId } });
+    expect(deletedOrg?.deletedAt).not.toBeNull();
+    expect(deletedOrg?.status).toBe('Active');
+
+    // No cascade, ever - the Restaurant and its Owner membership are untouched.
+    const restaurant = await prisma.restaurant.findUnique({ where: { id: restaurantId } });
+    expect(restaurant?.status).toBe('Active');
+    expect(restaurant?.deletedAt).toBeNull();
+    const member = await prisma.organizationMember.findUnique({
+      where: { organizationId_userId: { organizationId, userId: ownerId } },
+    });
+    expect(member?.role).toBe('Owner');
+    expect(member?.status).toBe('Active');
+
+    const auditRow = await prisma.auditLog.findFirst({
+      where: { action: 'organization.deleted', targetId: organizationId },
+      orderBy: { occurredAt: 'desc' },
+    });
+    expect(auditRow?.actorType).toBe('PlatformAdmin');
+    expect(auditRow?.organizationId).toBe(organizationId);
+    expect(auditRow?.correlationId).toBe(correlationId);
+
+    const restoreRes = await authed(
+      token,
+      'post',
+      `/api/v1/platform-admin/organizations/${organizationId}/restore`,
+    )
+      .send({})
+      .expect(200);
+    expect(restoreRes.body.data.deletedAt).toBeNull();
+
+    const restoredOrg = await prisma.organization.findUnique({ where: { id: organizationId } });
+    expect(restoredOrg?.deletedAt).toBeNull();
+
+    const restoreAuditRow = await prisma.auditLog.findFirst({
+      where: { action: 'organization.restored', targetId: organizationId },
+      orderBy: { occurredAt: 'desc' },
+    });
+    expect(restoreAuditRow?.actorType).toBe('PlatformAdmin');
+  });
+
+  it('deleting an already-deleted Organization re-applies harmlessly (200, re-stamps deletedAt) rather than erroring', async () => {
+    if (!dbAvailable || !app) return;
+    const { organizationId } = await seedOrgWithRestaurant('org-redelete');
+    const { email } = await seedPlatformAdmin('org-redelete-admin');
+    const token = await loginPlatformAdmin(email);
+
+    await authed(token, 'post', `/api/v1/platform-admin/organizations/${organizationId}/delete`)
+      .send({})
+      .expect(200);
+    const firstDeletedAt = (await prisma.organization.findUnique({ where: { id: organizationId } }))
+      ?.deletedAt;
+
+    await authed(token, 'post', `/api/v1/platform-admin/organizations/${organizationId}/delete`)
+      .send({})
+      .expect(200);
+    const secondDeletedAt = (
+      await prisma.organization.findUnique({ where: { id: organizationId } })
+    )?.deletedAt;
+
+    expect(secondDeletedAt).not.toBeNull();
+    expect(secondDeletedAt?.getTime()).toBeGreaterThanOrEqual(firstDeletedAt!.getTime());
+  });
+
+  it('rejects (409) restoring an Organization that is not currently deleted', async () => {
+    if (!dbAvailable || !app) return;
+    const { organizationId } = await seedOrgWithRestaurant('org-restore-conflict');
+    const { email } = await seedPlatformAdmin('org-restore-conflict-admin');
+    const token = await loginPlatformAdmin(email);
+
+    await authed(token, 'post', `/api/v1/platform-admin/organizations/${organizationId}/restore`)
+      .send({})
+      .expect(409);
+  });
+
+  it('returns 404 for an unknown Organization id on both delete and restore (IDOR-safe)', async () => {
+    if (!dbAvailable || !app) return;
+    const { email } = await seedPlatformAdmin('org-delete-404');
+    const token = await loginPlatformAdmin(email);
+    const unknownId = randomUUID();
+
+    await authed(token, 'post', `/api/v1/platform-admin/organizations/${unknownId}/delete`)
+      .send({})
+      .expect(404);
+    await authed(token, 'post', `/api/v1/platform-admin/organizations/${unknownId}/restore`)
+      .send({})
+      .expect(404);
+  });
+
+  it('denies PlatformSupport on Organization delete/restore (403, mutation is PlatformAdmin-only), allows PlatformAdmin', async () => {
+    if (!dbAvailable || !app) return;
+    const { organizationId } = await seedOrgWithRestaurant('org-delete-rbac');
+    const { email: supportEmail } = await seedPlatformAdmin(
+      'org-delete-support',
+      'PlatformSupport',
+    );
+    const supportToken = await loginPlatformAdmin(supportEmail);
+
+    await authed(
+      supportToken,
+      'post',
+      `/api/v1/platform-admin/organizations/${organizationId}/delete`,
+    )
+      .send({})
+      .expect(403);
+
+    const { email: adminEmail } = await seedPlatformAdmin('org-delete-rbac-admin');
+    const adminToken = await loginPlatformAdmin(adminEmail);
+
+    await authed(
+      adminToken,
+      'post',
+      `/api/v1/platform-admin/organizations/${organizationId}/delete`,
+    )
+      .send({})
+      .expect(200);
+  });
+
+  it('denies a non-PlatformAdmin actor entirely (Organization Owner token, representative of Customer/Employee - PlatformAdminGuard rejects any non-PlatformAdmin JWT identically, never reaching role-tier logic)', async () => {
+    if (!dbAvailable || !app) return;
+    const { organizationId } = await seedOrgWithRestaurant('org-delete-owner-denied');
+    const ownerEmail = `${TEST_PREFIX}owner-denied-${uniqueId()}@example.com`;
+    await seedOwnerAndOrganization(prisma, {
+      email: ownerEmail,
+      passwordHash,
+      organizationName: `${TEST_PREFIX}OwnerDeniedOrg ${uniqueId()}`,
+    });
+    const ownerLoginRes = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: ownerEmail, password: PASSWORD, deviceName: 'e2e', deviceType: 'web' })
+      .expect(200);
+    const ownerToken = ownerLoginRes.body.data.accessToken as string;
+
+    await authed(
+      ownerToken,
+      'post',
+      `/api/v1/platform-admin/organizations/${organizationId}/delete`,
+    )
+      .send({})
+      .expect(403);
+  });
+
+  it('cross-tenant safety: deleting Organization A never affects Organization B', async () => {
+    if (!dbAvailable || !app) return;
+    const { organizationId: orgA, restaurantId: restaurantA } =
+      await seedOrgWithRestaurant('org-cross-a');
+    const { organizationId: orgB, restaurantId: restaurantB } =
+      await seedOrgWithRestaurant('org-cross-b');
+    const { email } = await seedPlatformAdmin('org-cross-admin');
+    const token = await loginPlatformAdmin(email);
+
+    await authed(token, 'post', `/api/v1/platform-admin/organizations/${orgA}/delete`)
+      .send({})
+      .expect(200);
+
+    const deletedA = await prisma.organization.findUnique({ where: { id: orgA } });
+    const untouchedB = await prisma.organization.findUnique({ where: { id: orgB } });
+    expect(deletedA?.deletedAt).not.toBeNull();
+    expect(untouchedB?.deletedAt).toBeNull();
+
+    const restaurantAAfter = await prisma.restaurant.findUnique({ where: { id: restaurantA } });
+    const restaurantBAfter = await prisma.restaurant.findUnique({ where: { id: restaurantB } });
+    expect(restaurantAAfter?.status).toBe('Active');
+    expect(restaurantAAfter?.deletedAt).toBeNull();
+    expect(restaurantBAfter?.status).toBe('Active');
+  });
+
+  it('Swagger document exposes the Organization delete/restore routes', async () => {
+    if (!dbAvailable || !app) return;
+    const { SwaggerModule, DocumentBuilder } = await import('@nestjs/swagger');
+    const document = SwaggerModule.createDocument(
+      app as unknown as Parameters<typeof SwaggerModule.createDocument>[0],
+      new DocumentBuilder().build(),
+    );
+    expect(document.paths).toHaveProperty('/api/v1/platform-admin/organizations/{id}/delete');
+    expect(document.paths).toHaveProperty('/api/v1/platform-admin/organizations/{id}/restore');
+  });
+
   it('emergency-transfers Organization ownership to another Active member (ADR-034 §6)', async () => {
     if (!dbAvailable || !app) return;
     const { organizationId, ownerId } = await seedOrgWithRestaurant('transfer');
@@ -381,5 +581,71 @@ describe('Platform Back Office (e2e, Phase 19.1)', () => {
     await authed(token, 'post', `/api/v1/platform-admin/admins/${self!.id}/deactivate`)
       .send({})
       .expect(409);
+  });
+
+  // Phase 19.1 targeted remediation: live verification of the previous phase
+  // found POST /platform-admin/admins/:id/reactivate was not idempotent at
+  // the audit/event layer (a redundant call on an already-active account
+  // republished PlatformAdminAccountReactivatedEvent and wrote a second
+  // audit_logs row). Real-HTTP proof the fix holds through the actual guard
+  // stack, not just the use-case unit test.
+  it('reactivate is idempotent: transitions once from revoked, then a repeat call on an already-active account writes no new audit row', async () => {
+    if (!dbAvailable || !app) return;
+    const { email } = await seedPlatformAdmin('reactivate-admin');
+    const token = await loginPlatformAdmin(email);
+
+    const targetEmail = `${TEST_PREFIX}reactivate-target-${uniqueId()}@example.com`;
+    const targetUserId = randomUUID();
+    const targetPlatformAdminId = randomUUID();
+    await prisma.user.create({
+      data: {
+        id: targetUserId,
+        firstName: 'Target',
+        lastName: 'Support',
+        email: targetEmail,
+        passwordHash,
+        language: 'en',
+        status: 'Active',
+        emailVerified: true,
+      },
+    });
+    await prisma.platformAdmin.create({
+      data: {
+        id: targetPlatformAdminId,
+        userId: targetUserId,
+        role: 'PlatformSupport',
+        revokedAt: new Date(),
+      },
+    });
+
+    await authed(token, 'post', `/api/v1/platform-admin/admins/${targetPlatformAdminId}/reactivate`)
+      .send({})
+      .expect(200);
+
+    const afterFirstCall = await prisma.platformAdmin.findUnique({
+      where: { id: targetPlatformAdminId },
+    });
+    expect(afterFirstCall?.revokedAt).toBeNull();
+
+    const auditRowsAfterFirstCall = await prisma.auditLog.findMany({
+      where: {
+        action: 'platform_admin.admin_account.reactivated',
+        targetId: targetPlatformAdminId,
+      },
+    });
+    expect(auditRowsAfterFirstCall).toHaveLength(1);
+
+    // Repeat call on the now-already-active account.
+    await authed(token, 'post', `/api/v1/platform-admin/admins/${targetPlatformAdminId}/reactivate`)
+      .send({})
+      .expect(200);
+
+    const auditRowsAfterSecondCall = await prisma.auditLog.findMany({
+      where: {
+        action: 'platform_admin.admin_account.reactivated',
+        targetId: targetPlatformAdminId,
+      },
+    });
+    expect(auditRowsAfterSecondCall).toHaveLength(1);
   });
 });

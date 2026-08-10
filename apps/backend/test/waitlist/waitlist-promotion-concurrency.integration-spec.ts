@@ -15,8 +15,10 @@ import { EventPublisherPort } from '@shared/application/ports/event-publisher.po
 import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
 import { DomainEvent } from '@shared/domain/base/domain-event.base';
 import { BranchId } from '@shared/domain/value-objects/identifiers.vo';
+import { RecordCustomerAcquisitionOnApprovalService } from '@modules/customer-acquisition/application/services/record-customer-acquisition-on-approval.service';
 import { isDatabaseReachable, skipUnlessDatabaseAvailable } from '../support/live-database';
 import { createPrismaIntegrationModule } from '../support/prisma-integration-testing';
+import { InMemoryAcquisitionRecordingService } from '../reservations/support/in-memory-acquisition-recording.service';
 
 const rawPrisma = new PrismaClient();
 const TEST_PREFIX = 'waitlist-promo-concurrency-';
@@ -86,6 +88,7 @@ describe('WaitlistPromotionService concurrency (real Postgres, real advisory loc
       unitOfWork,
       new NoopWaitlistExpirationScheduler(),
       scheduleApprovedReservationSignals,
+      new InMemoryAcquisitionRecordingService() as unknown as RecordCustomerAcquisitionOnApprovalService,
     );
 
     org = await rawPrisma.organization.create({
