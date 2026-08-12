@@ -237,6 +237,40 @@ describe('PrismaOrganizationMemberRepository tenant enforcement (integration)', 
     await expect(repository.findOwner(OrganizationId.create(orgA.id))).rejects.toBeInstanceOf(
       TenantContextMissingException,
     );
+
+    await expect(repository.findById(memberA.id)).rejects.toBeInstanceOf(
+      TenantContextMissingException,
+    );
+
+    await expect(repository.listByOrganization(1, 20)).rejects.toBeInstanceOf(
+      TenantContextMissingException,
+    );
+  });
+
+  // Phase 19.7 (Organization self-service member management) - `findById`/
+  // `listByOrganization` are the two new methods this phase adds, both
+  // reused by ChangeRole/Remove/Transfer/List. Same "bound context always
+  // wins" proof as the existing methods above.
+  it("findById never resolves another tenant's member row, even by its own real id", async () => {
+    if (!dbAvailable) return;
+
+    const foundAsA = await asOrgA(() => repository.findById(memberB.id));
+    expect(foundAsA).toBeNull();
+
+    const foundAsB = await asOrgB(() => repository.findById(memberB.id));
+    expect(foundAsB?.toProps().id).toBe(memberB.id);
+  });
+
+  it('listByOrganization only returns members of the bound tenant', async () => {
+    if (!dbAvailable) return;
+
+    const { items: itemsAsA } = await asOrgA(() => repository.listByOrganization(1, 100));
+    expect(itemsAsA.map((m) => m.toProps().id)).toContain(memberA.id);
+    expect(itemsAsA.map((m) => m.toProps().id)).not.toContain(memberB.id);
+
+    const { items: itemsAsB } = await asOrgB(() => repository.listByOrganization(1, 100));
+    expect(itemsAsB.map((m) => m.toProps().id)).toContain(memberB.id);
+    expect(itemsAsB.map((m) => m.toProps().id)).not.toContain(memberA.id);
   });
 
   it('keeps concurrent Org A / Org B repository reads isolated under real concurrent DB I/O', async () => {

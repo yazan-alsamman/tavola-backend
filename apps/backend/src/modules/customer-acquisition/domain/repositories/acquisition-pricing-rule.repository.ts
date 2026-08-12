@@ -15,9 +15,16 @@ export interface AcquisitionPricingRuleRepository {
     scopeId: string | null,
   ): Promise<AcquisitionPricingRule[]>;
 
+  /**
+   * `filters` (ADR-034 §13 — narrow lookup, "PricingRule by name/id"; `label`
+   * is this entity's closest field to "name"): `label` is a case-insensitive
+   * partial match (ILIKE), `id` is exact. Both optional/omittable, matching
+   * this method's existing unfiltered callers.
+   */
   findMany(
     page: number,
     limit: number,
+    filters?: { label?: string; id?: string },
   ): Promise<{ items: AcquisitionPricingRule[]; total: number }>;
 
   save(rule: AcquisitionPricingRule): Promise<void>;

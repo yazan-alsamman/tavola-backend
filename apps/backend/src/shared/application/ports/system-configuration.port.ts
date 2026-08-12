@@ -29,4 +29,8 @@ export const SYSTEM_CONFIG_KEYS = {
   // Phase 20.X (ADR-014 execution) - the account-deletion grace period, in
   // days, before AnonymizeUserAccountUseCase's BullMQ job runs.
   anonymizationGracePeriodDays: 'anonymizationGracePeriodDays',
+  // Phase 19.8 (Owner Invite, ADR-036) - invitation token TTL, in hours.
+  // Mirrors passwordResetTokenTtlHours's exact pattern (DB-seeded,
+  // business-configurable). Default 168h = 7 days.
+  organizationInvitationTtlHours: 'organizationInvitationTtlHours',
 } as const;

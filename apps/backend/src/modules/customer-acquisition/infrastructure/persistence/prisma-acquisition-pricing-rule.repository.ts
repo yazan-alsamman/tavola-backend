@@ -39,14 +39,23 @@ export class PrismaAcquisitionPricingRuleRepository implements AcquisitionPricin
   async findMany(
     page: number,
     limit: number,
+    filters?: { label?: string; id?: string },
   ): Promise<{ items: AcquisitionPricingRule[]; total: number }> {
+    const where = {
+      ...(filters?.label
+        ? { label: { contains: filters.label, mode: 'insensitive' as const } }
+        : {}),
+      ...(filters?.id ? { id: filters.id } : {}),
+    };
+
     const [rows, total] = await Promise.all([
       this.prismaContext.client.acquisitionPricingRule.findMany({
+        where,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
-      this.prismaContext.client.acquisitionPricingRule.count(),
+      this.prismaContext.client.acquisitionPricingRule.count({ where }),
     ]);
     return { items: rows.map(AcquisitionPricingRulePrismaMapper.toDomain), total };
   }

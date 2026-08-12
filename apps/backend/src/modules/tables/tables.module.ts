@@ -63,7 +63,9 @@ import { TableController } from './presentation/controllers/table.controller';
  */
 @Module({
   imports: [
-    AuthenticationModule,
+    // Phase 19.8 (Owner Invite, ADR-036) correction: forwardRef - see
+    // branches.module.ts's matching fix for the exact boot-time symptom.
+    forwardRef(() => AuthenticationModule),
     AuthorizationModule,
     RestaurantsModule,
     forwardRef(() => BranchesModule),

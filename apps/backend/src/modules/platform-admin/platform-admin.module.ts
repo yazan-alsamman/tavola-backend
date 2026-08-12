@@ -1,9 +1,15 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { PrismaModule } from '@infrastructure/prisma/prisma.module';
 import { AuthenticationModule } from '@modules/authentication/authentication.module';
+import { RestaurantsModule } from '@modules/restaurants/restaurants.module';
+import { OrganizationsModule } from '@modules/organizations/organizations.module';
+import { SubscriptionsModule } from '@modules/subscriptions/subscriptions.module';
+import { CustomerAcquisitionModule } from '@modules/customer-acquisition/customer-acquisition.module';
+import { NotificationsModule } from '@modules/notifications/notifications.module';
 import { PlatformAdminController } from './presentation/controllers/platform-admin.controller';
 import { PlatformAdminAccountsController } from './presentation/controllers/platform-admin-accounts.controller';
 import { PlatformAdminAuditLogsController } from './presentation/controllers/platform-admin-audit-logs.controller';
+import { PlatformAdminDashboardController } from './presentation/controllers/platform-admin-dashboard.controller';
 import { PlatformAdminGuard } from './presentation/guards/platform-admin.guard';
 import { PlatformAdminRoleGuard } from './presentation/guards/platform-admin-role.guard';
 import { PlatformAdminLoginUseCase } from './application/use-cases/platform-admin-login.use-case';
@@ -14,6 +20,7 @@ import { ReactivatePlatformAdminUseCase } from './application/use-cases/reactiva
 import { ListPlatformAdminsUseCase } from './application/use-cases/list-platform-admins.use-case';
 import { GetPlatformAdminUseCase } from './application/use-cases/get-platform-admin.use-case';
 import { ListAuditLogsUseCase } from './application/use-cases/list-audit-logs.use-case';
+import { GetPlatformDashboardUseCase } from './application/use-cases/get-platform-dashboard.use-case';
 import { JwtPlatformAdminTokenService } from './infrastructure/security/jwt-platform-admin-token.service';
 import { PrismaPlatformAdminRepository } from './infrastructure/persistence/prisma-platform-admin.repository';
 import { PrismaAuditLogReader } from './infrastructure/persistence/prisma-audit-log.reader';
@@ -32,13 +39,42 @@ import { AUDIT_LOG_READER } from './application/ports/audit-log-reader.port';
  * imports `SubscriptionsModule` (also via `forwardRef`) - the same
  * three-module cycle documented on `RestaurantsModule`'s own
  * `AuthenticationModule` import.
+ *
+ * Phase 19 — Platform Dashboard composition endpoint: this module now also
+ * imports `RestaurantsModule`/`OrganizationsModule`/`SubscriptionsModule`/
+ * `CustomerAcquisitionModule` (all `forwardRef`, since each of those modules
+ * already imports this one back for `PlatformAdminGuard`/`PlatformAdminRoleGuard`
+ * - a genuine direct two-module cycle per edge, resolved the same way as the
+ * `AuthenticationModule` cycle above) purely to inject their exported
+ * Pattern-2 reader tokens (`PLATFORM_ADMIN_RESTAURANT_LOOKUP_READER`,
+ * `PLATFORM_ADMIN_ORGANIZATION_STATS_READER`,
+ * `PLATFORM_ADMIN_SUBSCRIPTION_STATS_READER`, `ACQUISITION_CROSS_TENANT_READER`)
+ * into `GetPlatformDashboardUseCase` - no new repository, no new business
+ * logic, pure composition (see that use case's own doc comment).
+ *
+ * Phase 19.6 — Platform Dashboard Messaging section: also imports
+ * `NotificationsModule` (`forwardRef`, since it now imports this module back
+ * for `PLATFORM_ADMIN_NOTIFICATION_STATS_READER` via its own
+ * `AuthenticationModule` edge - see `NotificationsModule`'s own doc comment
+ * for the exact three-module cycle this closes) purely to inject that token
+ * into `GetPlatformDashboardUseCase`, closing the Messaging dependency
+ * Phase 19.5 disclosed as unimplemented.
  */
 @Module({
-  imports: [PrismaModule, forwardRef(() => AuthenticationModule)],
+  imports: [
+    PrismaModule,
+    forwardRef(() => AuthenticationModule),
+    forwardRef(() => RestaurantsModule),
+    forwardRef(() => OrganizationsModule),
+    forwardRef(() => SubscriptionsModule),
+    forwardRef(() => CustomerAcquisitionModule),
+    forwardRef(() => NotificationsModule),
+  ],
   controllers: [
     PlatformAdminController,
     PlatformAdminAccountsController,
     PlatformAdminAuditLogsController,
+    PlatformAdminDashboardController,
   ],
   providers: [
     PlatformAdminGuard,
@@ -51,6 +87,7 @@ import { AUDIT_LOG_READER } from './application/ports/audit-log-reader.port';
     ListPlatformAdminsUseCase,
     GetPlatformAdminUseCase,
     ListAuditLogsUseCase,
+    GetPlatformDashboardUseCase,
     JwtPlatformAdminTokenService,
     PrismaPlatformAdminRepository,
     PrismaAuditLogReader,

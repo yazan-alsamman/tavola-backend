@@ -1,10 +1,12 @@
 import {
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -30,16 +32,21 @@ import { PlatformAdminSuspendRestaurantUseCase } from '../../application/use-cas
 import { PlatformAdminReactivateRestaurantUseCase } from '../../application/use-cases/platform-admin-reactivate-restaurant.use-case';
 import { PlatformAdminDeleteRestaurantUseCase } from '../../application/use-cases/platform-admin-delete-restaurant.use-case';
 import { PlatformAdminRestoreRestaurantUseCase } from '../../application/use-cases/platform-admin-restore-restaurant.use-case';
+import { SearchRestaurantsUseCase } from '../../application/use-cases/search-restaurants.use-case';
 import { PlatformAdminRestaurantResponseDto } from '../dto/platform-admin-restaurant.response.dto';
+import { SearchRestaurantsQueryDto } from '../dto/search-restaurants.query.dto';
+import { RestaurantLookupListResponseDto } from '../dto/restaurant-lookup.response.dto';
 import { toPlatformAdminRestaurantResponse } from './platform-admin-restaurant-response.mapper';
 
 /**
- * ADR-034 §3, API_GUIDELINES.md's Platform Back Office Route Ownership table:
- * `/platform-admin/restaurants/:id/{suspend,reactivate,delete,restore}`,
- * owned by Restaurants, Pattern 1 (after an internal Pattern 2 resolve - see
- * `PlatformAdminSuspendRestaurantUseCase`'s doc comment). Every route is
- * PlatformAdmin-tier only (PlatformSupport is read-only, ADR-034 §11) - all
- * four are destructive/state-mutating.
+ * ADR-034 §3/§13, API_GUIDELINES.md's Platform Back Office Route Ownership
+ * table: `/platform-admin/restaurants/:id/{suspend,reactivate,delete,restore}`
+ * (Pattern 1, after an internal Pattern 2 resolve - see
+ * `PlatformAdminSuspendRestaurantUseCase`'s doc comment) plus
+ * `GET /platform-admin/restaurants` (Pattern 2, narrow lookup/search, Phase
+ * 19.7). The four lifecycle routes are PlatformAdmin-tier only
+ * (destructive/state-mutating); the lookup route is read-only, available to
+ * both Platform tiers (ADR-034 §11).
  */
 @ApiTags('Platform Admin - Restaurants')
 @ApiExtraModels(ErrorResponseDto)
@@ -50,7 +57,49 @@ export class PlatformAdminRestaurantsController {
     private readonly reactivateRestaurantUseCase: PlatformAdminReactivateRestaurantUseCase,
     private readonly deleteRestaurantUseCase: PlatformAdminDeleteRestaurantUseCase,
     private readonly restoreRestaurantUseCase: PlatformAdminRestoreRestaurantUseCase,
+    private readonly searchRestaurantsUseCase: SearchRestaurantsUseCase,
   ) {}
+
+  @Get()
+  @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)
+  @RequirePlatformAdminRole(PlatformAdminRole.PlatformAdmin, PlatformAdminRole.PlatformSupport)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Restaurants retrieved successfully.')
+  @ApiOperation({
+    operationId: 'platformAdminSearchRestaurants',
+    summary: 'Narrow lookup of Restaurants by name/slug (PlatformAdmin or PlatformSupport)',
+    description:
+      'ADR-034 §13 - a support tool, not a search engine. Case-insensitive partial match on name or slug; q omitted lists every Restaurant. Includes soft-deleted rows.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Restaurants retrieved',
+    type: RestaurantLookupListResponseDto,
+  })
+  @ApiErrorResponse(403, 'Caller is not an active Platform Admin', ['FORBIDDEN'])
+  async search(
+    @Query() query: SearchRestaurantsQueryDto,
+  ): Promise<RestaurantLookupListResponseDto> {
+    const result = await this.searchRestaurantsUseCase.execute({
+      q: query.q ?? '',
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+    });
+    return {
+      items: result.items.map((row) => ({
+        id: row.id,
+        organizationId: row.organizationId,
+        name: row.name,
+        slug: row.slug,
+        status: row.status,
+        deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
+      })),
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+    };
+  }
 
   @Post(':id/suspend')
   @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)

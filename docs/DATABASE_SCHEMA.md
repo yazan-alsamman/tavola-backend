@@ -75,6 +75,39 @@ Indexes
 
 ---
 
+## Organization Invitations
+
+Purpose
+
+Phase 19.8 (Owner Invite, ADR-036, Option B). An explicit, acceptance-required invitation for a new or existing User to join an Organization as a non-Owner member. A dedicated table, not a nullable `OrganizationMember.userId` (Option A, rejected) — `OrganizationMember` is untouched by this table's existence.
+
+Fields
+
+* id (UUID)
+* organizationId
+* email (trim+lowercase-normalized, matches `Email.vo`)
+* role (`Admin`, `Billing`, `Staff` — never `Owner`, enforced at the application layer)
+* tokenHash (unique — SHA-256 of a 32-byte opaque token, same `OpaqueTokenService` mechanism as `password_reset_tokens`; the raw token is never stored)
+* invitedByUserId
+* status (`Pending`, `Accepted`, `Revoked` — `Expired` is never persisted, always resolved live from `expiresAt`, mirroring `password_reset_tokens`' own un-swept-TTL precedent)
+* expiresAt (default TTL 168h / 7 days, `SystemConfiguration.organizationInvitationTtlHours`)
+* acceptedAt (nullable)
+* createdAt
+* updatedAt
+
+Indexes
+
+* organizationId
+* composite (organizationId, email)
+* unique tokenHash
+* partial unique index `organization_invitations_org_email_one_pending_key` on (organizationId, email) WHERE status = 'Pending' — at most one live invitation per organization+email at a time (hand-written SQL in the migration, same "Prisma DSL cannot express a WHERE-filtered unique index" precedent as `tables_merge_group_one_primary_key`/`menus_restaurant_one_default_key`)
+
+Tenancy
+
+Deliberately **not** a `DIRECT_TENANT_OWNED_MODEL` (unlike `OrganizationMember`) — acceptance is looked up by raw token with no bound `TenantContext`. Issuance/list/revoke pass `organizationId` explicitly at the application layer instead. See TENANCY.md and ADR-036.
+
+---
+
 ## Users
 
 Purpose
@@ -1116,72 +1149,6 @@ Indexes
 
 ---
 
-## Menus (Future — Not Yet Implemented)
-
-**Documented as planned schema but never implemented in Prisma (no migration, no model) — matches the disposition of Payments/Invoices below.** `src/modules/menus` exists only as an unregistered scaffold (not wired into `AppModule`); do not treat this or the two following sections (Menu Categories, Menu Items) as live.
-
-Restaurant menus.
-
-Fields
-
-* id (UUID)
-* restaurantId
-* branchId (nullable — null means the menu applies to all branches of the restaurant; set when a specific branch has a distinct menu)
-* name
-* isActive
-* createdAt
-* updatedAt
-* deletedAt
-
-Indexes
-
-* restaurantId
-* branchId
-
----
-
-## Menu Categories (Future — Not Yet Implemented)
-
-Fields
-
-* id (UUID)
-* menuId
-* name
-* sortOrder
-* createdAt
-* updatedAt
-
-Indexes
-
-* menuId
-
----
-
-## Menu Items (Future — Not Yet Implemented)
-
-Fields
-
-* id (UUID)
-* menuCategoryId
-* name
-* description
-* price
-* currency
-* imageId
-* available
-* createdAt
-* updatedAt
-
-Indexes
-
-* menuCategoryId
-
-Notes
-
-* `currency` on a Menu Item follows the owning Branch's currency (see Branches table); denormalized onto the row at write time so historical prices remain correctly denominated even if a branch's currency setting changes later.
-
----
-
 ## Reviews
 
 **Phase 10 architecture frozen (owner-approved) — see `TASKS.md`'s "Phase 10 — Reviews: Pre-implementation architecture decisions" for the full freeze.** `Review.restaurantId` is a direct FK to `Restaurant` — the sole tenant-resolution hop (`Review.restaurantId → Restaurant.organizationId`); `Review` carries **no `organizationId` column** and is **not** in `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS` (see TENANCY.md). `Review.userId` is the ownership column, spanning organizations exactly like `Reservation.userId`/`Notification.userId` — the two concerns (tenant resolution vs. ownership authorization) are independent, same pattern already established platform-wide.
@@ -1274,8 +1241,9 @@ Fields
 
 * id (UUID)
 * userId (FK → Users, required)
-* type (source domain eventType, e.g. `ReservationApproved` — see `EVENTS.md`'s Phase 9 event→notification allow-list)
+* type (source domain eventType, e.g. `ReservationApproved` — see `EVENTS.md`'s Phase 9 event→notification allow-list; Phase 19.9 adds `PlatformAdminDirectMessage`, `PlatformAdminBroadcast`, `OrganizationMemberBroadcast`)
 * templateId (nullable, FK → NotificationTemplates — traceability only; `title`/`body` below are already resolved/snapshotted at creation time and are never re-read from the template for rendering)
+* broadcastId (nullable, FK → NotificationBroadcasts, `ON DELETE SET NULL` — Phase 19.9/ADR-037; set only for a Platform Admin/Restaurant Owner broadcast row, null otherwise)
 * title (resolved, snapshotted at creation in the recipient's language)
 * body (resolved, snapshotted at creation)
 * data (nullable JSON — minimal deep-link payload only, e.g. `{ reservationId }`/`{ entryId }`; never `ReservationGuest` contact fields or internal audit identifiers — see the PII policy below)
@@ -1296,6 +1264,31 @@ Indexes
 
 * userId
 * composite (userId, read) — serves the common "unread notifications for this user" query
+* composite unique (broadcastId, userId) — Phase 19.9/ADR-037; Postgres allows unlimited NULL `broadcastId` values (same convention as `User.email`/`phone`), so this is a no-op for every non-broadcast row. Makes `NotificationBroadcastFanoutProcessor`'s batch insert (`createMany({ skipDuplicates: true })`) idempotent under BullMQ job retry — the mechanism `NotificationBroadcast.md`'s Idempotency section below relies on.
+
+---
+
+## Notification Broadcasts
+
+**Phase 19.9 (ADR-037), additive migration `phase_19_9_notification_broadcast`.** Tracks one Platform Admin or Restaurant Owner "send to all eligible Customers" action end to end — idempotency/resume anchor for `NotificationBroadcastFanoutProcessor` plus the observability counters the internal notification system requires. Not tenant-scoped (same reasoning as `Notification` itself — the audience it drives is platform-global, per the Owner's explicit product decision that a Restaurant Owner broadcast reaches every eligible Customer, not only customers who have interacted with that restaurant).
+
+Fields
+
+* id (UUID)
+* senderType (`PlatformAdmin` | `OrganizationMember`)
+* senderId (User.id of the sender — plain column, not a FK, mirrors `AuditLog.actorId`'s existing precedent)
+* organizationId (nullable — populated only for an `OrganizationMember` sender; audit/traceability only, never used to scope the audience)
+* title, body (the broadcast content, snapshotted onto every fanned-out `Notification` row)
+* totalRecipients (nullable Int — a point-in-time audience-size snapshot resolved at request time, observability only)
+* processedCount, succeededCount, failedCount (Int, default 0 — advance per batch; `failedCount` here means "already-delivered, skipped by the unique-index dedupe on retry," not an operational error)
+* status (`Pending` [default] | `Processing` | `Completed` | `Failed`)
+* lastProcessedUserId (nullable — a keyset cursor over `User.id`, the fan-out processor's resume point)
+* createdAt
+* updatedAt
+
+Indexes
+
+* status
 
 ---
 
@@ -1357,7 +1350,7 @@ Indexes
 
 ## Menu Management
 
-**Phase 18 architecture freeze (2026-08-02, ADR-031), ownership/availability/isFeatured corrected by the Phase 18 reconciliation (2026-08-03, ADR-032) — not implemented, no Prisma model or migration exists; implementation requires separate explicit authorization.** Seven tables: `Menu` (root, 1:N per Restaurant, exactly one `isDefault` per Restaurant — corrected by ADR-032, see below), `MenuCategory`, `MenuItem`, `MenuItemOptionGroup`, `MenuItemOption`, `MenuItemAddOn`, `MenuItemAvailability` (new, ADR-032). All seven are transitively tenant-owned via `restaurantId -> Restaurant.organizationId` (same pattern as `Offer`/`Review`/`Branch`) — not added to `DIRECT_TENANT_OWNED_MODELS`, no `organizationId` column on any of them. All except `MenuItemAvailability` are soft-deletable (`deletedAt`); `MenuItemAvailability` has no `deletedAt`, matching `WorkingHours`/`BranchWorkingHours`'s existing whole-set-replacement precedent for schedule rows (see below). `MenuCategory`/`MenuItem`/`MenuItemOptionGroup`/`MenuItemOption`/`MenuItemAddOn`/`MenuItemAvailability` all additionally carry a denormalized `restaurantId` (not only their immediate parent FK) so tenancy resolution stays a single hop through `RestaurantRepository` regardless of nesting depth — see `DOMAIN_MODEL.md`'s Menu Aggregate. Money fields use `Decimal(10,2)`, matching `Offer.discountValue` — not integer cents. Images (`imageFileId`) are bare nullable `String @db.Uuid` pointers into the existing polymorphic `File` table (`FileOwnerType.Menu`, already reserved), with no Prisma relation, matching `Restaurant.logoId` — the File module requires no changes. **Currency caveat:** `MenuItem.currency` is a plain per-item field on a Restaurant-level Menu, which is only self-consistent when a Restaurant's Branches all share one currency — see `DOMAIN_MODEL.md`'s Menu Aggregate Notes for the documented tension with the Branch Aggregate's "currency is Branch-owned" decision, flagged as a Remaining Decision, not resolved here. `displayOrder` reorder (Menus within a Restaurant; Categories within a Menu; Items within a Category) is a bulk-replace pattern with no prior precedent outside this aggregate (`RestaurantGallery.sortOrder` is set once on insert and never bulk-reordered) — see `API_GUIDELINES.md`'s reorder-endpoint convention.
+**Phase 18 architecture freeze (2026-08-02, ADR-031), ownership/availability/isFeatured corrected by the Phase 18 reconciliation (2026-08-03, ADR-032). Implemented 2026-08-03 (commit `e4a5efc`); verified and documentation-reconciled 2026-08-10 — see `TASKS.md`'s "Phase 18 — Menu Management: Reconciliation & Completion Report."** Seven tables, all present in the live schema and migrated: `Menu` (root, 1:N per Restaurant, exactly one `isDefault` per Restaurant — corrected by ADR-032, see below), `MenuCategory`, `MenuItem`, `MenuItemOptionGroup`, `MenuItemOption`, `MenuItemAddOn`, `MenuItemAvailability` (new, ADR-032). All seven are transitively tenant-owned via `restaurantId -> Restaurant.organizationId` (same pattern as `Offer`/`Review`/`Branch`) — not added to `DIRECT_TENANT_OWNED_MODELS`, no `organizationId` column on any of them. All except `MenuItemAvailability` are soft-deletable (`deletedAt`); `MenuItemAvailability` has no `deletedAt`, matching `WorkingHours`/`BranchWorkingHours`'s existing whole-set-replacement precedent for schedule rows (see below). `MenuCategory`/`MenuItem`/`MenuItemOptionGroup`/`MenuItemOption`/`MenuItemAddOn`/`MenuItemAvailability` all additionally carry a denormalized `restaurantId` (not only their immediate parent FK) so tenancy resolution stays a single hop through `RestaurantRepository` regardless of nesting depth — see `DOMAIN_MODEL.md`'s Menu Aggregate. Money fields use `Decimal(10,2)`, matching `Offer.discountValue` — not integer cents. Images (`imageFileId`) are bare nullable `String @db.Uuid` pointers into the existing polymorphic `File` table (`FileOwnerType.Menu`, already reserved), with no Prisma relation, matching `Restaurant.logoId` — the File module requires no changes. **Currency caveat:** `MenuItem.currency` is a plain per-item field on a Restaurant-level Menu, which is only self-consistent when a Restaurant's Branches all share one currency — see `DOMAIN_MODEL.md`'s Menu Aggregate Notes for the documented tension with the Branch Aggregate's "currency is Branch-owned" decision, flagged as a Remaining Decision, not resolved here. `displayOrder` reorder (Menus within a Restaurant; Categories within a Menu; Items within a Category) is a bulk-replace pattern with no prior precedent outside this aggregate (`RestaurantGallery.sortOrder` is set once on insert and never bulk-reordered) — see `API_GUIDELINES.md`'s reorder-endpoint convention.
 
 ### Menu
 

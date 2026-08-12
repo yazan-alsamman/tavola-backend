@@ -1,11 +1,13 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -32,24 +34,27 @@ import { PlatformAdminReactivateOrganizationUseCase } from '../../application/us
 import { PlatformAdminDeleteOrganizationUseCase } from '../../application/use-cases/platform-admin-delete-organization.use-case';
 import { PlatformAdminRestoreOrganizationUseCase } from '../../application/use-cases/platform-admin-restore-organization.use-case';
 import { PlatformAdminTransferOrganizationOwnershipUseCase } from '../../application/use-cases/platform-admin-transfer-organization-ownership.use-case';
+import { SearchOrganizationsUseCase } from '../../application/use-cases/search-organizations.use-case';
 import { TransferOrganizationOwnershipRequestDto } from '../dto/transfer-organization-ownership.request.dto';
 import {
   OwnershipTransferResponseDto,
   PlatformAdminOrganizationResponseDto,
 } from '../dto/platform-admin-organization.response.dto';
+import { SearchOrganizationsQueryDto } from '../dto/search-organizations.query.dto';
+import { OrganizationLookupListResponseDto } from '../dto/organization-lookup.response.dto';
 import {
   toOwnershipTransferResponse,
   toPlatformAdminOrganizationResponse,
 } from './platform-admin-organization-response.mapper';
 
 /**
- * ADR-034 §4/§6, API_GUIDELINES.md's Platform Back Office Route Ownership
- * table: `/platform-admin/organizations/:id/{suspend,reactivate,delete,restore,transfer-ownership}`.
- * `:id` IS the organizationId directly (unlike Restaurants, no lookup step
- * needed) - pure Pattern 1. This is `OrganizationsModule`'s first real
- * controller/use-case layer. Delete/Restore added Phase 19.4, mirroring
- * Restaurant Delete/Restore's exact route/verb/authorization shape
- * (Phase 19.1).
+ * ADR-034 §4/§6/§13, API_GUIDELINES.md's Platform Back Office Route
+ * Ownership table: `/platform-admin/organizations/:id/{suspend,reactivate,delete,restore,transfer-ownership}`
+ * (`:id` IS the organizationId directly - pure Pattern 1) plus
+ * `GET /platform-admin/organizations` (Pattern 2, narrow lookup/search,
+ * Phase 19.7). This is `OrganizationsModule`'s first real controller/use-case
+ * layer. Delete/Restore added Phase 19.4, mirroring Restaurant Delete/Restore's
+ * exact route/verb/authorization shape (Phase 19.1).
  */
 @ApiTags('Platform Admin - Organizations')
 @ApiExtraModels(ErrorResponseDto)
@@ -61,7 +66,48 @@ export class PlatformAdminOrganizationsController {
     private readonly deleteOrganizationUseCase: PlatformAdminDeleteOrganizationUseCase,
     private readonly restoreOrganizationUseCase: PlatformAdminRestoreOrganizationUseCase,
     private readonly transferOwnershipUseCase: PlatformAdminTransferOrganizationOwnershipUseCase,
+    private readonly searchOrganizationsUseCase: SearchOrganizationsUseCase,
   ) {}
+
+  @Get()
+  @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)
+  @RequirePlatformAdminRole(PlatformAdminRole.PlatformAdmin, PlatformAdminRole.PlatformSupport)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Organizations retrieved successfully.')
+  @ApiOperation({
+    operationId: 'platformAdminSearchOrganizations',
+    summary: 'Narrow lookup of Organizations by name/slug (PlatformAdmin or PlatformSupport)',
+    description:
+      'ADR-034 §13 - a support tool, not a search engine. Case-insensitive partial match on name or slug; q omitted lists every Organization. Includes soft-deleted rows.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Organizations retrieved',
+    type: OrganizationLookupListResponseDto,
+  })
+  @ApiErrorResponse(403, 'Caller is not an active Platform Admin', ['FORBIDDEN'])
+  async search(
+    @Query() query: SearchOrganizationsQueryDto,
+  ): Promise<OrganizationLookupListResponseDto> {
+    const result = await this.searchOrganizationsUseCase.execute({
+      q: query.q ?? '',
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+    });
+    return {
+      items: result.items.map((row) => ({
+        id: row.id,
+        name: row.name,
+        slug: row.slug,
+        status: row.status,
+        deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
+      })),
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+    };
+  }
 
   @Post(':id/suspend')
   @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)

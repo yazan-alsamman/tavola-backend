@@ -318,7 +318,7 @@ Employee
 
 ## Menu Aggregate
 
-**Architecture frozen 2026-08-02 (ADR-031, Phase 18), ownership/availability/isFeatured corrected 2026-08-03 (ADR-032) — not implemented, no Prisma model exists; implementation requires separate explicit authorization.** Resolves the roadmap gap recorded in `TASKS.md`'s Phase 15.5 note and `PRODUCT_REQUIREMENTS.md`'s `FR-08.1`.
+**Architecture frozen 2026-08-02 (ADR-031, Phase 18), ownership/availability/isFeatured corrected 2026-08-03 (ADR-032). Implemented 2026-08-03; verified and documentation-reconciled 2026-08-10 — see `TASKS.md`'s "Phase 18 — Menu Management: Reconciliation & Completion Report."** Resolves the roadmap gap recorded in `TASKS.md`'s Phase 15.5 note and `PRODUCT_REQUIREMENTS.md`'s `FR-08.1`.
 
 ### Root
 
@@ -632,7 +632,7 @@ Business use cases depend on policies — they never embed permission logic inli
 | `TablePolicy` | Table CRUD, merge/split, availability overrides |
 | `EmployeePolicy` | Invite, assign roles, branch assignments, deactivate |
 | `OfferPolicy` | Offer lifecycle, publication |
-| `MenuPolicy` (Phase 18, architecture frozen 2026-08-02, ADR-031, corrected 2026-08-03 by ADR-032 — not implemented) | Menu/Category/Item/OptionGroup/Option/AddOn/Availability management, gated by the new `menu:manage` permission slug for Employees; Owner/Admin full access via existing role hierarchy; Customer read-only, no ownership check (public data) |
+| `MenuPolicy` (Phase 18, ADR-031/ADR-032, implemented 2026-08-03 as `assertActorCanManageMenu`) | Menu/Category/Item/OptionGroup/Option/AddOn/Availability management, gated by the new `menu:manage` permission slug for Employees; Owner/Admin full access via existing role hierarchy; Customer read-only, no ownership check (public data) |
 | `ReviewPolicy` | Create review (post-completion, ownership); owning Customer or Restaurant Owner/Admin may delete; Restaurant Owner/Admin only may reply (zero-or-one, immutable); no Employee participation, no `reviews:reply` slug |
 | `SubscriptionPolicy` | Plan limits, feature gating |
 | `AnalyticsPolicy` | Report access by role and scope |
@@ -694,19 +694,19 @@ ReviewRepository
 
 OfferRepository
 
-MenuRepository (Phase 18, architecture frozen 2026-08-02, ADR-031 — not implemented)
+MenuRepository (Phase 18, ADR-031, implemented 2026-08-03)
 
-MenuCategoryRepository (Phase 18, ADR-031 — not implemented)
+MenuCategoryRepository (Phase 18, ADR-031, implemented 2026-08-03)
 
-MenuItemRepository (Phase 18, ADR-031 — not implemented)
+MenuItemRepository (Phase 18, ADR-031, implemented 2026-08-03)
 
-MenuItemOptionGroupRepository (Phase 18, ADR-031 — not implemented)
+MenuItemOptionGroupRepository (Phase 18, ADR-031, implemented 2026-08-03)
 
-MenuItemOptionRepository (Phase 18, ADR-031 — not implemented)
+MenuItemOptionRepository (Phase 18, ADR-031, implemented 2026-08-03)
 
-MenuItemAddOnRepository (Phase 18, ADR-031 — not implemented)
+MenuItemAddOnRepository (Phase 18, ADR-031, implemented 2026-08-03)
 
-MenuItemAvailabilityRepository (Phase 18, added by ADR-032 — not implemented)
+MenuItemAvailabilityRepository (Phase 18, added by ADR-032, implemented 2026-08-03)
 
 SubscriptionRepository
 
@@ -729,6 +729,10 @@ Examples
 OrganizationCreated
 
 OrganizationMemberInvited
+
+OrganizationInvitationRevoked
+
+OrganizationInvitationAccepted
 
 OrganizationMemberRoleChanged
 
@@ -869,9 +873,17 @@ Events are immutable and published only after successful business operations.
 * Push delivery failures are retried through background jobs (BullMQ, `NotificationQueue`), following the platform's existing best-effort/log-and-swallow convention for non-critical post-commit work (the same pattern already used for the Waitlist re-check enqueue in Cancel/NoShow) — not a transactional-outbox-backed guarantee. A process crash between persisting the `Notification` row and enqueuing its delivery job loses only that notification's push attempt, silently; the durable in-app record is never lost, since it is written first, before the delivery job is even enqueued.
 * `NotificationProvider` implementations must be interchangeable (ADR-007's Anti-Corruption Layer) — application/domain code never communicates with a specific provider (e.g. OneSignal) directly.
 * Notification content is resolved through a `NotificationTemplate` in the recipient's preferred language (`User.language`); if no translation exists for that language, the template's configured default-language (`isDefault`) version is used — a notification is never sent with a missing/blank body. Templates are platform-global in v1 (no restaurant-specific override), and `Push`/`InApp` may carry separate content for the same event/language.
-* `User.notificationOptIn` (default `true`) governs **Push delivery only** — it never suppresses durable in-app notification creation for transactional reservation-lifecycle events; a Customer who disables it still sees their notification history in-app, they simply never receive an external push for it. `User.marketingOptIn` remains unrelated to transactional reservation notifications (reserved for a future promotional-notification category, out of Phase 9 v1 scope).
+* `User.notificationOptIn` (default `true`) governs **Push delivery only** — it never suppresses durable in-app notification creation for transactional reservation-lifecycle events; a Customer who disables it still sees their notification history in-app, they simply never receive an external push for it. `User.marketingOptIn` (default `false`) is unrelated to transactional reservation notifications; Phase 19.9/ADR-037 gives it its first real consumer (see below).
 * Push notification content (and the resolved in-app `title`/`body`, since both go through the same template mechanism) contains only the minimum user-facing information necessary — never `ReservationGuest.phone`/`email`/`fullName`, internal audit identifiers, or reservation notes; prefer generic, lock-screen-safe wording, with full detail retrievable only after the Customer opens the authenticated app (mirrors, but is stricter than, Phase 8's own WebSocket PII-minimization precedent, since a push can appear on a locked screen).
 * A `Notification` carries no `organizationId` — a Customer's notification inbox spans every organization they've ever booked with, exactly like `Reservation.userId` itself already does; deliberately avoiding the Phase 7.5 `ReservationWaitlistEntry.organizationId` mistake of requiring a tenant context a Customer actor does not possess.
+
+**Phase 19.9 extension (ADR-037) — internal (non-Firebase/OneSignal) admin/owner-initiated notifications:**
+
+* A Platform Admin may send an in-app notification directly to one named Customer (`SendNotificationToCustomerUseCase`) — the target must resolve to an eligible Customer (a `User` with no `OrganizationMember`/`Employee`/`PlatformAdmin` row, ADR-022) or the request 404s (IDOR-safe, never distinguishes "not found" from "not a Customer"). Reuses the existing single-entity `Notification.create()`/`save()` path and the existing `NotificationCreatedEvent` realtime/audit pipeline — no template involved, the Admin's `title`/`body` are used verbatim (`templateId: null`).
+* A Platform Admin, or a Restaurant Owner from the Restaurant Dashboard, may broadcast an in-app notification to **all eligible Customers** — tracked by a new `NotificationBroadcast` row and processed asynchronously in batches via BullMQ (`NotificationBroadcastFanoutProcessor`), never synchronously inside the triggering HTTP request. "Eligible" means: a genuine Customer identity (no `OrganizationMember`/`Employee`/`PlatformAdmin` row), `status = Active`, not soft-deleted, not mid account-deletion grace period, and `marketingOptIn = true` — this is the field's first real consumer. Explicit product decision: a Restaurant Owner's broadcast audience is identical to a Platform Admin's — every eligible Customer platform-wide, never derived from that restaurant's own Reservation/Favorite/Review relationships, and no new Restaurant-Customer relationship exists for this purpose. `restaurantId` on the Restaurant Owner route is authorization-scoping/audit-attribution only.
+* Broadcast-created `Notification` rows carry `broadcastId` (nullable FK) instead of going through the per-event dispatch path; the `[broadcastId, userId]` unique index makes batch re-insertion under BullMQ job retry idempotent (duplicates are silently skipped, not errors).
+* Realtime delivery for this extension uses a new self-only `user:{userId}` Socket.IO room (every `User`-actor socket auto-joins its own at handshake time) rather than the existing `reservation:{id}` room, since these notifications have no reservation context. `NotificationCreatedEvent`'s existing realtime mapping is widened, not replaced: `reservationId === null` now routes to `user:{userId}` instead of nowhere — a side benefit that also closes a pre-existing gap for `WaitlistEntryPromoted`-sourced notifications. A broadcast's own realtime signal is a separate, content-free `NotificationBroadcastDelivered` hint (`{ broadcastId }` only), emitted once per DB-insert batch to every recipient's room in one call, not once per recipient.
+* No OneSignal/Firebase/FCM/APNs push is attempted for admin/owner-originated notifications in this phase — durable PostgreSQL persistence plus the Socket.IO realtime hint above is the complete delivery model, matching the approved product scope exactly.
 
 ---
 
@@ -925,10 +937,10 @@ Events are immutable and published only after successful business operations.
 ## Organization
 
 * Create Organization (typically implicit during restaurant-owner signup)
-* Invite Organization Member — **not implemented; no self-service Organization Management controller exists** (ADR-034 §7, explicitly out of scope for Phase 19)
-* Change Organization Member Role — **not implemented**, same gap
-* Remove Organization Member — **not implemented**, same gap
-* Transfer Ownership — **narrow, PlatformAdmin-only emergency transfer authorized (ADR-034 §6)**; full self-service Owner-initiated transfer remains not implemented
+* Invite Organization Member — **implemented (Phase 19.8, ADR-036, 2026-08-12)**, Owner\Admin self-service, `POST \organizations\invitations` (issue), `GET \organizations\invitations` (list), `DELETE \organizations\invitations:invitationId` (revoke), `POST \invitations:token/accept` (public, token-authenticated). A dedicated `OrganizationInvitation` entity (Option B) — `OrganizationMember.userId` remains required/non-nullable, untouched. See ADR-036.
+* Change Organization Member Role — **implemented (Phase 19.7, 2026-08-11)**, Owner/Admin self-service, `PATCH /organizations/members/:memberId/role`; rejects role changes that touch Owner (must use Transfer Ownership)
+* Remove Organization Member — **implemented (Phase 19.7, 2026-08-11)**, Owner/Admin self-service, `DELETE /organizations/members/:memberId`; status-flip to `Removed`, rejects removing the sole Active Owner
+* Transfer Ownership — **PlatformAdmin-only emergency transfer (ADR-034 §6, Phase 19.1) plus full self-service Owner-initiated transfer (Phase 19.7, 2026-08-11)**, `POST /organizations/members/:memberId/transfer-ownership`, reuses `OrganizationMembershipPolicy.transferOwnership` verbatim
 * Suspend / Reactivate / Delete / Restore Organization (PlatformAdmin-only, ADR-034 §4-5 — never cascades to `Restaurant.status`)
 
 ---

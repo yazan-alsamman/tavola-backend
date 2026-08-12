@@ -12,6 +12,7 @@ import realtimeConfig from './realtime.config';
 import onesignalConfig from './onesignal.config';
 import discoveryConfig from './discovery.config';
 import messagingConfig from './messaging.config';
+import smtpConfig from './smtp.config';
 import { envValidationSchema } from './env.validation';
 
 const nodeEnv = process.env.NODE_ENV ?? 'development';
@@ -40,6 +41,7 @@ const nodeEnv = process.env.NODE_ENV ?? 'development';
         onesignalConfig,
         discoveryConfig,
         messagingConfig,
+        smtpConfig,
       ],
       validationSchema: envValidationSchema,
       validationOptions: {

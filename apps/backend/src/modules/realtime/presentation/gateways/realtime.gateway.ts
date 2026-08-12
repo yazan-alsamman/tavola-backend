@@ -11,6 +11,7 @@ import {
 } from '@nestjs/websockets';
 import type { Server, Socket } from 'socket.io';
 import { AuthenticatedActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
+import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
 import { RateLimiterPort } from '@modules/authentication/domain/services/rate-limiter.port';
 import { RATE_LIMITER } from '@modules/authentication/domain/tokens/authentication.tokens';
 import type { RealtimeConfig } from '@config/realtime.config';
@@ -100,6 +101,19 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayDisconnect {
 
       const data: RealtimeSocketData = { actor, rooms: new Set<string>() };
       client.data = data;
+
+      // Phase 19.9 (ADR-037) — every `User`/Customer actor auto-joins their
+      // own `user:{userId}` room right here, not via `room.subscribe`: it is
+      // self-only (no repository lookup, no ownership question beyond "is
+      // this the caller's own identity"), so there is no scenario where the
+      // client needs to opt in. Employee/OrganizationMember actors are
+      // skipped - no Notification recipient of that actor type exists in v1
+      // (DOMAIN_MODEL.md).
+      if (actor.actorType === AccessTokenActorType.User) {
+        const userRoom = buildCanonicalRoom(RoomType.User, actor.userId);
+        await client.join(userRoom);
+        data.rooms.add(userRoom);
+      }
 
       if (expiresAt) {
         this.scheduleExpiryDisconnect(client, expiresAt);

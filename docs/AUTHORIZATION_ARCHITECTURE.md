@@ -296,7 +296,7 @@ Guards are thin: they read decorators + JWT claims and delegate to `PermissionRe
 |---|---|---|
 | `@RequirePermission('reservations:approve')` | RBAC slug required | Controller method |
 | `@RequireAnyPermission(['a', 'b'])` | One of set | Read endpoints |
-| `@RequireOrgRole('Owner', 'Admin')` | Organization admin role | Invite member |
+| `@RequireOrgRole('Owner', 'Admin')` | Organization admin role | Invite member (implemented Phase 19.8, ADR-036) |
 | `@RequirePolicy(ReservationPolicy, 'approve')` | Domain policy | Complex rules |
 | `@RequirePlatformAdminRole('PlatformAdmin')` | Platform two-tier role check (ADR-034 §11/§12, implemented Phase 19.1 via `PlatformAdminRoleGuard`) — clones the `@RequireOrgRole`/`OrganizationMemberGuard` pattern against `PlatformAdminClaims.role` instead of `AUTHENTICATED_ACTOR_KEY`; **not** an ADR-026/028-style dual-actor OR-composition | Restaurant/Organization Suspend/Reactivate/Delete/Restore, Ownership Transfer, Account access control, Platform Admin CRUD mutations (Acquisition Reversal/pricing mutation remain unimplemented, ADR-033) |
 | `@Public()` | Skip auth (login, register) | Auth controller |
@@ -469,7 +469,7 @@ A Review/foreign-organization Restaurant, or an unknown Review id, collapses to 
 
 | `SubscriptionPolicy` | Plan limits, downgrade rules, feature gating |
 | `AnalyticsPolicy` | Role-based report access, PII masking |
-| `OrganizationPolicy` | Owner transfer, member invite/remove, sole Owner invariant |
+| `OrganizationPolicy` | Owner transfer, member invite (Phase 19.8, `OrganizationInvitationPolicy`)/remove, sole Owner invariant |
 | `FilePolicy` | Public vs private bucket, owner upload |
 
 **Phase 14 — Analytics dual-actor note (implemented and live-verified 2026-07-28, ADR-028):** `AnalyticsPolicy` evaluates: (a) OrganizationMember Owner/Admin of the organization that transitively owns the queried Restaurant/Branch, **or** (b) Employee with `reports:view` and, for any Branch-scoped or timezone-bucketed query (Peak Hours, service-day trend, booking-created trend), branch assignment for the target `branchId`. PII masking means the response is aggregate-only by construction — no `ReservationGuest` field, no raw customer/guest list is ever assembled, so there is no separate masking step to apply. Same use-case-level branching shape as ADR-026's Merge/Split and Phase 7.3's Cancel/Reschedule; no new guard-composition mechanism.

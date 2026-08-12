@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { StorageConfig } from '@config/storage.config';
 import { AuthenticationModule } from '@modules/authentication/authentication.module';
@@ -52,7 +52,9 @@ import { RestaurantConversationsController } from './presentation/controllers/re
  */
 @Module({
   imports: [
-    AuthenticationModule,
+    // Phase 19.8 (Owner Invite, ADR-036) correction: forwardRef - see
+    // branches.module.ts's matching fix for the exact boot-time symptom.
+    forwardRef(() => AuthenticationModule),
     RestaurantsModule,
     BranchesModule,
     ReservationsModule,

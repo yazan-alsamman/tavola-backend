@@ -124,11 +124,42 @@ All routes remain under the existing `/platform-admin` prefix, guarded by `Platf
 | `/platform-admin/admins` (CRUD) | Platform Admin | Pattern 1 | **Implemented** (create/list/get/update-role/deactivate/reactivate — reactivate and role-update are implementation-scope additions beyond ADR-034 §10's literal text) |
 | `/platform-admin/acquisitions*`, `/platform-admin/pricing*` | New `customer-acquisition` module (ADR-033) | Pattern 1 (mutation); List/Simulate read-only, no rebind needed | **Implemented** (Phase 19.2, 2026-08-09) |
 | `/platform-admin/revenue*` | New `customer-acquisition` module (revenue) | Pattern 2 | **Implemented** (Phase 19.2) |
-| `/platform-admin/dashboard` | Platform Admin module (dashboard composition) | Pattern 2 | Not implemented — out of Phase 19.2 scope |
+| `/platform-admin/dashboard` | Platform Admin module (dashboard composition) | Pattern 2 | **Implemented** (2026-08-11, Messaging section added 2026-08-11 Phase 19.6) — Restaurant/Organization/Subscription/Acquisition/Messaging, all five sections |
 | `/platform-admin/audit-logs` | Platform Admin, reading via a new `AuditLogReaderPort` | Pattern 2 | **Implemented** (Phase 19.3, 2026-08-10) |
-| `/platform-admin/search` | Platform Admin (thin composition delegating to each target module's own query ports — no new search infrastructure) | Pattern 1/2 per target | Not implemented |
+| `GET /platform-admin/restaurants` (name/slug lookup) | Restaurants (extends the existing Pattern-2 lookup reader) | Pattern 2 | **Implemented** (Phase 19.7, 2026-08-11) |
+| `GET /platform-admin/organizations` (name/slug lookup) | Organizations (extends the existing Pattern-2 stats reader) | Pattern 2 | **Implemented** (Phase 19.7, 2026-08-11) |
+| `GET /platform-admin/acquisitions/:id` (lookup by id) | New `customer-acquisition` module — reuses `CustomerAcquisitionRepository.findById` directly, no cross-tenant reader needed (not a `DIRECT_TENANT_OWNED_MODEL`) | N/A (unscoped by-id read, same as Reverse/ManuallyRecord's own first step) | **Implemented** (Phase 19.7, 2026-08-11) |
+| `GET /platform-admin/pricing/rules` (label/id filters, extends the existing List endpoint) | New `customer-acquisition` module | Pattern 1 (unchanged from List) | **Implemented** (Phase 19.7, 2026-08-11) |
+| ~~`/platform-admin/search`~~ (unified cross-entity endpoint) | — | — | **Rejected, not built** — ADR-034 §13 explicitly authorizes narrow per-entity lookup, not a unified endpoint; the four resource-specific routes above satisfy it while reusing existing controllers (Acquisition/PricingRule extended in place) rather than inventing a new one |
+| `/platform-admin/notifications`, `/platform-admin/notifications/broadcast` | Notifications module (new `PlatformAdminNotificationsController`) | Pattern 1 not applicable — target is a bare `User.id` (send-to-one) or the entire platform-wide Customer audience (broadcast), neither tenant-scoped | **Implemented** (Phase 19.9, ADR-037) — send-to-one is `PlatformAdmin`-only, 201; broadcast is `PlatformAdmin`-only, 202 (queued, processed asynchronously via BullMQ) |
 
 `/organizations/subscription*` and `/platform-admin/organizations/:id/subscription*` (Subscriptions, ADR-027) are unaffected.
+
+---
+
+# Organization Self-Service Member Management (Phase 19.7, ADR-034 §7, previously deferred — explicitly authorized and implemented 2026-08-11)
+
+Distinct from Platform Back Office above — this is the Organization's own Owner/Admin managing their own membership, not PlatformAdmin operational authority. Guarded by `JwtAuthGuard`/`SessionVersionGuard`/`OrganizationMemberGuard` + `@RequireOrgRole(...)`, the same chain every other `OrganizationMember`-scoped route uses (e.g. `/organizations/subscription*`). No `:organizationId` path param anywhere — the acting Organization is always the caller's own, resolved from the JWT, matching this codebase's existing convention for every `OrganizationMember`-scoped route.
+
+| Route | Required role | Status |
+|---|---|---|
+| `GET /organizations/members` | Owner, Admin | **Implemented** |
+| `PATCH /organizations/members/:memberId/role` | Owner, Admin | **Implemented** — rejects (403) promoting a member TO Owner or demoting the current Owner AWAY from Owner; both must go through Transfer Ownership |
+| `DELETE /organizations/members/:memberId` | Owner, Admin | **Implemented** — status-flip to `Removed` (`OrganizationMember` has no `deletedAt`); rejects (403) removing the sole Active Owner |
+| `POST /organizations/members/:memberId/transfer-ownership` | Owner only | **Implemented** — self-service counterpart to `/platform-admin/organizations/:id/transfer-ownership`, reuses `OrganizationMembershipPolicy.transferOwnership` verbatim |
+
+---
+
+# Owner Invite (Phase 19.8, ADR-036 — resolves the gap Phase 19.7 above left open)
+
+A dedicated `OrganizationInvitation` entity (Option B: explicit, acceptance-required invitation lifecycle) — `OrganizationMember` is untouched. Issue/list/revoke use the same guard chain as the member-management routes above (`JwtAuthGuard`/`SessionVersionGuard`/`OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)`, no `:organizationId` path param). Acceptance is a separate, deliberately **public** route — no guard — since it must remain reachable by an anonymous, not-yet-registered invitee; its security rests entirely on the opaque invitation token, not on session state.
+
+| Route | Required role | Status |
+|---|---|---|
+| `POST /organizations/invitations` | Owner, Admin | **Implemented** — rejects (400) `role: Owner`; rejects (409) an email already an Active member; re-inviting the same email revokes any still-Pending invitation first, then issues a new one |
+| `GET /organizations/invitations` | Owner, Admin | **Implemented** — paginated; `status` is live-resolved (`pending`/`accepted`/`revoked`/`expired`), never a stale persisted value |
+| `DELETE /organizations/invitations/:invitationId` | Owner, Admin | **Implemented** — CAS revoke; 404 if not found in the caller's own Organization, 409 if no longer Pending |
+| `POST /invitations/:token/accept` | None (public, token-authenticated) | **Implemented** — if the invited email already has an account, the caller must be authenticated as exactly that account (401 if anonymous, 403 if a different account); otherwise `firstName`/`lastName`/`password` are required and a new account is created atomically with the membership. 400 for an invalid/already-used/expired token; 409 if the Organization is no longer Active or the target already holds an Active membership. |
 
 ---
 
@@ -386,7 +417,19 @@ Response DTOs for the inbox routes expose only `id`, `type`, `title`, `body`, `d
 
 **ADR-025 initial delivery (also owner-approved 2026-07-25):** `onesignalIdentityToken: string | null` is included on `POST /api/v1/auth/customer/login` and on `POST /api/v1/auth/refresh` for Customer (`User`) actors. It is not a Tavola session token and is never accepted by any Tavola guard.
 
-**No admin/staff notification API** in v1 — no Employee/OrganizationMember recipient exists yet (Phase 9 decision item 2), so there is nothing for staff to administer. **No server-side push-subscription-registration endpoint** — the OneSignal client SDK registers subscriptions directly against `external_id` (Phase 9 decision item 3); a Tavola-side registration endpoint would be redundant and is not built.
+**No server-side push-subscription-registration endpoint** — the OneSignal client SDK registers subscriptions directly against `external_id` (Phase 9 decision item 3); a Tavola-side registration endpoint would be redundant and is not built.
+
+## Admin/Owner authoring surface (Phase 19.9, ADR-037 — internal notification system, no Firebase/OneSignal/FCM/APNs)
+
+The "no admin/staff notification API" statement above described v1 only — Phase 19.9 adds three authoring routes, all distinct from the Customer-owned inbox routes above (which remain unchanged):
+
+| Method | Route | Guard | Notes |
+|---|---|---|---|
+| `POST` | `/api/v1/platform-admin/notifications` | `PlatformAdminGuard` + `PlatformAdminRoleGuard(PlatformAdmin)` | Send to one Customer. `targetUserId` must resolve to an eligible Customer (no `OrganizationMember`/`Employee`/`PlatformAdmin` row) or 404 (IDOR-safe). 201, `{ notificationId }` |
+| `POST` | `/api/v1/platform-admin/notifications/broadcast` | `PlatformAdminGuard` + `PlatformAdminRoleGuard(PlatformAdmin)` | Broadcast to all eligible Customers platform-wide. Queued via BullMQ, processed asynchronously in batches — 202 Accepted means queued, not delivered. `{ broadcastId, totalRecipients }` (a point-in-time audience-size snapshot) |
+| `POST` | `/api/v1/restaurants/:restaurantId/notifications/broadcast` | `JwtAuthGuard`/`SessionVersionGuard`/`OrganizationMemberGuard` + `@RequireOrgRole(Owner, Admin)` | Restaurant Owner/Admin broadcast. `restaurantId` proves the caller controls that Restaurant (cross-org → 404) but is never used to scope the (global) audience — same audience definition as the Platform Admin broadcast, an explicit product decision. 202, `{ broadcastId, totalRecipients }` |
+
+`PlatformSupport` (the read-only Platform tier, ADR-034 §11) has no mutation authority on either Platform Admin route — 403. Neither `PlatformAdminGuard`-only route ever returns 401 for a missing/invalid token; it uniformly returns 403 (that guard's own established behavior, not new to this phase).
 
 ---
 

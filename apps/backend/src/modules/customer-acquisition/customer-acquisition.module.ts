@@ -9,6 +9,7 @@ import { RecordCustomerAcquisitionOnApprovalService } from './application/servic
 import { ReverseCustomerAcquisitionUseCase } from './application/use-cases/reverse-customer-acquisition.use-case';
 import { ManuallyRecordCustomerAcquisitionUseCase } from './application/use-cases/manually-record-customer-acquisition.use-case';
 import { ListCustomerAcquisitionsUseCase } from './application/use-cases/list-customer-acquisitions.use-case';
+import { GetCustomerAcquisitionUseCase } from './application/use-cases/get-customer-acquisition.use-case';
 import { ActivatePricingRuleUseCase } from './application/use-cases/activate-pricing-rule.use-case';
 import { ListPricingRulesUseCase } from './application/use-cases/list-pricing-rules.use-case';
 import { SimulatePricingUseCase } from './application/use-cases/simulate-pricing.use-case';
@@ -56,12 +57,33 @@ import { PlatformAdminRevenueController } from './presentation/controllers/platf
  */
 @Module({
   imports: [
-    AuthenticationModule,
+    // Phase 19.8 (Owner Invite, ADR-036): AcceptOrganizationInvitationUseCase
+    // (under OrganizationsModule, already forwardRef'd below) now imports
+    // authentication domain/application files directly (UserRepository,
+    // PasswordHasher, etc.), lengthening the require chain back through
+    // AuthenticationModule before this module's own class declaration
+    // finishes evaluating - the same "index [n] of imports array is
+    // undefined" symptom this file's own doc comment already describes for
+    // BranchesModule/PlatformAdminModule/RestaurantsModule/OrganizationsModule.
+    // Wrapped in forwardRef per this module's established "forwardRef every
+    // edge of the cycle" precedent.
+    forwardRef(() => AuthenticationModule),
     PrismaModule,
-    PlatformAdminModule,
-    RestaurantsModule,
+    // Wrapped in forwardRef (Phase 19 — Platform Dashboard composition):
+    // PlatformAdminModule now imports this module back for
+    // ACQUISITION_CROSS_TENANT_READER, making this a genuine direct
+    // two-module cycle where it previously was not. That new edge also
+    // closes two further three-module cycles through this module's own
+    // RestaurantsModule/OrganizationsModule imports below
+    // (RestaurantsModule -> PlatformAdminModule -> CustomerAcquisitionModule
+    // -> RestaurantsModule, and the same shape for OrganizationsModule), so
+    // both of those imports are wrapped in forwardRef too, per this
+    // module's own established "forwardRef every edge of the cycle"
+    // precedent (see its BranchesModule import note above).
+    forwardRef(() => PlatformAdminModule),
+    forwardRef(() => RestaurantsModule),
     forwardRef(() => BranchesModule),
-    OrganizationsModule,
+    forwardRef(() => OrganizationsModule),
   ],
   controllers: [
     PlatformAdminAcquisitionsController,
@@ -73,6 +95,7 @@ import { PlatformAdminRevenueController } from './presentation/controllers/platf
     ReverseCustomerAcquisitionUseCase,
     ManuallyRecordCustomerAcquisitionUseCase,
     ListCustomerAcquisitionsUseCase,
+    GetCustomerAcquisitionUseCase,
     ActivatePricingRuleUseCase,
     ListPricingRulesUseCase,
     SimulatePricingUseCase,
@@ -98,7 +121,10 @@ import { PlatformAdminRevenueController } from './presentation/controllers/platf
   // ReservationsModule (ApproveReservationUseCase, CreateReservationUseCase)
   // and WaitlistModule (WaitlistPromotionService) - the single shared write
   // path ADR-033 §13 requires inside each of their own UnitOfWorkPort
-  // transactions.
-  exports: [RecordCustomerAcquisitionOnApprovalService],
+  // transactions. ACQUISITION_CROSS_TENANT_READER is exported for
+  // PlatformAdminModule (Phase 19 — Platform Dashboard composition
+  // endpoint): reuses GetRevenueReportUseCase's exact reader/method
+  // (groupByRevenue) rather than adding a new one.
+  exports: [RecordCustomerAcquisitionOnApprovalService, ACQUISITION_CROSS_TENANT_READER],
 })
 export class CustomerAcquisitionModule {}

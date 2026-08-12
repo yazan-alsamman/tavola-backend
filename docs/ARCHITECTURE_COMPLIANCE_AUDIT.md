@@ -55,7 +55,7 @@ Legend: **Supported** = full architectural specification exists | **Partial** = 
 | Offers | **Partial** | Schema documented; Phase 11 |
 | Promotions | **Partial** | Offers aggregate; Phase 11 |
 | Analytics | **Partial** | ActivityFeed, AnalyticsCalculator; analytics ADR open |
-| Notifications | **Partial** | NotificationProvider port; Phase 9 |
+| Notifications | **Partial** | NotificationProvider port; Phase 9. Phase 19.9/ADR-037 adds internal Platform Admin/Restaurant Owner authoring (send-to-one, broadcast-to-all-eligible-Customers) — no Firebase/OneSignal/FCM/APNs |
 | Favorites | **Partial** | Favorites table; Phase 3 |
 | Restaurant Comparison | **Supported** *(audit fix)* | ADR-018 comparison API |
 | Restaurant Search | **Supported** *(audit fix)* | ADR-018, RestaurantSearchService |

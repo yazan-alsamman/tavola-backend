@@ -158,4 +158,22 @@ export const envValidationSchema = Joi.object({
   RATE_LIMIT_MESSAGING_SEND_MAX: Joi.number().integer().min(1).default(30),
   RATE_LIMIT_MESSAGING_SEND_WINDOW_SECONDS: Joi.number().integer().min(1).default(60),
   MESSAGING_IDEMPOTENCY_TTL_SECONDS: Joi.number().integer().min(1).default(86400),
+
+  // Phase 19.8 (Owner Invite, ADR-036 - Email Provider Abstraction). Never
+  // `.required()` - mirrors ONESIGNAL_API_KEY/LIGHTOTP_API_KEY's own
+  // precedent so the application still boots without real SMTP credentials
+  // configured; `SmtpEmailProvider` itself fails closed when unconfigured.
+  SMTP_HOST: Joi.string().allow('').default(''),
+  SMTP_PORT: Joi.number().port().default(587),
+  SMTP_SECURE: Joi.boolean().default(false),
+  SMTP_USER: Joi.string().allow('').default(''),
+  SMTP_PASSWORD: Joi.string().allow('').default(''),
+  SMTP_FROM_ADDRESS: Joi.string().allow('').default(''),
+  SMTP_FROM_NAME: Joi.string().default('Tavla'),
+  SMTP_REQUEST_TIMEOUT_MS: Joi.number().integer().min(1).default(10000),
+  // Phase 19.8 - the base URL used to build the invitation acceptance link
+  // sent by email (e.g. `https://app.tavla.com`); the backend never renders
+  // a web page itself, so this must point at the frontend/web client route
+  // that calls `POST /invitations/:token/accept`.
+  APP_WEB_BASE_URL: Joi.string().uri().default('http://localhost:3000'),
 });

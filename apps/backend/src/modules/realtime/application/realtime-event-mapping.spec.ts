@@ -240,7 +240,7 @@ describe('mapDomainEventForRealtime', () => {
     expect(result!.customerPayload).not.toHaveProperty('body');
   });
 
-  it('NotificationCreated broadcasts nothing when reservationId is null (a Waitlist-sourced notification)', async () => {
+  it('NotificationCreated broadcasts to the recipient user room when reservationId is null (a Waitlist-sourced notification, Phase 19.9 ADR-037)', async () => {
     const event = new NotificationCreatedEvent(
       'event-1',
       { notificationId: 'notif-1', userId, type: 'WaitlistEntryPromoted', reservationId: null },
@@ -249,7 +249,12 @@ describe('mapDomainEventForRealtime', () => {
 
     const result = await mapDomainEventForRealtime(event, notFoundCtx);
 
-    expect(result).toBeNull();
+    expect(result!.reservationRoom).toBe(`user:${userId}`);
+    expect(result!.customerPayload).toEqual({
+      notificationId: 'notif-1',
+      type: 'WaitlistEntryPromoted',
+    });
+    expect(result!.staffRooms).toEqual([]);
   });
 
   it('resolves the restaurant room for Table events via the injected branch->restaurant resolver', async () => {

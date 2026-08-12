@@ -74,6 +74,8 @@ export class RoomAuthorizationService {
           return await this.authorizeReservation(actor, resourceId);
         case RoomType.Conversation:
           return await this.authorizeConversation(actor, resourceId);
+        case RoomType.User:
+          return this.authorizeUser(actor, resourceId);
       }
     } catch (error) {
       if (error instanceof InvalidUuidException) {
@@ -81,6 +83,31 @@ export class RoomAuthorizationService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Phase 19.9 (ADR-037) — self-only, no repository lookup, `User`/Customer
+   * actor only: gated by `actorType` exactly like `authorizeRestaurant`/
+   * `authorizeReservation` deny an `AccessTokenActorType.User` actor from
+   * staff surfaces — the same actor-type-strictness applies here in reverse,
+   * since an Employee/OrganizationMember JWT's `userId` claim (the shared
+   * underlying `User.id`) must never be treated as equivalent to being
+   * authenticated as that identity's Customer surface (no Notification
+   * recipient of the Employee/OrganizationMember actor type exists in v1 -
+   * DOMAIN_MODEL.md). `RealtimeGateway` auto-joins every `User` actor to
+   * this room at handshake time already - this method exists for parity/
+   * idempotency if a client calls `room.subscribe` for it explicitly (e.g.
+   * after a reconnect).
+   */
+  private authorizeUser(actor: AuthenticatedActor, resourceId: string): string | null {
+    const userId = UserId.create(resourceId);
+    if (actor.actorType !== AccessTokenActorType.User) {
+      return null;
+    }
+    if (actor.userId !== userId.value) {
+      return null;
+    }
+    return buildCanonicalRoom(RoomType.User, userId.value);
   }
 
   private authorizeOrganization(actor: AuthenticatedActor, resourceId: string): string | null {

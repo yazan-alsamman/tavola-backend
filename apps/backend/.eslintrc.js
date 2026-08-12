@@ -43,7 +43,18 @@ module.exports = {
       // the Audit Log Read API queries across every Organization at once
       // (organizationId is an optional filter, never a required path
       // parameter identifying one target tenant), so no single `organizationId`
-      // exists to Pattern-1-rebind to.
+      // exists to Pattern-1-rebind to. `PrismaPlatformAdminOrganizationStatsReader`
+      // and `PrismaPlatformAdminSubscriptionStatsReader` (Phase 19 — Platform
+      // Dashboard composition endpoint) are the fourth/fifth - platform-wide
+      // status counts with the identical "no single tenant bound" shape.
+      // `PrismaPlatformAdminNotificationStatsReader` (Phase 19.6, closing the
+      // Dashboard's disclosed Messaging dependency) is the sixth - same
+      // shape again, `Notification` carries no `organizationId` at all
+      // (TENANCY.md). `PrismaCustomerAudienceReader` (Phase 19.9, ADR-037)
+      // is the seventh - "Customer" (`User` with no `OrganizationMember`/
+      // `Employee`/`PlatformAdmin` row, ADR-022) is platform-global, the
+      // identical "no single tenant to bind" shape, used to resolve both the
+      // Platform Admin and the Restaurant Owner broadcast audience.
       files: ['src/modules/**/infrastructure/persistence/**/*.ts'],
       excludedFiles: [
         '**/prisma-login-organization-reader.ts',
@@ -52,6 +63,10 @@ module.exports = {
         '**/prisma-platform-admin-restaurant-lookup.reader.ts',
         '**/prisma-acquisition-cross-tenant.reader.ts',
         '**/prisma-audit-log.reader.ts',
+        '**/prisma-platform-admin-notification-stats.reader.ts',
+        '**/prisma-platform-admin-organization-stats.reader.ts',
+        '**/prisma-platform-admin-subscription-stats.reader.ts',
+        '**/prisma-customer-audience.reader.ts',
       ],
       rules: {
         'no-restricted-imports': [

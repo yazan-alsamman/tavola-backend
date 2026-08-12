@@ -37,10 +37,12 @@ export interface ProcessNotificationDeliveryInput {
 }
 
 /**
- * Phase 9 (architecture frozen 2026-07-25) - `NotificationQueue`'s sole
- * consumer, delegated to entirely by `NotificationDeliveryProcessor`
- * (mirrors `ExpireWaitlistEntryProcessor` -> `ExpireWaitlistEntryUseCase`'s
- * established one-processor-one-use-case precedent). Resolves the Push
+ * Phase 9 (architecture frozen 2026-07-25) - handles the
+ * `deliver-notification-push` job name on `NotificationQueue`, delegated to
+ * by `NotificationQueueProcessor` (which also dispatches the Phase 19.9/
+ * ADR-037 `fanout-notification-broadcast` job name to
+ * `ProcessNotificationBroadcastFanoutUseCase` - one Worker per queue, see
+ * that processor's own doc comment for why). Resolves the Push
  * channel's own `NotificationTemplate` at send time (independent of the
  * already-persisted In-App `title`/`body` - LOCALIZATION.md: "Push and
  * InApp may carry separate resolved content"), calls

@@ -16,6 +16,7 @@ import { PlatformAdminSuspendRestaurantUseCase } from './application/use-cases/p
 import { PlatformAdminReactivateRestaurantUseCase } from './application/use-cases/platform-admin-reactivate-restaurant.use-case';
 import { PlatformAdminDeleteRestaurantUseCase } from './application/use-cases/platform-admin-delete-restaurant.use-case';
 import { PlatformAdminRestoreRestaurantUseCase } from './application/use-cases/platform-admin-restore-restaurant.use-case';
+import { SearchRestaurantsUseCase } from './application/use-cases/search-restaurants.use-case';
 import { GetRestaurantSettingsUseCase } from './application/use-cases/get-restaurant-settings.use-case';
 import { UpdateRestaurantSettingsUseCase } from './application/use-cases/update-restaurant-settings.use-case';
 import { GetWorkingHoursUseCase } from './application/use-cases/get-working-hours.use-case';
@@ -114,7 +115,11 @@ import { PlatformAdminRestaurantsController } from './presentation/controllers/p
     FilesModule,
     PrismaModule,
     ConfigModule,
-    PlatformAdminModule,
+    // Wrapped in forwardRef (Phase 19 — Platform Dashboard composition):
+    // PlatformAdminModule now imports this module back for
+    // PLATFORM_ADMIN_RESTAURANT_LOOKUP_READER.countByStatus, making this a
+    // genuine direct two-module cycle where it previously was not.
+    forwardRef(() => PlatformAdminModule),
   ],
   controllers: [
     RestaurantsController,
@@ -127,6 +132,7 @@ import { PlatformAdminRestaurantsController } from './presentation/controllers/p
     PlatformAdminReactivateRestaurantUseCase,
     PlatformAdminDeleteRestaurantUseCase,
     PlatformAdminRestoreRestaurantUseCase,
+    SearchRestaurantsUseCase,
     GetRestaurantUseCase,
     ListRestaurantsUseCase,
     UpdateRestaurantUseCase,

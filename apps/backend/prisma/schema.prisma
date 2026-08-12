@@ -34,6 +34,23 @@ enum OrganizationMemberStatus {
   Removed
 }
 
+/**
+ * Phase 19.8 (Owner Invite, ADR-036) - explicit-acceptance invitation
+ * lifecycle for `OrganizationInvitation`. Only the transitions an explicit
+ * action actually performs are persisted (`Pending -> Accepted | Revoked`).
+ * "Expired" is deliberately NOT a persisted value here - it is resolved live
+ * from `expiresAt` at read/accept time by `OrganizationInvitationPolicy`,
+ * mirroring `PasswordResetToken`/`PasswordResetPolicy.resolveTokenState`'s
+ * own established precedent for exactly this problem (a TTL-bound token with
+ * no background sweep) rather than introducing a new swept-state mechanism
+ * this codebase has never used.
+ */
+enum OrganizationInvitationStatus {
+  Pending
+  Accepted
+  Revoked
+}
+
 enum UserStatus {
   Pending
   Active
@@ -172,6 +189,7 @@ model Organization {
   restaurants       Restaurant[]
   subscription      Subscription?
   subscriptionUsage SubscriptionUsage?
+  invitations       OrganizationInvitation[]
 
   @@index([slug])
   @@map("organizations")
@@ -195,6 +213,57 @@ model OrganizationMember {
   @@index([organizationId])
   @@index([userId])
   @@map("organization_members")
+}
+
+/**
+ * Phase 19.8 (Owner Invite, ADR-036 - Owner Invite Architecture Decision
+ * Audit, Option B). A dedicated entity, NOT a nullable `OrganizationMember.userId`
+ * (Option A, rejected) and NOT an immediate grant (Option C, rejected) - the
+ * product decision (2026-08-11) is that Invite means a real,
+ * acceptance-required invitation; `OrganizationMember.userId` remains
+ * required/non-nullable, untouched by this migration.
+ * `tokenHash` reuses the existing `OpaqueTokenService` pattern verbatim
+ * (32-byte random, base64url, SHA-256 hash at rest, single-use, timing-safe
+ * compare) - the same mechanism `PasswordResetToken` already uses; the raw
+ * token itself is never stored. `email` is stored trim+lowercase-normalized,
+ * matching `Email.vo`'s own canonical normalization.
+ * Deliberately NOT added to `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS`
+ * even though it carries a direct `organizationId` column (unlike
+ * `OrganizationMember`, which is in that set): acceptance is looked up by raw
+ * token alone, before the invitee has any bound `TenantContext` - the same
+ * structural requirement `PasswordResetToken`'s unscoped `findByTokenHash`
+ * already has, and the same "transitively/explicitly tenant-filtered instead
+ * of automatically enforced" pattern `Employee` already uses for its own
+ * unscoped, cross-restaurant, login-time email-match lookup. Issuance/list/
+ * revoke instead pass `organizationId` explicitly into every repository
+ * method (application-layer enforcement) - this is a reuse of that existing
+ * pattern, not a third tenancy mechanism.
+ * At most one `Pending` invitation may exist per `(organizationId, email)` -
+ * enforced by a hand-written partial unique index
+ * (`organization_invitations_org_email_one_pending_key`) added via raw SQL in
+ * this migration, mirroring `FloorPlan.isActive`/`Table.mergeGroupId`/
+ * `Menu.isDefault`'s existing precedent for a WHERE-filtered unique index
+ * Prisma's schema DSL cannot express.
+ */
+model OrganizationInvitation {
+  id              String                       @id @default(uuid()) @db.Uuid
+  organizationId  String                       @map("organization_id") @db.Uuid
+  email           String
+  role            OrganizationMemberRole
+  tokenHash       String                       @unique @map("token_hash")
+  invitedByUserId String                       @map("invited_by_user_id") @db.Uuid
+  status          OrganizationInvitationStatus @default(Pending)
+  expiresAt       DateTime                     @map("expires_at")
+  acceptedAt      DateTime?                    @map("accepted_at")
+  createdAt       DateTime                     @default(now()) @map("created_at")
+  updatedAt       DateTime                     @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation("OrganizationInvitationInvitedBy", fields: [invitedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId])
+  @@index([organizationId, email])
+  @@map("organization_invitations")
 }
 
 model User {
@@ -251,6 +320,7 @@ model User {
   deletedAt                DateTime?  @map("deleted_at")
 
   organizationMembers         OrganizationMember[]
+  sentOrganizationInvitations OrganizationInvitation[]     @relation("OrganizationInvitationInvitedBy")
   deviceSessions              DeviceSession[]
   tokenFamilies               TokenFamily[]
   passwordResetTokens         PasswordResetToken[]
@@ -1691,6 +1761,14 @@ model Notification {
   userId                String                 @map("user_id") @db.Uuid
   type                  String
   templateId            String?                @map("template_id") @db.Uuid
+  // Phase 19.9 (ADR-037) — set only for a Platform Admin/Restaurant Owner
+  // broadcast; null for every other Notification (event-dispatched or
+  // single-customer admin send). The composite unique index below is what
+  // makes `NotificationBroadcastFanoutProcessor`'s batch insert
+  // (`createMany({ skipDuplicates: true })`) safe under BullMQ job retry —
+  // Postgres allows unlimited NULLs on a unique index, so non-broadcast rows
+  // are unaffected (same pattern already used for `User.email`/`phone`).
+  broadcastId           String?                @map("broadcast_id") @db.Uuid
   title                 String
   body                  String
   data                  Json?
@@ -1705,12 +1783,60 @@ model Notification {
   createdAt             DateTime               @default(now()) @map("created_at")
   updatedAt             DateTime               @updatedAt @map("updated_at")
 
-  user     User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  template NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  user      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template  NotificationTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  broadcast NotificationBroadcast? @relation(fields: [broadcastId], references: [id], onDelete: SetNull)
 
+  @@unique([broadcastId, userId])
   @@index([userId])
   @@index([userId, read])
   @@map("notifications")
+}
+
+enum NotificationBroadcastSenderType {
+  PlatformAdmin
+  OrganizationMember
+}
+
+enum NotificationBroadcastStatus {
+  Pending
+  Processing
+  Completed
+  Failed
+}
+
+/**
+ * Phase 19.9 (ADR-037) — tracks one Platform Admin or Restaurant Owner
+ * broadcast-to-all-eligible-Customers action end to end: idempotency/resume
+ * anchor for `NotificationBroadcastFanoutProcessor` (`lastProcessedUserId`,
+ * a keyset cursor over `User.id`) and the observability counters the
+ * approved product spec requires. `organizationId` is populated only for an
+ * `OrganizationMember` (Restaurant Owner) sender — audit/traceability only,
+ * never used to scope the (global) audience per ADR-037 Decision #4/#8.
+ * `senderId` is deliberately a plain column, not a FK relation, mirroring
+ * `AuditLog.actorId`'s existing precedent (the sender is always a `User.id`
+ * whether acting as a PlatformAdmin or an OrganizationMember).
+ */
+model NotificationBroadcast {
+  id                  String                          @id @default(uuid()) @db.Uuid
+  senderType          NotificationBroadcastSenderType @map("sender_type")
+  senderId            String                          @map("sender_id") @db.Uuid
+  organizationId      String?                         @map("organization_id") @db.Uuid
+  title               String
+  body                String
+  totalRecipients     Int?                            @map("total_recipients")
+  processedCount      Int                             @default(0) @map("processed_count")
+  succeededCount      Int                             @default(0) @map("succeeded_count")
+  failedCount         Int                             @default(0) @map("failed_count")
+  status              NotificationBroadcastStatus     @default(Pending)
+  lastProcessedUserId String?                         @map("last_processed_user_id") @db.Uuid
+  createdAt           DateTime                        @default(now()) @map("created_at")
+  updatedAt           DateTime                        @updatedAt @map("updated_at")
+
+  notifications Notification[]
+
+  @@index([status])
+  @@map("notification_broadcasts")
 }
 
 /**

@@ -271,6 +271,94 @@ describe('/api/v1/discovery/restaurants (e2e)', () => {
     ).toBe(false);
   });
 
+  /**
+   * Phase 18 Reconciliation (2026-08-10): closes the Provenance Audit's one
+   * real gap - `hasMenu` (ADR-031 decision #9) previously had zero test
+   * coverage anywhere in the repository (the sibling `hasActiveOffer` field
+   * only had a `toHaveProperty` presence check, never a value assertion).
+   * Real HTTP against the actual search-family endpoint, real Postgres -
+   * proves the full wire from `MenusController`'s mutation routes through
+   * `ListRestaurantIdsWithMenuUseCase` to the serialized Discovery response,
+   * not just the repository predicate (already proven in
+   * `test/menus/prisma-menu.integration-spec.ts`).
+   */
+  it('hasMenu: reflects an active default Menu, and turns false again once deactivated, deleted, or no longer default', async () => {
+    if (!dbAvailable) return;
+    const owner = await registerAndLoginOwner('has-menu');
+    const noMenuRestaurant = await setUpRestaurantBranchTable(owner.accessToken, 'HasMenu None');
+    const withMenuRestaurant = await setUpRestaurantBranchTable(
+      owner.accessToken,
+      'HasMenu Active',
+    );
+    const authHeader = `Bearer ${owner.accessToken}`;
+
+    async function fetchHasMenu(restaurantId: string): Promise<boolean> {
+      const response = await request(app!.getHttpServer())
+        .get('/api/v1/discovery/restaurants')
+        .query({ q: 'hasmenu', limit: 100 })
+        .expect(200);
+      const item = response.body.data.items.find(
+        (candidate: { restaurantId: string }) => candidate.restaurantId === restaurantId,
+      );
+      expect(item).toBeDefined();
+      return item.hasMenu as boolean;
+    }
+
+    // No Menu created yet at all.
+    expect(await fetchHasMenu(noMenuRestaurant.restaurantId)).toBe(false);
+    expect(await fetchHasMenu(withMenuRestaurant.restaurantId)).toBe(false);
+
+    // First Menu created is auto-marked isDefault and defaults to active.
+    const menuResponse = await request(app!.getHttpServer())
+      .post(`/api/v1/restaurants/${withMenuRestaurant.restaurantId}/menus`)
+      .set('Authorization', authHeader)
+      .send({ name: 'HasMenu Menu' })
+      .expect(201);
+    const menuId = menuResponse.body.data.id as string;
+    expect(await fetchHasMenu(withMenuRestaurant.restaurantId)).toBe(true);
+    // The restaurant with no Menu at all remains unaffected throughout.
+    expect(await fetchHasMenu(noMenuRestaurant.restaurantId)).toBe(false);
+
+    // Deactivated: still the default, but no longer active.
+    await request(app!.getHttpServer())
+      .post(`/api/v1/restaurants/${withMenuRestaurant.restaurantId}/menus/${menuId}/deactivate`)
+      .set('Authorization', authHeader)
+      .expect(200);
+    expect(await fetchHasMenu(withMenuRestaurant.restaurantId)).toBe(false);
+
+    // Reactivated: true again.
+    await request(app!.getHttpServer())
+      .post(`/api/v1/restaurants/${withMenuRestaurant.restaurantId}/menus/${menuId}/activate`)
+      .set('Authorization', authHeader)
+      .expect(200);
+    expect(await fetchHasMenu(withMenuRestaurant.restaurantId)).toBe(true);
+
+    // A second Menu, promoted to default: the first Menu (still active) is
+    // no longer the default, so the restaurant's hasMenu stays true - but
+    // demoting the first Menu without a replacement default must go false.
+    const secondMenuResponse = await request(app!.getHttpServer())
+      .post(`/api/v1/restaurants/${withMenuRestaurant.restaurantId}/menus`)
+      .set('Authorization', authHeader)
+      .send({ name: 'HasMenu Second Menu' })
+      .expect(201);
+    const secondMenuId = secondMenuResponse.body.data.id as string;
+    await request(app!.getHttpServer())
+      .post(
+        `/api/v1/restaurants/${withMenuRestaurant.restaurantId}/menus/${secondMenuId}/set-default`,
+      )
+      .set('Authorization', authHeader)
+      .expect(200);
+    expect(await fetchHasMenu(withMenuRestaurant.restaurantId)).toBe(true);
+
+    // Soft-delete the current default (second Menu): the first Menu remains
+    // but is no longer isDefault, so hasMenu must go false.
+    await request(app!.getHttpServer())
+      .delete(`/api/v1/restaurants/${withMenuRestaurant.restaurantId}/menus/${secondMenuId}`)
+      .set('Authorization', authHeader)
+      .expect(204);
+    expect(await fetchHasMenu(withMenuRestaurant.restaurantId)).toBe(false);
+  });
+
   it('D4: nearby search includes a branch inside the radius and excludes one far away, with deterministic distance ordering', async () => {
     if (!dbAvailable) return;
     const owner = await registerAndLoginOwner('nearby');

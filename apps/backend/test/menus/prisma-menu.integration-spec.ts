@@ -301,6 +301,71 @@ describe('Menu round-trip via Prisma repositories (integration)', () => {
     expect(found.has(otherRestaurantId)).toBe(false);
   });
 
+  /**
+   * Phase 18 Reconciliation (2026-08-10): closes the Provenance Audit's one
+   * real gap - `Restaurant.hasMenu` (ADR-031 decision #9) is a Discovery
+   * annotation with no prior test proving its ADR-032 predicate
+   * (`isDefault && active && !deletedAt`) on each axis independently. The
+   * happy-path/no-Menu cases are already covered by the test immediately
+   * above; these four cover every way a Restaurant can have a Menu that
+   * still must NOT count as having one.
+   */
+  describe('findRestaurantIdsWithActiveDefaultMenu - ADR-032 predicate, each axis independently', () => {
+    it('excludes a restaurant whose only Menu is not the default (isDefault = false)', async () => {
+      if (!dbAvailable) return;
+      const restaurantId = await createFreshRestaurant();
+      const nonDefault = makeMenu(restaurantId, { isDefault: false });
+      await menuRepository.create(nonDefault);
+
+      const found = await menuRepository.findRestaurantIdsWithActiveDefaultMenu([
+        RestaurantId.create(restaurantId),
+      ]);
+      expect(found.has(restaurantId)).toBe(false);
+    });
+
+    it('excludes a restaurant whose default Menu is deactivated (active = false)', async () => {
+      if (!dbAvailable) return;
+      const restaurantId = await createFreshRestaurant();
+      const inactiveDefault = makeMenu(restaurantId, { isDefault: true }).deactivate(NOW);
+      await menuRepository.create(inactiveDefault);
+      await menuRepository.update(inactiveDefault);
+
+      const found = await menuRepository.findRestaurantIdsWithActiveDefaultMenu([
+        RestaurantId.create(restaurantId),
+      ]);
+      expect(found.has(restaurantId)).toBe(false);
+    });
+
+    it('excludes a restaurant whose default Menu has been soft-deleted (deletedAt != null)', async () => {
+      if (!dbAvailable) return;
+      const restaurantId = await createFreshRestaurant();
+      const defaultMenu = makeMenu(restaurantId, { isDefault: true });
+      await menuRepository.create(defaultMenu);
+      await menuRepository.softDelete(defaultMenu.menuId, NOW);
+
+      const found = await menuRepository.findRestaurantIdsWithActiveDefaultMenu([
+        RestaurantId.create(restaurantId),
+      ]);
+      expect(found.has(restaurantId)).toBe(false);
+    });
+
+    it('is scoped per-restaurant: one restaurant qualifying does not leak into a sibling restaurant with only a non-default Menu', async () => {
+      if (!dbAvailable) return;
+      const qualifyingRestaurantId = await createFreshRestaurant();
+      const nonQualifyingRestaurantId = await createFreshRestaurant();
+      await menuRepository.create(makeMenu(qualifyingRestaurantId, { isDefault: true }));
+      await menuRepository.create(makeMenu(nonQualifyingRestaurantId, { isDefault: false }));
+
+      const found = await menuRepository.findRestaurantIdsWithActiveDefaultMenu([
+        RestaurantId.create(qualifyingRestaurantId),
+        RestaurantId.create(nonQualifyingRestaurantId),
+      ]);
+      expect(found.has(qualifyingRestaurantId)).toBe(true);
+      expect(found.has(nonQualifyingRestaurantId)).toBe(false);
+      expect(found.size).toBe(1);
+    });
+  });
+
   it('rejects Restaurant resolution with no tenant context bound (the shared gate every Menu use case relies on)', async () => {
     if (!dbAvailable) return;
     await expectMissingContextRejection();

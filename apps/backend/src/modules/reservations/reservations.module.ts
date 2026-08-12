@@ -119,16 +119,26 @@ import { BranchReservationsController } from './presentation/controllers/branch-
  */
 @Module({
   imports: [
-    AuthenticationModule,
+    // Phase 19.8 (Owner Invite, ADR-036) correction: AcceptOrganizationInvitationUseCase
+    // (under OrganizationsModule, imported by CustomerAcquisitionModule below)
+    // now imports several authentication domain/application files directly,
+    // lengthening the require chain enough that this plain import now
+    // surfaces as "index [0] of imports array is undefined" at boot -
+    // confirmed by a real boot run, not a hypothetical. Wrapped in
+    // forwardRef per this codebase's established "forwardRef every edge of
+    // the cycle" precedent (see CustomerAcquisitionModule's own matching fix).
+    forwardRef(() => AuthenticationModule),
     AuthorizationModule,
     RestaurantsModule,
     // Phase 19.2 (ADR-033): supplies RecordCustomerAcquisitionOnApprovalService,
     // called from both ApproveReservationUseCase and CreateReservationUseCase's
     // auto-approve branch, inside their own UnitOfWorkPort transaction.
     // CustomerAcquisitionModule imports RestaurantsModule/BranchesModule/
-    // OrganizationsModule/AuthenticationModule, none of which import
-    // ReservationsModule back - a one-directional edge, no forwardRef needed.
-    CustomerAcquisitionModule,
+    // OrganizationsModule/AuthenticationModule - previously documented as "no
+    // forwardRef needed" here; the Phase 19.8 lengthened require chain (see
+    // note above) now surfaces this edge too ("index [3] of imports array is
+    // undefined" at boot), so it is wrapped in forwardRef as well.
+    forwardRef(() => CustomerAcquisitionModule),
     // `forwardRef` (Phase 6, ADR-026): this module has no DIRECT edge back to
     // `BranchesModule`, but adding `forwardRef(() => ReservationsModule)` to
     // `TablesModule` below closes a genuine 3-module cycle at the Node/CommonJS

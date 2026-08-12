@@ -1,4 +1,4 @@
-import { Global, Module } from '@nestjs/common';
+import { forwardRef, Global, Module } from '@nestjs/common';
 import { AuthenticationModule } from '@modules/authentication/authentication.module';
 import { AuditingEventPublisher } from '@modules/authentication/infrastructure/events/auditing-event-publisher';
 import { ReservationsModule } from '@modules/reservations/reservations.module';
@@ -67,7 +67,9 @@ import { EVENT_PUBLISHER } from '@shared/application/ports/event-publisher.port'
 @Global()
 @Module({
   imports: [
-    AuthenticationModule,
+    // Phase 19.8 (Owner Invite, ADR-036) correction: forwardRef - see
+    // branches.module.ts's matching fix for the exact boot-time symptom.
+    forwardRef(() => AuthenticationModule),
     ReservationsModule,
     BranchesModule,
     RestaurantsModule,
@@ -102,6 +104,14 @@ import { EVENT_PUBLISHER } from '@shared/application/ports/event-publisher.port'
       ],
     },
   ],
-  exports: [EVENT_PUBLISHER],
+  // Phase 19.9 (ADR-037) — `REALTIME_BROADCASTER` is now exported alongside
+  // `EVENT_PUBLISHER`, ambiently resolvable exactly the same way, so
+  // `NotificationBroadcastFanoutProcessor` (`NotificationsModule`) can emit
+  // its one-per-batch `NotificationBroadcastDelivered` hint directly -
+  // deliberately bypassing the standard `EVENT_PUBLISHER` -> domain-event
+  // pipeline for bulk-inserted broadcast rows (ADR-037 Decision #6: one
+  // audit row and one Socket.IO emit per broadcast batch, not one per
+  // recipient).
+  exports: [EVENT_PUBLISHER, REALTIME_BROADCASTER],
 })
 export class RealtimeModule {}

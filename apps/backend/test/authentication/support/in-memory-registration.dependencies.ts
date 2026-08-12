@@ -54,9 +54,18 @@ import {
 import { RefreshTokenHash } from '@shared/domain/value-objects/refresh-token-hash.vo';
 import { SessionId, TokenFamilyId } from '@shared/domain/value-objects/identifiers.vo';
 import {
+  OrganizationInvitationRepository,
   OrganizationMemberRepository,
   OrganizationRepository,
 } from '@modules/organizations/domain/repositories/organization.repository';
+import { OrganizationInvitation } from '@modules/organizations/domain/entities/organization-invitation.entity';
+import { OrganizationInvitationStatus } from '@modules/organizations/domain/enums/organization.enums';
+import { DuplicatePendingInvitationException } from '@modules/organizations/domain/exceptions/duplicate-pending-invitation.exception';
+import {
+  EmailProviderPort,
+  EmailSendParams,
+  EmailSendResult,
+} from '@shared/application/ports/email-provider.port';
 import { Email } from '@shared/domain/value-objects/email.vo';
 import { OrganizationId, UserId } from '@shared/domain/value-objects/identifiers.vo';
 import { OrganizationSlug } from '@shared/domain/value-objects/organization-slug.vo';
@@ -285,6 +294,19 @@ export class InMemoryOrganizationMemberRepository implements OrganizationMemberR
     return true;
   }
 
+  async findById(id: string): Promise<OrganizationMember | null> {
+    return this.members.get(id) ?? null;
+  }
+
+  async listByOrganization(
+    page: number,
+    limit: number,
+  ): Promise<{ items: OrganizationMember[]; total: number }> {
+    const items = [...this.members.values()];
+    const start = (page - 1) * limit;
+    return { items: items.slice(start, start + limit), total: items.length };
+  }
+
   snapshot(): OrganizationMember[] {
     return [...this.members.values()];
   }
@@ -294,6 +316,140 @@ export class InMemoryOrganizationMemberRepository implements OrganizationMemberR
     for (const member of members) {
       this.members.set(member.toProps().id, member);
     }
+  }
+}
+
+/** Phase 19.8 (Owner Invite, ADR-036). Mirrors PrismaOrganizationInvitationRepository's CAS/partial-unique-index semantics in memory. */
+export class InMemoryOrganizationInvitationRepository implements OrganizationInvitationRepository {
+  private readonly invitations = new Map<string, OrganizationInvitation>();
+
+  async save(invitation: OrganizationInvitation): Promise<void> {
+    const props = invitation.toProps();
+    if (props.status === OrganizationInvitationStatus.Pending) {
+      for (const existing of this.invitations.values()) {
+        const existingProps = existing.toProps();
+        if (
+          existingProps.id !== props.id &&
+          existingProps.organizationId === props.organizationId &&
+          existingProps.email === props.email &&
+          existingProps.status === OrganizationInvitationStatus.Pending
+        ) {
+          throw new DuplicatePendingInvitationException();
+        }
+      }
+    }
+    this.invitations.set(props.id, invitation);
+  }
+
+  async findById(
+    id: string,
+    organizationId: OrganizationId,
+  ): Promise<OrganizationInvitation | null> {
+    const invitation = this.invitations.get(id);
+    if (!invitation || invitation.organizationId.value !== organizationId.value) {
+      return null;
+    }
+    return invitation;
+  }
+
+  async findByTokenHash(tokenHash: string): Promise<OrganizationInvitation | null> {
+    for (const invitation of this.invitations.values()) {
+      if (invitation.tokenHash === tokenHash) {
+        return invitation;
+      }
+    }
+    return null;
+  }
+
+  async findActivePendingByOrganizationAndEmail(
+    organizationId: OrganizationId,
+    email: string,
+  ): Promise<OrganizationInvitation | null> {
+    for (const invitation of this.invitations.values()) {
+      if (
+        invitation.organizationId.value === organizationId.value &&
+        invitation.email === email &&
+        invitation.status === OrganizationInvitationStatus.Pending
+      ) {
+        return invitation;
+      }
+    }
+    return null;
+  }
+
+  async listByOrganization(
+    organizationId: OrganizationId,
+    page: number,
+    limit: number,
+  ): Promise<{ items: OrganizationInvitation[]; total: number }> {
+    const items = [...this.invitations.values()]
+      .filter((invitation) => invitation.organizationId.value === organizationId.value)
+      .sort((a, b) => b.toProps().createdAt.getTime() - a.toProps().createdAt.getTime());
+    const start = (page - 1) * limit;
+    return { items: items.slice(start, start + limit), total: items.length };
+  }
+
+  async revokePendingByOrganizationAndEmail(
+    organizationId: OrganizationId,
+    email: string,
+    at: Date,
+  ): Promise<void> {
+    for (const [id, invitation] of this.invitations.entries()) {
+      if (
+        invitation.organizationId.value === organizationId.value &&
+        invitation.email === email &&
+        invitation.status === OrganizationInvitationStatus.Pending
+      ) {
+        this.invitations.set(id, invitation.revoke(at));
+      }
+    }
+  }
+
+  async revokeIfPending(id: string, organizationId: OrganizationId, at: Date): Promise<boolean> {
+    const invitation = this.invitations.get(id);
+    if (
+      !invitation ||
+      invitation.organizationId.value !== organizationId.value ||
+      invitation.status !== OrganizationInvitationStatus.Pending
+    ) {
+      return false;
+    }
+    this.invitations.set(id, invitation.revoke(at));
+    return true;
+  }
+
+  async consumeIfPending(id: string, at: Date): Promise<boolean> {
+    const invitation = this.invitations.get(id);
+    if (
+      !invitation ||
+      invitation.status !== OrganizationInvitationStatus.Pending ||
+      invitation.toProps().expiresAt.getTime() <= at.getTime()
+    ) {
+      return false;
+    }
+    this.invitations.set(id, invitation.accept(at));
+    return true;
+  }
+
+  snapshot(): OrganizationInvitation[] {
+    return [...this.invitations.values()];
+  }
+
+  restore(invitations: OrganizationInvitation[]): void {
+    this.invitations.clear();
+    for (const invitation of invitations) {
+      this.invitations.set(invitation.toProps().id, invitation);
+    }
+  }
+}
+
+export class RecordingEmailProvider implements EmailProviderPort {
+  readonly calls: EmailSendParams[] = [];
+  nextResult: EmailSendResult = { outcome: 'sent' };
+
+  async send(params: EmailSendParams): Promise<EmailSendResult> {
+    this.calls.push(params);
+    return this.nextResult;
   }
 }
 

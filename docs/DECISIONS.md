@@ -1693,7 +1693,7 @@ Menu Management Architecture — Phase 18 Freeze
 
 ### Status
 
-**Accepted — Phase 18 Architecture Freeze, 2026-08-02. Architecture only — implementation not authorized.** No `Menu`/`MenuCategory`/`MenuItem`/`MenuItemOptionGroup`/`MenuItemOption`/`MenuItemAddOn` table, migration, or code exists before this session (`FR-08.1` in `PRODUCT_REQUIREMENTS.md` had no implementation phase, recorded as a gap in `TASKS.md`'s Phase 15.5 note). This ADR resolves that gap by design only; a separate explicit go-ahead is required before any Prisma migration or code is written.
+**Accepted — Phase 18 Architecture Freeze, 2026-08-02. Superseded on Decision Item 2 and `scheduleJson` by ADR-032 (2026-08-03); all other decision items implemented.** No `Menu`/`MenuCategory`/`MenuItem`/`MenuItemOptionGroup`/`MenuItemOption`/`MenuItemAddOn` table, migration, or code existed before this session (`FR-08.1` in `PRODUCT_REQUIREMENTS.md` had no implementation phase, recorded as a gap in `TASKS.md`'s Phase 15.5 note). **Implemented 2026-08-03 per ADR-032's corrected design (see ADR-032's own Status); reconciled 2026-08-10 after a Provenance Audit found this status line had never been updated to reflect that — see TASKS.md's "Phase 18 — Menu Management: Reconciliation & Completion Report."**
 
 ### Date
 
@@ -1749,7 +1749,7 @@ Menu Ownership, Availability, and Featured-Item Reconciliation — Phase 18 Corr
 
 ### Status
 
-**Accepted — Phase 18 Architecture Reconciliation, 2026-08-03.** Supersedes only ADR-031 Decision Item 2 (singleton Menu) and the `scheduleJson` field documented in `DATABASE_SCHEMA.md`'s Menu Items table (that field was never a numbered ADR-031 Decision item in its own right, only a schema-level consequence of it). ADR-031 Decision Items 1, 3, 4, 5, 6, 7, 8, 9 are unchanged and not reopened. Pre-implementation correction, exactly like ADR-030's relationship to ADR-020 — no `Menu`/`MenuCategory`/`MenuItem`/`MenuItemOptionGroup`/`MenuItemOption`/`MenuItemAddOn` table, migration, or code exists before this session, so this is not a production schema change, only a correction to an unimplemented specification. Implementation remains unauthorized by this ADR.
+**Accepted — Phase 18 Architecture Reconciliation, 2026-08-03.** Supersedes only ADR-031 Decision Item 2 (singleton Menu) and the `scheduleJson` field documented in `DATABASE_SCHEMA.md`'s Menu Items table (that field was never a numbered ADR-031 Decision item in its own right, only a schema-level consequence of it). ADR-031 Decision Items 1, 3, 4, 5, 6, 7, 8, 9 are unchanged and not reopened. At the time this ADR was written, no `Menu`/`MenuCategory`/`MenuItem`/`MenuItemOptionGroup`/`MenuItemOption`/`MenuItemAddOn` table, migration, or code existed. **Implemented against this corrected design the same session (2026-08-03, commit `e4a5efc`) — see `DATABASE_SCHEMA.md`'s "Menu Management" section and `TASKS.md`'s "Phase 18 — Menu Management: Reconciliation & Completion Report" for verification evidence. This status line was not updated at implementation time; corrected 2026-08-10 by a Provenance Audit that found no repository record of the authorization that must have produced the working, tested code — see that report for the full evidence trail. No historical decision above is altered by this correction.**
 
 ### Date
 
@@ -1810,7 +1810,7 @@ Customer Acquisition & Pricing Engine — Financial Source of Truth, Not Billing
 
 ### Status
 
-**Accepted — architecture frozen 2026-08-04 (Phase 19 Part 1 / Part 2 / Final Decision sessions). Architecture frozen only — not implemented, no Prisma model exists; implementation requires separate explicit authorization.**
+**Accepted — architecture frozen 2026-08-04 (Phase 19 Part 1 / Part 2 / Final Decision sessions). Implemented 2026-08-09 (Phase 19.2, explicitly authorized) — see `TASKS.md`'s Phase 19.2 Engineering Report for the full checklist and verification evidence. This status line was not updated at implementation time; corrected 2026-08-10 during the Phase 18 Provenance Audit, which found the same drift on ADR-034 below and on ADR-031/ADR-032 (see TASKS.md's Phase 18 Reconciliation & Completion Report, §9). No historical decision above is altered by this correction.**
 
 ### Date
 
@@ -1904,7 +1904,7 @@ Platform Back Office — PlatformAdmin Operational Authority (Restaurant/Organiz
 
 ### Status
 
-**Accepted — architecture frozen 2026-08-04 (Phase 19 Part 2 / Final Decision sessions). Architecture frozen only — not implemented; implementation requires separate explicit authorization.**
+**Accepted — architecture frozen 2026-08-04 (Phase 19 Part 2 / Final Decision sessions). Implemented in stages: the curated Phase 19.1 subset 2026-08-04, Audit Log Read API (§2) as Phase 19.3 on 2026-08-10, Organization Delete/Restore as Phase 19.4 on 2026-08-10, each explicitly authorized — see `TASKS.md`'s Phase 19 status line and the corresponding Engineering Reports. Narrow per-entity lookup, Platform Dashboard composition, Notification delivery-status aggregation, and full self-service Organization management remain unimplemented and unauthorized. This status line was not updated as each increment landed; corrected 2026-08-10 during the Phase 18 Provenance Audit (see TASKS.md's Phase 18 Reconciliation & Completion Report, §9). No historical decision above is altered by this correction.**
 
 ### Date
 
@@ -2043,6 +2043,140 @@ Both mechanisms already satisfy every design goal ADR-012 Decision Item 3 stated
 ### Impact
 
 Affects: `DECISIONS.md` (this ADR; ADR-012 receives a Superseding Note, its own Decision text unchanged), `TENANCY.md` ("System / Platform-Administration Operations" section rewritten to describe Patterns 1/2), `AUTHORIZATION_ARCHITECTURE.md` (role hierarchy diagram, ownership table, tenant-scope-resolution section), `CODING_STANDARDS.md` (repository rule corrected), `PRODUCT_REQUIREMENTS.md` (FR-03.4/FR-19.2 corrected), `DATABASE_SCHEMA.md` (Platform Admins purpose line corrected), `ARCHITECTURE_COMPLIANCE_AUDIT.md` (addendum note, historical table row not rewritten), `ARCHITECTURE_LOCK.md` (post-lock extension entry; `TENANCY.md`'s locked-content description unaffected in substance). No Prisma schema/migration, no code, in this session.
+
+---
+
+## ADR-036
+
+### Title
+
+Owner Invite — Explicit Acceptance-Required Invitation Lifecycle (`OrganizationInvitation`, Option B) and the SMTP Email Provider Abstraction
+
+### Status
+
+**Accepted — implemented, 2026-08-12 (Phase 19.8).** Resolves the Owner Invite architecture gap ADR-034 §7 explicitly deferred and the Phase 19.7 Engineering Report (`TASKS.md`) reported as unresolved. Product decision (explicit, this session): Invite means a real, acceptance-required invitation — not an `OrganizationMember.userId`-nullable state machine (Option A) and not an immediate membership grant (Option C).
+
+### Date
+
+2026-08-12
+
+### Context
+
+Phase 19.7 shipped Change Role / Remove / Transfer Ownership for self-service Organization member management but explicitly declined to implement Owner Invite: `OrganizationMember.userId` is required/non-nullable, and no `Invited -> Active` transition mechanism exists anywhere in the codebase (`PrismaLoginOrganizationReader` grants org-claims to `Active` members only). A dedicated architecture/product audit (this session, preceding this ADR) evaluated three options:
+
+- **Option A** — make `OrganizationMember.userId` nullable and add an `Invited` lifecycle directly on that entity, mirroring `Employee.userId`'s nullable-then-linked-at-login pattern. Rejected: touches a required invariant a large amount of existing tenant-scoped code depends on, and inherits Employee's own unresolved gap (no path for a person with zero platform account to ever acquire one to log into, since self-registration was retired by ADR-022).
+- **Option B** — a dedicated `OrganizationInvitation` entity, explicit acceptance step, `OrganizationMember` untouched. Selected.
+- **Option C** — immediate grant to an already-existing `User` found by email, no acceptance semantics at all. Rejected by the explicit product decision that Invite must mean a real invitation.
+
+A second, coupled gap: no email-delivery infrastructure exists anywhere in this backend (`NotificationProviderPort` is push/in-app only, OneSignal-backed, gated by a frozen event allow-list with no email-capable adapter). An invitation link must be delivered by email, so this ADR also freezes a new, provider-agnostic `EmailProviderPort` (mirroring `NotificationProviderPort`'s ADR-007 Anti-Corruption Layer shape) and its concrete adapter.
+
+### Decision
+
+1. **New entity, not a schema change to `OrganizationMember`.** `OrganizationInvitation` (`organizationId`, `email`, `role`, `tokenHash`, `invitedByUserId`, `status`, `expiresAt`, `acceptedAt`, `createdAt`, `updatedAt`) is additive-only. `OrganizationMember.userId` remains required/non-nullable, untouched.
+2. **Status lifecycle is `Pending | Accepted | Revoked` — `Expired` is never persisted.** It is resolved live from `expiresAt` by `OrganizationInvitationPolicy.resolveState`, mirroring `PasswordResetToken`/`PasswordResetPolicy.resolveTokenState`'s existing precedent for a TTL-bound, un-swept token record, rather than introducing a new background-sweep mechanism this codebase has never used.
+3. **Token security reuses `OpaqueTokenService` verbatim** — 32-byte random, base64url, SHA-256 hash at rest, single-use (CAS `consumeIfPending`), timing-safe compare. The raw token is never persisted or logged.
+4. **Tenancy: explicit application-layer scoping (the pre-existing "transitively tenant-owned" convention — not to be confused with ADR-035's numbered Pattern 1/Pattern 2, which govern PlatformAdmin cross-tenant access and do not apply here).** `OrganizationInvitation` carries a direct `organizationId` column like `OrganizationMember`, but is deliberately *not* added to `withTenantScoping`'s `DIRECT_TENANT_OWNED_MODELS` — acceptance is looked up by raw token alone, before the invitee has any bound `TenantContext` (the same structural requirement `PasswordResetToken`'s unscoped `findByTokenHash` already has). Issuance/list/revoke instead pass `organizationId` explicitly into every repository method that must not cross tenants, the same convention `Employee`'s repository already uses for its own unscoped, login-time lookup (and `RestaurantSettings`/`Offer`/`Menu` use for their own FK-chain-resolved tenancy). This is a reuse of an existing convention, not a new tenancy mechanism.
+5. **At most one `Pending` invitation per `(organizationId, email)`** — a hand-written partial unique index (`organization_invitations_org_email_one_pending_key`), the same "Prisma schema DSL cannot express a WHERE-filtered unique index" precedent as `Table.mergeGroupId`/`Menu.isDefault`. Resend (re-inviting the same email) revokes the prior Pending row, then issues a new one, inside one transaction — mirrors `ForgotPasswordUseCase`'s `invalidateActiveByUserId` + `save` shape.
+6. **A single accept endpoint serves both branches**, determined by the use case (never a client-supplied flag) from whether `invitation.email` already has a `User` account:
+   - **Existing account**: the caller must already be authenticated as exactly that User (an optional, lenient Bearer-token read on an otherwise-public route — absent/invalid is anonymous, never a hard 401 for unrelated reasons); only an `OrganizationMember` row is created or reactivated.
+   - **No existing account**: `firstName`/`lastName`/`password` are required; the new `User.email` is always `invitation.email`, never client-suppliable; `User` + `OrganizationMember` are created atomically, in the same transaction as the invitation's CAS consume.
+   Both branches run inside `TenantContextPort.runAsync` (the same bootstrap-tenant-context mechanism `ProvisionRestaurantOwnerUseCase` already uses), because neither branch has an interceptor-bound `TenantContext` yet.
+7. **Anti-enumeration**: "not found", "already accepted", and "revoked" are indistinguishable to the caller (`InvalidInvitationTokenException`), mirroring `ResetPasswordUseCase`'s existing 'consumed' handling exactly. Only "expired" is a separate, informative error.
+8. **Invitations can never grant Owner** — `OrganizationInvitationPolicy.assertRoleIsInvitable` rejects `role: Owner` at issuance. Owner changes remain exclusively `OrganizationMembershipPolicy.transferOwnership`.
+9. **`OrganizationMemberInvited`** (pre-named since Phase 0, zero producer until now) means exactly "an invitation was issued" — never republished on acceptance. Two new events, `OrganizationInvitationRevokedEvent`/`OrganizationInvitationAcceptedEvent`, cover the other two lifecycle transitions; all three are wired into `AuditingEventPublisher`.
+10. **Email Provider Abstraction (`EmailProviderPort`)**: a new, provider-agnostic port (`shared/application/ports/email-provider.port.ts`), concrete adapter `SmtpEmailProvider` (generic SMTP via `nodemailer` — vendor-neutral, works behind Amazon SES, Gmail, a SendGrid/Mailgun SMTP relay, self-hosted Postfix, or Mailhog/Ethereal for dev/test). Configured via `smtp.config.ts` (`SMTP_HOST`/`PORT`/`SECURE`/`USER`/`PASSWORD`/`FROM_ADDRESS`/`FROM_NAME`), never `.required()` in `env.validation.ts` (mirrors `ONESIGNAL_*`/`LIGHTOTP_API_KEY`'s precedent) — the adapter fails closed (logs, does not throw) when unconfigured rather than silently "succeeding". Email delivery from `IssueOrganizationInvitationUseCase` is best-effort: a transient SMTP failure never rolls back or fails an otherwise-successful issuance (the invitation record is the source of truth; the Owner can always re-view/resend it) — the same "never rethrows into the business transaction" convention `NotifyingEventPublisher` already established for push notifications.
+11. **TTL default 168 hours (7 days)**, DB-seeded/business-configurable via a new `SystemConfiguration` key (`organizationInvitationTtlHours`), mirroring `passwordResetTokenTtlHours`'s exact pattern.
+
+### Alternatives Considered
+
+* **Option A / Option C** (see Context) — rejected per the explicit product decision and the architecture audit's analysis; both are recorded in full in that audit, not reproduced here.
+* **A generic/polymorphic invitation-token table reused across future invite-like features.** Rejected — repeats the exact reasoning `PendingCustomerRegistration`'s own doc comment already gives against generalizing distinct token shapes (a 256-bit opaque token has a materially different entropy/attempt-limiting profile than, e.g., a 6-digit OTP); this codebase's established convention is one purpose-built table per token shape.
+* **A specific transactional-email SaaS adapter (SendGrid/Resend/Mailgun/Postmark) instead of generic SMTP.** Rejected for this phase — requires provisioning and holding a real third-party API key/account, which this session has no authority to create; generic SMTP is the lowest-lock-in real option and every listed provider is reachable through it anyway via its own SMTP relay. The port is designed so swapping in a vendor-specific adapter later requires zero caller changes.
+* **Deferring real email delivery entirely (a logging-only adapter).** Rejected — Section 9 of the approved architecture explicitly requires a real delivery mechanism for this phase, and SMTP credentials are operationally cheap to provision compared to a SaaS account.
+
+### Consequences
+
+#### Positive
+
+* Closes the last open item from ADR-034 §7 / the Phase 19.7 Engineering Report — Owner Invite is now fully implemented, not merely re-deferred.
+* Zero changes to `OrganizationMember`'s required-`userId` invariant — every existing consumer of that entity is unaffected; the migration is purely additive (new table only).
+* The new `EmailProviderPort` is immediately reusable by any future feature needing outbound email (e.g. a future digest/receipt email), without re-deriving the Anti-Corruption Layer pattern.
+* Token, CAS, and anti-enumeration mechanics are 100% reused from `PasswordResetToken`/`ResetPasswordUseCase` — no new security primitive was invented for this phase.
+
+#### Negative
+
+* A second, distinct "tenant-owned but not automatically tenant-scoped" table now exists alongside `OrganizationMember` (which is automatically scoped) — a future maintainer adding a new query method to `OrganizationInvitationRepository` must remember to pass `organizationId` explicitly; nothing at the type level prevents forgetting it (mitigated by this ADR and the repository's own doc comment, not eliminated).
+* Adding new SMTP credentials is new operational surface (a secret to provision and rotate per environment) that did not exist before this phase.
+* The existing-account acceptance branch's "lenient" optional-auth read on an otherwise-public route is a new pattern in this codebase (every prior route was either fully public or fully `JwtAuthGuard`-gated) — worth revisiting if a second such route is ever needed, to decide whether it deserves a named, reusable guard instead of ad hoc controller-level parsing.
+
+### Impact
+
+Affects: `prisma/schema.prisma` (new model + enum, additive migration `20260811200619_add_organization_invitations`), `DATABASE_SCHEMA.md`, `DOMAIN_MODEL.md`, `EVENTS.md`, `API_GUIDELINES.md`, `AUTHORIZATION_ARCHITECTURE.md`, `TENANCY.md`, `PROJECT_ROADMAP.md`, `TASKS.md`, `ENVIRONMENT_SETUP.md`/`.env.example` (new SMTP/`APP_WEB_BASE_URL` variables), the Postman collection. No change to `ARCHITECTURE_LOCK.md`'s locked schema decisions (this is new, additive scope, not a reopening of a locked one).
+
+---
+
+## ADR-037
+
+### Title
+
+Internal Notification System Extension — Admin/Owner-Initiated Notifications, `user:{userId}` Realtime Room, and BullMQ Broadcast Fan-out
+
+### Status
+
+**Accepted — implementation in progress, 2026-08-12 (Phase 19.9).** Extends, not replaces, the Phase 9 Notification System (this document's Notification section) and Phase 8's realtime architecture (ADR-006/ADR-015). Owner-authorized scope (explicit, this session): internal, backend-owned in-app notifications only — no Firebase, OneSignal, FCM, APNs, or other external push provider is introduced by this ADR; `OneSignalNotificationProvider` (ADR-007) is untouched and continues to own only the existing per-notification push track.
+
+### Date
+
+2026-08-12
+
+### Context
+
+Phase 9 shipped a Customer-facing notification inbox (`GET /notifications`, mark-read/read-all/unread-count) and a single creation path — `NotificationDispatcher`, triggered only by a frozen allow-list of *domain* events (Reservation/Waitlist/Messaging), always resolving exactly one recipient. There was no way for a human actor (Platform Admin or Restaurant Owner) to originate a notification directly. A pre-implementation audit (this session) of the Notification module, Socket.IO/BullMQ/Redis infrastructure, and the Customer/Restaurant-Owner identity and authorization model found:
+
+* `Notification`/`pushStatus` are structurally sufficient as-is — no rename, no new enum value, no read/unread gap. `Notification.title`/`body` already accept arbitrary sender-supplied strings with `templateId: null`, so ad hoc admin/owner content needs no `NotificationTemplate` change.
+* The Socket.IO room taxonomy is explicitly frozen at five types (`room.ts`'s own doc comment: "No other future room type ... belongs in this list without its own equivalent freeze"), and has no per-user room. `NotificationCreatedEvent`'s realtime hint today reaches only the `reservation:{id}` room, so it cannot reach a Customer for a reservation-less, admin-originated notification.
+* BullMQ has zero existing batch/paginated fan-out precedent — every processor in the codebase (Reservation/Reminder/LateArrival/Offer/Subscription/Waitlist) handles exactly one entity per job. A "notify every eligible Customer" operation is genuinely new infrastructure.
+* `Notification.pushIdempotencyKey` dedupes a single push send under BullMQ retry; nothing dedupes an entire *broadcast* (one admin action fanning out to N Customer rows) under retry.
+* There is no `Customer` table — a Customer is a `User` row with no `OrganizationMember`/`Employee`/`PlatformAdmin` row (ADR-022). `User`/`Notification` carry no `organizationId` (this document's Notification section, `TENANCY.md`) — Customers are platform-global, not tenant-scoped.
+* Explicit owner product decision (this session, superseding the initial draft assumption that a Restaurant-Owner broadcast should be scoped to that Restaurant's own Reservation/Favorite/Review history): **"all eligible Customers" for a Restaurant Owner broadcast means every active Customer account platform-wide, identical in shape to a Platform Admin broadcast's audience — not derived from any Restaurant/Organization relationship.** No new Restaurant-Customer relationship table is introduced for notification delivery.
+* Explicit owner product decision (this session): broadcast-style sends (Platform Admin → all Customers, Restaurant Owner → all Customers) are filtered by `User.marketingOptIn` — a column that existed since Phase 9 but had no consumer (`DOMAIN_MODEL.md` already earmarked it "reserved for future promotional/broadcast category"). `User.notificationOptIn` is unchanged and continues to gate push-delivery-only, exactly as it does for every existing transactional notification.
+
+### Decision
+
+1. **New `RoomType.User` (`user:{userId}`), self-only.** Added to the frozen five (`Organization | Restaurant | Branch | Reservation | Conversation`), matching this file's own precedent for how `Conversation` was added (D9). Authorization is trivial and requires no repository lookup: `actor.userId === resourceId`. Unlike every other room, the client never has to call `room.subscribe` for it — `RealtimeGateway`'s handshake-authentication success path (`ws-authentication.service.ts`) joins the socket to its own `user:{userId}` room automatically, since there is no ownership check beyond "this is the authenticated caller's own identity" and no scenario where a Customer would need to *not* be in it.
+2. **`NotificationCreatedEvent`'s realtime mapping is extended, not replaced.** Today: `reservationId !== null` → `reservation:{id}` room; `reservationId === null` → no room at all. New: `reservationId === null` → `user:{userId}` room instead (payload unchanged: `{ notificationId, type }`, still never `title`/`body`, per the existing frozen PII policy). This is a strict widening — every existing reservation-sourced notification is unaffected — and, as a side effect, closes a pre-existing gap where `WaitlistEntryPromoted`-sourced notifications (already reservation-less) never reached the Customer in realtime; they now do, for free.
+3. **A new, minimal `NotificationBroadcast` table** (`id, senderType [PlatformAdmin|OrganizationMember], senderId, organizationId?, title, body, totalRecipients?, processedCount, succeededCount, failedCount, status [Pending|Processing|Completed|Failed], lastProcessedUserId?, createdAt, updatedAt`) plus a nullable `Notification.broadcastId` FK with a composite `@@unique([broadcastId, userId])`. This is the minimum viable mechanism satisfying three simultaneous requirements: (a) idempotent batch insert under BullMQ retry — `createMany({ skipDuplicates: true })` relies on the unique index exactly the way `pushIdempotencyKey` relies on a provider-side idempotency key today; (b) the observability fields the approved product spec requires (broadcast/job id, sender, audience size, processed/succeeded/failed counts); (c) a resumable cursor (`lastProcessedUserId`) so a fan-out job interrupted mid-run continues instead of rescanning from the start. `organizationId` is populated only for a Restaurant-Owner-originated broadcast, for audit/traceability — it is never used to scope the (global) audience query.
+4. **Audience resolution is a new Pattern-2 raw reader (`CustomerAudienceReaderPort`/`PrismaCustomerAudienceReader`)** — the seventh ESLint-whitelisted cross-tenant reader (`.eslintrc.js`), alongside `PrismaPlatformAdminNotificationStatsReader` et al., following the identical "no single tenant to bind" justification. Eligibility, keyset-paginated (`id > cursor`, never `OFFSET`): `User` with no `OrganizationMember`, no `Employee.userId`, no `PlatformAdmin` row, `status = Active`, `deletedAt IS NULL`, `deletionRequestedAt IS NULL`, `marketingOptIn = true`. Used identically by both the Platform Admin and the Restaurant Owner broadcast — per the product decision above, there is exactly one audience definition, not two.
+5. **BullMQ: one new processor, same queue, deterministic job IDs, no new queue system.** `NotificationBroadcastFanoutProcessor` runs on the existing `NotificationQueue`. Kickoff job id `notification-broadcast-{broadcastId}` (mirrors `notification-push-{id}`'s existing convention). Each run processes a bounded number of keyset batches (500 rows/batch, chunked `createMany`), updates the `NotificationBroadcast` row's counters/cursor after each batch, emits one realtime hint per DB batch (`RealtimeBroadcasterPort.broadcast(rooms, envelope)` already accepts a room array — one call reaches every recipient in that batch, not one emit per recipient), and — if the audience isn't exhausted within the run's row budget — self-enqueues a deterministic continuation job id (`notification-broadcast-{broadcastId}-from-{cursor}`) rather than looping unbounded inside one job or one HTTP request. Marks `Completed` when a batch returns fewer rows than requested.
+6. **Two audit-only domain events per broadcast, not one per recipient.** `PlatformAdminNotificationBroadcastRequestedEvent` / `RestaurantOwnerNotificationBroadcastRequestedEvent` fire once, synchronously, when the HTTP request that kicks off the broadcast completes (before the fan-out job even runs) — giving `AuditingEventPublisher` a single, properly actor-attributed (`PlatformAdmin` / `User`, matching the existing `AuditActorType` convention for `OrganizationMember`) audit row per broadcast action, exactly like `CustomerAcquisitionManuallyRecordedEvent`'s existing precedent. The per-recipient `Notification` rows created during fan-out are bulk-inserted via `NotificationRepository.saveMany` and deliberately do **not** each publish their own `NotificationCreatedEvent` through `EVENT_PUBLISHER` — doing so would write one additional `AuditLog` row per recipient (noise, not signal, at broadcast scale) and would require one Socket.IO emit per recipient instead of one per batch. A new, content-free realtime envelope (`eventType: 'NotificationBroadcastDelivered', data: { broadcastId }`) is used for the batched hint instead, staying inside the existing "never carry notification content, only enough to prompt an authenticated REST fetch" policy.
+7. **Platform Admin → one Customer** reuses the existing single-entity path exactly (`Notification.save()` + `NotificationCreatedEvent`, so it gets the existing realtime/audit pipeline for free) plus one new `PlatformAdminNotificationSentEvent` for actor-attributed audit (the generic `NotificationCreatedEvent` audit branch alone only ever records `actorType: 'System'`). The target `userId` is validated to resolve to an eligible Customer (no `OrganizationMember`/`Employee`/`PlatformAdmin` row) via the same `CustomerAudienceReaderPort`; an invalid target collapses to the existing `NotificationNotFoundException` (404), matching this codebase's established cross-entity IDOR-safe-404 convention rather than a distinguishing 403.
+8. **Route ownership**: `POST /platform-admin/notifications` (send-to-one) and `POST /platform-admin/notifications/broadcast`, guarded by `PlatformAdminGuard` + `PlatformAdminRoleGuard` (mirrors `PlatformAdminAcquisitionsController`'s existing shape exactly); `POST /restaurants/:restaurantId/notifications/broadcast` under the Restaurant Dashboard's existing `OrganizationMemberGuard` + `@RequireOrgRole(Owner)` convention — `restaurantId` is authorization-scoping/attribution only (proves the caller genuinely owns *a* restaurant and which one is recorded for audit) and, per Decision #4, is never used to narrow the (global) audience.
+
+### Alternatives Considered
+
+* **Scope the Restaurant Owner broadcast audience to that Restaurant's own Reservation/Favorite/Review history.** This was the architecturally "cleaner" default the pre-implementation audit initially flagged as the most defensible interpretation absent product input. Explicitly rejected by the Owner in favor of a global-audience broadcast — recorded here because it reverses that default, not because the global interpretation was architecturally forced.
+* **A generic multi-room single Socket.IO emit carrying a shared payload for the whole broadcast, reusing the exact `NotificationCreatedEvent` shape.** Rejected: `NotificationCreatedEvent`'s payload carries one `notificationId`, which is necessarily different per recipient row; multiplexing it across many rooms in one emit call is incompatible with a per-recipient id. The chosen design (bulk-insert without per-row events + one content-free `NotificationBroadcastDelivered` batch hint) keeps exactly one Socket.IO emit call per DB batch without inventing a per-recipient identifier inside a shared payload.
+* **Reuse `notificationOptIn` instead of introducing `marketingOptIn` as the broadcast audience filter.** Rejected by explicit Owner decision — `notificationOptIn` continues to mean exactly what it means today (gates push delivery only, never suppresses row creation, per the existing Phase 9 semantics `DOMAIN_MODEL.md` documents), so overloading it for broadcast-audience filtering would have silently changed established behavior for every existing transactional notification path.
+* **A single combined use case handling both Platform Admin and Restaurant Owner broadcasts, selected by an actor-type parameter passed from a shared controller.** Rejected in favor of two thin use cases delegating into one shared `CreateNotificationBroadcastService` — matches this codebase's established "dual-actor branching happens inside the use case only when both actors hit the *same* route" pattern (`AUTHORIZATION_ARCHITECTURE.md` §"Open Decisions"), which does not apply here since Platform Admin and Restaurant Owner are reached via two structurally different guard chains and route prefixes.
+
+### Consequences
+
+#### Positive
+
+* Zero changes to `NotificationPushStatus`, `Notification`'s existing columns, or any Phase 19.6 Platform Dashboard aggregation query — fully additive.
+* The `user:{userId}` room and the `reservationId === null` mapping extension benefit every future reservation-less notification, not just this feature (immediate, incidental fix for `WaitlistEntryPromoted`).
+* `CustomerAudienceReaderPort` is immediately reusable by any future platform-wide Customer-facing broadcast feature without re-deriving the eligibility query.
+* Broadcast idempotency, resumability, and observability all fall out of one small additive table — no speculative columns beyond what the approved product spec's own observability requirements (§25) demand.
+
+#### Negative
+
+* A second "Customer-adjacent but not tenant-scoped, not automatically audited-per-row" write path now exists (bulk `saveMany`) alongside the original single-entity `save()` + `NotificationCreatedEvent` path — a future maintainer adding a new Notification-creating flow must consciously choose which shape applies (single-entity vs. bulk) rather than there being one obvious path, mitigated by this ADR's Decision #6 rationale but not eliminated.
+* A Restaurant Owner can now reach every Customer on the platform, not only customers who have ever interacted with their restaurant — a deliberate, explicit product decision, but a real abuse-surface expansion worth monitoring (existing platform-level rate limiting/observability conventions apply; no new bespoke limiter is introduced per the approved scope's "reuse existing conventions" instruction).
+* `marketingOptIn` now has its first real consumer; a Customer who has never explicitly reviewed that setting (default `false` at signup, per the existing column default) will not receive broadcasts until they opt in, which is the intended conservative default but changes today's "every column is unused" status quo.
+
+### Impact
+
+Affects: `prisma/schema.prisma` (new `NotificationBroadcast` model + `NotificationBroadcastSenderType`/`NotificationBroadcastStatus` enums, additive `broadcastId` column + composite unique index on `Notification`), `docs/DATABASE_SCHEMA.md`, `docs/DOMAIN_MODEL.md`, `docs/EVENTS.md` (new room type, extended `NotificationCreatedEvent` mapping, new `NotificationBroadcastDelivered` event contract), `docs/API_GUIDELINES.md` (new routes), `docs/TENANCY.md` (broadcast audience note), `docs/TESTING_STRATEGY.md`, `docs/PROJECT_ROADMAP.md`, `TASKS.md` (Phase 19.9), the Postman collection. No change to `ARCHITECTURE_LOCK.md`'s locked schema decisions (additive scope only).
 
 ---
 

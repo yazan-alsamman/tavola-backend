@@ -36,10 +36,12 @@ Every event should include:
 # Organization Events
 
 * OrganizationCreated
-* OrganizationMemberInvited
-* OrganizationMemberRoleChanged
-* OrganizationMemberRemoved
-* OrganizationOwnershipTransferred — documented since Phase 0; gains its first real producer under ADR-034 §6, implemented Phase 19.1 (narrow, PlatformAdmin-only emergency transfer; full self-service Organization management remains unbuilt and explicitly out of scope)
+* OrganizationMemberInvited — documented since Phase 0; gains its first real producer in Phase 19.8 (ADR-036, 2026-08-12), `IssueOrganizationInvitationUseCase` (Owner\Admin self-service). Means exactly "an invitation was issued" — never republished on acceptance (see `OrganizationInvitationAccepted` below). Payload: `{ organizationId, actorId, invitationId, email, role }`.
+* OrganizationInvitationRevoked — new (Phase 19.8, ADR-036) — a Pending invitation was explicitly revoked, including the automatic revoke-old half of resend semantics. Payload: `{ organizationId, actorId, invitationId, email }`.
+* OrganizationInvitationAccepted — new (Phase 19.8, ADR-036) — the invitation was accepted and the resulting `OrganizationMember` was created or reactivated. `actorId` is the new member's own userId (always self-actuated). Payload: `{ organizationId, actorId, invitationId, memberId, targetUserId, role, accountCreated }`.
+* OrganizationMemberRoleChanged — documented since Phase 0; gains its first real producer in Phase 19.7 (2026-08-11), `ChangeOrganizationMemberRoleUseCase` (Owner/Admin self-service). Payload: `{ organizationId, actorId, memberId, targetUserId, previousRole, newRole }`.
+* OrganizationMemberRemoved — documented since Phase 0; gains its first real producer in Phase 19.7 (2026-08-11), `RemoveOrganizationMemberUseCase` (Owner/Admin self-service). Payload: `{ organizationId, actorId, memberId, targetUserId }`.
+* OrganizationOwnershipTransferred — documented since Phase 0; gains its first real producer under ADR-034 §6, implemented Phase 19.1 (narrow, PlatformAdmin-only emergency transfer). Phase 19.7 (2026-08-11) adds a second producer: `SelfServiceTransferOrganizationOwnershipUseCase` (Owner-initiated self-service), reusing the exact same event/payload shape.
 * OrganizationSuspended — documented since Phase 0; gains its first real producer under ADR-034 §4, implemented Phase 19.1 (PlatformAdmin-authorized; never cascades to `Restaurant.status`, ADR-034 §5)
 * OrganizationReactivated (new, ADR-034 §4, implemented Phase 19.1)
 * OrganizationDeleted — `{ organizationId, actorId }`. ADR-034 §4, implemented Phase 19.4 (2026-08-10) — soft delete only, reuses the existing `Organization.deletedAt` field, no new schema. Never cascades to Restaurant/Branch/Employee/Reservation data — no cascade, ever (§5).
@@ -401,6 +403,18 @@ Explicit, not inferred from event names — no event outside this list produces 
 
 The only Notification-specific **domain event** Phase 9 v1 defines is `NotificationCreated` — published once, when the row is persisted, consumed both by Phase 8's realtime hint (above) and by `AuditingEventPublisher` per the usual convention. Push-track transitions (`Accepted`/`Failed`) are recorded as column updates on the `Notification` row itself, not as separate published domain events — the row *is* the audit trail (queryable via its own `pushStatus`/`pushSentAt`/`pushFailedAt`/`pushFailureReason` columns), avoiding six near-duplicate event classes for what is really one row's lifecycle.
 
+### Phase 19.9 extension (ADR-037) — internal admin/owner-initiated notifications
+
+**INTERNAL NOTIFICATION SYSTEM. No Firebase, no OneSignal, no FCM/APNs, no other external push provider is used by this extension** — durable PostgreSQL persistence plus the Socket.IO realtime hint below is the complete delivery model; the existing OneSignal Push track above is untouched and unrelated.
+
+Three new domain events, all consumed by `AuditingEventPublisher` only (none of them drive realtime fan-out directly — see the room/event contract below):
+
+* `PlatformAdminNotificationSentEvent` — `{ adminId, notificationId, targetUserId, correlationId? }`. Published alongside the existing `NotificationCreated` whenever a Platform Admin sends directly to one Customer, so the audit row is attributed to the real actor (`NotificationCreated`'s own audit branch always logs `actorType: 'System'`).
+* `PlatformAdminNotificationBroadcastRequestedEvent` — `{ broadcastId, adminId, title, totalRecipients, correlationId? }`. Published once per broadcast action (at HTTP-request time, before the BullMQ fan-out job even runs) — one audit row per broadcast, not one per recipient.
+* `RestaurantOwnerNotificationBroadcastRequestedEvent` — `{ broadcastId, ownerId, organizationId, restaurantId, title, totalRecipients, correlationId? }`. The Restaurant Owner equivalent; `organizationId`/`restaurantId` are audit/traceability only, never used to scope the (global) audience.
+
+Batch-inserted broadcast recipient rows (`Notification.broadcastId` set) do **not** each publish their own `NotificationCreated` event — that would mean one `AuditLog` row and one realtime emit per recipient at broadcast scale. Instead `NotificationBroadcastFanoutProcessor` emits one realtime-only, content-free hint per DB-insert batch (see "WebSocket Broadcast Events" below).
+
 ---
 
 # Subscription Events
@@ -529,7 +543,11 @@ Broadcasts use one canonical Socket.IO server event name: **`domain.event`**, wi
 **Phase 9 freeze additions (frozen 2026-07-25, `TASKS.md`'s Phase 9 decision item 1 — implemented 2026-07-25, additive only, does not redesign Phase 8):**
 
 * `WaitlistEntryNotified` — once Phase 9 gives it a real production publisher (see the Waitlist Events section below), it broadcasts to the same staff `restaurant`/`branch` rooms as its three siblings (`WaitlistEntryCreated`/`Promoted`/`Expired`/`Cancelled`), using the identical staff-only payload pattern. **Requires an additive one-line change to `realtime-event-mapping.ts`'s existing Waitlist `instanceof` OR-chain during Phase 9 implementation** — the event class is currently excluded from that chain (default-deny), so it will **not** broadcast until that specific line is added; this is a Phase 9 implementation task, not something Phase 8's already-shipped code does automatically.
-* `NotificationCreated` (new) — broadcasts **only** to the existing `reservation:{reservationId}` room, and only when the source event that produced the `Notification` carries a `reservationId` (see the Phase 9 event→notification allow-list, "Notification Events" section below); minimized payload `{ notificationId, type }` only, never `title`/`body`. **No new room type is introduced** — Phase 8's frozen "exactly four rooms" contract is unchanged. Requires a new, additive mapping branch in `realtime-event-mapping.ts` during Phase 9 implementation, following the same pattern `TableStatusChanged`/`TableMoved` already established for adding a new allow-listed event without altering the gateway/room/auth architecture.
+* `NotificationCreated` (new) — broadcasts to the `reservation:{reservationId}` room when the source event that produced the `Notification` carries a `reservationId` (see the Phase 9 event→notification allow-list, "Notification Events" section below); **Phase 19.9 (ADR-037) widens this**: when `reservationId` is `null` (a `WaitlistEntryPromoted`-sourced notification, or a Platform Admin direct send), it now broadcasts instead to the sender's own `user:{userId}` room (see "Room Naming Convention" below) rather than nowhere — a strict widening, never a behavior change for any reservation-sourced notification. Minimized payload `{ notificationId, type }` only, never `title`/`body`, unchanged.
+
+**Phase 19.9 addition (ADR-037):**
+
+* `NotificationBroadcastDelivered` — realtime-only, never published as a domain event, never audited (see "Phase 19.9 extension" above for why). Emitted directly by `NotificationBroadcastFanoutProcessor`, once per DB-insert batch (not once per recipient), to every recipient's own `user:{userId}` room in that batch via one `RealtimeBroadcasterPort.broadcast(rooms[], envelope)` call. Payload: `{ broadcastId }` only — even more minimal than `NotificationCreated`'s `{ notificationId, type }`, since the payload is shared across every room in the batch and cannot carry a per-recipient id; the client refetches via the existing `GET /notifications`/`GET /notifications/unread-count` endpoints.
 
 ## Explicitly excluded from Phase 8 broadcast
 
@@ -555,6 +573,8 @@ No Phase 8 rooms: `waitlist:{id}`, `notification:{id}`.
 
 **`conversation:{conversationId}` (Phase 15.6, DECISIONS.md D9)** — the room type this note previously deferred is now added, as a fifth `RoomType`, via the Phase 15.6 architecture decision note in `DECISIONS.md` (the "new architecture freeze" this section's original wording anticipated). Authorization: Customer only when they are the conversation's `Customer` participant; Employee/OrganizationMember only when they pass the Dual Actor check (D15) for the conversation's `restaurantId`/`branchId`.
 
+**`user:{userId}` (Phase 19.9, ADR-037)** — a sixth `RoomType`, self-only. Authorization: `actor.actorType === User` and `actor.userId === userId` — no repository lookup, gated by actor type exactly like every other room denies a `User` actor from staff surfaces (in reverse: an Employee/OrganizationMember JWT's `userId` claim, the shared underlying `User.id`, is never treated as equivalent to being authenticated as that identity's Customer surface). Unlike every other room, the client never calls `room.subscribe` for it — `RealtimeGateway` auto-joins every `User`-actor socket to its own `user:{userId}` room immediately at handshake-authentication time, since there is no ownership question beyond "is this the caller's own identity."
+
 Clients request typed subscriptions (`room.subscribe` / `room.unsubscribe` with `{ roomType, resourceId }`). The server constructs the canonical room name **after** authorization — room names are never guessable substitutes for authorization checks, and clients never join by supplying a raw room string as authorization input. Passive subscription is scope/ownership-based (no `realtime:*` / `websocket:*` / `reservations:read` permission slugs).
 
 Event→room targeting and actor matrices are frozen in TASKS.md's "Phase 8 — WebSocket: Pre-implementation architecture decisions" note.
@@ -565,7 +585,7 @@ Event→room targeting and actor matrices are frozen in TASKS.md's "Phase 8 — 
 
 Queues
 
-NotificationQueue
+NotificationQueue — two job names, one Worker (`NotificationQueueProcessor`, dispatching by `job.name`; a BullMQ Worker competes for every job on its bound queue regardless of name, so two job names sharing one queue require exactly one Worker, not two `@Processor` classes): `deliver-notification-push` (Phase 9, OneSignal Push delivery) and `fanout-notification-broadcast` (Phase 19.9/ADR-037, keyset-batched broadcast fan-out — `jobId: notification-broadcast-{broadcastId}` for the kickoff, `notification-broadcast-{broadcastId}-from-{cursor}` for a self-enqueued continuation when one run's batch budget is exhausted before the audience is).
 
 ReservationQueue
 

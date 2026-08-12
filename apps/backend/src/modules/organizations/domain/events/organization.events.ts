@@ -92,3 +92,143 @@ export class OrganizationOwnershipTransferredEvent extends DomainEvent {
     this.seal();
   }
 }
+
+/**
+ * Phase 19.7 (Organization self-service member management) - documented
+ * since Phase 0 (`EVENTS.md`), gains its first real producer here
+ * (`ChangeOrganizationMemberRoleUseCase`, Owner/Admin self-service).
+ */
+export class OrganizationMemberRoleChangedEvent extends DomainEvent {
+  public readonly eventName = 'OrganizationMemberRoleChanged';
+  public readonly payload: OrganizationEventPayload & {
+    memberId: string;
+    targetUserId: string;
+    previousRole: string;
+    newRole: string;
+  };
+
+  constructor(
+    eventId: string,
+    payload: OrganizationEventPayload & {
+      memberId: string;
+      targetUserId: string;
+      previousRole: string;
+      newRole: string;
+    },
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+    this.payload = payload;
+    this.seal();
+  }
+}
+
+/**
+ * Phase 19.7 (Organization self-service member management) - documented
+ * since Phase 0 (`EVENTS.md`), gains its first real producer here
+ * (`RemoveOrganizationMemberUseCase`, Owner/Admin self-service).
+ */
+export class OrganizationMemberRemovedEvent extends DomainEvent {
+  public readonly eventName = 'OrganizationMemberRemoved';
+  public readonly payload: OrganizationEventPayload & {
+    memberId: string;
+    targetUserId: string;
+  };
+
+  constructor(
+    eventId: string,
+    payload: OrganizationEventPayload & { memberId: string; targetUserId: string },
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+    this.payload = payload;
+    this.seal();
+  }
+}
+
+/**
+ * Phase 19.8 (Owner Invite, ADR-036) - documented since Phase 0
+ * (`EVENTS.md`/`DOMAIN_MODEL.md`), gains its first real producer here
+ * (`IssueOrganizationInvitationUseCase`). Means exactly "an invitation was
+ * issued" - it is never published again when the invitation is later
+ * accepted (see `OrganizationInvitationAcceptedEvent` below for that
+ * transition, per the Owner Invite decision's Section 14).
+ */
+export class OrganizationMemberInvitedEvent extends DomainEvent {
+  public readonly eventName = 'OrganizationMemberInvited';
+  public readonly payload: OrganizationEventPayload & {
+    invitationId: string;
+    email: string;
+    role: string;
+  };
+
+  constructor(
+    eventId: string,
+    payload: OrganizationEventPayload & { invitationId: string; email: string; role: string },
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+    this.payload = payload;
+    this.seal();
+  }
+}
+
+/** Phase 19.8 (Owner Invite, ADR-036) - a Pending invitation was explicitly revoked (including the automatic revoke-old half of resend semantics). */
+export class OrganizationInvitationRevokedEvent extends DomainEvent {
+  public readonly eventName = 'OrganizationInvitationRevoked';
+  public readonly payload: OrganizationEventPayload & {
+    invitationId: string;
+    email: string;
+  };
+
+  constructor(
+    eventId: string,
+    payload: OrganizationEventPayload & { invitationId: string; email: string },
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+    this.payload = payload;
+    this.seal();
+  }
+}
+
+/**
+ * Phase 19.8 (Owner Invite, ADR-036) - the invitation was accepted and the
+ * resulting `OrganizationMember` was created/reactivated. `actorId` is the
+ * new member's own `userId` (self-service acceptance, always self-actuated -
+ * there is no PlatformAdmin/other-actor producer of this event).
+ * `accountCreated` distinguishes the Section 8 (new User + OrganizationMember,
+ * atomic) branch from the Section 7 (existing User, OrganizationMember only)
+ * branch.
+ */
+export class OrganizationInvitationAcceptedEvent extends DomainEvent {
+  public readonly eventName = 'OrganizationInvitationAccepted';
+  public readonly payload: OrganizationEventPayload & {
+    invitationId: string;
+    memberId: string;
+    targetUserId: string;
+    role: string;
+    accountCreated: boolean;
+  };
+
+  constructor(
+    eventId: string,
+    payload: OrganizationEventPayload & {
+      invitationId: string;
+      memberId: string;
+      targetUserId: string;
+      role: string;
+      accountCreated: boolean;
+    },
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+    this.payload = payload;
+    this.seal();
+  }
+}

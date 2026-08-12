@@ -329,3 +329,13 @@ export class AcquisitionPricingRuleId extends UuidId {
     return new AcquisitionPricingRuleId(value);
   }
 }
+
+export class NotificationBroadcastId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'NotificationBroadcastId');
+  }
+
+  static create(value: string): NotificationBroadcastId {
+    return new NotificationBroadcastId(value);
+  }
+}

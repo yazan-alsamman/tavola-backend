@@ -19,6 +19,8 @@ import { ExpireSubscriptionUseCase } from './application/use-cases/expire-subscr
 import { PrismaSubscriptionRepository } from './infrastructure/persistence/prisma-subscription.repository';
 import { PrismaSubscriptionPlanRepository } from './infrastructure/persistence/prisma-subscription-plan.repository';
 import { PrismaSubscriptionUsageRepository } from './infrastructure/persistence/prisma-subscription-usage.repository';
+import { PrismaPlatformAdminSubscriptionStatsReader } from './infrastructure/persistence/prisma-platform-admin-subscription-stats.reader';
+import { PLATFORM_ADMIN_SUBSCRIPTION_STATS_READER } from './application/ports/platform-admin-subscription-stats-reader.port';
 import { SUBSCRIPTION_EXPIRATION_QUEUE_NAME } from './infrastructure/bullmq/subscription-queue.constants';
 import { BullMqSubscriptionExpirationScheduler } from './infrastructure/bullmq/subscription-expiration.scheduler';
 import { ExpireSubscriptionProcessor } from './infrastructure/bullmq/expire-subscription.processor';
@@ -59,15 +61,17 @@ import { OrganizationSubscriptionController } from './presentation/controllers/o
  * and `PlatformAdminModule`'s own doc comments), matching this codebase's
  * existing precedent for genuine circular pairs
  * (`BranchesModule`↔`TablesModule`, `TablesModule`↔`ReservationsModule`).
- * `PlatformAdminModule` (for `PlatformAdminGuard`) is imported plainly -
- * it does not import this module back, so it is not part of the cycle.
+ * `PlatformAdminModule` (for `PlatformAdminGuard`) import is wrapped in
+ * `forwardRef` too (Phase 19 — Platform Dashboard composition): it now
+ * imports this module back for `PLATFORM_ADMIN_SUBSCRIPTION_STATS_READER`,
+ * making this a genuine direct two-module cycle where it previously was not.
  */
 @Module({
   imports: [
     forwardRef(() => AuthenticationModule),
     AuthorizationModule,
     forwardRef(() => RestaurantsModule),
-    PlatformAdminModule,
+    forwardRef(() => PlatformAdminModule),
     BullModule.registerQueue({ name: SUBSCRIPTION_EXPIRATION_QUEUE_NAME }),
   ],
   controllers: [PlatformAdminSubscriptionsController, OrganizationSubscriptionController],
@@ -84,15 +88,27 @@ import { OrganizationSubscriptionController } from './presentation/controllers/o
     PrismaSubscriptionRepository,
     PrismaSubscriptionPlanRepository,
     PrismaSubscriptionUsageRepository,
+    PrismaPlatformAdminSubscriptionStatsReader,
     { provide: SUBSCRIPTION_REPOSITORY, useExisting: PrismaSubscriptionRepository },
     { provide: SUBSCRIPTION_PLAN_REPOSITORY, useExisting: PrismaSubscriptionPlanRepository },
     { provide: SUBSCRIPTION_USAGE_REPOSITORY, useExisting: PrismaSubscriptionUsageRepository },
+    {
+      provide: PLATFORM_ADMIN_SUBSCRIPTION_STATS_READER,
+      useExisting: PrismaPlatformAdminSubscriptionStatsReader,
+    },
     BullMqSubscriptionExpirationScheduler,
     {
       provide: SUBSCRIPTION_EXPIRATION_SCHEDULER,
       useExisting: BullMqSubscriptionExpirationScheduler,
     },
   ],
-  exports: [SUBSCRIPTION_REPOSITORY, SUBSCRIPTION_PLAN_REPOSITORY, SUBSCRIPTION_USAGE_REPOSITORY],
+  // PLATFORM_ADMIN_SUBSCRIPTION_STATS_READER is exported for PlatformAdminModule
+  // (Phase 19 — Platform Dashboard composition endpoint, ADR-035 Pattern 2).
+  exports: [
+    SUBSCRIPTION_REPOSITORY,
+    SUBSCRIPTION_PLAN_REPOSITORY,
+    SUBSCRIPTION_USAGE_REPOSITORY,
+    PLATFORM_ADMIN_SUBSCRIPTION_STATS_READER,
+  ],
 })
 export class SubscriptionsModule {}

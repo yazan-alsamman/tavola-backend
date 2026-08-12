@@ -23,6 +23,12 @@ class FakeLookupReader implements PlatformAdminRestaurantLookupReaderPort {
   ): Promise<PlatformAdminRestaurantLookup | null> {
     return this.rows.get(restaurantId) ?? null;
   }
+  async countByStatus() {
+    return { total: 0, active: 0, suspended: 0, deleted: 0 };
+  }
+  async search() {
+    return { items: [], total: 0 };
+  }
 }
 
 describe('PlatformAdminSuspendRestaurantUseCase', () => {

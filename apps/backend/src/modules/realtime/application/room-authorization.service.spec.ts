@@ -628,4 +628,29 @@ describe('RoomAuthorizationService', () => {
       expect(await service.authorize(userActor(), RoomType.Conversation, malformedId)).toBeNull();
     });
   });
+
+  describe('user room (Phase 19.9, ADR-037)', () => {
+    it('allows a User actor to join their own user room', async () => {
+      const { service } = await build();
+      const room = await service.authorize(userActor(), RoomType.User, userId);
+      expect(room).toBe(`user:${userId}`);
+    });
+
+    it("denies a User actor for someone else's user room", async () => {
+      const { service } = await build();
+      const room = await service.authorize(userActor(), RoomType.User, otherOrganizationId);
+      expect(room).toBeNull();
+    });
+
+    it('denies an Employee actor even for their own userId (no repository lookup, identity-only check)', async () => {
+      const { service } = await build();
+      const room = await service.authorize(employeeActor({ userId }), RoomType.User, userId);
+      expect(room).toBeNull();
+    });
+
+    it('rejects a malformed user id', async () => {
+      const { service } = await build();
+      expect(await service.authorize(userActor(), RoomType.User, malformedId)).toBeNull();
+    });
+  });
 });

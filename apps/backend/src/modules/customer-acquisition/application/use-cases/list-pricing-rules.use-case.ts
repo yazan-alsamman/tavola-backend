@@ -9,6 +9,8 @@ import { toPricingRuleResult } from '../mappers/pricing-rule-result.mapper';
 export interface ListPricingRulesQuery {
   page: number;
   limit: number;
+  label?: string;
+  id?: string;
 }
 
 export interface ListPricingRulesResult {
@@ -27,7 +29,10 @@ export class ListPricingRulesUseCase {
   ) {}
 
   async execute(query: ListPricingRulesQuery): Promise<ListPricingRulesResult> {
-    const { items, total } = await this.pricingRuleRepository.findMany(query.page, query.limit);
+    const { items, total } = await this.pricingRuleRepository.findMany(query.page, query.limit, {
+      label: query.label,
+      id: query.id,
+    });
     return {
       items: items.map(toPricingRuleResult),
       total,

@@ -153,6 +153,44 @@ describe('RealtimeGateway', () => {
       expect((socket.data as { actor?: unknown }).actor).toMatchObject({ userId });
     });
 
+    it('auto-joins a User actor to its own user:{userId} room at handshake time (Phase 19.9, ADR-037)', async () => {
+      const { gateway } = buildGateway({});
+      const socket = new FakeSocket({ auth: { token: 'valid-token' } });
+
+      await connect(gateway, socket);
+
+      expect(socket.joinedRooms.has(`user:${userId}`)).toBe(true);
+      expect((socket.data as { rooms: Set<string> }).rooms.has(`user:${userId}`)).toBe(true);
+    });
+
+    it('does not auto-join an Employee/OrganizationMember actor to any user room (no Notification recipient of that actor type exists)', async () => {
+      const { gateway } = buildGateway({
+        wsAuthentication: {
+          authenticate: async () => ({
+            actor: {
+              actorType: AccessTokenActorType.Employee,
+              userId,
+              sessionId: 's',
+              sessionVersion: 1,
+              tokenFamilyId: 'f',
+              employeeId: 'employee-1',
+              organizationId: 'org-1',
+              restaurantId: 'restaurant-1',
+              branchIds: [],
+              permissions: [],
+              permissionsVersion: 1,
+            },
+            expiresAt: null,
+          }),
+        },
+      });
+      const socket = new FakeSocket({ auth: { token: 'valid-token' } });
+
+      await connect(gateway, socket);
+
+      expect(socket.joinedRooms.size).toBe(0);
+    });
+
     it('authenticates via an Authorization: Bearer header when present', async () => {
       let receivedToken: string | undefined;
       const { gateway } = buildGateway({
@@ -392,12 +430,31 @@ describe('RealtimeGateway', () => {
       });
 
       expect(secondAck).toEqual({ ok: true, room: `reservation:${reservationId}` });
-      expect(socket.joinedRooms.size).toBe(1);
+      // 2, not 1: the connecting `User` actor auto-joins its own `user:{userId}`
+      // room at handshake time (Phase 19.9, ADR-037) before this test's single
+      // explicit `room.subscribe` call adds the reservation room.
+      expect(socket.joinedRooms.size).toBe(2);
     });
 
     it('enforces the configured max-rooms-per-socket cap', async () => {
       let counter = 0;
+      // maxRoomsPerSocket raised to 3 here (default test config is 2) so this
+      // test's original "two explicit subscribes succeed, the third doesn't"
+      // intent still holds now that the connecting `User` actor's auto-joined
+      // `user:{userId}` room (Phase 19.9, ADR-037) already occupies one slot.
+      const configService = {
+        get: () => ({
+          maxRoomsPerSocket: 3,
+          rateLimits: {
+            handshake: { max: 20, windowSeconds: 60 },
+            subscribe: { max: 60, windowSeconds: 60 },
+            unsubscribe: { max: 60, windowSeconds: 60 },
+            unknownEvent: { max: 3, windowSeconds: 60 },
+          },
+        }),
+      } as unknown as ConfigService;
       const { gateway } = buildGateway({
+        configService,
         roomAuthorization: {
           authorize: async () => `reservation:room-${(counter += 1)}`,
         },
@@ -420,7 +477,7 @@ describe('RealtimeGateway', () => {
       expect(first.ok).toBe(true);
       expect(second.ok).toBe(true);
       expect(third).toMatchObject({ ok: false, code: 'MAX_ROOMS_EXCEEDED' });
-      expect(socket.joinedRooms.size).toBe(2);
+      expect(socket.joinedRooms.size).toBe(3);
     });
 
     it('rate-limits room.subscribe requests', async () => {

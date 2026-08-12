@@ -58,7 +58,13 @@ import { BranchesController } from './presentation/controllers/branches.controll
  */
 @Module({
   imports: [
-    AuthenticationModule,
+    // Phase 19.8 (Owner Invite, ADR-036) correction: the lengthened
+    // OrganizationsModule require chain (AcceptOrganizationInvitationUseCase
+    // now imports several authentication domain/application files directly)
+    // surfaces this plain edge as "index [0] of imports array is undefined"
+    // at boot - confirmed by a real boot run. Wrapped in forwardRef per this
+    // codebase's established "forwardRef every edge of the cycle" precedent.
+    forwardRef(() => AuthenticationModule),
     AuthorizationModule,
     RestaurantsModule,
     SubscriptionsModule,

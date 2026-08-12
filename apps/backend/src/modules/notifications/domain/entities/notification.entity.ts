@@ -9,6 +9,8 @@ export interface NotificationProps {
   userId: string;
   type: string;
   templateId: string | null;
+  /** Phase 19.9 (ADR-037) — set only for a broadcast-originated row; null otherwise. */
+  broadcastId: string | null;
   title: string;
   body: string;
   data: Record<string, unknown> | null;
@@ -69,6 +71,7 @@ export class Notification extends Entity<NotificationProps> {
     userId: string;
     type: string;
     templateId: string | null;
+    broadcastId?: string | null;
     title: string;
     body: string;
     data: Record<string, unknown> | null;
@@ -80,6 +83,7 @@ export class Notification extends Entity<NotificationProps> {
       userId: props.userId,
       type: props.type,
       templateId: props.templateId,
+      broadcastId: props.broadcastId ?? null,
       title: props.title,
       body: props.body,
       data: props.data,
@@ -114,6 +118,10 @@ export class Notification extends Entity<NotificationProps> {
 
   get templateId(): string | null {
     return this.props.templateId;
+  }
+
+  get broadcastId(): string | null {
+    return this.props.broadcastId;
   }
 
   get title(): string {

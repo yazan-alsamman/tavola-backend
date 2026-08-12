@@ -81,4 +81,26 @@ export class PrismaOrganizationMemberRepository implements OrganizationMemberRep
     });
     return result.count > 0;
   }
+
+  async findById(id: string): Promise<OrganizationMember | null> {
+    const row = await this.prismaContext.client.organizationMember.findUnique({
+      where: { id },
+    });
+    return row ? OrganizationMemberPrismaMapper.toDomain(row) : null;
+  }
+
+  async listByOrganization(
+    page: number,
+    limit: number,
+  ): Promise<{ items: OrganizationMember[]; total: number }> {
+    const [rows, total] = await Promise.all([
+      this.prismaContext.client.organizationMember.findMany({
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prismaContext.client.organizationMember.count(),
+    ]);
+    return { items: rows.map(OrganizationMemberPrismaMapper.toDomain), total };
+  }
 }

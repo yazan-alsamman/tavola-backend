@@ -36,7 +36,7 @@ Required for critical workflows, per CODING_STANDARDS.md and NON_FUNCTIONAL_REQU
 
 * Authentication (register → verify → login → refresh → logout)
 * Reservation Engine (search availability → create → approve → complete; and the conflict path: two concurrent creation attempts for the same table/slot, asserting exactly one succeeds)
-* Notifications (event → template resolution → provider dispatch, using the fake provider)
+* Notifications (event → template resolution → provider dispatch, using the fake provider). Phase 19.9 (ADR-037) extends this to the internal admin/owner-authored path: Platform Admin → one Customer and Platform Admin/Restaurant Owner → all-eligible-Customers broadcast, covering the HTTP/authorization contract, real-Postgres audience resolution + batch idempotency (`NotificationBroadcastFanoutProcessor` driven directly against real repositories, mirroring the existing "drive the use case directly, don't wait on a live BullMQ worker's poll timing" convention), and real Socket.IO delivery to the new `user:{userId}` room.
 * Realtime Gateway (a REST action triggers the correct WebSocket broadcast to an authorized, connected client, and is *not* received by an unauthorized client)
 
 ## Load Tests

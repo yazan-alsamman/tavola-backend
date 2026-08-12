@@ -32,6 +32,7 @@ import { PlatformAdminRole } from '@modules/platform-admin/domain/enums/platform
 import { ReverseCustomerAcquisitionUseCase } from '../../application/use-cases/reverse-customer-acquisition.use-case';
 import { ManuallyRecordCustomerAcquisitionUseCase } from '../../application/use-cases/manually-record-customer-acquisition.use-case';
 import { ListCustomerAcquisitionsUseCase } from '../../application/use-cases/list-customer-acquisitions.use-case';
+import { GetCustomerAcquisitionUseCase } from '../../application/use-cases/get-customer-acquisition.use-case';
 import { ReverseAcquisitionRequestDto } from '../dto/reverse-acquisition.request.dto';
 import { ManuallyRecordAcquisitionRequestDto } from '../dto/manually-record-acquisition.request.dto';
 import { ListAcquisitionsQueryDto } from '../dto/list-acquisitions.query.dto';
@@ -56,6 +57,7 @@ export class PlatformAdminAcquisitionsController {
     private readonly reverseCustomerAcquisitionUseCase: ReverseCustomerAcquisitionUseCase,
     private readonly manuallyRecordCustomerAcquisitionUseCase: ManuallyRecordCustomerAcquisitionUseCase,
     private readonly listCustomerAcquisitionsUseCase: ListCustomerAcquisitionsUseCase,
+    private readonly getCustomerAcquisitionUseCase: GetCustomerAcquisitionUseCase,
   ) {}
 
   @Get()
@@ -89,6 +91,31 @@ export class PlatformAdminAcquisitionsController {
       page: result.page,
       limit: result.limit,
     };
+  }
+
+  @Get(':id')
+  @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)
+  @RequirePlatformAdminRole(PlatformAdminRole.PlatformAdmin, PlatformAdminRole.PlatformSupport)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Customer acquisition retrieved successfully.')
+  @ApiOperation({
+    operationId: 'platformAdminGetCustomerAcquisition',
+    summary: 'Narrow lookup of a Customer Acquisition by id (PlatformAdmin or PlatformSupport)',
+    description:
+      'ADR-034 §13 - CustomerAcquisition carries no name/text field, so id is the only applicable lookup axis. A support tool, not a search engine.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({
+    status: 200,
+    description: 'Acquisition retrieved',
+    type: CustomerAcquisitionResponseDto,
+  })
+  @ApiErrorResponse(403, 'Caller is not an active Platform Admin', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Acquisition not found', ['NOT_FOUND'])
+  async get(@Param('id', ParseUUIDPipe) id: string): Promise<CustomerAcquisitionResponseDto> {
+    const result = await this.getCustomerAcquisitionUseCase.execute(id);
+    return toCustomerAcquisitionResponse(result);
   }
 
   @Post(':id/reverse')

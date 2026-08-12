@@ -30,6 +30,20 @@ export class PrismaNotificationRepository implements NotificationRepository {
     });
   }
 
+  async saveMany(notifications: readonly Notification[]): Promise<{ insertedCount: number }> {
+    if (notifications.length === 0) {
+      return { insertedCount: 0 };
+    }
+    const data = notifications.map((notification) =>
+      NotificationPrismaMapper.toPersistence(notification),
+    );
+    const result = await this.prismaContext.client.notification.createMany({
+      data,
+      skipDuplicates: true,
+    });
+    return { insertedCount: result.count };
+  }
+
   async findById(id: NotificationId): Promise<Notification | null> {
     const row = await this.prismaContext.client.notification.findUnique({
       where: { id: id.value },

@@ -16,6 +16,11 @@ export default registerAs('app', () => {
     swaggerEnabled:
       swaggerExplicit === 'true' || (swaggerExplicit !== 'false' && nodeEnv !== 'production'),
     requestBodyLimit: process.env.REQUEST_BODY_LIMIT ?? '10mb',
+    // Phase 19.8 (Owner Invite) - the base URL used to build the invitation
+    // acceptance link sent by email. The backend never renders a web page
+    // itself, so this must point at the frontend/web client route that calls
+    // `POST /invitations/:token/accept`.
+    webBaseUrl: process.env.APP_WEB_BASE_URL ?? 'http://localhost:3000',
   };
 });
 
@@ -27,4 +32,5 @@ export interface AppConfig {
   correlationIdHeader: string;
   swaggerEnabled: boolean;
   requestBodyLimit: string;
+  webBaseUrl: string;
 }

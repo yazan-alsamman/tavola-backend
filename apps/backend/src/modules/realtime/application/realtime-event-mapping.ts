@@ -96,6 +96,9 @@ function reservation(reservationId: string): string {
 function conversation(conversationId: string): string {
   return buildCanonicalRoom(RoomType.Conversation, conversationId);
 }
+function user(userId: string): string {
+  return buildCanonicalRoom(RoomType.User, userId);
+}
 
 /** Strips server-internal actor identifiers a Customer never needs (Phase 8 §15/§19). */
 function omit<T extends object, K extends keyof T>(
@@ -403,27 +406,26 @@ export async function mapDomainEventForRealtime(
   }
 
   // NotificationCreated (Phase 9, architecture frozen 2026-07-25, EVENTS.md's
-  // Phase 9 broadcast note) - the one additive Phase 9 realtime event.
-  // Broadcasts ONLY to the existing `reservation:{id}` room, and only when
-  // the source event that produced the Notification carried a
-  // `reservationId` (a Waitlist-sourced notification has none - no
-  // customer-room broadcast for it in v1, matching Waitlist's own
-  // staff-rooms-only precedent above). Payload minimized to
-  // `{ notificationId, type }` only - never `title`/`body` (the frozen PII
-  // policy: a push/realtime payload must never carry notification content,
-  // only enough to prompt an authenticated REST fetch). No staff room, no
-  // new room type.
+  // Phase 9 broadcast note; extended Phase 19.9, ADR-037) - the one additive
+  // Phase 9 realtime event. Broadcasts to `reservation:{id}` when the source
+  // event that produced the Notification carried a `reservationId`;
+  // otherwise (a Waitlist-sourced notification, or a Phase 19.9 Platform
+  // Admin -> one Customer send) to the recipient's own `user:{userId}` room
+  // instead, now that one exists - a strict widening of the original Phase 9
+  // rule, not a behavior change for any reservation-sourced notification.
+  // Payload minimized to `{ notificationId, type }` only - never `title`/
+  // `body` (the frozen PII policy: a push/realtime payload must never carry
+  // notification content, only enough to prompt an authenticated REST
+  // fetch). No staff room.
   if (event instanceof NotificationCreatedEvent) {
     const p = event.payload;
-    if (p.reservationId === null) {
-      return null;
-    }
+    const customerRoom = p.reservationId !== null ? reservation(p.reservationId) : user(p.userId);
     return {
       aggregateType: 'Notification',
       aggregateId: p.notificationId,
       staffRooms: [],
       staffPayload: {},
-      reservationRoom: reservation(p.reservationId),
+      reservationRoom: customerRoom,
       customerPayload: { notificationId: p.notificationId, type: p.type },
     };
   }

@@ -19,6 +19,17 @@ export interface NotificationRepository {
   /** Upsert-by-id - used both for the initial `create()` insert and every subsequent state-transition write. */
   save(notification: Notification): Promise<void>;
 
+  /**
+   * Phase 19.9 (ADR-037) — bulk insert for `NotificationBroadcastFanoutProcessor`'s
+   * batches only. `skipDuplicates` relies on the `[broadcastId, userId]`
+   * unique index so a retried batch never double-inserts; the returned count
+   * is how many rows were genuinely new (used to advance
+   * `NotificationBroadcast.succeededCount`/`failedCount`). Never used for the
+   * single-entity `create()` path — CODING_STANDARDS.md's N+1 rule is why
+   * this exists as its own method rather than a per-row `save()` loop.
+   */
+  saveMany(notifications: readonly Notification[]): Promise<{ insertedCount: number }>;
+
   findById(id: NotificationId): Promise<Notification | null>;
 
   /** Paginated, ordered newest-first (API_GUIDELINES.md's Notification Endpoints). */

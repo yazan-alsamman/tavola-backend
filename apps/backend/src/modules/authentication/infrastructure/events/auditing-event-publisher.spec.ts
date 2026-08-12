@@ -67,6 +67,11 @@ import {
   AcquisitionPricingRuleActivatedEvent,
 } from '@modules/customer-acquisition/domain/events/customer-acquisition.events';
 import { NotificationCreatedEvent } from '@modules/notifications/domain/events/notification.events';
+import { PlatformAdminNotificationSentEvent } from '@modules/notifications/domain/events/platform-admin-notification-sent.event';
+import {
+  PlatformAdminNotificationBroadcastRequestedEvent,
+  RestaurantOwnerNotificationBroadcastRequestedEvent,
+} from '@modules/notifications/domain/events/notification-broadcast.events';
 import { AuditingEventPublisher } from './auditing-event-publisher';
 import { LoggingEventPublisher } from './logging-event-publisher';
 
@@ -1268,6 +1273,88 @@ describe('AuditingEventPublisher', () => {
         actorType: 'System',
         targetType: 'Notification',
         targetId: notificationId,
+      });
+    });
+  });
+
+  describe('Phase 19.9 — Internal Notification System events (ADR-037)', () => {
+    const adminId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const ownerId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const notificationId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const broadcastId = 'aaaaaaaa-4444-4444-8444-444444444444';
+    const targetUserId = 'bbbbbbbb-5555-4555-8555-555555555555';
+    const restaurantId = 'cccccccc-6666-4666-8666-666666666666';
+    const organizationId = 'dddddddd-7777-4777-8777-777777777777';
+
+    it('maps PlatformAdminNotificationSentEvent to notification.sent_by_platform_admin, actorType PlatformAdmin, organizationId always null', async () => {
+      // Ambient tenant context deliberately non-null here to prove the branch
+      // overrides it - PlatformAdminGuard-only routes never bind one for real.
+      const { publisher, auditLogWriter } = createPublisher(organizationId);
+      await publisher.publish(
+        new PlatformAdminNotificationSentEvent(
+          'event-1',
+          { adminId, notificationId, targetUserId, correlationId: 'corr-1' },
+          now,
+          'corr-1',
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'notification.sent_by_platform_admin',
+        actorId: adminId,
+        actorType: 'PlatformAdmin',
+        targetType: 'Notification',
+        targetId: notificationId,
+        organizationId: null,
+        correlationId: 'corr-1',
+      });
+    });
+
+    it('maps PlatformAdminNotificationBroadcastRequestedEvent to notification.broadcast_by_platform_admin, actorType PlatformAdmin, organizationId always null', async () => {
+      const { publisher, auditLogWriter } = createPublisher(organizationId);
+      await publisher.publish(
+        new PlatformAdminNotificationBroadcastRequestedEvent(
+          'event-1',
+          { broadcastId, adminId, title: 'Title', totalRecipients: 500, correlationId: 'corr-1' },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'notification.broadcast_by_platform_admin',
+        actorId: adminId,
+        actorType: 'PlatformAdmin',
+        targetType: 'NotificationBroadcast',
+        targetId: broadcastId,
+        organizationId: null,
+      });
+    });
+
+    it('maps RestaurantOwnerNotificationBroadcastRequestedEvent to notification.broadcast_by_restaurant_owner, actorType User (no OrganizationMember AuditActorType value), organizationId from the event payload', async () => {
+      const { publisher, auditLogWriter } = createPublisher(null);
+      await publisher.publish(
+        new RestaurantOwnerNotificationBroadcastRequestedEvent(
+          'event-1',
+          {
+            broadcastId,
+            ownerId,
+            organizationId,
+            restaurantId,
+            title: 'Title',
+            totalRecipients: 500,
+            correlationId: 'corr-1',
+          },
+          now,
+        ),
+      );
+
+      expect(auditLogWriter.entries[0]).toMatchObject({
+        action: 'notification.broadcast_by_restaurant_owner',
+        actorId: ownerId,
+        actorType: 'User',
+        targetType: 'NotificationBroadcast',
+        targetId: broadcastId,
+        organizationId,
       });
     });
   });

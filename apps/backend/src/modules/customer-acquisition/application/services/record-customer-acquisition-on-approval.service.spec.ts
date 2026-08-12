@@ -70,6 +70,12 @@ class FakeRestaurantLookupReader implements PlatformAdminRestaurantLookupReaderP
   async findOrganizationIdByRestaurantId(restaurantId: string) {
     return { restaurantId, organizationId: ORGANIZATION_ID };
   }
+  async countByStatus() {
+    return { total: 0, active: 0, suspended: 0, deleted: 0 };
+  }
+  async search() {
+    return { items: [], total: 0 };
+  }
 }
 
 function platformRule(flatCurrency: string): AcquisitionPricingRule {

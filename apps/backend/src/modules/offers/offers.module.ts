@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { AuthenticationModule } from '@modules/authentication/authentication.module';
 import { AuthorizationModule } from '@modules/authorization/authorization.module';
@@ -38,7 +38,9 @@ import { OffersController } from './presentation/controllers/offers.controller';
  */
 @Module({
   imports: [
-    AuthenticationModule,
+    // Phase 19.8 (Owner Invite, ADR-036) correction: forwardRef - see
+    // branches.module.ts's matching fix for the exact boot-time symptom.
+    forwardRef(() => AuthenticationModule),
     AuthorizationModule,
     RestaurantsModule,
     BullModule.registerQueue({ name: OFFER_EXPIRATION_QUEUE_NAME }),

@@ -44,6 +44,9 @@ import {
   OrganizationReactivatedEvent,
   OrganizationRestoredEvent,
   OrganizationSuspendedEvent,
+  OrganizationMemberInvitedEvent,
+  OrganizationInvitationRevokedEvent,
+  OrganizationInvitationAcceptedEvent,
 } from '@modules/organizations/domain/events/organization.events';
 import {
   PlatformAdminAccountCreatedEvent,
@@ -87,6 +90,11 @@ import {
   WaitlistEntryPromotedEvent,
 } from '@modules/waitlist/domain/events/waitlist.events';
 import { NotificationCreatedEvent } from '@modules/notifications/domain/events/notification.events';
+import { PlatformAdminNotificationSentEvent } from '@modules/notifications/domain/events/platform-admin-notification-sent.event';
+import {
+  PlatformAdminNotificationBroadcastRequestedEvent,
+  RestaurantOwnerNotificationBroadcastRequestedEvent,
+} from '@modules/notifications/domain/events/notification-broadcast.events';
 import {
   ReviewCreatedEvent,
   ReviewDeletedEvent,
@@ -387,6 +395,51 @@ export class AuditingEventPublisher implements EventPublisherPort {
         action: 'organization.ownership_transferred',
         targetType: 'Organization',
         targetId: event.payload.organizationId,
+        organizationId: event.payload.organizationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof OrganizationMemberInvitedEvent) {
+      // Phase 19.8 (Owner Invite, ADR-036) - `actorId` is always the
+      // inviting Owner/Admin's own userId, an ordinary `OrganizationMember`
+      // self-service action - never PlatformAdmin, unlike the Organization
+      // lifecycle events above.
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'User',
+        action: 'organization.member.invited',
+        targetType: 'OrganizationInvitation',
+        targetId: event.payload.invitationId,
+        organizationId: event.payload.organizationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof OrganizationInvitationRevokedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'User',
+        action: 'organization.invitation.revoked',
+        targetType: 'OrganizationInvitation',
+        targetId: event.payload.invitationId,
+        organizationId: event.payload.organizationId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof OrganizationInvitationAcceptedEvent) {
+      // `actorId` is the new/reactivated member's own userId - acceptance is
+      // always self-actuated by the invitee, never by the inviting Owner/Admin.
+      return {
+        ...base,
+        actorId: event.payload.actorId,
+        actorType: 'User',
+        action: 'organization.invitation.accepted',
+        targetType: 'OrganizationMember',
+        targetId: event.payload.memberId,
         organizationId: event.payload.organizationId,
         ipAddress: null,
       };
@@ -973,6 +1026,64 @@ export class AuditingEventPublisher implements EventPublisherPort {
         action: 'notification.created',
         targetType: 'Notification',
         targetId: event.payload.notificationId,
+        ipAddress: null,
+      };
+    }
+
+    // Phase 19.9 (ADR-037) - published alongside the above `NotificationCreatedEvent`
+    // whenever a Platform Admin sends a notification directly to one
+    // Customer, so this audit row properly attributes the real actor (the
+    // generic `NotificationCreatedEvent` branch above always logs
+    // `actorType: 'System'`, mirroring `CustomerAcquisitionManuallyRecordedEvent`'s
+    // precedent). `organizationId` is `null` - `PlatformAdminGuard`-only
+    // routes never bind a `TenantContext` (no target Organization exists for
+    // this action at all).
+    if (event instanceof PlatformAdminNotificationSentEvent) {
+      return {
+        ...base,
+        actorId: event.payload.adminId,
+        actorType: 'PlatformAdmin',
+        action: 'notification.sent_by_platform_admin',
+        targetType: 'Notification',
+        targetId: event.payload.notificationId,
+        organizationId: null,
+        ipAddress: null,
+      };
+    }
+
+    // Phase 19.9 (ADR-037) - one audit row per broadcast action, not one per
+    // recipient (Decision #6). `organizationId` is `null` for the same
+    // reason as `PlatformAdminNotificationSentEvent` above.
+    if (event instanceof PlatformAdminNotificationBroadcastRequestedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.adminId,
+        actorType: 'PlatformAdmin',
+        action: 'notification.broadcast_by_platform_admin',
+        targetType: 'NotificationBroadcast',
+        targetId: event.payload.broadcastId,
+        organizationId: null,
+        ipAddress: null,
+      };
+    }
+
+    // Phase 19.9 (ADR-037) - the Restaurant Owner equivalent. `AuditActorType`
+    // has no `OrganizationMember` value (`OrganizationMemberGuard`'s own
+    // denial-audit branch logs the same way) - `actorType: 'User'` is correct
+    // here, not a fallback. `organizationId` comes from the event's own
+    // payload (the caller's own Organization, resolved from their JWT) -
+    // explicit rather than relying on the ambient `TenantContext`, since the
+    // restaurantId/organizationId pairing is what this audit row exists to
+    // prove.
+    if (event instanceof RestaurantOwnerNotificationBroadcastRequestedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.ownerId,
+        actorType: 'User',
+        action: 'notification.broadcast_by_restaurant_owner',
+        targetType: 'NotificationBroadcast',
+        targetId: event.payload.broadcastId,
+        organizationId: event.payload.organizationId,
         ipAddress: null,
       };
     }

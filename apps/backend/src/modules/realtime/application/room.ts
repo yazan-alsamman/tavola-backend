@@ -1,10 +1,15 @@
 /**
  * Phase 8 §9 — the original frozen four; Phase 15.6 (Messaging, DECISIONS.md
  * D9) adds `Conversation` as a fifth, the specific addition this freeze note
- * had anticipated and gated behind "a new architecture freeze." No other
- * future room type (`waitlist:{id}`, `notification:{id}`, ...) belongs in
- * this list without its own equivalent freeze. Client
- * `room.subscribe`/`room.unsubscribe` payloads name one of these five
+ * had anticipated and gated behind "a new architecture freeze." Phase 19.9
+ * (ADR-037) adds `User` as a sixth, under that same equivalent freeze — a
+ * self-only room (`actor.userId === resourceId`, no repository lookup) that
+ * `RealtimeGateway` auto-joins every `User`-actor socket to right after
+ * handshake authentication, since there is no ownership question beyond "is
+ * this the caller's own identity" and therefore no scenario where the client
+ * would ever need to call `room.subscribe` for it itself. No other future
+ * room type belongs in this list without its own equivalent freeze. Client
+ * `room.subscribe`/`room.unsubscribe` payloads name one of these six
  * strings - anything else is rejected before any authorization logic runs
  * (`UnknownRoomTypeException`).
  */
@@ -14,6 +19,7 @@ export enum RoomType {
   Branch = 'branch',
   Reservation = 'reservation',
   Conversation = 'conversation',
+  User = 'user',
 }
 
 export function isRoomType(value: unknown): value is RoomType {
@@ -22,7 +28,8 @@ export function isRoomType(value: unknown): value is RoomType {
     value === RoomType.Restaurant ||
     value === RoomType.Branch ||
     value === RoomType.Reservation ||
-    value === RoomType.Conversation
+    value === RoomType.Conversation ||
+    value === RoomType.User
   );
 }
 

@@ -14,7 +14,6 @@ import type { Request } from 'express';
 import { ResponseMessage } from '@common/decorators/response-message.decorator';
 import { ApiErrorResponse } from '@common/decorators/api-error-response.decorator';
 import { ErrorResponseDto } from '@common/dto/error-response.dto';
-import { PaginationQueryDto } from '@common/dto/pagination-query.dto';
 import { PlatformAdminGuard } from '@modules/platform-admin/presentation/guards/platform-admin.guard';
 import { PlatformAdminRoleGuard } from '@modules/platform-admin/presentation/guards/platform-admin-role.guard';
 import { RequirePlatformAdminRole } from '@modules/platform-admin/presentation/decorators/require-platform-admin-role.decorator';
@@ -25,6 +24,7 @@ import { ActivatePricingRuleUseCase } from '../../application/use-cases/activate
 import { ListPricingRulesUseCase } from '../../application/use-cases/list-pricing-rules.use-case';
 import { SimulatePricingUseCase } from '../../application/use-cases/simulate-pricing.use-case';
 import { ActivatePricingRuleRequestDto } from '../dto/activate-pricing-rule.request.dto';
+import { ListPricingRulesQueryDto } from '../dto/list-pricing-rules.query.dto';
 import {
   SimulatePricingRequestDto,
   SimulatePricingResponseDto,
@@ -59,14 +59,18 @@ export class PlatformAdminPricingController {
   @ResponseMessage('Pricing rules retrieved successfully.')
   @ApiOperation({
     operationId: 'platformAdminListPricingRules',
-    summary: 'List every Acquisition Pricing Rule, any scope (PlatformAdmin or PlatformSupport)',
+    summary: 'List/lookup Acquisition Pricing Rules, any scope (PlatformAdmin or PlatformSupport)',
+    description:
+      'ADR-034 §13 - optional label (case-insensitive partial match) and id (exact) filters, a narrow lookup tool. Omit both to list every rule.',
   })
   @ApiResponse({ status: 200, description: 'Rules retrieved', type: PricingRuleListResponseDto })
   @ApiErrorResponse(403, 'Caller is not an active Platform Admin', ['FORBIDDEN'])
-  async list(@Query() query: PaginationQueryDto): Promise<PricingRuleListResponseDto> {
+  async list(@Query() query: ListPricingRulesQueryDto): Promise<PricingRuleListResponseDto> {
     const result = await this.listPricingRulesUseCase.execute({
       page: query.page ?? 1,
       limit: query.limit ?? 20,
+      label: query.label,
+      id: query.id,
     });
     return {
       items: result.items.map(toPricingRuleResponse),
