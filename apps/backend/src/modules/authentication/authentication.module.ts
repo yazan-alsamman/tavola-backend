@@ -27,6 +27,10 @@ import { PlatformAdminForceLogoutUseCase } from './application/use-cases/platfor
 import { PlatformAdminResetCredentialsUseCase } from './application/use-cases/platform-admin-reset-credentials.use-case';
 import { PlatformAdminDisableLoginUseCase } from './application/use-cases/platform-admin-disable-login.use-case';
 import { PlatformAdminEnableLoginUseCase } from './application/use-cases/platform-admin-enable-login.use-case';
+import { PlatformAdminListAccountsUseCase } from './application/use-cases/platform-admin-list-accounts.use-case';
+import { PlatformAdminGetAccountUseCase } from './application/use-cases/platform-admin-get-account.use-case';
+import { PrismaPlatformAdminAccountReader } from './infrastructure/persistence/prisma-platform-admin-account.reader';
+import { PLATFORM_ADMIN_ACCOUNT_READER } from './application/ports/platform-admin-account-reader.port';
 import { AuthController } from './presentation/controllers/auth.controller';
 import { CustomerAuthController } from './presentation/controllers/customer-auth.controller';
 import { PlatformAdminAccountAccessController } from './presentation/controllers/platform-admin-account-access.controller';
@@ -155,6 +159,10 @@ import { UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
     PlatformAdminResetCredentialsUseCase,
     PlatformAdminDisableLoginUseCase,
     PlatformAdminEnableLoginUseCase,
+    PlatformAdminListAccountsUseCase,
+    PlatformAdminGetAccountUseCase,
+    PrismaPlatformAdminAccountReader,
+    { provide: PLATFORM_ADMIN_ACCOUNT_READER, useExisting: PrismaPlatformAdminAccountReader },
     JwtAuthGuard,
     SessionVersionGuard,
     RateLimitGuard,

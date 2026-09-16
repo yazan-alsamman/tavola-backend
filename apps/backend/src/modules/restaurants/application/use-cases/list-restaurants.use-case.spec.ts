@@ -56,7 +56,8 @@ describe('ListRestaurantsUseCase', () => {
     );
     for (let i = 0; i < count; i += 1) {
       await createUseCase.execute({
-        actor: baseActor(),
+        organizationId: baseActor().organizationId,
+        actorId: baseActor().userId,
         name: `Restaurant ${i}`,
         description: null,
         cuisineType: null,

@@ -78,7 +78,8 @@ describe('CreateRestaurantUseCase', () => {
     const { useCase, restaurantRepository } = createUseCase();
 
     const result = await useCase.execute({
-      actor: baseActor(),
+      organizationId: baseActor().organizationId,
+      actorId: baseActor().userId,
       name: 'The Old Mill',
       description: 'Cozy spot',
       cuisineType: 'Italian',
@@ -98,7 +99,8 @@ describe('CreateRestaurantUseCase', () => {
     const { useCase, restaurantSettingsRepository } = createUseCase();
 
     const result = await useCase.execute({
-      actor: baseActor(),
+      organizationId: baseActor().organizationId,
+      actorId: baseActor().userId,
       name: 'The Old Mill',
       description: null,
       cuisineType: null,
@@ -123,7 +125,8 @@ describe('CreateRestaurantUseCase', () => {
     const { useCase } = createUseCase();
 
     const result = await useCase.execute({
-      actor: baseActor(),
+      organizationId: baseActor().organizationId,
+      actorId: baseActor().userId,
       name: 'The Old Mill',
       slug: 'custom-slug',
       description: null,
@@ -137,7 +140,8 @@ describe('CreateRestaurantUseCase', () => {
   it('throws RestaurantSlugAlreadyExistsException when the slug is already taken', async () => {
     const { useCase, restaurantRepository } = createUseCase();
     await useCase.execute({
-      actor: baseActor(),
+      organizationId: baseActor().organizationId,
+      actorId: baseActor().userId,
       name: 'The Old Mill',
       description: null,
       cuisineType: null,
@@ -168,7 +172,8 @@ describe('CreateRestaurantUseCase', () => {
 
     await expect(
       second.execute({
-        actor: baseActor(),
+        organizationId: baseActor().organizationId,
+        actorId: baseActor().userId,
         name: 'The Old Mill Again',
         slug: 'the-old-mill',
         description: null,
@@ -182,7 +187,8 @@ describe('CreateRestaurantUseCase', () => {
     const { useCase, eventPublisher } = createUseCase();
 
     await useCase.execute({
-      actor: baseActor(),
+      organizationId: baseActor().organizationId,
+      actorId: baseActor().userId,
       name: 'The Old Mill',
       description: null,
       cuisineType: null,
@@ -205,7 +211,8 @@ describe('CreateRestaurantUseCase', () => {
     const { useCase } = createUseCase();
 
     const result = await useCase.execute({
-      actor: baseActor(),
+      organizationId: baseActor().organizationId,
+      actorId: baseActor().userId,
       name: 'The Old Mill',
       description: null,
       cuisineType: null,

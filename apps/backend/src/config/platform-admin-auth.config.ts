@@ -13,6 +13,13 @@ export default registerAs('platformAdminAuth', () => ({
   jwtIssuer: process.env.PLATFORM_ADMIN_JWT_ISSUER ?? 'tavla-platform-admin',
   jwtAudience: process.env.PLATFORM_ADMIN_JWT_AUDIENCE ?? 'tavla-platform-admin-clients',
   jwtExpirySeconds: parseInt(process.env.PLATFORM_ADMIN_JWT_EXPIRY_SECONDS ?? '900', 10),
+  /**
+   * Sliding lifetime of a `PlatformAdminSession` refresh token. Much shorter
+   * than the tenant `refreshTokenTtlDays` (30) on purpose: this credential
+   * grants platform-wide operational authority, so an unused console should
+   * fall back to full re-authentication in days, not a month.
+   */
+  refreshExpiryDays: parseInt(process.env.PLATFORM_ADMIN_REFRESH_EXPIRY_DAYS ?? '7', 10),
 }));
 
 export interface PlatformAdminAuthConfig {
@@ -20,4 +27,5 @@ export interface PlatformAdminAuthConfig {
   jwtIssuer: string;
   jwtAudience: string;
   jwtExpirySeconds: number;
+  refreshExpiryDays: number;
 }

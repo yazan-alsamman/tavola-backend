@@ -711,8 +711,28 @@ See DATABASE_SCHEMA.md — supports `RoleGrant`, `IndividualGrant`, `IndividualR
 |---|---|---|
 | `id` | UUID | PK |
 | `userId` | UUID | FK → Users, unique |
+| `role` | enum | `PlatformAdmin` \| `PlatformSupport` (ADR-034 §11). No column default — every INSERT sets it explicitly (fail closed) |
 | `createdAt` | timestamp | |
 | `revokedAt` | timestamp nullable | |
+
+## 7.11a Platform Admin Sessions (ADR-038)
+
+Backs the Platform Owner console's refresh/logout lifecycle. Structurally isolated from `DeviceSession`: separate table, separate repository port, separate revoke-reason enum — the two pipelines must never share persistence (§5.2).
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | UUID | PK |
+| `platformAdminUserId` | UUID | FK → Users (cascade), indexed |
+| `refreshTokenHash` | string | SHA-256 digest, unique. The plaintext is returned once at issue time and is never recoverable |
+| `previousRefreshTokenHash` | string nullable | Indexed. A presented hash matching **this** is a replay of an already-rotated token |
+| `ipAddress` / `userAgent` | string nullable | Captured at issue time, audit only |
+| `lastUsedAt` | timestamp nullable | Set on each rotation |
+| `revokedAt` | timestamp nullable | Write-once — a session already revoked keeps its original reason/timestamp |
+| `revokedReason` | enum nullable | `logout` \| `reuse_detected` \| `admin` |
+| `expiresAt` | timestamp | Sliding; extended on each rotation |
+| `createdAt` / `updatedAt` | timestamp | |
+
+Deliberately flatter than `DeviceSession`: **no `TokenFamily`** (with one session per row and `previousRefreshTokenHash` on it, there is nothing else to cascade-revoke — the replay handler revokes every live session for that admin directly), and **no `sessionVersion`/`permissionsVersion`** (`PlatformAdminGuard` re-reads the live `PlatformAdmin` row on every request, so revocation and role demotion already take effect immediately without a version counter).
 
 ## 7.12 SystemConfiguration Integration
 
@@ -807,6 +827,10 @@ Per NON_FUNCTIONAL_REQUIREMENTS.md:
 * Minimum 12 characters.
 * Uppercase, lowercase, number, special character.
 * Validated in Domain `Password` value object.
+
+**The policy governs password *creation*, never credential *verification* (ADR-039).** `Password.create()` applies it and is used on every path that sets a password — registration, reset, change, Platform Admin provisioning, and `POST /platform-admin/accounts/:userId/reset-credentials`. `Password.forVerification()` skips it and is used on every path that checks one — all three login use cases.
+
+Applying the creation policy at login was a real defect, fixed 2026-09-15: it threw `WeakPasswordException` (400 `VALIDATION_ERROR`) *before* the hash was ever compared, so a wrong password that happened to be short or to lack a symbol returned 400 instead of **401 `AUTH_INVALID_CREDENTIALS`**. That contradicted the documented login contract, short-circuited before the failed-login counter was incremented (so those guesses escaped lockout), gave an attacker an oracle distinguishing "not policy-shaped" from "wrong", and would have permanently locked out any account whose password predated a policy tightening.
 
 ## 8.9 Email Verification Policy (superseded by ADR-022 — no remaining consumer, see §1.3 and §15.6)
 
@@ -1307,6 +1331,25 @@ Restaurant Owners are **not** publicly self-registered — `POST /auth/register`
 **Platform Admin authentication (frozen, Phase 2.23 closure addendum):** Platform Admin authentication is a genuinely separate JWT pipeline from the ordinary Customer/Owner/Employee/OrganizationMember tokens — its own signing secret (`PLATFORM_ADMIN_JWT_SECRET`), its own issuer (`tavla-platform-admin`), its own audience (`tavla-platform-admin-clients`), a short expiry (900s default), verified by a self-contained `PlatformAdminGuard` (`src/modules/platform-admin/presentation/guards/platform-admin.guard.ts`) that never delegates to the ordinary `JwtAuthGuard` or reads the ordinary `AuthenticatedActor` — it extracts and verifies the Bearer token itself, from scratch, exclusively against the Platform Admin secret/issuer/audience, then separately confirms the token's subject is still an active (non-revoked) `PlatformAdmin` row before allowing the request through. An ordinary application JWT — even one forged to carry `actorType: PlatformAdmin` under the *ordinary* issuer/audience/secret — is rejected outright, before any claim is ever inspected, exactly the isolation §5.2 above requires. There is no public Platform Admin self-registration; accounts are provisioned operationally (seeded), never via any API. Login is `POST /platform-admin/login` (email + password against the underlying `User` row + its `PlatformAdmin` record). Proven by `test/authentication/platform-admin.e2e-spec.ts`'s full security-isolation matrix (valid token accepted; unauthenticated, Customer, Owner, forged-Employee-actorType, forged-PlatformAdmin-actorType-under-ordinary-secret, wrong-issuer, wrong-audience, expired, nonexistent-subject, and revoked-admin tokens all rejected).
 
 **Password delivery (frozen, ADR-022 Decision #15):** the Platform Admin sets the password directly at creation time; the backend's only responsibility is to hash (Argon2id) and persist it. There is no password-delivery mechanism in Phase 2.23 — no email, no WhatsApp, no temporary-password service, no automatic reset-link generation, no mandatory first-login password change (unless independently required elsewhere, which nothing today is). Credential communication to the Owner is an out-of-band operational responsibility, outside backend scope.
+
+**Platform Admin session lifecycle (ADR-038, 2026-09-15 — supersedes the "short-lived, stateless, re-login-on-expiry credential, not a `DeviceSession`-backed session" clause above, and nothing else).** Everything the addendum above says about isolation — separate secret, issuer, audience, self-contained guard, rejection of any ordinary application JWT — remains in force unchanged. What changed is that the Platform Owner console now needs a session it can actually end and renew, which a purely stateless token could not provide: `logout` had nothing to revoke, and `refresh` had nothing to rotate.
+
+| Endpoint | Auth | Behaviour |
+|---|---|---|
+| `POST /platform-admin/login` | public | Issues an access token **and** an opaque refresh token backed by a new `PlatformAdminSession` row (§7.11a). Invalid credentials → **401 `AUTH_INVALID_CREDENTIALS`**, never a 400 (ADR-039) |
+| `POST /platform-admin/refresh` | public — the refresh token *is* the credential, same model as `POST /auth/refresh` | Rotates the token (single conditional UPDATE, so concurrent refreshes cannot both mint a pair), extends the sliding expiry, re-reads the live `PlatformAdmin` row, and returns a new pair |
+| `POST /platform-admin/logout` | `PlatformAdminGuard` | Revokes the session named by the supplied refresh token. Idempotent, ownership-checked, non-enumerating (unknown / already-revoked / another admin's token all return 204) |
+| `GET /platform-admin/me` | `PlatformAdminGuard` | Identity plus the **live** role, so a console need not decode the JWT or cache login state. Both Platform tiers |
+
+**Reuse detection.** Presenting an already-rotated refresh token is indistinguishable from token theft, so it revokes **every** session belonging to that admin — not merely the one replayed — and writes a `platform_admin.refresh.reuse_detected` audit row. The concurrent-refresh race is deliberately *not* treated as a replay: the loser of the race never received a token of its own, so it gets an ordinary invalid-token response with no revocation. Every refresh failure mode (unknown, expired, revoked, revoked grant, replay) raises the identical 401 `AUTH_INVALID_REFRESH_TOKEN`, so the endpoint cannot be used to probe whether a token was ever valid.
+
+**Access-token window.** `logout` kills the refresh token immediately; the already-issued *access* token stays valid until it expires (900s default). That is inherent to stateless JWT verification and is equally true of `POST /auth/logout` — the bound is the short TTL, not the endpoint.
+
+**Refresh TTL.** `PLATFORM_ADMIN_REFRESH_EXPIRY_DAYS`, default **7** — deliberately far shorter than the tenant `refreshTokenTtlDays` (30), because this credential carries platform-wide operational authority.
+
+**Deactivation cascades.** `POST /platform-admin/admins/:id/deactivate` now also revokes every live session for the target, so nothing usable survives the revocation. This is defence in depth, not the only barrier: the guard already blocks every request the moment the grant is revoked, and the refresh use case re-checks the grant before minting anything.
+
+**Guard status codes (ADR-038).** `PlatformAdminGuard` separates the two failure modes so a client can act on them. **401 `UNAUTHORIZED`** — no usable credential (header missing, not `Bearer`, empty, malformed, expired, wrong secret/issuer/audience): nothing was authenticated, so refresh then re-login. **403 `FORBIDDEN`** — a valid, verified token whose subject is not (or is no longer) an active `PlatformAdmin`: identity is established, authority is not, and refreshing cannot help. Tier checks (`PlatformAdminRoleGuard`) stay 403 for the same reason. The full security-isolation matrix in `test/authentication/platform-admin.e2e-spec.ts` and `platform-admin.guard.spec.ts` still **rejects every scenario it rejected before** — only the status distinguishes them.
 
 ## 15.3 Username Rules (frozen)
 

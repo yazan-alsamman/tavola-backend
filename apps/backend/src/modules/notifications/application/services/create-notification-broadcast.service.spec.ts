@@ -8,7 +8,10 @@ function build(totalRecipients: number) {
     countBroadcastEligibleCustomers: jest.fn().mockResolvedValue(totalRecipients),
   };
   const broadcastRepository = { save: jest.fn().mockResolvedValue(undefined), findById: jest.fn() };
-  const fanoutScheduler = { enqueueFanout: jest.fn().mockResolvedValue(undefined), enqueueContinuation: jest.fn() };
+  const fanoutScheduler = {
+    enqueueFanout: jest.fn().mockResolvedValue(undefined),
+    enqueueContinuation: jest.fn(),
+  };
   const clock = { now: () => now };
   const idGenerator = { generate: () => 'broadcast-1' };
 

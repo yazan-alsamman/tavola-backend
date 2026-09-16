@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   HttpCode,
@@ -33,9 +34,13 @@ import { PlatformAdminReactivateRestaurantUseCase } from '../../application/use-
 import { PlatformAdminDeleteRestaurantUseCase } from '../../application/use-cases/platform-admin-delete-restaurant.use-case';
 import { PlatformAdminRestoreRestaurantUseCase } from '../../application/use-cases/platform-admin-restore-restaurant.use-case';
 import { SearchRestaurantsUseCase } from '../../application/use-cases/search-restaurants.use-case';
+import { PlatformAdminCreateRestaurantUseCase } from '../../application/use-cases/platform-admin-create-restaurant.use-case';
+import { PlatformAdminGetRestaurantUseCase } from '../../application/use-cases/platform-admin-get-restaurant.use-case';
 import { PlatformAdminRestaurantResponseDto } from '../dto/platform-admin-restaurant.response.dto';
 import { SearchRestaurantsQueryDto } from '../dto/search-restaurants.query.dto';
 import { RestaurantLookupListResponseDto } from '../dto/restaurant-lookup.response.dto';
+import { PlatformAdminCreateRestaurantRequestDto } from '../dto/platform-admin-create-restaurant.request.dto';
+import { PlatformAdminRestaurantDetailResponseDto } from '../dto/platform-admin-restaurant-detail.response.dto';
 import { toPlatformAdminRestaurantResponse } from './platform-admin-restaurant-response.mapper';
 
 /**
@@ -58,6 +63,8 @@ export class PlatformAdminRestaurantsController {
     private readonly deleteRestaurantUseCase: PlatformAdminDeleteRestaurantUseCase,
     private readonly restoreRestaurantUseCase: PlatformAdminRestoreRestaurantUseCase,
     private readonly searchRestaurantsUseCase: SearchRestaurantsUseCase,
+    private readonly createRestaurantUseCase: PlatformAdminCreateRestaurantUseCase,
+    private readonly getRestaurantUseCase: PlatformAdminGetRestaurantUseCase,
   ) {}
 
   @Get()
@@ -83,6 +90,7 @@ export class PlatformAdminRestaurantsController {
   ): Promise<RestaurantLookupListResponseDto> {
     const result = await this.searchRestaurantsUseCase.execute({
       q: query.q ?? '',
+      status: query.status,
       page: query.page ?? 1,
       limit: query.limit ?? 20,
     });
@@ -98,6 +106,110 @@ export class PlatformAdminRestaurantsController {
       total: result.total,
       page: result.page,
       limit: result.limit,
+    };
+  }
+
+  @Post()
+  @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)
+  @RequirePlatformAdminRole(PlatformAdminRole.PlatformAdmin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.CREATED)
+  @ResponseMessage('Restaurant created successfully.')
+  @ApiOperation({
+    operationId: 'platformAdminCreateRestaurant',
+    summary: 'Create a Restaurant inside a named Organization (PlatformAdmin only)',
+    description:
+      "ADR-035 Pattern 1 - rebinds to the supplied organizationId, then reuses the ordinary CreateRestaurantUseCase, so the Restaurant, its RestaurantSettings and its RestaurantUsage rows are created in one transaction exactly as on the Owner path. Subscription limits still apply: exceeding the plan's maxRestaurants returns 409, and an Organization with no Subscription returns 404. PlatformAdmin-tier only - this is a creation, and PlatformSupport is read-only.",
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Restaurant created',
+    type: PlatformAdminRestaurantDetailResponseDto,
+  })
+  @ApiErrorResponse(400, 'Validation failure', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Missing, malformed, or expired access token', ['UNAUTHORIZED'])
+  @ApiErrorResponse(403, 'Caller is not an active PlatformAdmin', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Organization not found, soft-deleted, or has no Subscription', [
+    'NOT_FOUND',
+  ])
+  @ApiErrorResponse(409, 'Slug already taken, or the plan restaurant limit is reached', [
+    'CONFLICT',
+    'ORGANIZATION_LIMIT_EXCEEDED',
+  ])
+  async create(
+    @Body() body: PlatformAdminCreateRestaurantRequestDto,
+    @CurrentPlatformAdmin() actor: PlatformAdminActor,
+    @Req() request: Request,
+  ): Promise<PlatformAdminRestaurantDetailResponseDto> {
+    const created = await this.createRestaurantUseCase.execute({
+      organizationId: body.organizationId,
+      name: body.name,
+      slug: body.slug,
+      description: body.description ?? null,
+      cuisineType: body.cuisineType ?? null,
+      priceLevel: body.priceLevel ?? null,
+      actorId: actor.userId,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+
+    // Re-read through the detail reader so 201 and the subsequent GET return
+    // the identical shape - the console can render the created Restaurant
+    // straight from this response without a follow-up call.
+    return this.toDetailResponse(created.restaurantId);
+  }
+
+  @Get(':id')
+  @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)
+  @RequirePlatformAdminRole(PlatformAdminRole.PlatformAdmin, PlatformAdminRole.PlatformSupport)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Restaurant retrieved successfully.')
+  @ApiOperation({
+    operationId: 'platformAdminGetRestaurant',
+    summary: 'Full Restaurant detail by id (PlatformAdmin or PlatformSupport)',
+    description:
+      'ADR-035 Pattern 2 - a pure cross-tenant read, no tenant rebind needed. Includes the owning Organization and a live branch count. A soft-deleted Restaurant is returned (with deletedAt set) rather than 404, so the console can inspect one before deciding whether to Restore it.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({
+    status: 200,
+    description: 'Restaurant retrieved',
+    type: PlatformAdminRestaurantDetailResponseDto,
+  })
+  @ApiErrorResponse(401, 'Missing, malformed, or expired access token', ['UNAUTHORIZED'])
+  @ApiErrorResponse(403, 'Caller is not an active Platform Admin', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Restaurant not found', ['NOT_FOUND'])
+  async getById(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<PlatformAdminRestaurantDetailResponseDto> {
+    return this.toDetailResponse(id);
+  }
+
+  private async toDetailResponse(
+    restaurantId: string,
+  ): Promise<PlatformAdminRestaurantDetailResponseDto> {
+    const row = await this.getRestaurantUseCase.execute({ restaurantId });
+    return {
+      id: row.id,
+      organization: {
+        id: row.organizationId,
+        name: row.organizationName,
+        slug: row.organizationSlug,
+        status: row.organizationStatus,
+      },
+      name: row.name,
+      slug: row.slug,
+      description: row.description,
+      cuisineType: row.cuisineType,
+      priceLevel: row.priceLevel,
+      averageRating: row.averageRating,
+      logoId: row.logoId,
+      coverImageId: row.coverImageId,
+      status: row.status,
+      branchCount: row.branchCount,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+      deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
     };
   }
 

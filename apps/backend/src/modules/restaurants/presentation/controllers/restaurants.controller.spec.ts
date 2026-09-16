@@ -237,8 +237,13 @@ describe('RestaurantsController', () => {
         buildRequest({ 'x-correlation-id': 'corr-1' }),
       );
 
+      // The tenant route sources `organizationId` exclusively from the
+      // verified JWT actor — `CreateRestaurantRequestDto` has no such field,
+      // so a client cannot supply one. (The Platform Owner route does accept
+      // one, in its own DTO, and existence-checks it before rebinding.)
       expect(createExecute).toHaveBeenCalledWith({
-        actor,
+        organizationId: actor.organizationId,
+        actorId: actor.userId,
         name: 'The Old Mill',
         slug: undefined,
         description: 'Cozy',

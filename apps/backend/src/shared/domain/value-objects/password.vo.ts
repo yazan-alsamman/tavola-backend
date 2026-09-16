@@ -29,6 +29,27 @@ export class Password extends ValueObject<{ value: string }> {
     return new Password(plaintext);
   }
 
+  /**
+   * Wraps a plaintext candidate for *verification* against a stored hash
+   * without applying {@link PasswordPolicy} — authentication validates
+   * credentials, never the password-creation policy.
+   *
+   * Applying `create()` at login is a latent correctness bug: the policy
+   * throws `WeakPasswordException` (400 `VALIDATION_ERROR`) before the hash
+   * is ever compared, so any wrong password that happens to be short (or to
+   * lack a digit/symbol) surfaces as a validation failure instead of
+   * `401 AUTH_INVALID_CREDENTIALS`. That contradicts API_GUIDELINES.md's
+   * documented login contract, leaks a distinguisher an attacker can use to
+   * classify guesses without ever touching the account, and permanently
+   * locks out any account whose password predates a policy tightening.
+   *
+   * Use `create()` on every path that *sets* a password (registration,
+   * reset, change, provisioning); use this on every path that *checks* one.
+   */
+  static forVerification(plaintext: string): Password {
+    return new Password(plaintext);
+  }
+
   get value(): string {
     return this.props.value;
   }

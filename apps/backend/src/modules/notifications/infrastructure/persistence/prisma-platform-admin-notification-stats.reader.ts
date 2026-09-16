@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/prisma/prisma.service';
 import { NotificationPushStatus } from '../../domain/enums/notification.enums';
 import {
+  NotificationBroadcastHistoryQuery,
+  NotificationBroadcastHistoryRow,
   NotificationPushStatusCounts,
   PlatformAdminNotificationStatsReaderPort,
 } from '../../application/ports/platform-admin-notification-stats-reader.port';
@@ -49,5 +52,51 @@ export class PrismaPlatformAdminNotificationStatsReader implements PlatformAdmin
       accepted: counts[NotificationPushStatus.Accepted],
       failed: counts[NotificationPushStatus.Failed],
     };
+  }
+
+  async listBroadcasts(
+    query: NotificationBroadcastHistoryQuery,
+  ): Promise<{ items: NotificationBroadcastHistoryRow[]; total: number }> {
+    // Only applied filters contribute a clause; an omitted filter leaves the
+    // listing unrestricted rather than matching an empty value.
+    const where: Prisma.NotificationBroadcastWhereInput = {};
+    if (query.status) {
+      where.status = query.status as Prisma.EnumNotificationBroadcastStatusFilter['equals'];
+    }
+    if (query.senderType) {
+      where.senderType =
+        query.senderType as Prisma.EnumNotificationBroadcastSenderTypeFilter['equals'];
+    }
+
+    // Every column below is persisted state written by the aggregate itself
+    // (`CreateNotificationBroadcastService` on insert, then
+    // `NotificationBroadcast.recordBatch`/`complete`/`fail` from the fan-out
+    // processor). Nothing is derived or reconstructed here.
+    const [rows, total] = await Promise.all([
+      this.prisma.notificationBroadcast.findMany({
+        where,
+        select: {
+          id: true,
+          senderType: true,
+          senderId: true,
+          organizationId: true,
+          title: true,
+          body: true,
+          totalRecipients: true,
+          processedCount: true,
+          succeededCount: true,
+          failedCount: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.notificationBroadcast.count({ where }),
+    ]);
+
+    return { items: rows, total };
   }
 }

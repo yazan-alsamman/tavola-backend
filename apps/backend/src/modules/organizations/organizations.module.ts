@@ -20,6 +20,7 @@ import { PlatformAdminDeleteOrganizationUseCase } from './application/use-cases/
 import { PlatformAdminRestoreOrganizationUseCase } from './application/use-cases/platform-admin-restore-organization.use-case';
 import { PlatformAdminTransferOrganizationOwnershipUseCase } from './application/use-cases/platform-admin-transfer-organization-ownership.use-case';
 import { SearchOrganizationsUseCase } from './application/use-cases/search-organizations.use-case';
+import { PlatformAdminGetOrganizationUseCase } from './application/use-cases/platform-admin-get-organization.use-case';
 import { ListOrganizationMembersUseCase } from './application/use-cases/list-organization-members.use-case';
 import { ChangeOrganizationMemberRoleUseCase } from './application/use-cases/change-organization-member-role.use-case';
 import { RemoveOrganizationMemberUseCase } from './application/use-cases/remove-organization-member.use-case';
@@ -86,6 +87,7 @@ import { OrganizationInvitationAcceptanceController } from './presentation/contr
     PlatformAdminRestoreOrganizationUseCase,
     PlatformAdminTransferOrganizationOwnershipUseCase,
     SearchOrganizationsUseCase,
+    PlatformAdminGetOrganizationUseCase,
     ListOrganizationMembersUseCase,
     ChangeOrganizationMemberRoleUseCase,
     RemoveOrganizationMemberUseCase,

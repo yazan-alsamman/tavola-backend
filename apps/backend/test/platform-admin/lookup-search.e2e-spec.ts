@@ -141,9 +141,9 @@ describe('Platform Back Office — narrow lookup/search (e2e, Phase 19.7)', () =
   }
 
   describe('GET /platform-admin/restaurants', () => {
-    it('rejects unauthenticated requests (403) and allows both PlatformAdmin tiers (200)', async () => {
+    it('rejects unauthenticated requests (401) and allows both PlatformAdmin tiers (200)', async () => {
       if (!dbAvailable || !app) return;
-      await request(app.getHttpServer()).get('/api/v1/platform-admin/restaurants').expect(403);
+      await request(app.getHttpServer()).get('/api/v1/platform-admin/restaurants').expect(401);
 
       const { email: adminEmail } = await seedPlatformAdmin('rst-admin', 'PlatformAdmin');
       const { email: supportEmail } = await seedPlatformAdmin('rst-support', 'PlatformSupport');
@@ -182,9 +182,9 @@ describe('Platform Back Office — narrow lookup/search (e2e, Phase 19.7)', () =
   });
 
   describe('GET /platform-admin/organizations', () => {
-    it('rejects unauthenticated requests (403) and finds a seeded organization by partial name', async () => {
+    it('rejects unauthenticated requests (401) and finds a seeded organization by partial name', async () => {
       if (!dbAvailable || !app) return;
-      await request(app.getHttpServer()).get('/api/v1/platform-admin/organizations').expect(403);
+      await request(app.getHttpServer()).get('/api/v1/platform-admin/organizations').expect(401);
 
       const { email } = await seedPlatformAdmin('org-search', 'PlatformAdmin');
       const token = await loginPlatformAdmin(email);
@@ -209,11 +209,11 @@ describe('Platform Back Office — narrow lookup/search (e2e, Phase 19.7)', () =
   });
 
   describe('GET /platform-admin/acquisitions/:id', () => {
-    it('rejects unauthenticated requests (403); returns 404 for unknown id; returns the record for a known id', async () => {
+    it('rejects unauthenticated requests (401); returns 404 for unknown id; returns the record for a known id', async () => {
       if (!dbAvailable || !app) return;
       await request(app.getHttpServer())
         .get(`/api/v1/platform-admin/acquisitions/${randomUUID()}`)
-        .expect(403);
+        .expect(401);
 
       const { email } = await seedPlatformAdmin('acq-search', 'PlatformAdmin');
       const token = await loginPlatformAdmin(email);
@@ -268,9 +268,9 @@ describe('Platform Back Office — narrow lookup/search (e2e, Phase 19.7)', () =
   });
 
   describe('GET /platform-admin/pricing/rules', () => {
-    it('rejects unauthenticated requests (403); label/id filters both work', async () => {
+    it('rejects unauthenticated requests (401); label/id filters both work', async () => {
       if (!dbAvailable || !app) return;
-      await request(app.getHttpServer()).get('/api/v1/platform-admin/pricing/rules').expect(403);
+      await request(app.getHttpServer()).get('/api/v1/platform-admin/pricing/rules').expect(401);
 
       const { email } = await seedPlatformAdmin('pricing-search', 'PlatformAdmin');
       const token = await loginPlatformAdmin(email);

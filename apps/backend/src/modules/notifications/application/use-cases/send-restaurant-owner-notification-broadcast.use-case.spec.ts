@@ -10,7 +10,9 @@ function build(restaurantFound: boolean) {
     execute: jest.fn().mockResolvedValue({ broadcastId: 'broadcast-1', totalRecipients: 500 }),
   };
   const restaurantRepository = {
-    findById: jest.fn().mockResolvedValue(restaurantFound ? { restaurantId: { value: restaurantId } } : null),
+    findById: jest
+      .fn()
+      .mockResolvedValue(restaurantFound ? { restaurantId: { value: restaurantId } } : null),
   };
   const eventPublisher = { publish: jest.fn().mockResolvedValue(undefined) };
   const clock = { now: () => now };

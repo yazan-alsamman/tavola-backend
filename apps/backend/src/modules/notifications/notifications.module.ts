@@ -37,6 +37,7 @@ import { GetUnreadNotificationCountUseCase } from './application/use-cases/get-u
 import { GetOneSignalIdentityTokenUseCase } from './application/use-cases/get-onesignal-identity-token.use-case';
 import { SendNotificationToCustomerUseCase } from './application/use-cases/send-notification-to-customer.use-case';
 import { SendPlatformAdminNotificationBroadcastUseCase } from './application/use-cases/send-platform-admin-notification-broadcast.use-case';
+import { PlatformAdminListNotificationBroadcastsUseCase } from './application/use-cases/platform-admin-list-notification-broadcasts.use-case';
 import { SendRestaurantOwnerNotificationBroadcastUseCase } from './application/use-cases/send-restaurant-owner-notification-broadcast.use-case';
 import { NotificationsController } from './presentation/controllers/notifications.controller';
 import { PlatformAdminNotificationsController } from './presentation/controllers/platform-admin-notifications.controller';
@@ -122,6 +123,7 @@ import { RestaurantNotificationsController } from './presentation/controllers/re
     GetOneSignalIdentityTokenUseCase,
     SendNotificationToCustomerUseCase,
     SendPlatformAdminNotificationBroadcastUseCase,
+    PlatformAdminListNotificationBroadcastsUseCase,
     SendRestaurantOwnerNotificationBroadcastUseCase,
     NotificationQueueProcessor,
     PrismaNotificationRepository,

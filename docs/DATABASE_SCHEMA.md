@@ -402,6 +402,40 @@ Notes (ADR-034)
 
 ---
 
+## PlatformAdminSession (ADR-038)
+
+The Platform Owner console's refresh session. Deliberately a separate table from `DeviceSession` rather than a reuse of it: one table behind one repository would make it possible, by ordinary refactoring accident, to hand a tenant refresh token to the Platform Admin refresh path or to widen a revocation across the boundary. AUTHENTICATION_ARCHITECTURE.md §5.2 requires these pipelines never mix, and separate persistence makes that structural rather than conventional.
+
+Fields
+
+* id (UUID)
+* platformAdminUserId (FK User, `onDelete: Cascade`)
+* refreshTokenHash (SHA-256 digest, unique — the plaintext is returned once at issue and is never recoverable)
+* previousRefreshTokenHash (nullable — a presented hash matching *this* is a replay of an already-rotated token)
+* ipAddress (nullable), userAgent (nullable) — captured at issue time, audit only
+* lastUsedAt (nullable — set on each rotation)
+* revokedAt (nullable), revokedReason (`PlatformAdminSessionRevokeReason`: `logout`, `reuse_detected`, `admin`)
+* expiresAt (sliding — extended on each rotation; TTL from `PLATFORM_ADMIN_REFRESH_EXPIRY_DAYS`, default 7)
+* createdAt, updatedAt
+
+Indexes
+
+* refreshTokenHash (unique) — the rotation lookup
+* platformAdminUserId — revoke-all-for-admin (reuse detection, deactivation)
+* previousRefreshTokenHash — the replay lookup
+
+Notes
+
+* **No `TokenFamily`.** `previousRefreshTokenHash` carries the only signal reuse detection needs, and with one session per row there is nothing else to cascade-revoke — the replay handler revokes every live session for that admin directly.
+* **No `sessionVersion`/`permissionsVersion`.** `PlatformAdminGuard` re-reads the live `PlatformAdmin` row on every request, so revocation and role demotion already take effect immediately; a version counter would duplicate a solved problem.
+* **Revocation is write-once.** A session already revoked keeps its original reason and timestamp, so a `logout` arriving after a `reuse_detected` revoke cannot erase the security-relevant record of why the session actually died.
+* **Rotation is a single conditional UPDATE** whose `WHERE` re-asserts hash-still-current + not-revoked + not-expired, so the database arbitrates concurrent refreshes. Mirrors `DeviceSession`'s own `rotateRefreshTokenIfHashMatches`.
+* Revoked and expired rows are retained (audit-relevant, matching `DeviceSession`'s precedent). No pruning job exists yet — see ADR-038's Negative consequences.
+
+**Implemented (2026-09-15):** migration `20260915100000_platform_owner_sessions_and_status_filters`, which also adds `status` indexes on `restaurants` and `organizations` backing the new Platform Owner `status` list filters (low-cardinality columns always paired with pagination — the index earns its keep on the `ORDER BY created_at DESC LIMIT n` path).
+
+---
+
 ## Customer Acquisitions (Phase 19.2, architecture frozen 2026-08-04, implemented 2026-08-09, ADR-033 — migration `20260809123633_phase_19_2_customer_acquisition_pricing`)
 
 Purpose

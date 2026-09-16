@@ -67,6 +67,7 @@ module.exports = {
         '**/prisma-platform-admin-organization-stats.reader.ts',
         '**/prisma-platform-admin-subscription-stats.reader.ts',
         '**/prisma-customer-audience.reader.ts',
+        '**/prisma-platform-admin-account.reader.ts',
       ],
       rules: {
         'no-restricted-imports': [

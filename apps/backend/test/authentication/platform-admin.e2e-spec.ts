@@ -267,7 +267,7 @@ describe('Platform Admin authentication + provisioning (e2e)', () => {
     const response = await request(app.getHttpServer())
       .post('/api/v1/platform-admin/restaurant-owners')
       .send(provisionPayload('unauth'));
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(401);
   });
 
   it('rejects a real Customer access token', async () => {
@@ -300,7 +300,7 @@ describe('Platform Admin authentication + provisioning (e2e)', () => {
     const customerToken = loginResponse.body.data.accessToken as string;
 
     const response = await provisionRequest(customerToken, provisionPayload('cust-reject'));
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(401);
   });
 
   it('rejects a real Restaurant Owner access token', async () => {
@@ -319,7 +319,7 @@ describe('Platform Admin authentication + provisioning (e2e)', () => {
     const ownerToken = loginResponse.body.data.accessToken as string;
 
     const response = await provisionRequest(ownerToken, provisionPayload('owner-reject'));
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(401);
   });
 
   it('rejects a forged ordinary JWT carrying actorType=Employee under the real ordinary secret/issuer/audience', async () => {
@@ -349,7 +349,7 @@ describe('Platform Admin authentication + provisioning (e2e)', () => {
     );
 
     const response = await provisionRequest(forgedEmployeeToken, provisionPayload('emp-reject'));
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(401);
   });
 
   it('rejects a forged ordinary JWT carrying actorType=PlatformAdmin under the ORDINARY issuer/audience/secret (must not bypass isolation)', async () => {
@@ -373,7 +373,7 @@ describe('Platform Admin authentication + provisioning (e2e)', () => {
     );
 
     const response = await provisionRequest(forgedToken, provisionPayload('forged-actortype'));
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(401);
   });
 
   it('rejects a token signed with the real Platform Admin secret but the WRONG issuer', async () => {
@@ -389,7 +389,7 @@ describe('Platform Admin authentication + provisioning (e2e)', () => {
     });
 
     const response = await provisionRequest(wrongIssuerToken, provisionPayload('wrong-issuer'));
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(401);
   });
 
   it('rejects a token signed with the real Platform Admin secret but the WRONG audience', async () => {
@@ -405,7 +405,7 @@ describe('Platform Admin authentication + provisioning (e2e)', () => {
     });
 
     const response = await provisionRequest(wrongAudienceToken, provisionPayload('wrong-aud'));
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(401);
   });
 
   it('rejects an expired Platform Admin token', async () => {
@@ -422,15 +422,19 @@ describe('Platform Admin authentication + provisioning (e2e)', () => {
     });
 
     const response = await provisionRequest(expiredToken, provisionPayload('expired'));
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(401);
   });
 
-  it('rejects a well-formed Platform Admin token for a nonexistent user (sub not found)', async () => {
+  it('rejects a fully-valid Platform Admin token whose sub does not exist (403 - authenticated, no authority)', async () => {
     if (!dbAvailable || !app) return;
 
     const secret = process.env.PLATFORM_ADMIN_JWT_SECRET;
     expect(secret).toBeTruthy();
-    const nonexistentToken = jwt.sign({ sub: randomUUID() }, secret!, {
+    // `role` is required: `JwtPlatformAdminTokenService.verifyAccessToken`
+    // rejects a payload without it, which would short-circuit to 401 on
+    // payload shape and never reach the live-row lookup this case exists to
+    // exercise. (That payload-shape branch is covered by its own test below.)
+    const nonexistentToken = jwt.sign({ sub: randomUUID(), role: 'PlatformAdmin' }, secret!, {
       algorithm: 'HS256',
       issuer: process.env.PLATFORM_ADMIN_JWT_ISSUER ?? 'tavla-platform-admin',
       audience: process.env.PLATFORM_ADMIN_JWT_AUDIENCE ?? 'tavla-platform-admin-clients',
@@ -438,7 +442,26 @@ describe('Platform Admin authentication + provisioning (e2e)', () => {
     });
 
     const response = await provisionRequest(nonexistentToken, provisionPayload('nonexistent'));
+    // The token verifies, so identity is established; there is simply no
+    // active PlatformAdmin row for that sub. ADR-038 puts that on the 403
+    // side, not 401 - refreshing could never help.
     expect(response.status).toBe(403);
+  });
+
+  it('rejects a correctly-signed token missing the required role claim (401 - unusable payload)', async () => {
+    if (!dbAvailable || !app) return;
+
+    const secret = process.env.PLATFORM_ADMIN_JWT_SECRET;
+    expect(secret).toBeTruthy();
+    const noRoleToken = jwt.sign({ sub: randomUUID() }, secret!, {
+      algorithm: 'HS256',
+      issuer: process.env.PLATFORM_ADMIN_JWT_ISSUER ?? 'tavla-platform-admin',
+      audience: process.env.PLATFORM_ADMIN_JWT_AUDIENCE ?? 'tavla-platform-admin-clients',
+      expiresIn: '15m',
+    });
+
+    const response = await provisionRequest(noRoleToken, provisionPayload('noroleclaim'));
+    expect(response.status).toBe(401);
   });
 
   it('rejects a valid token for a Platform Admin that has since been revoked', async () => {

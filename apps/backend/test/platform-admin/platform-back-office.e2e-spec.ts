@@ -438,7 +438,7 @@ describe('Platform Back Office (e2e, Phase 19.1)', () => {
       `/api/v1/platform-admin/organizations/${organizationId}/delete`,
     )
       .send({})
-      .expect(403);
+      .expect(401);
   });
 
   it('cross-tenant safety: deleting Organization A never affects Organization B', async () => {

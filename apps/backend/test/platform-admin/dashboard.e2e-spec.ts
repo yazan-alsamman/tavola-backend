@@ -219,11 +219,11 @@ describe('Platform Back Office — Dashboard composition endpoint (e2e, Phase 19
   const to = '2026-05-02T00:00:00.000Z';
   const withinWindow = new Date('2026-05-01T12:00:00.000Z');
 
-  it('1. rejects unauthenticated requests (PlatformAdminGuard fails closed, 403)', async () => {
+  it('1. rejects unauthenticated requests (PlatformAdminGuard fails closed, 401 - no usable credential)', async () => {
     if (!dbAvailable || !app) return;
     await request(app.getHttpServer())
       .get(`/api/v1/platform-admin/dashboard?from=${from}&to=${to}`)
-      .expect(403);
+      .expect(401);
   });
 
   it('2/3. PlatformSupport can read (200); PlatformAdmin can read (200) - both tiers, ADR-034 §11', async () => {
@@ -446,7 +446,7 @@ describe('Platform Back Office — Dashboard composition endpoint (e2e, Phase 19
     expect(after.messaging.total - before.messaging.total).toBe(1);
   });
 
-  it('11. rejects a Customer token (no PlatformAdmin/PlatformSupport record) - 403', async () => {
+  it('11. rejects a Customer token (ordinary-pipeline JWT, unverifiable here) - 401', async () => {
     if (!dbAvailable || !app) return;
     const email = `${TEST_PREFIX}customer-${uniqueId()}@example.com`;
     await prisma.user.create({
@@ -469,11 +469,11 @@ describe('Platform Back Office — Dashboard composition endpoint (e2e, Phase 19
     const customerToken = loginResponse.body.data.accessToken as string;
 
     await authed(customerToken, `/api/v1/platform-admin/dashboard?from=${from}&to=${to}`).expect(
-      403,
+      401,
     );
   });
 
-  it('12. rejects a Restaurant/Organization Owner token (no PlatformAdmin/PlatformSupport record) - 403', async () => {
+  it('12. rejects a Restaurant/Organization Owner token (ordinary-pipeline JWT, unverifiable here) - 401', async () => {
     if (!dbAvailable || !app) return;
     const email = `${TEST_PREFIX}owner-${uniqueId()}@example.com`;
     await seedOwnerAndOrganization(prisma, {
@@ -488,7 +488,7 @@ describe('Platform Back Office — Dashboard composition endpoint (e2e, Phase 19
       .expect(200);
     const ownerToken = loginResponse.body.data.accessToken as string;
 
-    await authed(ownerToken, `/api/v1/platform-admin/dashboard?from=${from}&to=${to}`).expect(403);
+    await authed(ownerToken, `/api/v1/platform-admin/dashboard?from=${from}&to=${to}`).expect(401);
   });
 
   it('13. Swagger document exposes the route', async () => {

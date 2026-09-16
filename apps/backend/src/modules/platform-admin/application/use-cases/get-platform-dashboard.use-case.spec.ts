@@ -58,6 +58,9 @@ class FakeRestaurantReader implements PlatformAdminRestaurantLookupReaderPort {
   async search() {
     return { items: [], total: 0 };
   }
+  async findDetailById() {
+    return null;
+  }
 }
 
 class FakeOrganizationReader implements PlatformAdminOrganizationStatsReaderPort {
@@ -73,6 +76,9 @@ class FakeOrganizationReader implements PlatformAdminOrganizationStatsReaderPort
   }
   async search() {
     return { items: [], total: 0 };
+  }
+  async findDetailById() {
+    return null;
   }
 }
 
@@ -117,6 +123,9 @@ class FakeNotificationReader implements PlatformAdminNotificationStatsReaderPort
     this.called = true;
     this.onCalled?.();
     return this.result;
+  }
+  async listBroadcasts() {
+    return { items: [], total: 0 };
   }
 }
 

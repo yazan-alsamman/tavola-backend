@@ -12,7 +12,7 @@
     "start:debug": "nest start --debug --watch --exec \"node --inspect -r ./scripts/register-tsconfig-paths.js\"",
     "start:prod": "node -r ./scripts/register-tsconfig-paths.js dist/main",
     "lint": "eslint \"{src,test}/**/*.ts\" --max-warnings 0 --fix",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.eslint.json --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",

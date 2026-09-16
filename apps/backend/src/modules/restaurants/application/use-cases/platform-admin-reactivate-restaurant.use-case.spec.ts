@@ -28,6 +28,9 @@ class FakeLookupReader implements PlatformAdminRestaurantLookupReaderPort {
   async search() {
     return { items: [], total: 0 };
   }
+  async findDetailById() {
+    return null;
+  }
 }
 
 describe('PlatformAdminReactivateRestaurantUseCase', () => {

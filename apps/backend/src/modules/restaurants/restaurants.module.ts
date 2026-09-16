@@ -7,7 +7,10 @@ import { AuthorizationModule } from '@modules/authorization/authorization.module
 import { FilesModule } from '@modules/files/files.module';
 import { SubscriptionsModule } from '@modules/subscriptions/subscriptions.module';
 import { PlatformAdminModule } from '@modules/platform-admin/platform-admin.module';
+import { OrganizationsModule } from '@modules/organizations/organizations.module';
 import { CreateRestaurantUseCase } from './application/use-cases/create-restaurant.use-case';
+import { PlatformAdminCreateRestaurantUseCase } from './application/use-cases/platform-admin-create-restaurant.use-case';
+import { PlatformAdminGetRestaurantUseCase } from './application/use-cases/platform-admin-get-restaurant.use-case';
 import { GetRestaurantUseCase } from './application/use-cases/get-restaurant.use-case';
 import { ListRestaurantsUseCase } from './application/use-cases/list-restaurants.use-case';
 import { UpdateRestaurantUseCase } from './application/use-cases/update-restaurant.use-case';
@@ -120,6 +123,14 @@ import { PlatformAdminRestaurantsController } from './presentation/controllers/p
     // PLATFORM_ADMIN_RESTAURANT_LOOKUP_READER.countByStatus, making this a
     // genuine direct two-module cycle where it previously was not.
     forwardRef(() => PlatformAdminModule),
+    // Phase 19.10: `PlatformAdminCreateRestaurantUseCase` injects
+    // `PLATFORM_ADMIN_ORGANIZATION_STATS_READER` to existence-check the target
+    // Organization before rebinding to it, so a bad `organizationId` yields a
+    // clear 404 instead of surfacing as a confusing "subscription not found"
+    // two layers down. `forwardRef` because this closes a three-module cycle
+    // (Restaurants -> Organizations -> PlatformAdmin -> Restaurants), the same
+    // shape already documented on the `PlatformAdminModule` import above.
+    forwardRef(() => OrganizationsModule),
   ],
   controllers: [
     RestaurantsController,
@@ -128,6 +139,8 @@ import { PlatformAdminRestaurantsController } from './presentation/controllers/p
   ],
   providers: [
     CreateRestaurantUseCase,
+    PlatformAdminCreateRestaurantUseCase,
+    PlatformAdminGetRestaurantUseCase,
     PlatformAdminSuspendRestaurantUseCase,
     PlatformAdminReactivateRestaurantUseCase,
     PlatformAdminDeleteRestaurantUseCase,

@@ -109,6 +109,10 @@ export const envValidationSchema = Joi.object({
   PLATFORM_ADMIN_JWT_ISSUER: Joi.string().default('tavla-platform-admin'),
   PLATFORM_ADMIN_JWT_AUDIENCE: Joi.string().default('tavla-platform-admin-clients'),
   PLATFORM_ADMIN_JWT_EXPIRY_SECONDS: Joi.number().integer().min(1).default(900),
+  // Sliding refresh-token lifetime for the Platform Owner console session
+  // (PlatformAdminSession). Deliberately days, not the tenant pipeline's 30:
+  // this credential carries platform-wide operational authority.
+  PLATFORM_ADMIN_REFRESH_EXPIRY_DAYS: Joi.number().integer().min(1).max(90).default(7),
 
   // ADR-024 LightOTP (WhatsApp OTP delivery, supersedes ADR-022's Fonnte
   // integration). Required in every environment except where

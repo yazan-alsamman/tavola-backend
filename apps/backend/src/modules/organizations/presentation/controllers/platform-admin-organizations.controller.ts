@@ -35,6 +35,7 @@ import { PlatformAdminDeleteOrganizationUseCase } from '../../application/use-ca
 import { PlatformAdminRestoreOrganizationUseCase } from '../../application/use-cases/platform-admin-restore-organization.use-case';
 import { PlatformAdminTransferOrganizationOwnershipUseCase } from '../../application/use-cases/platform-admin-transfer-organization-ownership.use-case';
 import { SearchOrganizationsUseCase } from '../../application/use-cases/search-organizations.use-case';
+import { PlatformAdminGetOrganizationUseCase } from '../../application/use-cases/platform-admin-get-organization.use-case';
 import { TransferOrganizationOwnershipRequestDto } from '../dto/transfer-organization-ownership.request.dto';
 import {
   OwnershipTransferResponseDto,
@@ -42,6 +43,7 @@ import {
 } from '../dto/platform-admin-organization.response.dto';
 import { SearchOrganizationsQueryDto } from '../dto/search-organizations.query.dto';
 import { OrganizationLookupListResponseDto } from '../dto/organization-lookup.response.dto';
+import { PlatformAdminOrganizationDetailResponseDto } from '../dto/platform-admin-organization-detail.response.dto';
 import {
   toOwnershipTransferResponse,
   toPlatformAdminOrganizationResponse,
@@ -67,6 +69,7 @@ export class PlatformAdminOrganizationsController {
     private readonly restoreOrganizationUseCase: PlatformAdminRestoreOrganizationUseCase,
     private readonly transferOwnershipUseCase: PlatformAdminTransferOrganizationOwnershipUseCase,
     private readonly searchOrganizationsUseCase: SearchOrganizationsUseCase,
+    private readonly getOrganizationUseCase: PlatformAdminGetOrganizationUseCase,
   ) {}
 
   @Get()
@@ -92,6 +95,7 @@ export class PlatformAdminOrganizationsController {
   ): Promise<OrganizationLookupListResponseDto> {
     const result = await this.searchOrganizationsUseCase.execute({
       q: query.q ?? '',
+      status: query.status,
       page: query.page ?? 1,
       limit: query.limit ?? 20,
     });
@@ -106,6 +110,45 @@ export class PlatformAdminOrganizationsController {
       total: result.total,
       page: result.page,
       limit: result.limit,
+    };
+  }
+
+  @Get(':id')
+  @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)
+  @RequirePlatformAdminRole(PlatformAdminRole.PlatformAdmin, PlatformAdminRole.PlatformSupport)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Organization retrieved successfully.')
+  @ApiOperation({
+    operationId: 'platformAdminGetOrganization',
+    summary: 'Full Organization detail by id (PlatformAdmin or PlatformSupport)',
+    description:
+      'ADR-035 Pattern 2 - a pure cross-tenant read, no tenant rebind needed. Includes live restaurant and active-member counts, aggregated in the same query as the record itself. A soft-deleted Organization is returned (with deletedAt set) rather than 404, so the console can inspect one before deciding whether to Restore it.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({
+    status: 200,
+    description: 'Organization retrieved',
+    type: PlatformAdminOrganizationDetailResponseDto,
+  })
+  @ApiErrorResponse(401, 'Missing, malformed, or expired access token', ['UNAUTHORIZED'])
+  @ApiErrorResponse(403, 'Caller is not an active Platform Admin', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Organization not found', ['NOT_FOUND'])
+  async getById(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<PlatformAdminOrganizationDetailResponseDto> {
+    const row = await this.getOrganizationUseCase.execute({ organizationId: id });
+    return {
+      id: row.id,
+      name: row.name,
+      slug: row.slug,
+      status: row.status,
+      billingEmail: row.billingEmail,
+      restaurantCount: row.restaurantCount,
+      memberCount: row.memberCount,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+      deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
     };
   }
 

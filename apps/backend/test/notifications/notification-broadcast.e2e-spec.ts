@@ -63,7 +63,9 @@ describe('Internal Notification System - Platform Admin & Restaurant Owner autho
           ],
         },
       });
-      await prisma.notificationBroadcast.deleteMany({ where: { title: { startsWith: TEST_PREFIX } } });
+      await prisma.notificationBroadcast.deleteMany({
+        where: { title: { startsWith: TEST_PREFIX } },
+      });
       await prisma.employee.deleteMany({ where: { email: { startsWith: TEST_PREFIX } } });
       await prisma.role.deleteMany({ where: { slug: { startsWith: TEST_PREFIX } } });
       await prisma.organizationMember.deleteMany({
@@ -95,7 +97,9 @@ describe('Internal Notification System - Platform Admin & Restaurant Owner autho
         },
       });
       await prisma.user.deleteMany({
-        where: { OR: [{ email: { startsWith: TEST_PREFIX } }, { username: { startsWith: TEST_PREFIX } }] },
+        where: {
+          OR: [{ email: { startsWith: TEST_PREFIX } }, { username: { startsWith: TEST_PREFIX } }],
+        },
       });
       await prisma.$disconnect();
     }
@@ -164,14 +168,22 @@ describe('Internal Notification System - Platform Admin & Restaurant Owner autho
       .post('/api/v1/auth/login')
       .send({ email, password: PASSWORD, deviceType: 'web' })
       .expect(200);
-    return { accessToken: loginResponse.body.data.accessToken as string, userId, organizationId, email };
+    return {
+      accessToken: loginResponse.body.data.accessToken as string,
+      userId,
+      organizationId,
+      email,
+    };
   }
 
   async function createRestaurant(ownerAccessToken: string): Promise<string> {
     const response = await request(app!.getHttpServer())
       .post('/api/v1/restaurants')
       .set('Authorization', `Bearer ${ownerAccessToken}`)
-      .send({ name: 'Notif Broadcast Test Restaurant', slug: `${TEST_PREFIX}restaurant-${uniqueId()}` })
+      .send({
+        name: 'Notif Broadcast Test Restaurant',
+        slug: `${TEST_PREFIX}restaurant-${uniqueId()}`,
+      })
       .expect(201);
     return response.body.data.restaurantId as string;
   }
@@ -247,12 +259,12 @@ describe('Internal Notification System - Platform Admin & Restaurant Owner autho
       expect(response.body.code).toBe('FORBIDDEN');
     });
 
-    it('rejects a request with no Authorization header (PlatformAdminGuard uniformly returns 403, never 401)', async () => {
+    it('rejects a request with no Authorization header (PlatformAdminGuard returns 401 - no usable credential, ADR-038)', async () => {
       if (!dbAvailable || !app) return;
       await request(app.getHttpServer())
         .post('/api/v1/platform-admin/notifications')
         .send({ targetUserId: randomUUID(), title: 'Welcome!', body: 'Body' })
-        .expect(403);
+        .expect(401);
     });
 
     it("returns 404 (IDOR-safe) when targetUserId is an OrganizationMember, never an internal identity's inbox", async () => {
@@ -332,12 +344,12 @@ describe('Internal Notification System - Platform Admin & Restaurant Owner autho
       expect(response.body.code).toBe('FORBIDDEN');
     });
 
-    it('rejects a request with no Authorization header (PlatformAdminGuard uniformly returns 403, never 401)', async () => {
+    it('rejects a request with no Authorization header (PlatformAdminGuard returns 401 - no usable credential, ADR-038)', async () => {
       if (!dbAvailable || !app) return;
       await request(app.getHttpServer())
         .post('/api/v1/platform-admin/notifications/broadcast')
         .send({ title: 'Title', body: 'Body' })
-        .expect(403);
+        .expect(401);
     });
   });
 
@@ -381,7 +393,7 @@ describe('Internal Notification System - Platform Admin & Restaurant Owner autho
       expect(response.body.code).toBe('FORBIDDEN');
     });
 
-    it("returns 404 (IDOR-safe, not 403) when the restaurant belongs to a different Organization", async () => {
+    it('returns 404 (IDOR-safe, not 403) when the restaurant belongs to a different Organization', async () => {
       if (!dbAvailable || !app) return;
       const ownerA = await registerAndLoginOwner('broadcast-idor-a');
       const ownerB = await registerAndLoginOwner('broadcast-idor-b');

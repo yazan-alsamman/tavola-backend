@@ -76,6 +76,9 @@ class FakeRestaurantLookupReader implements PlatformAdminRestaurantLookupReaderP
   async search() {
     return { items: [], total: 0 };
   }
+  async findDetailById() {
+    return null;
+  }
 }
 
 function platformRule(flatCurrency: string): AcquisitionPricingRule {

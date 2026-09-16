@@ -81,7 +81,8 @@ describe('AddRestaurantGalleryImageUseCase', () => {
       new ImmediateUnitOfWork(),
     );
     const result = await createUseCase.execute({
-      actor: baseActor(),
+      organizationId: baseActor().organizationId,
+      actorId: baseActor().userId,
       name: 'The Old Mill',
       description: null,
       cuisineType: null,

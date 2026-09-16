@@ -1,4 +1,14 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { ResponseMessage } from '@common/decorators/response-message.decorator';
@@ -16,6 +26,11 @@ import { SendNotificationToCustomerRequestDto } from '../dto/send-notification-t
 import { SendNotificationBroadcastRequestDto } from '../dto/send-notification-broadcast.request.dto';
 import { NotificationSendResponseDto } from '../dto/notification-send.response.dto';
 import { NotificationBroadcastResponseDto } from '../dto/notification-broadcast.response.dto';
+import { PlatformAdminListNotificationBroadcastsUseCase } from '../../application/use-cases/platform-admin-list-notification-broadcasts.use-case';
+import {
+  ListNotificationBroadcastsQueryDto,
+  NotificationBroadcastHistoryListResponseDto,
+} from '../dto/notification-broadcast-history.response.dto';
 
 /**
  * Phase 19.9 (ADR-037) — internal notification system, Platform Admin
@@ -37,7 +52,60 @@ export class PlatformAdminNotificationsController {
   constructor(
     private readonly sendNotificationToCustomerUseCase: SendNotificationToCustomerUseCase,
     private readonly sendPlatformAdminNotificationBroadcastUseCase: SendPlatformAdminNotificationBroadcastUseCase,
+    private readonly listNotificationBroadcastsUseCase: PlatformAdminListNotificationBroadcastsUseCase,
   ) {}
+
+  @Get()
+  @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)
+  @RequirePlatformAdminRole(PlatformAdminRole.PlatformAdmin, PlatformAdminRole.PlatformSupport)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Notification broadcasts retrieved successfully.')
+  @ApiOperation({
+    operationId: 'platformAdminListNotificationBroadcasts',
+    summary: 'Notification broadcast history with real delivery state (both Platform tiers)',
+    description:
+      'The counterpart to POST /platform-admin/notifications/broadcast, which returns 202 Accepted and therefore cannot report an outcome - delivery happens asynchronously via BullMQ. Every field here is persisted NotificationBroadcast state written by the fan-out processor: status (Pending/Processing/Completed/Failed), processed/succeeded/failed counters, the queue-time audience snapshot, and createdAt/updatedAt. Nothing is synthesized at read time. Newest first, paginated, optionally filtered by status and senderType; both Platform Admin and Restaurant Owner broadcasts are included unless senderType narrows it. Read-only, so PlatformSupport may call it even though authoring a broadcast is PlatformAdmin-only.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Broadcast history retrieved',
+    type: NotificationBroadcastHistoryListResponseDto,
+  })
+  @ApiErrorResponse(400, 'Validation failure', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Missing, malformed, or expired access token', ['UNAUTHORIZED'])
+  @ApiErrorResponse(403, 'Caller is not an active Platform Admin', ['FORBIDDEN'])
+  async listBroadcasts(
+    @Query() query: ListNotificationBroadcastsQueryDto,
+  ): Promise<NotificationBroadcastHistoryListResponseDto> {
+    const result = await this.listNotificationBroadcastsUseCase.execute({
+      status: query.status,
+      senderType: query.senderType,
+      page: query.page ?? 1,
+      limit: query.limit ?? 20,
+    });
+
+    return {
+      items: result.items.map((row) => ({
+        id: row.id,
+        senderType: row.senderType,
+        senderId: row.senderId,
+        organizationId: row.organizationId,
+        title: row.title,
+        body: row.body,
+        totalRecipients: row.totalRecipients,
+        processedCount: row.processedCount,
+        succeededCount: row.succeededCount,
+        failedCount: row.failedCount,
+        status: row.status,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      })),
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+    };
+  }
 
   @Post()
   @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)

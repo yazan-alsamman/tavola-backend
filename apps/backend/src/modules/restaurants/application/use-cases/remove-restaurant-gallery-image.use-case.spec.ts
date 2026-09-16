@@ -70,7 +70,8 @@ describe('RemoveRestaurantGalleryImageUseCase', () => {
       new ImmediateUnitOfWork(),
     );
     const result = await createUseCase.execute({
-      actor: baseActor(),
+      organizationId: baseActor().organizationId,
+      actorId: baseActor().userId,
       name,
       description: null,
       cuisineType: null,

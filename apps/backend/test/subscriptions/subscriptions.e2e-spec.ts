@@ -307,7 +307,7 @@ describe('Subscriptions (e2e)', () => {
   it('rejects an unauthenticated request to the PlatformAdmin subscription routes', async () => {
     if (!dbAvailable || !app) return;
     const response = await request(app.getHttpServer()).get('/api/v1/platform-admin/plans');
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(401);
   });
 
   it('rejects a real Restaurant Owner token on the PlatformAdmin routes (never combined guard chains)', async () => {
@@ -317,7 +317,7 @@ describe('Subscriptions (e2e)', () => {
     const response = await request(app.getHttpServer())
       .get(`/api/v1/platform-admin/organizations/${organizationId}/subscription`)
       .set('Authorization', `Bearer ${token}`);
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(401);
   });
 
   it('rejects an unauthenticated request to the Owner subscription routes', async () => {

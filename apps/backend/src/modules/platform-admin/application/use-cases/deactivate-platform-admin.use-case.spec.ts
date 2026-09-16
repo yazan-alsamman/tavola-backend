@@ -9,6 +9,7 @@ import { PlatformAdminRole } from '../../domain/enums/platform-admin.enums';
 import { PlatformAdminNotFoundException } from '../../domain/exceptions/platform-admin-not-found.exception';
 import { CannotModifyOwnPlatformAdminAccountException } from '../../domain/exceptions/cannot-modify-own-platform-admin-account.exception';
 import { PlatformAdminAccountRevokedEvent } from '../../domain/events/platform-admin.events';
+import { InMemoryPlatformAdminSessionRepository } from '../../../../../test/platform-admin/support/in-memory-platform-admin-session.repository';
 import {
   CollectingEventPublisher,
   FixedClock,
@@ -57,14 +58,16 @@ describe('DeactivatePlatformAdminUseCase', () => {
 
   function build() {
     const platformAdminRepository = new FakePlatformAdminRepository();
+    const sessionRepository = new InMemoryPlatformAdminSessionRepository();
     const eventPublisher = new CollectingEventPublisher();
     const useCase = new DeactivatePlatformAdminUseCase(
       platformAdminRepository,
+      sessionRepository,
       new FixedClock(now),
       new SequentialIdGenerator(['eeeeeeee-1111-4111-8111-111111111111']),
       eventPublisher,
     );
-    return { useCase, platformAdminRepository, eventPublisher };
+    return { useCase, platformAdminRepository, sessionRepository, eventPublisher };
   }
 
   it('revokes the target account and publishes PlatformAdminAccountRevokedEvent', async () => {

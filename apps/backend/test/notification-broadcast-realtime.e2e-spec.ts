@@ -5,7 +5,11 @@ import { io, Socket } from 'socket.io-client';
 import { PrismaClient, UserStatus } from '@prisma/client';
 import { AccessTokenActorType } from '../src/modules/authentication/domain/services/access-token-claims';
 import { ProcessNotificationBroadcastFanoutUseCase } from '../src/modules/notifications/application/use-cases/process-notification-broadcast-fanout.use-case';
-import { isDatabaseReachable, isRedisReachable, skipUnlessDatabaseAvailable } from './support/live-database';
+import {
+  isDatabaseReachable,
+  isRedisReachable,
+  skipUnlessDatabaseAvailable,
+} from './support/live-database';
 import {
   cleanupRealtimeWorld,
   createRealtimeTestApp,
@@ -30,7 +34,12 @@ interface DomainEventEnvelope {
 }
 
 function connectSocket(url: string, token: string): Socket {
-  return io(url, { transports: ['websocket'], auth: { token }, reconnection: false, forceNew: true });
+  return io(url, {
+    transports: ['websocket'],
+    auth: { token },
+    reconnection: false,
+    forceNew: true,
+  });
 }
 
 function waitForConnect(socket: Socket, timeoutMs = 5000): Promise<void> {
@@ -53,7 +62,10 @@ function waitForDomainEvent(
   timeoutMs = 8000,
 ): Promise<DomainEventEnvelope> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Timed out waiting for domain.event')), timeoutMs);
+    const timer = setTimeout(
+      () => reject(new Error('Timed out waiting for domain.event')),
+      timeoutMs,
+    );
     const handler = (envelope: DomainEventEnvelope) => {
       if (predicate(envelope)) {
         clearTimeout(timer);
@@ -128,8 +140,12 @@ describe('Internal Notification System realtime delivery (e2e, Phase 19.9)', () 
           ],
         },
       });
-      await prisma.notificationBroadcast.deleteMany({ where: { title: { startsWith: TEST_PREFIX } } });
-      await prisma.platformAdmin.deleteMany({ where: { user: { email: { startsWith: TEST_PREFIX } } } });
+      await prisma.notificationBroadcast.deleteMany({
+        where: { title: { startsWith: TEST_PREFIX } },
+      });
+      await prisma.platformAdmin.deleteMany({
+        where: { user: { email: { startsWith: TEST_PREFIX } } },
+      });
       await prisma.user.deleteMany({ where: { email: { startsWith: TEST_PREFIX } } });
       await cleanupRealtimeWorld(prisma);
     }
@@ -239,7 +255,11 @@ describe('Internal Notification System realtime delivery (e2e, Phase 19.9)', () 
     const socketA = connectSocket(url, customerToken(customerA.id));
     const socketB = connectSocket(url, customerToken(customerB.id));
     const unrelatedSocket = connectSocket(url, customerToken(world.otherCustomerUserId));
-    await Promise.all([waitForConnect(socketA), waitForConnect(socketB), waitForConnect(unrelatedSocket)]);
+    await Promise.all([
+      waitForConnect(socketA),
+      waitForConnect(socketB),
+      waitForConnect(unrelatedSocket),
+    ]);
 
     const response = await request(app!.getHttpServer())
       .post('/api/v1/platform-admin/notifications/broadcast')
@@ -250,15 +270,21 @@ describe('Internal Notification System realtime delivery (e2e, Phase 19.9)', () 
 
     const eventAPromise = waitForDomainEvent(
       socketA,
-      (envelope) => envelope.eventType === 'NotificationBroadcastDelivered' && envelope.data.broadcastId === broadcastId,
+      (envelope) =>
+        envelope.eventType === 'NotificationBroadcastDelivered' &&
+        envelope.data.broadcastId === broadcastId,
     );
     const eventBPromise = waitForDomainEvent(
       socketB,
-      (envelope) => envelope.eventType === 'NotificationBroadcastDelivered' && envelope.data.broadcastId === broadcastId,
+      (envelope) =>
+        envelope.eventType === 'NotificationBroadcastDelivered' &&
+        envelope.data.broadcastId === broadcastId,
     );
     const noLeakPromise = assertNoMatchingDomainEvent(
       unrelatedSocket,
-      (envelope) => envelope.eventType === 'NotificationBroadcastDelivered' && envelope.data.broadcastId === broadcastId,
+      (envelope) =>
+        envelope.eventType === 'NotificationBroadcastDelivered' &&
+        envelope.data.broadcastId === broadcastId,
     );
 
     // Drive the fan-out deterministically via the real app's own DI-resolved

@@ -1,5 +1,8 @@
 import { NotificationBroadcast } from './notification-broadcast.entity';
-import { NotificationBroadcastSenderType, NotificationBroadcastStatus } from '../enums/notification-broadcast.enums';
+import {
+  NotificationBroadcastSenderType,
+  NotificationBroadcastStatus,
+} from '../enums/notification-broadcast.enums';
 import { InvalidNotificationBroadcastException } from '../exceptions/invalid-notification-broadcast.exception';
 import { InvalidNotificationBroadcastTransitionException } from '../exceptions/invalid-notification-broadcast-transition.exception';
 
@@ -65,9 +68,13 @@ describe('NotificationBroadcast', () => {
     });
 
     it('recordBatch advances counters and cursor while Processing', () => {
-      const broadcast = build()
-        .start(now)
-        .recordBatch({ batchSize: 10, succeeded: 8, failed: 2, lastProcessedUserId: '10101010-1010-4010-8010-101010101010', at: later });
+      const broadcast = build().start(now).recordBatch({
+        batchSize: 10,
+        succeeded: 8,
+        failed: 2,
+        lastProcessedUserId: '10101010-1010-4010-8010-101010101010',
+        at: later,
+      });
 
       expect(broadcast.processedCount).toBe(10);
       expect(broadcast.succeededCount).toBe(8);
@@ -79,8 +86,20 @@ describe('NotificationBroadcast', () => {
     it('recordBatch accumulates across multiple batches', () => {
       const broadcast = build()
         .start(now)
-        .recordBatch({ batchSize: 10, succeeded: 10, failed: 0, lastProcessedUserId: '10101010-1010-4010-8010-101010101010', at: later })
-        .recordBatch({ batchSize: 5, succeeded: 5, failed: 0, lastProcessedUserId: '15151515-1515-4015-8015-151515151515', at: later });
+        .recordBatch({
+          batchSize: 10,
+          succeeded: 10,
+          failed: 0,
+          lastProcessedUserId: '10101010-1010-4010-8010-101010101010',
+          at: later,
+        })
+        .recordBatch({
+          batchSize: 5,
+          succeeded: 5,
+          failed: 0,
+          lastProcessedUserId: '15151515-1515-4015-8015-151515151515',
+          at: later,
+        });
 
       expect(broadcast.processedCount).toBe(15);
       expect(broadcast.succeededCount).toBe(15);
@@ -90,7 +109,13 @@ describe('NotificationBroadcast', () => {
     it('complete() is terminal and fills totalRecipients from processedCount when it was never set', () => {
       const broadcast = build({ totalRecipients: null })
         .start(now)
-        .recordBatch({ batchSize: 7, succeeded: 7, failed: 0, lastProcessedUserId: '07070707-0707-4007-8007-070707070707', at: later })
+        .recordBatch({
+          batchSize: 7,
+          succeeded: 7,
+          failed: 0,
+          lastProcessedUserId: '07070707-0707-4007-8007-070707070707',
+          at: later,
+        })
         .complete(later);
 
       expect(broadcast.status).toBe(NotificationBroadcastStatus.Completed);
@@ -100,7 +125,13 @@ describe('NotificationBroadcast', () => {
     it('complete() never overwrites a totalRecipients snapshot taken at creation', () => {
       const broadcast = build({ totalRecipients: 100 })
         .start(now)
-        .recordBatch({ batchSize: 7, succeeded: 7, failed: 0, lastProcessedUserId: '07070707-0707-4007-8007-070707070707', at: later })
+        .recordBatch({
+          batchSize: 7,
+          succeeded: 7,
+          failed: 0,
+          lastProcessedUserId: '07070707-0707-4007-8007-070707070707',
+          at: later,
+        })
         .complete(later);
 
       expect(broadcast.totalRecipients).toBe(100);
@@ -137,9 +168,13 @@ describe('NotificationBroadcast', () => {
 
   describe('reconstitute/toProps round-trip', () => {
     it('preserves every field', () => {
-      const original = build()
-        .start(now)
-        .recordBatch({ batchSize: 3, succeeded: 3, failed: 0, lastProcessedUserId: '03030303-0303-4003-8003-030303030303', at: later });
+      const original = build().start(now).recordBatch({
+        batchSize: 3,
+        succeeded: 3,
+        failed: 0,
+        lastProcessedUserId: '03030303-0303-4003-8003-030303030303',
+        at: later,
+      });
       const restored = NotificationBroadcast.reconstitute(original.toProps());
       expect(restored.toProps()).toEqual(original.toProps());
     });

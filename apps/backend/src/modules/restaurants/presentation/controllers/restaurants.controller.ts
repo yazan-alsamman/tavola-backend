@@ -144,7 +144,8 @@ export class RestaurantsController {
     @Req() request: Request,
   ): Promise<RestaurantResponseDto> {
     const result = await this.createRestaurantUseCase.execute({
-      actor,
+      organizationId: actor.organizationId,
+      actorId: actor.userId,
       name: body.name,
       slug: body.slug,
       description: body.description ?? null,

@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { ResponseMessage } from '@common/decorators/response-message.decorator';
@@ -10,8 +10,17 @@ import { PlatformAdminGuard } from '../guards/platform-admin.guard';
 import { CurrentPlatformAdmin } from '../decorators/current-platform-admin.decorator';
 import { PlatformAdminActor } from '../../application/dto/platform-admin-actor.dto';
 import { PlatformAdminLoginUseCase } from '../../application/use-cases/platform-admin-login.use-case';
+import { PlatformAdminRefreshUseCase } from '../../application/use-cases/platform-admin-refresh.use-case';
+import { PlatformAdminLogoutUseCase } from '../../application/use-cases/platform-admin-logout.use-case';
+import { GetCurrentPlatformAdminUseCase } from '../../application/use-cases/get-current-platform-admin.use-case';
 import { PlatformAdminLoginRequestDto } from '../dto/platform-admin-login.request.dto';
-import { PlatformAdminLoginResponseDto } from '../dto/platform-admin-login.response.dto';
+import {
+  PlatformAdminLoginResponseDto,
+  PlatformAdminSessionResponseDto,
+} from '../dto/platform-admin-login.response.dto';
+import { PlatformAdminRefreshRequestDto } from '../dto/platform-admin-refresh.request.dto';
+import { PlatformAdminLogoutRequestDto } from '../dto/platform-admin-logout.request.dto';
+import { PlatformAdminMeResponseDto } from '../dto/platform-admin-me.response.dto';
 import { ProvisionRestaurantOwnerRequestDto } from '../dto/provision-restaurant-owner.request.dto';
 import { ProvisionRestaurantOwnerResponseDto } from '../dto/provision-restaurant-owner.response.dto';
 
@@ -29,6 +38,9 @@ import { ProvisionRestaurantOwnerResponseDto } from '../dto/provision-restaurant
 export class PlatformAdminController {
   constructor(
     private readonly platformAdminLoginUseCase: PlatformAdminLoginUseCase,
+    private readonly platformAdminRefreshUseCase: PlatformAdminRefreshUseCase,
+    private readonly platformAdminLogoutUseCase: PlatformAdminLogoutUseCase,
+    private readonly getCurrentPlatformAdminUseCase: GetCurrentPlatformAdminUseCase,
     private readonly provisionRestaurantOwnerUseCase: ProvisionRestaurantOwnerUseCase,
   ) {}
 
@@ -57,11 +69,103 @@ export class PlatformAdminController {
       email: body.email,
       password: body.password,
       ipAddress: resolveClientIp(request),
+      userAgent: request.headers['user-agent'],
+    });
+
+    return toSessionResponse(result);
+  }
+
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Session refreshed successfully.')
+  @ApiOperation({
+    operationId: 'platformAdminRefresh',
+    summary: 'Rotate a Platform Admin refresh token and issue a new access token',
+    description:
+      'Public - it authenticates via the refresh token itself, exactly like POST /auth/refresh. The presented token is consumed and a new pair returned. Replaying an already-rotated token is treated as theft: every session belonging to that admin is revoked and the attempt audited, forcing a full re-login. Unknown, expired, revoked and replayed tokens are indistinguishable in the response.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Session refreshed',
+    type: PlatformAdminSessionResponseDto,
+  })
+  @ApiErrorResponse(400, 'Validation failure', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Invalid, expired, revoked, or replayed refresh token', [
+    'AUTH_INVALID_REFRESH_TOKEN',
+  ])
+  async refresh(
+    @Body() body: PlatformAdminRefreshRequestDto,
+    @Req() request: Request,
+  ): Promise<PlatformAdminSessionResponseDto> {
+    const result = await this.platformAdminRefreshUseCase.execute({
+      refreshToken: body.refreshToken,
+      ipAddress: resolveClientIp(request),
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+
+    return toSessionResponse(result);
+  }
+
+  @Post('logout')
+  @UseGuards(PlatformAdminGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    operationId: 'platformAdminLogout',
+    summary: 'End one Platform Admin console session',
+    description:
+      'Revokes the PlatformAdminSession identified by the supplied refresh token, so that token stops working immediately. The already-issued access token stays valid until it expires (900s default) - an inherent property of stateless JWT verification, identical to POST /auth/logout. Idempotent and non-enumerating: an unknown, already-revoked, or another admin token all return 204.',
+  })
+  @ApiResponse({ status: 204, description: 'Session ended' })
+  @ApiErrorResponse(400, 'Validation failure', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Missing, malformed, or expired access token', ['UNAUTHORIZED'])
+  @ApiErrorResponse(403, 'Caller is no longer an active Platform Admin', ['FORBIDDEN'])
+  async logout(
+    @Body() body: PlatformAdminLogoutRequestDto,
+    @CurrentPlatformAdmin() actor: PlatformAdminActor,
+    @Req() request: Request,
+  ): Promise<void> {
+    await this.platformAdminLogoutUseCase.execute({
+      refreshToken: body.refreshToken,
+      actorId: actor.userId,
+      ipAddress: resolveClientIp(request),
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+  }
+
+  @Get('me')
+  @UseGuards(PlatformAdminGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Current Platform Admin retrieved successfully.')
+  @ApiOperation({
+    operationId: 'platformAdminGetMe',
+    summary: 'Identity and live role of the authenticated Platform Admin',
+    description:
+      'What a console calls on boot to answer "am I still signed in, and as whom?" without decoding the JWT client-side. Available to both Platform tiers - it reports the caller own role rather than requiring a particular one.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Current admin retrieved',
+    type: PlatformAdminMeResponseDto,
+  })
+  @ApiErrorResponse(401, 'Missing, malformed, or expired access token', ['UNAUTHORIZED'])
+  @ApiErrorResponse(403, 'Caller is no longer an active Platform Admin', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Platform Admin grant or User row no longer exists', ['NOT_FOUND'])
+  async me(@CurrentPlatformAdmin() actor: PlatformAdminActor): Promise<PlatformAdminMeResponseDto> {
+    const result = await this.getCurrentPlatformAdminUseCase.execute({
+      platformAdminUserId: actor.userId,
     });
 
     return {
-      accessToken: result.accessToken,
-      accessTokenExpiresAt: result.accessTokenExpiresAt.toISOString(),
+      userId: result.userId,
+      platformAdminId: result.platformAdminId,
+      email: result.email,
+      firstName: result.firstName,
+      lastName: result.lastName,
+      role: result.role,
+      status: result.status,
+      platformAdminCreatedAt: result.platformAdminCreatedAt.toISOString(),
     };
   }
 
@@ -101,4 +205,29 @@ export class PlatformAdminController {
       ipAddress: resolveClientIp(request),
     });
   }
+}
+
+/**
+ * Login and Refresh return the identical wire shape; this is the single
+ * place an application result is projected onto it, so the two handlers
+ * cannot drift apart.
+ */
+function toSessionResponse(result: {
+  accessToken: string;
+  refreshToken: string;
+  tokenType: string;
+  accessTokenExpiresAt: Date;
+  refreshTokenExpiresAt: Date;
+  platformAdminUserId: string;
+  role: string;
+}): PlatformAdminSessionResponseDto {
+  return {
+    accessToken: result.accessToken,
+    refreshToken: result.refreshToken,
+    tokenType: result.tokenType,
+    accessTokenExpiresAt: result.accessTokenExpiresAt.toISOString(),
+    refreshTokenExpiresAt: result.refreshTokenExpiresAt.toISOString(),
+    platformAdminUserId: result.platformAdminUserId,
+    role: result.role as PlatformAdminSessionResponseDto['role'],
+  };
 }

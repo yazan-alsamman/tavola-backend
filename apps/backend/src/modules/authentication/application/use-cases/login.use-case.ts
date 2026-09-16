@@ -95,7 +95,7 @@ export class LoginUseCase {
   async execute(command: LoginCommand): Promise<LoginResult> {
     const now = this.clock.now();
     const email = Email.create(command.email);
-    const password = Password.create(command.password);
+    const password = Password.forVerification(command.password);
     const ipAddress = command.ipAddress?.trim() || 'unknown';
 
     const user = await this.userRepository.findByEmail(email);

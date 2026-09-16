@@ -96,7 +96,7 @@ export class CreateRestaurantUseCase {
     const now = this.clock.now();
     const restaurant = Restaurant.create({
       id: this.idGenerator.generate(),
-      organizationId: command.actor.organizationId,
+      organizationId: command.organizationId,
       name: command.name,
       slug: slug.value,
       logoId: null,
@@ -138,7 +138,7 @@ export class CreateRestaurantUseCase {
       // has committed its increment.
       const withinLimit =
         await this.subscriptionUsageRepository.incrementRestaurantCountIfUnderLimit(
-          command.actor.organizationId,
+          command.organizationId,
           plan.maxRestaurants,
         );
       if (!withinLimit) {
@@ -155,7 +155,7 @@ export class CreateRestaurantUseCase {
         {
           restaurantId: restaurant.restaurantId.value,
           organizationId: restaurant.organizationId.value,
-          actorId: command.actor.userId,
+          actorId: command.actorId,
         },
         now,
         command.correlationId,

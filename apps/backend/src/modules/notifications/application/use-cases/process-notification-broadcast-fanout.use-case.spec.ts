@@ -1,6 +1,9 @@
 import { Notification } from '../../domain/entities/notification.entity';
 import { NotificationBroadcast } from '../../domain/entities/notification-broadcast.entity';
-import { NotificationBroadcastSenderType, NotificationBroadcastStatus } from '../../domain/enums/notification-broadcast.enums';
+import {
+  NotificationBroadcastSenderType,
+  NotificationBroadcastStatus,
+} from '../../domain/enums/notification-broadcast.enums';
 import { ProcessNotificationBroadcastFanoutUseCase } from './process-notification-broadcast-fanout.use-case';
 
 const now = new Date('2026-08-12T12:00:00.000Z');
@@ -57,13 +60,11 @@ function build(params: {
     })),
   };
   const realtimeBroadcaster = {
-    broadcast: jest.fn(
-      async (_rooms: string[], _envelope: unknown): Promise<void> => {
-        if (params.realtimeBroadcastImpl) {
-          await params.realtimeBroadcastImpl();
-        }
-      },
-    ),
+    broadcast: jest.fn(async (_rooms: string[], _envelope: unknown): Promise<void> => {
+      if (params.realtimeBroadcastImpl) {
+        await params.realtimeBroadcastImpl();
+      }
+    }),
   };
   const fanoutScheduler = {
     enqueueFanout: jest.fn(),
@@ -317,7 +318,9 @@ describe('ProcessNotificationBroadcastFanoutUseCase', () => {
       idGenerator as never,
     );
 
-    await expect(useCase.execute({ broadcastId, isFinalAttempt: false })).rejects.toThrow('transient');
+    await expect(useCase.execute({ broadcastId, isFinalAttempt: false })).rejects.toThrow(
+      'transient',
+    );
 
     const finalState = await broadcastRepository.findById();
     expect(finalState?.status).toBe(NotificationBroadcastStatus.Processing);

@@ -149,6 +149,17 @@ enum PlatformAdminRole {
   PlatformSupport
 }
 
+/// Deliberately a separate enum from `SessionRevokeReason` rather than a
+/// reuse of it: the tenant enum carries values that can never apply to a
+/// Platform Admin session (`session_version_bump`, `account_deletion`,
+/// `password_change` — none of which exist on this pipeline), and widening
+/// it would imply a shared revocation mechanism that does not exist.
+enum PlatformAdminSessionRevokeReason {
+  logout
+  reuse_detected
+  admin
+}
+
 enum ConsentType {
   TermsOfService
   PrivacyPolicy
@@ -192,6 +203,7 @@ model Organization {
   invitations       OrganizationInvitation[]
 
   @@index([slug])
+  @@index([status])
   @@map("organizations")
 }
 
@@ -328,6 +340,7 @@ model User {
   passwordHistory             PasswordHistory[]
   userConsents                UserConsent[]
   platformAdmin               PlatformAdmin?
+  platformAdminSessions       PlatformAdminSession[]
   employees                   Employee[]
   favorites                   Favorite[]
   reservations                Reservation[]
@@ -519,6 +532,45 @@ model PlatformAdmin {
   @@map("platform_admins")
 }
 
+/// Platform Owner session store. ADR-022 originally froze Platform Admin
+/// access as stateless and re-login-on-expiry, which left `logout` with
+/// nothing to revoke and forced any console to re-prompt for credentials
+/// every 900s. This table is the minimum state that makes a real
+/// refresh/logout lifecycle possible without ever mixing the two token
+/// pipelines: it is keyed on `PlatformAdmin.userId` and is read exclusively
+/// through `PlatformAdminSessionRepository`, never by `DeviceSession`'s
+/// repositories, so the isolation AUTHENTICATION_ARCHITECTURE.md §5.2
+/// requires is structural rather than merely conventional.
+///
+/// Deliberately flatter than `DeviceSession`: no `TokenFamily` row, because
+/// `previousRefreshTokenHash` on the session itself already carries every
+/// signal reuse-detection needs (a presented hash matching the *previous*
+/// value is a replay), and a Platform Admin has no `sessionVersion`/
+/// `permissionsVersion` to track — `PlatformAdminGuard` re-reads the live
+/// `PlatformAdmin` row on every single request, so revocation already takes
+/// effect immediately without a version counter.
+model PlatformAdminSession {
+  id                       String                            @id @default(uuid()) @db.Uuid
+  platformAdminUserId      String                            @map("platform_admin_user_id") @db.Uuid
+  refreshTokenHash         String                            @map("refresh_token_hash")
+  previousRefreshTokenHash String?                           @map("previous_refresh_token_hash")
+  ipAddress                String?                           @map("ip_address")
+  userAgent                String?                           @map("user_agent")
+  lastUsedAt               DateTime?                         @map("last_used_at")
+  revokedAt                DateTime?                         @map("revoked_at")
+  revokedReason            PlatformAdminSessionRevokeReason? @map("revoked_reason")
+  expiresAt                DateTime                          @map("expires_at")
+  createdAt                DateTime                          @default(now()) @map("created_at")
+  updatedAt                DateTime                          @updatedAt @map("updated_at")
+
+  user User @relation(fields: [platformAdminUserId], references: [id], onDelete: Cascade)
+
+  @@unique([refreshTokenHash])
+  @@index([platformAdminUserId])
+  @@index([previousRefreshTokenHash])
+  @@map("platform_admin_sessions")
+}
+
 // ---------------------------------------------------------------------------
 // Restaurant structure (foundation — no business data seeded)
 // ---------------------------------------------------------------------------
@@ -560,6 +612,7 @@ model Restaurant {
   @@index([organizationId])
   @@index([slug])
   @@index([name])
+  @@index([status])
   @@map("restaurants")
 }
 

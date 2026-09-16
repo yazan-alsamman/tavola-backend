@@ -21,10 +21,16 @@ import { ListPlatformAdminsUseCase } from './application/use-cases/list-platform
 import { GetPlatformAdminUseCase } from './application/use-cases/get-platform-admin.use-case';
 import { ListAuditLogsUseCase } from './application/use-cases/list-audit-logs.use-case';
 import { GetPlatformDashboardUseCase } from './application/use-cases/get-platform-dashboard.use-case';
+import { PlatformAdminRefreshUseCase } from './application/use-cases/platform-admin-refresh.use-case';
+import { PlatformAdminLogoutUseCase } from './application/use-cases/platform-admin-logout.use-case';
+import { GetCurrentPlatformAdminUseCase } from './application/use-cases/get-current-platform-admin.use-case';
+import { PlatformAdminSessionIssuer } from './application/services/platform-admin-session-issuer.service';
 import { JwtPlatformAdminTokenService } from './infrastructure/security/jwt-platform-admin-token.service';
 import { PrismaPlatformAdminRepository } from './infrastructure/persistence/prisma-platform-admin.repository';
 import { PrismaAuditLogReader } from './infrastructure/persistence/prisma-audit-log.reader';
+import { PrismaPlatformAdminSessionRepository } from './infrastructure/persistence/prisma-platform-admin-session.repository';
 import { PLATFORM_ADMIN_REPOSITORY } from './domain/repositories/platform-admin.repository';
+import { PLATFORM_ADMIN_SESSION_REPOSITORY } from './domain/repositories/platform-admin-session.repository';
 import { PLATFORM_ADMIN_TOKEN_SERVICE } from './domain/services/platform-admin-token.port';
 import { AUDIT_LOG_READER } from './application/ports/audit-log-reader.port';
 
@@ -80,6 +86,10 @@ import { AUDIT_LOG_READER } from './application/ports/audit-log-reader.port';
     PlatformAdminGuard,
     PlatformAdminRoleGuard,
     PlatformAdminLoginUseCase,
+    PlatformAdminRefreshUseCase,
+    PlatformAdminLogoutUseCase,
+    GetCurrentPlatformAdminUseCase,
+    PlatformAdminSessionIssuer,
     CreatePlatformAdminUseCase,
     UpdatePlatformAdminRoleUseCase,
     DeactivatePlatformAdminUseCase,
@@ -90,8 +100,13 @@ import { AUDIT_LOG_READER } from './application/ports/audit-log-reader.port';
     GetPlatformDashboardUseCase,
     JwtPlatformAdminTokenService,
     PrismaPlatformAdminRepository,
+    PrismaPlatformAdminSessionRepository,
     PrismaAuditLogReader,
     { provide: PLATFORM_ADMIN_REPOSITORY, useExisting: PrismaPlatformAdminRepository },
+    {
+      provide: PLATFORM_ADMIN_SESSION_REPOSITORY,
+      useExisting: PrismaPlatformAdminSessionRepository,
+    },
     { provide: PLATFORM_ADMIN_TOKEN_SERVICE, useExisting: JwtPlatformAdminTokenService },
     { provide: AUDIT_LOG_READER, useExisting: PrismaAuditLogReader },
   ],
@@ -99,6 +114,7 @@ import { AUDIT_LOG_READER } from './application/ports/audit-log-reader.port';
     PlatformAdminGuard,
     PlatformAdminRoleGuard,
     PLATFORM_ADMIN_REPOSITORY,
+    PLATFORM_ADMIN_SESSION_REPOSITORY,
     PLATFORM_ADMIN_TOKEN_SERVICE,
   ],
 })

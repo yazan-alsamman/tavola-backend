@@ -62,7 +62,8 @@ describe('GetRestaurantUseCase', () => {
       new ImmediateUnitOfWork(),
     );
     await createUseCase.execute({
-      actor: baseActor(),
+      organizationId: baseActor().organizationId,
+      actorId: baseActor().userId,
       name: 'The Old Mill',
       description: 'Cozy',
       cuisineType: 'Italian',

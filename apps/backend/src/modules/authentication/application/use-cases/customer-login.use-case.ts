@@ -89,7 +89,7 @@ export class CustomerLoginUseCase {
   async execute(command: CustomerLoginCommand): Promise<CustomerLoginResult> {
     const now = this.clock.now();
     const phone = PhoneNumber.create(command.countryCode, command.phoneNumber);
-    const password = Password.create(command.password);
+    const password = Password.forVerification(command.password);
     const ipAddress = command.ipAddress?.trim() || 'unknown';
 
     const user = await this.userRepository.findByPhone(phone.value);

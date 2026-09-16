@@ -122,11 +122,11 @@ describe('Platform Back Office — Audit Log Read API (e2e, Phase 19.3)', () => 
   const to = '2026-04-02T00:00:00.000Z';
   const withinWindow = new Date('2026-04-01T12:00:00.000Z');
 
-  it('1. rejects unauthenticated requests (PlatformAdminGuard fails closed, 403)', async () => {
+  it('1. rejects unauthenticated requests (PlatformAdminGuard fails closed, 401 - no usable credential)', async () => {
     if (!dbAvailable || !app) return;
     await request(app.getHttpServer())
       .get(`/api/v1/platform-admin/audit-logs?from=${from}&to=${to}`)
-      .expect(403);
+      .expect(401);
   });
 
   it('2/3. PlatformSupport can read (200); PlatformAdmin can read (200) - both tiers, ADR-034 §11', async () => {

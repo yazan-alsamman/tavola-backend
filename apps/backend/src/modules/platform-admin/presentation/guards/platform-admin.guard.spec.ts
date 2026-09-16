@@ -1,5 +1,5 @@
 import * as jwt from 'jsonwebtoken';
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { ExecutionContext, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PlatformAdminGuard } from './platform-admin.guard';
 import { JwtPlatformAdminTokenService } from '../../infrastructure/security/jwt-platform-admin-token.service';
@@ -16,6 +16,14 @@ import { PlatformAdminRole } from '../../domain/enums/platform-admin.enums';
  * critical isolation proof. Every scenario here uses the REAL
  * `JwtPlatformAdminTokenService` (not a mock) so the secret/issuer/audience
  * isolation is genuinely exercised, not merely asserted.
+ *
+ * Every scenario that rejected before still rejects - the matrix is
+ * unchanged in what it admits. What changed is the status: an unusable
+ * credential (missing/malformed/expired/wrong secret, issuer or audience) is
+ * now 401, while a valid token whose subject is not an active PlatformAdmin
+ * stays 403. Case 8 is the only rejection in this suite on the 403 side, and
+ * that is the whole point of the distinction - see the guard's own doc
+ * comment for why a console cannot act sensibly without it.
  */
 describe('PlatformAdminGuard — token isolation', () => {
   const platformAdminSecret = 'platform-admin-secret-at-least-32-characters-long';
@@ -115,7 +123,7 @@ describe('PlatformAdminGuard — token isolation', () => {
     const token = issueOrdinaryToken('OrganizationMember', adminUserId);
     const context = buildContext(`Bearer ${token}`);
 
-    await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
   });
 
   it('3. rejects a normal Employee token', async () => {
@@ -123,7 +131,7 @@ describe('PlatformAdminGuard — token isolation', () => {
     const token = issueOrdinaryToken('Employee', adminUserId);
     const context = buildContext(`Bearer ${token}`);
 
-    await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
   });
 
   it('4. rejects a normal Customer token', async () => {
@@ -131,7 +139,7 @@ describe('PlatformAdminGuard — token isolation', () => {
     const token = issueOrdinaryToken('User', adminUserId);
     const context = buildContext(`Bearer ${token}`);
 
-    await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
   });
 
   it('5. rejects a token with the correct secret/audience but the WRONG issuer', async () => {
@@ -144,7 +152,7 @@ describe('PlatformAdminGuard — token isolation', () => {
     });
     const context = buildContext(`Bearer ${token}`);
 
-    await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
   });
 
   it('6. rejects a token with the correct secret/issuer but the WRONG audience', async () => {
@@ -157,7 +165,7 @@ describe('PlatformAdminGuard — token isolation', () => {
     });
     const context = buildContext(`Bearer ${token}`);
 
-    await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
   });
 
   it('7. rejects an expired Platform Admin token', async () => {
@@ -170,7 +178,7 @@ describe('PlatformAdminGuard — token isolation', () => {
     });
     const context = buildContext(`Bearer ${token}`);
 
-    await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
   });
 
   it('8. rejects a nonexistent/revoked Platform Admin even with an otherwise-valid token', async () => {
@@ -186,20 +194,38 @@ describe('PlatformAdminGuard — token isolation', () => {
     const token = issueOrdinaryToken('PlatformAdmin', adminUserId);
     const context = buildContext(`Bearer ${token}`);
 
-    await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
   });
 
   it('rejects a missing Authorization header', async () => {
     const guard = createGuard();
     const context = buildContext(undefined);
 
-    await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
   });
 
   it('rejects a malformed Authorization header', async () => {
     const guard = createGuard();
     const context = buildContext('NotBearer sometoken');
 
-    await expect(guard.canActivate(context)).rejects.toThrow(ForbiddenException);
+    await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('separates "no usable credential" (401) from "authenticated but not an admin" (403)', async () => {
+    // Asserted together, in one place, because the two are easy to conflate
+    // and the split is load bearing: a console refreshes on 401 and stops on
+    // 403. Collapsing them back to a single status would silently reintroduce
+    // the guessing this distinction exists to remove.
+    const activeAdminGuard = createGuard();
+    const revokedAdminGuard = createGuard(new FakePlatformAdminRepository(new Set()));
+    const validToken = issueRealPlatformAdminToken(adminUserId);
+
+    await expect(activeAdminGuard.canActivate(buildContext(undefined))).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+
+    await expect(
+      revokedAdminGuard.canActivate(buildContext(`Bearer ${validToken}`)),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

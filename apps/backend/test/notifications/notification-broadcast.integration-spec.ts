@@ -44,17 +44,23 @@ describe('NotificationBroadcast / CustomerAudienceReader via real PostgreSQL (in
     await prisma.notification.deleteMany({
       where: { user: { username: { startsWith: TEST_PREFIX } } },
     });
-    await prisma.notificationBroadcast.deleteMany({ where: { title: { startsWith: TEST_PREFIX } } });
+    await prisma.notificationBroadcast.deleteMany({
+      where: { title: { startsWith: TEST_PREFIX } },
+    });
     await prisma.employee.deleteMany({ where: { email: { startsWith: TEST_PREFIX } } });
     await prisma.organizationMember.deleteMany({
       where: { user: { email: { startsWith: TEST_PREFIX } } },
     });
-    await prisma.platformAdmin.deleteMany({ where: { user: { email: { startsWith: TEST_PREFIX } } } });
+    await prisma.platformAdmin.deleteMany({
+      where: { user: { email: { startsWith: TEST_PREFIX } } },
+    });
     await prisma.restaurant.deleteMany({ where: { slug: { startsWith: TEST_PREFIX } } });
     await prisma.organization.deleteMany({ where: { slug: { startsWith: TEST_PREFIX } } });
     await prisma.role.deleteMany({ where: { slug: { startsWith: TEST_PREFIX } } });
     await prisma.user.deleteMany({
-      where: { OR: [{ username: { startsWith: TEST_PREFIX } }, { email: { startsWith: TEST_PREFIX } }] },
+      where: {
+        OR: [{ username: { startsWith: TEST_PREFIX } }, { email: { startsWith: TEST_PREFIX } }],
+      },
     });
     await prisma.$disconnect();
   });
@@ -386,7 +392,12 @@ describe('NotificationBroadcast / CustomerAudienceReader via real PostgreSQL (in
 
     it('keyset-paginates without OFFSET drift: a small batch size still reaches every eligible id across multiple pages', async () => {
       if (!dbAvailable) return;
-      const seeded = await Promise.all([seedCustomer(), seedCustomer(), seedCustomer(), seedCustomer()]);
+      const seeded = await Promise.all([
+        seedCustomer(),
+        seedCustomer(),
+        seedCustomer(),
+        seedCustomer(),
+      ]);
 
       const collected: string[] = [];
       let cursor: string | null = null;
@@ -481,14 +492,16 @@ describe('NotificationBroadcast / CustomerAudienceReader via real PostgreSQL (in
 
       expect(realtimeCalls.length).toBeGreaterThan(0);
       const allRoomsBroadcast = realtimeCalls.flatMap((call) => call.rooms);
-      expect(allRoomsBroadcast).toEqual(expect.arrayContaining([`user:${eligibleA}`, `user:${eligibleB}`]));
+      expect(allRoomsBroadcast).toEqual(
+        expect.arrayContaining([`user:${eligibleA}`, `user:${eligibleB}`]),
+      );
     });
 
     it('is idempotent under a simulated retry - re-running against an already-Completed broadcast changes nothing', async () => {
       if (!dbAvailable) return;
       const eligible = await seedCustomer();
       const now = new Date();
-      let broadcast = NotificationBroadcast.create({
+      const broadcast = NotificationBroadcast.create({
         id: randomUUID(),
         senderType: NotificationBroadcastSenderType.PlatformAdmin,
         senderId: randomUUID(),

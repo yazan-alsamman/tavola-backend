@@ -1,6 +1,4 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { PlatformAdminAuthConfig } from '@config/platform-admin-auth.config';
 import { Email } from '@shared/domain/value-objects/email.vo';
 import { Password } from '@shared/domain/value-objects/password.vo';
 import { PasswordHash } from '@shared/domain/value-objects/password-hash.vo';
@@ -29,10 +27,7 @@ import {
   PlatformAdminRepository,
   PLATFORM_ADMIN_REPOSITORY,
 } from '../../domain/repositories/platform-admin.repository';
-import {
-  PlatformAdminTokenService,
-  PLATFORM_ADMIN_TOKEN_SERVICE,
-} from '../../domain/services/platform-admin-token.port';
+import { PlatformAdminSessionIssuer } from '../services/platform-admin-session-issuer.service';
 import { InvalidPlatformAdminCredentialsException } from '../../domain/exceptions/invalid-platform-admin-credentials.exception';
 import {
   PlatformAdminLoginCommand,
@@ -57,33 +52,24 @@ import {
  */
 @Injectable()
 export class PlatformAdminLoginUseCase {
-  private readonly tokenTtlSeconds: number;
-
   constructor(
-    private readonly configService: ConfigService,
+    private readonly sessionIssuer: PlatformAdminSessionIssuer,
     @Inject(USER_REPOSITORY) private readonly userRepository: UserRepository,
     @Inject(PLATFORM_ADMIN_REPOSITORY)
     private readonly platformAdminRepository: PlatformAdminRepository,
     @Inject(LOGIN_ATTEMPT_REPOSITORY)
     private readonly loginAttemptRepository: LoginAttemptRepository,
     @Inject(PASSWORD_HASHER) private readonly passwordHasher: PasswordHasher,
-    @Inject(PLATFORM_ADMIN_TOKEN_SERVICE)
-    private readonly platformAdminTokenService: PlatformAdminTokenService,
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
     @Inject(SYSTEM_CONFIGURATION) private readonly systemConfiguration: SystemConfigurationPort,
     @Inject(AUDIT_LOG_WRITER) private readonly auditLogWriter: AuditLogWriterPort,
-  ) {
-    const config = this.configService.get<PlatformAdminAuthConfig>('platformAdminAuth', {
-      infer: true,
-    });
-    this.tokenTtlSeconds = config?.jwtExpirySeconds ?? 900;
-  }
+  ) {}
 
   async execute(command: PlatformAdminLoginCommand): Promise<PlatformAdminLoginResult> {
     const now = this.clock.now();
     const email = Email.create(command.email);
-    const password = Password.create(command.password);
+    const password = Password.forVerification(command.password);
     const ipAddress = command.ipAddress?.trim() || 'unknown';
 
     const user = await this.userRepository.findByEmail(email);
@@ -166,15 +152,26 @@ export class PlatformAdminLoginUseCase {
       occurredAt: now,
     });
 
-    // Non-null: the failure branch above already returned for a null authContext.
-    const accessToken = this.platformAdminTokenService.signAccessToken({
-      sub: user.userId.value,
+    // Non-null: the failure branch above already returned for a null
+    // authContext. Issuing creates the `PlatformAdminSession` row that
+    // `POST /platform-admin/refresh` rotates and `POST /platform-admin/logout`
+    // revokes - without it neither endpoint would have anything to act on.
+    const issued = await this.sessionIssuer.issueForNewSession({
+      platformAdminUserId: user.userId.value,
       role: authContext.role,
+      ipAddress: command.ipAddress?.trim() || null,
+      userAgent: command.userAgent?.trim() || null,
+      now,
     });
 
     return {
-      accessToken,
-      accessTokenExpiresAt: new Date(now.getTime() + this.tokenTtlSeconds * 1000),
+      accessToken: issued.accessToken,
+      refreshToken: issued.refreshToken,
+      tokenType: 'Bearer',
+      accessTokenExpiresAt: issued.accessTokenExpiresAt,
+      refreshTokenExpiresAt: issued.refreshTokenExpiresAt,
+      platformAdminUserId: user.userId.value,
+      role: authContext.role,
     };
   }
 }

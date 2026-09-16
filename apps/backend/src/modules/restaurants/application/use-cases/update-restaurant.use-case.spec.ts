@@ -62,7 +62,8 @@ describe('UpdateRestaurantUseCase', () => {
       new ImmediateUnitOfWork(),
     );
     const result = await createUseCase.execute({
-      actor: baseActor(),
+      organizationId: baseActor().organizationId,
+      actorId: baseActor().userId,
       name: 'Original Name',
       description: 'Original description',
       cuisineType: 'Italian',

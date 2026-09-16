@@ -2180,6 +2180,159 @@ Affects: `prisma/schema.prisma` (new `NotificationBroadcast` model + `Notificati
 
 ---
 
+## ADR-038
+
+### Title
+
+Platform Owner Console Session Lifecycle — `PlatformAdminSession` Refresh/Logout, and the 401/403 Split on `PlatformAdminGuard`
+
+### Status
+
+**Accepted — implemented 2026-09-15 (Platform Owner / Farid Dashboard API completion).** Supersedes exactly one clause of ADR-022's Platform Admin Authentication addendum — the "short-lived, stateless, re-login-on-expiry credential, not a DeviceSession-backed session" characterisation — and nothing else. ADR-022's separate secret/issuer/audience isolation, its "no public Platform Admin self-registration" rule, and its minimal-claims requirement (AUTHENTICATION_ARCHITECTURE.md §5.2) all remain in force and are strengthened, not relaxed, by this ADR.
+
+### Date
+
+2026-09-15
+
+### Context
+
+Phase 2.23 froze Platform Admin authentication as a single short-lived access token (900s default) with no refresh and no server-side session record. That was a reasonable scope decision at the time: the only consumer was operational tooling, and the trade-off — re-authenticate every 15 minutes — cost nobody anything.
+
+The Platform Owner console (Farid Dashboard) changes the calculus, and a pre-implementation audit of the Platform Admin module, the tenant authentication pipeline, and the existing `/platform-admin` route surface found three concrete consequences:
+
+* **`logout` had nothing to revoke.** With no server-side session record, the only honest implementation of a logout endpoint is "the client forgets the token" — which is not logout, it is a client-side convention. A stolen token would stay valid for its full remaining lifetime with no way to intervene.
+* **`refresh` had nothing to rotate.** Without a refresh credential the console's only options at expiry are to re-prompt for a password every 15 minutes, or to hold the password and replay it — the second being strictly worse than a rotating opaque token.
+* **The guard could not be acted on.** `PlatformAdminGuard` answered `403 FORBIDDEN` for every rejection: missing header, malformed token, expired token, wrong issuer, *and* revoked admin. A client cannot distinguish a recoverable state (refresh, retry) from a terminal one (stop, the grant is gone), so it is pushed into inspecting the JWT's `exp` client-side and maintaining its own idea of whether it is signed in — precisely the local-session-state workaround the console must not need.
+
+The tenant pipeline already solves the first two problems well: `DeviceSession` + `TokenFamily`, opaque refresh tokens stored as SHA-256 digests, rotation on use, and reuse detection that revokes the whole family. The question was whether to reuse that machinery or mirror it.
+
+### Decision
+
+**1. A dedicated `PlatformAdminSession` table, not a reuse of `DeviceSession`.**
+
+Platform Admin sessions get their own model, their own repository port (`PlatformAdminSessionRepository`), and their own revoke-reason enum (`PlatformAdminSessionRevokeReason`). Reusing `DeviceSession` would put tenant sessions and platform-authority sessions in one table behind one repository, making it possible — by ordinary refactoring accident rather than malice — to hand a tenant refresh token to the Platform Admin refresh path, or to widen a `WHERE userId = ...` and revoke across the boundary. AUTHENTICATION_ARCHITECTURE.md §5.2 requires these pipelines never mix; keeping the persistence separate makes that structural rather than conventional.
+
+**2. Deliberately flatter than `DeviceSession`: no `TokenFamily`, no version counters.**
+
+`previousRefreshTokenHash` on the session row already carries the only signal reuse detection needs — a presented hash matching the *previous* value is a replay of an already-rotated token. With no family there is nothing else to cascade-revoke, so the replay handler revokes every live session for that admin directly. Likewise there is no `sessionVersion`/`permissionsVersion`: `PlatformAdminGuard` re-reads the live `PlatformAdmin` row on **every** request, so a revocation or role demotion already takes effect immediately, and a version counter would be a second mechanism for something already solved.
+
+**3. Rotation is a single conditional UPDATE, never read-then-write.**
+
+`rotateIfHashMatches` re-asserts every precondition (hash still current, not revoked, not expired) in the `WHERE` clause, so the database arbitrates concurrent refreshes. Two callers presenting the same token cannot both mint a pair — the loser sees zero rows affected and receives an ordinary invalid-token response. This mirrors `DeviceSessionRepository.rotateRefreshTokenIfHashMatches` exactly.
+
+**4. Replay is treated as theft.**
+
+Presenting an already-rotated token revokes *every* session belonging to that admin, not merely the one replayed, and writes a `platform_admin.refresh.reuse_detected` audit row. When one of the two parties holding a token is an attacker and there is no way to tell which, forcing the legitimate holder back through login is the correct outcome. Distinguishing the concurrent-refresh race from a genuine replay is what the `hash_mismatch` branch exists for: the loser of a race never received a token of its own, so it is not treated as a replay.
+
+**5. Every refresh-path failure is indistinguishable.**
+
+Unknown token, expired session, revoked session, revoked admin grant, and detected replay all raise the same `InvalidPlatformAdminRefreshTokenException` (401 `AUTH_INVALID_REFRESH_TOKEN`, identical in code and status to the tenant pipeline's own). The endpoint cannot be used to probe whether a token was ever valid.
+
+**6. Logout is idempotent, ownership-checked, and non-enumerating.**
+
+It revokes the session identified by the supplied refresh token. An unknown, already-revoked, or *another admin's* token all return 204 and reveal nothing; only the ownership match actually revokes. The refresh token is required (rather than deriving the session from the access token) because Platform Admin JWT claims stay minimal per §5.2 — adding a `sessionId` claim purely to support logout would weaken that isolation for no security gain. The already-issued **access token remains valid until it expires**; that is inherent to stateless JWT verification and is equally true of `POST /auth/logout`. The bound on that window is the access token's short TTL, not this endpoint.
+
+**7. Refresh TTL is 7 days, not the tenant pipeline's 30.**
+
+`PLATFORM_ADMIN_REFRESH_EXPIRY_DAYS` defaults to 7. This credential carries platform-wide operational authority, so an unused console should fall back to full re-authentication in days, not a month.
+
+**8. Deactivating a Platform Admin revokes their sessions.**
+
+`DeactivatePlatformAdminUseCase` now closes every live session for the target. This is the third of three layers, not the only one — the guard already blocks every request the moment the grant is revoked, and the refresh use case re-checks the grant — but it means nothing usable is left dangling for its sliding expiry.
+
+**9. `PlatformAdminGuard` splits 401 from 403.**
+
+* **401** — no usable credential: header missing, not `Bearer`, empty, malformed, expired, or signed for the wrong secret/issuer/audience. Nothing was authenticated, so there is nothing to authorize. The client should refresh, then re-authenticate.
+* **403** — a valid, verified token whose subject is not (or is no longer) an active `PlatformAdmin`. Identity is established; authority is not. Refreshing cannot help.
+
+Tier checks (`PlatformAdminRoleGuard`) remain 403 for the same reason: the caller is authenticated, just not permitted.
+
+### Alternatives Considered
+
+**Reuse `DeviceSession`/`TokenFamily` for Platform Admin sessions.** Rejected — see Decision #1. It would have saved a table and a repository at the cost of making the pipeline isolation a matter of discipline rather than structure, which is the one property ADR-022 exists to guarantee.
+
+**Stateless re-issue: exchange a still-valid access token for a fresh one; logout writes an audit row only.** Rejected. It needs no migration and stays literally inside ADR-022's text, but it does not solve the actual problem: logout still cannot revoke anything, and a stolen token remains usable until expiry. It would have meant shipping an endpoint whose name promises something it does not do.
+
+**Keep 403 for every guard rejection.** Rejected. It preserves the existing e2e matrix untouched, but leaves the console inferring expiry from the JWT client-side — the exact class of frontend workaround this work exists to remove.
+
+**Add a `sessionId` claim to the Platform Admin JWT so logout needs no body.** Rejected — §5.2 freezes these claims as minimal, and requiring the refresh token in the body costs the client nothing (it already holds it).
+
+### Consequences
+
+#### Positive
+
+* `logout` genuinely ends a session; `refresh` genuinely rotates one. Both endpoints do what their names say.
+* A console can hold a 7-day rotating credential instead of re-prompting for a password every 15 minutes, or holding the password.
+* Reuse detection now covers the Platform Admin pipeline, which previously had no theft-detection story at all because it had no rotating credential to detect theft of.
+* 401/403 are actionable, so no client needs to maintain its own view of whether it is signed in.
+
+#### Negative
+
+* Platform Admin authentication is no longer stateless: a refresh now costs a database round trip, and a new table participates in the auth hot path. This is the deliberate price of revocability.
+* `platform_admin_sessions` accumulates rows. Revoked and expired sessions are retained (they are audit-relevant, matching `DeviceSession`'s own precedent), so a retention/pruning policy will eventually be needed; none is introduced here, and no existing `DeviceSession` pruning job exists to mirror.
+* The 401/403 split is a **breaking change** for any existing consumer that treats every `/platform-admin` rejection as 403. The only in-repo consumers are the e2e security-isolation matrix and the Postman collection, both updated in this change; the full matrix still rejects every scenario it rejected before, only the status differs.
+* Two refresh implementations now exist side by side (tenant and Platform Admin). They share the `OpaqueTokenService` hashing primitive but nothing else, so a future change to rotation semantics must be considered for both. This is the accepted cost of Decision #1.
+
+### Impact
+
+Affects: `prisma/schema.prisma` (new `PlatformAdminSession` model + `PlatformAdminSessionRevokeReason` enum; `status` indexes on `restaurants`/`organizations` for the new list filters), `docs/DATABASE_SCHEMA.md`, `docs/AUTHENTICATION_ARCHITECTURE.md` (§5.2 addendum, §7.11a), `docs/API_GUIDELINES.md` (new routes, 401/403 contract), `docs/AUTHORIZATION_ARCHITECTURE.md`, `docs/PROJECT_ROADMAP.md`, `TASKS.md`, the Postman collection. No change to `ARCHITECTURE_LOCK.md`'s locked decisions — the token isolation it locks is preserved exactly.
+
+---
+
+## ADR-039
+
+### Title
+
+Login Validates Credentials, Not Password-Creation Policy
+
+### Status
+
+**Accepted — implemented 2026-09-15.** A correctness fix to all three login use cases, not a change to the password policy itself.
+
+### Date
+
+2026-09-15
+
+### Context
+
+`LoginUseCase`, `CustomerLoginUseCase` and `PlatformAdminLoginUseCase` each called `Password.create(command.password)` on the submitted credential. `Password.create` runs `PasswordPolicy.validatePlaintext` — the *creation* policy (minimum 12 characters, upper, lower, digit, symbol) — and throws `WeakPasswordException`, a `400 VALIDATION_ERROR`, on failure.
+
+The value object was doing exactly what it was written to do. The defect is that it was being applied on the wrong side of the boundary: at login the plaintext is a *candidate to verify*, not a password being set. Three consequences followed, all reachable today:
+
+* **Wrong status code.** Any wrong password that happened to be short, or to lack a digit or symbol, returned `400 VALIDATION_ERROR` instead of `401 AUTH_INVALID_CREDENTIALS` — contradicting the documented login contract and both exception classes, which already carry the correct 401/`AUTH_INVALID_CREDENTIALS` and were simply never reached.
+* **An enumeration oracle.** The response distinguished "this guess is not policy-shaped" from "this guess is wrong", letting an attacker classify guesses without touching the account. It also short-circuited *before* the failed-login counter was incremented, so guesses on that path were not rate-limited by the lockout mechanism.
+* **A lockout landmine.** Any account whose password predates a policy tightening becomes permanently unable to log in — the stored hash is fine, but the correct plaintext is rejected before it is ever compared.
+
+### Decision
+
+Add `Password.forVerification(plaintext)`: the same wrapper, constructed without the policy check, documented as the verification-side constructor. All three login use cases now use it.
+
+`Password.create()` is unchanged and remains the only constructor used on every path that *sets* a password — registration, reset, change, Platform Admin provisioning, and `POST /platform-admin/accounts/:userId/reset-credentials`. The password policy itself is not weakened: it still governs every write.
+
+### Alternatives Considered
+
+**Catch `WeakPasswordException` in each login use case and rethrow as invalid-credentials.** Rejected — it makes every call site responsible for remembering a subtlety, and still pays for policy evaluation on a path that has no use for the result.
+
+**Pass the raw string to `PasswordHasher.verify`, dropping the value object at login.** Rejected — it widens the port's signature to accept unwrapped plaintext, which is the wrapper's entire reason for existing.
+
+### Consequences
+
+#### Positive
+
+* Invalid credentials now consistently produce `401 AUTH_INVALID_CREDENTIALS` across all three login endpoints, matching the documented contract.
+* The enumeration oracle is closed, and every failed attempt now reaches the failed-login counter and lockout policy.
+* Accounts predating a future policy tightening remain able to authenticate.
+
+#### Negative
+
+* A second constructor on `Password` means a future author must pick the right one. Mitigated by naming (`forVerification`) and by a doc comment on both stating which paths use which — but it is a real fork where there was previously one obvious call.
+
+### Impact
+
+Affects: `src/shared/domain/value-objects/password.vo.ts`, the three login use cases, `docs/AUTHENTICATION_ARCHITECTURE.md`, `docs/API_GUIDELINES.md` (error-code table), the Postman collection (a 401 example for a policy-shaped wrong password).
+
+---
+
 # Future Decisions
 
 The following topics require an ADR before implementation:

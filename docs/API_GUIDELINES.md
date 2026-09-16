@@ -100,6 +100,18 @@ order
 
 Cursor pagination for large datasets.
 
+## Search and filter semantics on list endpoints
+
+Every offset-paginated list endpoint that accepts a text-search parameter follows the same rules. They are stated here because getting them subtly wrong is easy and the failure is silent:
+
+* **An empty or whitespace-only `q` is "no text filter", not "match the empty string".** The query builder omits the clause entirely rather than emitting `contains: ''`, which would degenerate into `LIKE '%%'` — a full scan that *also* silently excludes rows whose searchable columns are `NULL`. `?q=&page=1&limit=20` therefore returns the ordinary first page, never an empty result.
+* **Filters compose; each is omitted when not supplied.** Conditions are pushed into a single `AND` array only when they apply, so an absent filter contributes nothing to the `WHERE` clause.
+* **The page and its `total` are driven by the same `where`.** The count query and the row query never diverge, so `total` always describes the same filter as the returned rows — a console can render "page N of M" without the two disagreeing.
+* **`page`/`limit` come from the shared `PaginationQueryDto`** (`page` default 1, `limit` default 20, max 100), and pagination is applied after filtering, never before.
+* **"Present but blank" means the same as "absent", for every optional filter.** A client that builds its query string from a form sends every parameter and leaves the unselected ones empty — `?q=&status=&accountType=` — and that must behave identically to omitting them. This needs an explicit transform: `@IsOptional()` skips validation only for `undefined`/`null`, and a query string carries neither, so `?status=` arrives as `''` and an `@IsIn(...)`/`@IsUUID()` below it would reject the request with a 400. Every enum- or UUID-constrained optional filter therefore carries `@EmptyStringToUndefined()` (`common/decorators/empty-to-undefined.decorator.ts`) above `@IsOptional()`, which normalizes empty and whitespace-only values to `undefined` before validation runs. Without it, `q=` (a plain `@IsString()`) would succeed while `status=` on the same request returned 400 — the inconsistency that made this rule explicit.
+
+Platform Owner list endpoints additionally accept `status`. For Restaurants and Organizations it spans two distinct axes deliberately — `Active`/`Suspended` match the `status` column *and* exclude soft-deleted rows, while `Deleted` matches `deletedAt IS NOT NULL` regardless of status — because "show me the deleted ones" is a question about the row, not about its status column (ADR-034 §3 keeps soft delete a separate axis from `RestaurantStatus`). Omitting `status` returns everything, soft-deleted rows included. `OrganizationStatus.Closed` is deliberately not offered as a filter value: ADR-034 §4/§5 records it as an unused value no PlatformAdmin action ever writes.
+
 **Messaging (Phase 15.6, DECISIONS.md D13):** `GET /conversations/:id/messages` and the two conversation-list endpoints use true cursor (keyset) pagination — `(createdAt, id)` — default page size 50, maximum 100. This is the first true cursor-paginated endpoint set in the API; every other list endpoint in this codebase still uses page/limit offset pagination, and that convention is unchanged elsewhere. Cursor pagination was chosen specifically because message history is an append-heavy, high-churn feed where offset pagination double-counts/skips rows under concurrent inserts.
 
 ---
@@ -132,6 +144,25 @@ All routes remain under the existing `/platform-admin` prefix, guarded by `Platf
 | `GET /platform-admin/pricing/rules` (label/id filters, extends the existing List endpoint) | New `customer-acquisition` module | Pattern 1 (unchanged from List) | **Implemented** (Phase 19.7, 2026-08-11) |
 | ~~`/platform-admin/search`~~ (unified cross-entity endpoint) | — | — | **Rejected, not built** — ADR-034 §13 explicitly authorizes narrow per-entity lookup, not a unified endpoint; the four resource-specific routes above satisfy it while reusing existing controllers (Acquisition/PricingRule extended in place) rather than inventing a new one |
 | `/platform-admin/notifications`, `/platform-admin/notifications/broadcast` | Notifications module (new `PlatformAdminNotificationsController`) | Pattern 1 not applicable — target is a bare `User.id` (send-to-one) or the entire platform-wide Customer audience (broadcast), neither tenant-scoped | **Implemented** (Phase 19.9, ADR-037) — send-to-one is `PlatformAdmin`-only, 201; broadcast is `PlatformAdmin`-only, 202 (queued, processed asynchronously via BullMQ) |
+| `POST /platform-admin/refresh`, `POST /platform-admin/logout`, `GET /platform-admin/me` | Platform Admin (session lifecycle) | N/A — authentication, not a tenant read/write | **Implemented** (2026-09-15, ADR-038). `refresh` is public (the refresh token is the credential); `logout`/`me` require `PlatformAdminGuard` and are available to both Platform tiers |
+| `POST /platform-admin/restaurants` (create) | Restaurants | Pattern 1 — rebinds to the body's `organizationId`, then delegates to the ordinary `CreateRestaurantUseCase` | **Implemented** (2026-09-15) — `PlatformAdmin`-only. Subscription `maxRestaurants` limits still apply; a Platform Owner does not bypass them |
+| `GET /platform-admin/restaurants/:id` (detail) | Restaurants (extends the existing Pattern-2 lookup reader) | Pattern 2 | **Implemented** (2026-09-15) — returns soft-deleted rows rather than 404, so Restore can inspect one first |
+| `GET /platform-admin/organizations/:id` (detail) | Organizations (extends the existing Pattern-2 stats reader) | Pattern 2 | **Implemented** (2026-09-15) — same soft-delete behaviour as Restaurant detail |
+| `GET /platform-admin/accounts`, `GET /platform-admin/accounts/:userId` | Authentication (new `PlatformAdminAccountReaderPort`) | Pattern 2 — `User` is platform-wide and a Customer belongs to no Organization at all | **Implemented** (2026-09-15) — read-only, both Platform tiers. This is the lookup that makes the four existing `/accounts/:userId/*` actions usable: before it, no endpoint exposed a way to *find* a `userId`. Never exposes `passwordHash`/`sessionVersion`/`permissionsVersion` |
+| `GET /platform-admin/notifications` (broadcast history) | Notifications (extends the existing Pattern-2 stats reader) | Pattern 2 | **Implemented** (2026-09-15) — the counterpart to the 202-Accepted broadcast endpoint, which cannot report an outcome. Exposes the real persisted `NotificationBroadcast` state (status + processed/succeeded/failed counters), never a synthesized one |
+
+## Platform Admin authentication status codes (ADR-038)
+
+`PlatformAdminGuard` distinguishes the two failure modes, so a client can tell a recoverable state from a terminal one without inspecting the JWT itself:
+
+| Condition | Status | Code | Client action |
+|---|---|---|---|
+| No `Authorization` header, not `Bearer`, empty, malformed, expired, or wrong secret/issuer/audience | **401** | `UNAUTHORIZED` | Call `POST /platform-admin/refresh`; if that also fails, re-login |
+| Valid verified token, but the subject is not (or is no longer) an active `PlatformAdmin` | **403** | `FORBIDDEN` | Stop — refreshing cannot help |
+| Valid token and active admin, but the wrong tier for the route (`PlatformAdminRoleGuard`) | **403** | `FORBIDDEN` | Stop — the caller lacks authority |
+| `POST /platform-admin/refresh` with an unknown, expired, revoked, or replayed refresh token | **401** | `AUTH_INVALID_REFRESH_TOKEN` | Re-login. A **replayed** (already-rotated) token additionally revokes every session for that admin |
+
+Invalid login credentials are always **401 `AUTH_INVALID_CREDENTIALS`** on all three login endpoints. Password-creation policy is **not** applied when verifying a credential (ADR-039), so a wrong password that is short or otherwise non-policy-shaped still returns 401, never a 400 validation error.
 
 `/organizations/subscription*` and `/platform-admin/organizations/:id/subscription*` (Subscriptions, ADR-027) are unaffected.
 
