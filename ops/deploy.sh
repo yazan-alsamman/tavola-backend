@@ -14,6 +14,7 @@ BACKEND_DIR="$REPO_DIR/apps/backend"
 DOCKER_DIR="$BACKEND_DIR/docker"
 ENV_FILE="$BACKEND_DIR/.env.production"
 BRANCH="${1:-main}"
+SELF="$REPO_DIR/ops/deploy.sh"
 COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file ../.env.production"
 INFRA_SERVICES="postgres redis minio minio-init"
 
@@ -59,12 +60,27 @@ wait_for_health() {
 
 [ -f "$ENV_FILE" ] || fail "$ENV_FILE not found - was the server ever set up?"
 
+SELF_HASH="$(md5sum "$SELF" | cut -d" " -f1)"
+
 log "Fetching latest code (branch: $BRANCH)"
 cd "$REPO_DIR"
 git fetch origin "$BRANCH"
 git reset --hard "origin/$BRANCH"
 COMMIT="$(git rev-parse --short HEAD)"
 log "Now at commit $COMMIT"
+
+# The reset above can rewrite this very file mid-run, and bash handles that
+# badly: depending on how much of the script it has buffered it either keeps
+# executing the PREVIOUS version (silently ignoring whatever the pull brought
+# in, including fixes to the deploy steps themselves) or resumes the new file
+# at a now-meaningless byte offset and runs garbage. Hand over to the fresh
+# copy instead - at most once (DEPLOY_REEXEC guards against a loop) and only
+# when the file really changed, so an unchanged deploy.sh costs nothing.
+if [ "${DEPLOY_REEXEC:-0}" = "0" ] && [ "$SELF_HASH" != "$(md5sum "$SELF" | cut -d" " -f1)" ]; then
+  log "deploy.sh changed in $COMMIT - re-executing the updated script"
+  export DEPLOY_REEXEC=1
+  exec "$SELF" "$BRANCH"
+fi
 
 log "Installing workspace dependencies (pnpm install --frozen-lockfile)"
 pnpm install --frozen-lockfile
