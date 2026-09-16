@@ -1,144 +1,152 @@
 #!/usr/bin/env bash
-# Redeploys tavola-backend from the latest commit on the tracked branch.
-# Safe to re-run any time - every step is idempotent. Must run as root on
-# srv1614440 (this VPS also hosts eliasdahdal.clinic and vegacore.co via
-# PM2 + system Nginx; this script only ever touches Docker resources
-# prefixed "tavla" and never restarts nginx or system services).
-#
-# Usage: /opt/tavola-backend/ops/deploy.sh [branch]   (default: main)
+  # Redeploys tavola-backend from the latest commit on the tracked branch.
+  # Safe to re-run any time - every step is idempotent. Must run as root on
+  # srv1614440 (this VPS also hosts eliasdahdal.clinic and vegacore.co via
+  # PM2 + system Nginx; this script only ever touches Docker resources
+  # prefixed "tavla" and never restarts nginx or system services).
+  #
+  # Usage: /opt/tavola-backend/ops/deploy.sh [branch]   (default: main)
 
-set -euo pipefail
+  set -euo pipefail
 
-REPO_DIR="/opt/tavola-backend"
-BACKEND_DIR="$REPO_DIR/apps/backend"
-DOCKER_DIR="$BACKEND_DIR/docker"
-ENV_FILE="$BACKEND_DIR/.env.production"
-BRANCH="${1:-main}"
-SELF="$REPO_DIR/ops/deploy.sh"
-COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file ../.env.production"
-INFRA_SERVICES="postgres redis minio minio-init"
+  REPO_DIR="/opt/tavola-backend"
+  BACKEND_DIR="$REPO_DIR/apps/backend"
+  DOCKER_DIR="$BACKEND_DIR/docker"
+  ENV_FILE="$BACKEND_DIR/.env.production"
+  BRANCH="${1:-main}"
+  SELF="$REPO_DIR/ops/deploy.sh"
+  COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file ../.env.production"
+  INFRA_SERVICES="postgres redis minio minio-init"
 
-log() { printf '\n\033[1;34m[deploy]\033[0m %s\n' "$1"; }
-fail() { printf '\n\033[1;31m[deploy FAILED]\033[0m %s\n' "$1" >&2; exit 1; }
+  log() { printf '\n\033[1;34m[deploy]\033[0m %s\n' "$1"; }
+  fail() { printf '\n\033[1;31m[deploy FAILED]\033[0m %s\n' "$1" >&2; exit 1; }
 
-# Blocks until $1 reports a healthy Docker health status, giving up after $2
-# seconds. Fails fast when the container exits, crash-loops or is reported
-# unhealthy, so a broken image surfaces immediately instead of burning the
-# whole timeout. Containers without a health check are a configuration error:
-# waiting on one would block until the timeout and then report a misleading
-# "not healthy in time".
-wait_for_health() {
-  local container="$1" timeout="$2" waited=0 state health
+  # Blocks until $1 reports a healthy Docker health status, giving up after $2
+  # seconds. Fails fast when the container exits, crash-loops or is reported
+  # unhealthy, so a broken image surfaces immediately instead of burning the
+  # whole timeout. Containers without a health check are a configuration error:
+  # waiting on one would block until the timeout and then report a misleading
+  # "not healthy in time".
+  wait_for_health() {
+    local container="$1" timeout="$2" waited=0 state health
 
-  while :; do
-    # `docker inspect` writes a bare newline to stdout for an unknown
-    # container, so its exit status - not its output - is the existence test.
-    if ! docker inspect --type container "$container" >/dev/null 2>&1; then
-      fail "$container does not exist - did the compose up step fail?"
-    fi
+    while :; do
+      # `docker inspect` writes a bare newline to stdout for an unknown
+      # container, so its exit status - not its output - is the existence test.
+      if ! docker inspect --type container "$container" >/dev/null 2>&1; then
+        fail "$container does not exist - did the compose up step fail?"
+      fi
 
-    state="$(docker inspect --format '{{.State.Status}}' "$container")"
-    case "$state" in
-      exited|dead|restarting)
-        fail "$container is $state while starting - check: docker logs $container" ;;
-    esac
+      state="$(docker inspect --format '{{.State.Status}}' "$container")"
+      case "$state" in
+        exited|dead|restarting)
+          fail "$container is $state while starting - check: docker logs $container" ;;
+      esac
 
-    health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container")"
-    case "$health" in
-      healthy) return 0 ;;
-      none) fail "$container defines no health check - cannot verify it started" ;;
-      unhealthy) fail "$container reported unhealthy - check: docker logs $container" ;;
-    esac
+      health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container")"
+      case "$health" in
+        healthy) return 0 ;;
+        none) fail "$container defines no health check - cannot verify it started" ;;
+        unhealthy) fail "$container reported unhealthy - check: docker logs $container" ;;
+      esac
 
-    if [ "$waited" -ge "$timeout" ]; then
-      fail "$container did not become healthy within ${timeout}s - check: docker logs $container"
-    fi
-    sleep 2
-    waited=$((waited + 2))
+      if [ "$waited" -ge "$timeout" ]; then
+        fail "$container did not become healthy within ${timeout}s - check: docker logs $container"
+      fi
+      sleep 2
+      waited=$((waited + 2))
+    done
+  }
+
+  [ -f "$ENV_FILE" ] || fail "$ENV_FILE not found - was the server ever set up?"
+
+  SELF_HASH="$(md5sum "$SELF" | cut -d" " -f1)"
+
+  log "Fetching latest code (branch: $BRANCH)"
+  cd "$REPO_DIR"
+  git fetch origin "$BRANCH"
+  git reset --hard "origin/$BRANCH"
+  COMMIT="$(git rev-parse --short HEAD)"
+  log "Now at commit $COMMIT"
+
+  # The reset above can rewrite this very file mid-run, and bash handles that
+  # badly: depending on how much of the script it has buffered it either keeps
+  # executing the PREVIOUS version (silently ignoring whatever the pull brought
+  # in, including fixes to the deploy steps themselves) or resumes the new file
+  # at a now-meaningless byte offset and runs garbage. Hand over to the fresh
+  # copy instead - at most once (DEPLOY_REEXEC guards against a loop) and only
+  # when the file really changed, so an unchanged deploy.sh costs nothing.
+  if [ "${DEPLOY_REEXEC:-0}" = "0" ] && [ "$SELF_HASH" != "$(md5sum "$SELF" | cut -d" " -f1)" ]; then
+    log "deploy.sh changed in $COMMIT - re-executing the updated script"
+    export DEPLOY_REEXEC=1
+    exec "$SELF" "$BRANCH"
+  fi
+
+  log "Installing workspace dependencies (pnpm install --frozen-lockfile)"
+  pnpm install --frozen-lockfile
+
+  log "Building backend Docker image"
+  cd "$DOCKER_DIR"
+  $COMPOSE build backend
+  docker tag tavla-backend:latest "tavla-backend:$COMMIT"
+  log "Tagged image as tavla-backend:$COMMIT (kept alongside :latest for rollback.sh)"
+
+  log "Ensuring infra services (postgres, redis, minio) are up and healthy"
+  $COMPOSE up -d $INFRA_SERVICES
+
+  for svc in postgres redis minio; do
+    wait_for_health "tavla-${svc}-1" 60
   done
-}
+  log "Infra services healthy"
+  log "Applying Prisma migrations"
+  # shellcheck disable=SC1090
+  set -a; source "$ENV_FILE"; set +a
+  cd "$BACKEND_DIR"
 
-[ -f "$ENV_FILE" ] || fail "$ENV_FILE not found - was the server ever set up?"
+  # DATABASE_URL is overridden to 127.0.0.1 (Postgres's host-published port)
+  # DATABASE_URL is overridden to 127.0.0.1 (Postgres's host-published port)
+  # only for these host-side Prisma commands, run in a subshell so the export
+  # never reaches the rest of the script. Docker Compose's ${VAR} interpolation
+  # prefers a shell environment variable over --env-file, so if this leaked
+  # into the `up -d backend` call below, the backend container would inherit
+  # the host-local URL and fail to reach Postgres over the Docker network.
+  (
+    export DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:5432/${POSTGRES_DB}?schema=public"
 
-SELF_HASH="$(md5sum "$SELF" | cut -d" " -f1)"
+    log "Regenerating Prisma Client (host node_modules must match the schema just pulled)"
+    pnpm prisma:generate
+    
+    pnpm prisma:migrate:deploy
 
-log "Fetching latest code (branch: $BRANCH)"
-cd "$REPO_DIR"
-git fetch origin "$BRANCH"
-git reset --hard "origin/$BRANCH"
-COMMIT="$(git rev-parse --short HEAD)"
-log "Now at commit $COMMIT"
+    log "Running seed (idempotent - safe on every deploy)"
+    pnpm prisma:seed
+  )
 
-# The reset above can rewrite this very file mid-run, and bash handles that
-# badly: depending on how much of the script it has buffered it either keeps
-# executing the PREVIOUS version (silently ignoring whatever the pull brought
-# in, including fixes to the deploy steps themselves) or resumes the new file
-# at a now-meaningless byte offset and runs garbage. Hand over to the fresh
-# copy instead - at most once (DEPLOY_REEXEC guards against a loop) and only
-# when the file really changed, so an unchanged deploy.sh costs nothing.
-if [ "${DEPLOY_REEXEC:-0}" = "0" ] && [ "$SELF_HASH" != "$(md5sum "$SELF" | cut -d" " -f1)" ]; then
-  log "deploy.sh changed in $COMMIT - re-executing the updated script"
-  export DEPLOY_REEXEC=1
-  exec "$SELF" "$BRANCH"
-fi
+  log "Recreating backend container with the new image"
+  cd "$DOCKER_DIR"
+  $COMPOSE up -d backend
+  
+  log "Waiting for backend health check"
+  # The image allows a 60s start period and a cold boot measures ~40s, so 180s
+  # leaves headroom on a loaded VPS without masking a real failure - a crashed or
+  # unhealthy container is now reported immediately rather than at the timeout.
+  wait_for_health tavla-backend-1 180
+  
+  log "Verifying readiness endpoint"
+  READY="$(curl -sf http://127.0.0.1:3000/api/v1/health/readiness)" || fail "readiness check failed"
+  echo "$READY" 
+  case "$READY" in
+    *'"status":"ok"'*) ;;
+    *) fail "readiness endpoint did not report ok" ;;
+  esac
 
-log "Installing workspace dependencies (pnpm install --frozen-lockfile)"
-pnpm install --frozen-lockfile
+  log "Pruning unused Docker images (keeping the last 5 tavla-backend:<sha> tags for rollback)"
+  docker images "tavla-backend" --format '{{.Tag}} {{.CreatedAt}}' \
+    | grep -v '^latest ' \
+    | sort -k2 -r \
+    | tail -n +6 \
+    | awk '{print $1}' \
+    | xargs -r -I{} docker rmi "tavla-backend:{}" 2>/dev/null || true
+  docker image prune -f >/dev/null
 
-log "Building backend Docker image"
-cd "$DOCKER_DIR"
-$COMPOSE build backend
-docker tag tavla-backend:latest "tavla-backend:$COMMIT"
-log "Tagged image as tavla-backend:$COMMIT (kept alongside :latest for rollback.sh)"
-
-log "Ensuring infra services (postgres, redis, minio) are up and healthy"
-$COMPOSE up -d $INFRA_SERVICES
-
-for svc in postgres redis minio; do
-  wait_for_health "tavla-${svc}-1" 60
-done
-log "Infra services healthy"
-
-log "Applying Prisma migrations"
-# shellcheck disable=SC1090
-set -a; source "$ENV_FILE"; set +a
-cd "$BACKEND_DIR"
-DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:5432/${POSTGRES_DB}?schema=public"
-export DATABASE_URL
-
-log "Regenerating Prisma Client (host node_modules must match the schema just pulled)"
-pnpm prisma:generate
-
-pnpm prisma:migrate:deploy
-
-log "Running seed (idempotent - safe on every deploy)"
-pnpm prisma:seed
-
-log "Recreating backend container with the new image"
-cd "$DOCKER_DIR"
-$COMPOSE up -d backend
-
-log "Waiting for backend health check"
-# The image allows a 60s start period and a cold boot measures ~40s, so 180s
-# leaves headroom on a loaded VPS without masking a real failure - a crashed or
-# unhealthy container is now reported immediately rather than at the timeout.
-wait_for_health tavla-backend-1 180
-
-log "Verifying readiness endpoint"
-READY="$(curl -sf http://127.0.0.1:3000/api/v1/health/readiness)" || fail "readiness check failed"
-echo "$READY"
-case "$READY" in
-  *'"status":"ok"'*) ;;
-  *) fail "readiness endpoint did not report ok" ;;
-esac
-
-log "Pruning unused Docker images (keeping the last 5 tavla-backend:<sha> tags for rollback)"
-docker images "tavla-backend" --format '{{.Tag}} {{.CreatedAt}}' \
-  | grep -v '^latest ' \
-  | sort -k2 -r \
-  | tail -n +6 \
-  | awk '{print $1}' \
-  | xargs -r -I{} docker rmi "tavla-backend:{}" 2>/dev/null || true
-docker image prune -f >/dev/null
-
-log "Deploy of commit $COMMIT succeeded."
+  log "Deploy of commit $COMMIT succeeded."
