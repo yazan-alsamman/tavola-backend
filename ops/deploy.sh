@@ -20,6 +20,43 @@ INFRA_SERVICES="postgres redis minio minio-init"
 log() { printf '\n\033[1;34m[deploy]\033[0m %s\n' "$1"; }
 fail() { printf '\n\033[1;31m[deploy FAILED]\033[0m %s\n' "$1" >&2; exit 1; }
 
+# Blocks until $1 reports a healthy Docker health status, giving up after $2
+# seconds. Fails fast when the container exits, crash-loops or is reported
+# unhealthy, so a broken image surfaces immediately instead of burning the
+# whole timeout. Containers without a health check are a configuration error:
+# waiting on one would block until the timeout and then report a misleading
+# "not healthy in time".
+wait_for_health() {
+  local container="$1" timeout="$2" waited=0 state health
+
+  while :; do
+    # `docker inspect` writes a bare newline to stdout for an unknown
+    # container, so its exit status - not its output - is the existence test.
+    if ! docker inspect --type container "$container" >/dev/null 2>&1; then
+      fail "$container does not exist - did the compose up step fail?"
+    fi
+
+    state="$(docker inspect --format '{{.State.Status}}' "$container")"
+    case "$state" in
+      exited|dead|restarting)
+        fail "$container is $state while starting - check: docker logs $container" ;;
+    esac
+
+    health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container")"
+    case "$health" in
+      healthy) return 0 ;;
+      none) fail "$container defines no health check - cannot verify it started" ;;
+      unhealthy) fail "$container reported unhealthy - check: docker logs $container" ;;
+    esac
+
+    if [ "$waited" -ge "$timeout" ]; then
+      fail "$container did not become healthy within ${timeout}s - check: docker logs $container"
+    fi
+    sleep 2
+    waited=$((waited + 2))
+  done
+}
+
 [ -f "$ENV_FILE" ] || fail "$ENV_FILE not found - was the server ever set up?"
 
 log "Fetching latest code (branch: $BRANCH)"
@@ -42,12 +79,7 @@ log "Ensuring infra services (postgres, redis, minio) are up and healthy"
 $COMPOSE up -d $INFRA_SERVICES
 
 for svc in postgres redis minio; do
-  for i in $(seq 1 30); do
-    status="$(docker inspect --format '{{.State.Health.Status}}' "tavla-${svc}-1" 2>/dev/null || echo missing)"
-    [ "$status" = "healthy" ] && break
-    sleep 2
-    [ "$i" -eq 30 ] && fail "$svc did not become healthy in time"
-  done
+  wait_for_health "tavla-${svc}-1" 60
 done
 log "Infra services healthy"
 
@@ -71,12 +103,10 @@ cd "$DOCKER_DIR"
 $COMPOSE up -d backend
 
 log "Waiting for backend health check"
-for i in $(seq 1 30); do
-  status="$(docker inspect --format '{{.State.Health.Status}}' tavla-backend-1 2>/dev/null || echo missing)"
-  [ "$status" = "healthy" ] && break
-  sleep 2
-  [ "$i" -eq 30 ] && fail "backend did not become healthy after deploy - check: docker logs tavla-backend-1"
-done
+# The image allows a 60s start period and a cold boot measures ~40s, so 180s
+# leaves headroom on a loaded VPS without masking a real failure - a crashed or
+# unhealthy container is now reported immediately rather than at the timeout.
+wait_for_health tavla-backend-1 180
 
 log "Verifying readiness endpoint"
 READY="$(curl -sf http://127.0.0.1:3000/api/v1/health/readiness)" || fail "readiness check failed"

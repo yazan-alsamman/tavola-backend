@@ -74,7 +74,7 @@ COPY --from=builder --chown=tavla:tavla /prod/backend ./
 USER tavla
 EXPOSE 3000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=3 \
   CMD node -e "require('http').get({host:'127.0.0.1',port:3000,path:'/api/v1/health/liveness'},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 
 CMD ["node", "-r", "./scripts/register-tsconfig-paths.js", "dist/main.js"]
