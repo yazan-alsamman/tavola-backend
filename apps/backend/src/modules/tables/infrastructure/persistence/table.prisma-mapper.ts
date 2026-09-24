@@ -8,6 +8,7 @@ export class TablePrismaMapper {
       id: row.id,
       branchId: row.branchId,
       floorPlanId: row.floorPlanId,
+      floorPlanAreaId: row.floorPlanAreaId,
       tableNumber: row.tableNumber,
       capacity: row.capacity,
       floor: row.floor,
@@ -17,6 +18,7 @@ export class TablePrismaMapper {
       height: row.height,
       rotation: row.rotation,
       shape: row.shape as TableShape,
+      color: row.color,
       layer: row.layer,
       indoor: row.indoor,
       vip: row.vip,
@@ -34,6 +36,7 @@ export class TablePrismaMapper {
     id: string;
     branchId: string;
     floorPlanId: string;
+    floorPlanAreaId: string | null;
     tableNumber: string;
     capacity: number;
     floor: number | null;
@@ -43,6 +46,7 @@ export class TablePrismaMapper {
     height: number | null;
     rotation: number | null;
     shape: TableShape;
+    color: string | null;
     layer: number | null;
     indoor: boolean;
     vip: boolean;
@@ -59,6 +63,7 @@ export class TablePrismaMapper {
       id: props.id,
       branchId: props.branchId,
       floorPlanId: props.floorPlanId,
+      floorPlanAreaId: props.floorPlanAreaId,
       tableNumber: props.tableNumber,
       capacity: props.capacity,
       floor: props.floor,
@@ -68,6 +73,7 @@ export class TablePrismaMapper {
       height: props.height,
       rotation: props.rotation,
       shape: props.shape,
+      color: props.color,
       layer: props.layer,
       indoor: props.indoor,
       vip: props.vip,

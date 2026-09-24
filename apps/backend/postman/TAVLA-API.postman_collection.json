@@ -271,6 +271,18 @@
     {
       "key": "notificationBroadcastId",
       "value": ""
+    },
+    {
+      "key": "floorPlanAreaId",
+      "value": ""
+    },
+    {
+      "key": "floorPlanAreaColor",
+      "value": "#14B8A6"
+    },
+    {
+      "key": "tableColor",
+      "value": "#F97316"
     }
   ],
   "item": [
@@ -5565,7 +5577,7 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/branches/{{branchId}}/floor-plans/{{floorPlanId}}/tables?page=1&pageSize=20",
+                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/branches/{{branchId}}/floor-plans/{{floorPlanId}}/tables?page=1&pageSize=20&floorPlanAreaId=",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -5602,10 +5614,16 @@
                       "value": "",
                       "description": "Opaque cursor",
                       "disabled": true
+                    },
+                    {
+                      "key": "floorPlanAreaId",
+                      "value": "",
+                      "description": "ADR-040: narrow the result to one dining area of this floor plan. Blank or omitted means the whole plan.",
+                      "disabled": false
                     }
                   ]
                 },
-                "description": "## Purpose\nList tables belonging to one floor plan\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `branchId` | `{{branchId}}` | UUID path parameter |\n| `floorPlanId` | `{{floorPlanId}}` | UUID path parameter |\n## Query Params\nQuery DTO: `ListTablesQueryDto` (see schema / examples in query params).\n## Body\n_None_\n## Success Response\nEnvelope message: \"Tables retrieved successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `FloorPlansController`.`unknown`\n- Full path: `/api/v1/restaurants/:restaurantId/branches/:branchId/floor-plans/:floorPlanId/tables`\n- Callers (from source): Owner/Admin (Owner, Admin)"
+                "description": "## Purpose\nList tables belonging to one floor plan\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `branchId` | `{{branchId}}` | UUID path parameter |\n| `floorPlanId` | `{{floorPlanId}}` | UUID path parameter |\n## Query Params\nQuery DTO: `ListTablesQueryDto` (see schema / examples in query params).\n## Body\n_None_\n## Success Response\nEnvelope message: \"Tables retrieved successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `FloorPlansController`.`unknown`\n- Full path: `/api/v1/restaurants/:restaurantId/branches/:branchId/floor-plans/:floorPlanId/tables`\n- Callers (from source): Owner/Admin (Owner, Admin)\n- ADR-040: `floorPlanAreaId` narrows the result to one dining area of THIS floor plan. An id that is not a live area of this plan returns 404 rather than silently listing everything; a blank value means \"no filter\", like every other optional filter in this API."
               },
               "response": []
             },
@@ -5637,6 +5655,204 @@
           ]
         },
         {
+          "name": "Floor Plan Areas",
+          "item": [
+            {
+              "name": "Create a dining area (hall) inside a floor plan",
+              "id": "130c466c-4936-4130-bd45-75043f85dd65",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/branches/{{branchId}}/floor-plans/{{floorPlanId}}/areas",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "branches",
+                    "{{branchId}}",
+                    "floor-plans",
+                    "{{floorPlanId}}",
+                    "areas"
+                  ]
+                },
+                "description": "## Purpose\nCreate a dining area (hall) inside a floor plan\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `branchId` | `{{branchId}}` | UUID path parameter |\n| `floorPlanId` | `{{floorPlanId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\nJSON body - DTO: `CreateFloorPlanAreaRequestDto`\n## Success Response\nEnvelope message: \"Floor plan area created successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **401**: AUTH_INVALID_TOKEN / AUTH_EXPIRED_TOKEN\n- **403**: FORBIDDEN\n- **404**: NOT_FOUND\n## Notes\n- Controller: `FloorPlanAreasController`\n- Full path: `/api/v1/restaurants/:restaurantId/branches/:branchId/floor-plans/:floorPlanId/areas`\n- Callers (from source): Owner/Admin (Owner, Admin)\n- ADR-040: areas are the *concurrent* halls inside ONE floor plan (e.g. \"Main Hall\" + \"للضيوف\"), all live at the same time. This is a different axis from `FloorPlan.isActive`, which still means \"at most one layout per branch is active\" and is untouched by these routes.\n- `color` is exactly `#RRGGBB` (shorthand `#FFF` and alpha `#RRGGBBAA` are rejected with 400); it is stored and returned uppercase.\n- `name` must be unique among the NON-DELETED areas of this floor plan (409 otherwise); deleting an area releases its name for reuse.\n- `sortOrder` is the editor tab order, ascending; ties break by creation time. Optional, defaults to 0.\n",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Main Hall\",\n  \"color\": \"{{floorPlanAreaColor}}\",\n  \"sortOrder\": 0\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Floor plan area created (201)', function () { pm.response.to.have.status(201); });",
+                      "const jsonData = pm.response.json();",
+                      "if (jsonData && jsonData.data) {",
+                      "    pm.collectionVariables.set('floorPlanAreaId', jsonData.data.floorPlanAreaId);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "List the dining areas of a floor plan",
+              "id": "8e779612-4edb-4a16-b9ec-cf39cda7bd34",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/branches/{{branchId}}/floor-plans/{{floorPlanId}}/areas",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "branches",
+                    "{{branchId}}",
+                    "floor-plans",
+                    "{{floorPlanId}}",
+                    "areas"
+                  ]
+                },
+                "description": "## Purpose\nList the dining areas of a floor plan\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `branchId` | `{{branchId}}` | UUID path parameter |\n| `floorPlanId` | `{{floorPlanId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Floor plan areas retrieved successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **401**: AUTH_INVALID_TOKEN / AUTH_EXPIRED_TOKEN\n- **403**: FORBIDDEN\n- **404**: NOT_FOUND\n## Notes\n- Controller: `FloorPlanAreasController`\n- Full path: `/api/v1/restaurants/:restaurantId/branches/:branchId/floor-plans/:floorPlanId/areas`\n- Callers (from source): Owner/Admin (Owner, Admin)\n- ADR-040: areas are the *concurrent* halls inside ONE floor plan (e.g. \"Main Hall\" + \"للضيوف\"), all live at the same time. This is a different axis from `FloorPlan.isActive`, which still means \"at most one layout per branch is active\" and is untouched by these routes.\n- `color` is exactly `#RRGGBB` (shorthand `#FFF` and alpha `#RRGGBBAA` are rejected with 400); it is stored and returned uppercase.\n- Unpaginated, ordered by `sortOrder` then `createdAt`, both ascending.\n- An empty list is a valid, fully configured layout: every table then sits on the layout itself with `floorPlanAreaId: null`.\n"
+              },
+              "response": []
+            },
+            {
+              "name": "Get a dining area by id",
+              "id": "5ca69796-9bb3-45e4-aa6f-259f85751bb2",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/branches/{{branchId}}/floor-plans/{{floorPlanId}}/areas/{{floorPlanAreaId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "branches",
+                    "{{branchId}}",
+                    "floor-plans",
+                    "{{floorPlanId}}",
+                    "areas",
+                    "{{floorPlanAreaId}}"
+                  ]
+                },
+                "description": "## Purpose\nGet one dining area of a floor plan\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `branchId` | `{{branchId}}` | UUID path parameter |\n| `floorPlanId` | `{{floorPlanId}}` | UUID path parameter |\n| `areaId` | `{{floorPlanAreaId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Floor plan area retrieved successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **401**: AUTH_INVALID_TOKEN / AUTH_EXPIRED_TOKEN\n- **403**: FORBIDDEN\n- **404**: NOT_FOUND\n## Notes\n- Controller: `FloorPlanAreasController`\n- Full path: `/api/v1/restaurants/:restaurantId/branches/:branchId/floor-plans/:floorPlanId/areas/:areaId`\n- Callers (from source): Owner/Admin (Owner, Admin)\n- ADR-040: areas are the *concurrent* halls inside ONE floor plan (e.g. \"Main Hall\" + \"للضيوف\"), all live at the same time. This is a different axis from `FloorPlan.isActive`, which still means \"at most one layout per branch is active\" and is untouched by these routes.\n- `color` is exactly `#RRGGBB` (shorthand `#FFF` and alpha `#RRGGBBAA` are rejected with 400); it is stored and returned uppercase.\n- An unknown area, an area of another floor plan, and a soft-deleted area all return the same 404 (IDOR-safe).\n"
+              },
+              "response": []
+            },
+            {
+              "name": "Update a dining area (full replace)",
+              "id": "40d76d59-cf29-47df-b97e-c81e1ebace26",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/branches/{{branchId}}/floor-plans/{{floorPlanId}}/areas/{{floorPlanAreaId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "branches",
+                    "{{branchId}}",
+                    "floor-plans",
+                    "{{floorPlanId}}",
+                    "areas",
+                    "{{floorPlanAreaId}}"
+                  ]
+                },
+                "description": "## Purpose\nUpdate a dining area (full replace of its own attributes)\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `branchId` | `{{branchId}}` | UUID path parameter |\n| `floorPlanId` | `{{floorPlanId}}` | UUID path parameter |\n| `areaId` | `{{floorPlanAreaId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\nJSON body - DTO: `UpdateFloorPlanAreaRequestDto`\n## Success Response\nEnvelope message: \"Floor plan area updated successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **401**: AUTH_INVALID_TOKEN / AUTH_EXPIRED_TOKEN\n- **403**: FORBIDDEN\n- **404**: NOT_FOUND\n## Notes\n- Controller: `FloorPlanAreasController`\n- Full path: `/api/v1/restaurants/:restaurantId/branches/:branchId/floor-plans/:floorPlanId/areas/:areaId`\n- Callers (from source): Owner/Admin (Owner, Admin)\n- ADR-040: areas are the *concurrent* halls inside ONE floor plan (e.g. \"Main Hall\" + \"للضيوف\"), all live at the same time. This is a different axis from `FloorPlan.isActive`, which still means \"at most one layout per branch is active\" and is untouched by these routes.\n- `color` is exactly `#RRGGBB` (shorthand `#FFF` and alpha `#RRGGBBAA` are rejected with 400); it is stored and returned uppercase.\n- Full-replace semantics: every field is written, so omit nothing you want to keep.\n- Never moves the area to another floor plan - the tables inside it are positioned relative to this one layout.\n",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"للضيوف\",\n  \"color\": \"{{tableColor}}\",\n  \"sortOrder\": 1\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Floor plan area updated (200)', function () { pm.response.to.have.status(200); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Delete a dining area (soft delete)",
+              "id": "94d5af4d-b76c-4921-b316-373db5a5a063",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/branches/{{branchId}}/floor-plans/{{floorPlanId}}/areas/{{floorPlanAreaId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "branches",
+                    "{{branchId}}",
+                    "floor-plans",
+                    "{{floorPlanId}}",
+                    "areas",
+                    "{{floorPlanAreaId}}"
+                  ]
+                },
+                "description": "## Purpose\nSoft-delete a dining area\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `branchId` | `{{branchId}}` | UUID path parameter |\n| `floorPlanId` | `{{floorPlanId}}` | UUID path parameter |\n| `areaId` | `{{floorPlanAreaId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope: 204 No Content (no response body).\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **401**: AUTH_INVALID_TOKEN / AUTH_EXPIRED_TOKEN\n- **403**: FORBIDDEN\n- **404**: NOT_FOUND\n## Notes\n- Controller: `FloorPlanAreasController`\n- Full path: `/api/v1/restaurants/:restaurantId/branches/:branchId/floor-plans/:floorPlanId/areas/:areaId`\n- Callers (from source): Owner/Admin (Owner, Admin)\n- ADR-040: areas are the *concurrent* halls inside ONE floor plan (e.g. \"Main Hall\" + \"للضيوف\"), all live at the same time. This is a different axis from `FloorPlan.isActive`, which still means \"at most one layout per branch is active\" and is untouched by these routes.\n- `color` is exactly `#RRGGBB` (shorthand `#FFF` and alpha `#RRGGBBAA` are rejected with 400); it is stored and returned uppercase.\n- Rejected with **409** while any non-deleted table is still assigned to the area - tables are never silently reassigned or orphaned. Reassign or delete them first.\n- Not idempotent: deleting an already-deleted area returns 404.\n"
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Floor plan area deleted (204)', function () { pm.response.to.have.status(204); });"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
           "name": "Tables",
           "item": [
             {
@@ -5663,10 +5879,10 @@
                     "tables"
                   ]
                 },
-                "description": "## Purpose\nCreate a table under a branch\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `branchId` | `{{branchId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Table created successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `TablesController`.`unknown`\n- Full path: `/api/v1/restaurants/:restaurantId/branches/:branchId/tables`\n- Callers (from source): Owner/Admin (Owner, Admin)",
+                "description": "## Purpose\nCreate a table under a branch\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `branchId` | `{{branchId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Table created successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `TablesController`.`unknown`\n- Full path: `/api/v1/restaurants/:restaurantId/branches/:branchId/tables`\n- Callers (from source): Owner/Admin (Owner, Admin)\n- ADR-040: `floorPlanAreaId` (optional) must reference a live dining area of the SAME `floorPlanId`; an area of any other plan returns 404. Send `null`/omit it to place the table on the layout itself. `color` (optional, `#RRGGBB`) is a per-table override; `null` means the table inherits its area colour.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"floorPlanId\": \"{{floorPlanId}}\",\n  \"tableNumber\": \"T1\",\n  \"capacity\": 4,\n  \"floor\": 1,\n  \"positionX\": 10.5,\n  \"positionY\": 20.5,\n  \"width\": 100,\n  \"height\": 100,\n  \"rotation\": 0,\n  \"shape\": \"Rectangle\",\n  \"layer\": 0,\n  \"indoor\": true,\n  \"vip\": false,\n  \"smoking\": false\n}",
+                  "raw": "{\n  \"floorPlanId\": \"{{floorPlanId}}\",\n  \"floorPlanAreaId\": \"{{floorPlanAreaId}}\",\n  \"tableNumber\": \"T1\",\n  \"capacity\": 4,\n  \"floor\": 1,\n  \"positionX\": 10.5,\n  \"positionY\": 20.5,\n  \"width\": 100,\n  \"height\": 100,\n  \"rotation\": 0,\n  \"shape\": \"Rectangle\",\n  \"color\": \"{{tableColor}}\",\n  \"layer\": 0,\n  \"indoor\": true,\n  \"vip\": false,\n  \"smoking\": false\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -5816,10 +6032,10 @@
                     "{{tableId}}"
                   ]
                 },
-                "description": "## Purpose\nUpdate a table (full-replace)\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `tableId` | `{{tableId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\nJSON body — DTO: `UpdateTableRequestDto`\n## Success Response\nEnvelope message: \"Table updated successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `TableController`.`unknown`\n- Full path: `/api/v1/tables/:tableId`\n- Callers (from source): Owner/Admin (Owner, Admin)",
+                "description": "## Purpose\nUpdate a table (full-replace)\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `tableId` | `{{tableId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\nJSON body — DTO: `UpdateTableRequestDto`\n## Success Response\nEnvelope message: \"Table updated successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `TableController`.`unknown`\n- Full path: `/api/v1/tables/:tableId`\n- Callers (from source): Owner/Admin (Owner, Admin)\n- ADR-040: this is the floor editor’s drag-to-save endpoint - the layout fields (`positionX`/`positionY`/`width`/`height`/`rotation`/`shape`) are written together with `floorPlanAreaId` and `color` in one full-replace request. `floorPlanAreaId` is resolved against the table’s OWN current floor plan; changing the floor plan itself is `POST /tables/:tableId/move`, never this route.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"tableNumber\": \"T1\",\n  \"capacity\": 6,\n  \"floor\": 1,\n  \"positionX\": 15.0,\n  \"positionY\": 25.0,\n  \"width\": 120,\n  \"height\": 120,\n  \"rotation\": 0,\n  \"shape\": \"Round\",\n  \"layer\": 0,\n  \"indoor\": true,\n  \"vip\": false,\n  \"smoking\": false\n}",
+                  "raw": "{\n  \"tableNumber\": \"T1\",\n  \"floorPlanAreaId\": \"{{floorPlanAreaId}}\",\n  \"capacity\": 6,\n  \"floor\": 1,\n  \"positionX\": 15.0,\n  \"positionY\": 25.0,\n  \"width\": 120,\n  \"height\": 120,\n  \"rotation\": 0,\n  \"shape\": \"Round\",\n  \"color\": \"{{tableColor}}\",\n  \"layer\": 0,\n  \"indoor\": true,\n  \"vip\": false,\n  \"smoking\": false\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -5896,10 +6112,10 @@
                     "move"
                   ]
                 },
-                "description": "## Purpose\nMove a table to a different floor plan (Domain Action)\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `tableId` | `{{tableId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Table moved successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `TableController`.`unknown`\n- Full path: `/api/v1/tables/:tableId/move`\n- Callers (from source): Owner/Admin (Owner, Admin)",
+                "description": "## Purpose\nMove a table to a different floor plan (Domain Action)\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `tableId` | `{{tableId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Table moved successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `TableController`.`unknown`\n- Full path: `/api/v1/tables/:tableId/move`\n- Callers (from source): Owner/Admin (Owner, Admin)\n- ADR-040: a move also reconciles dining-area membership. `targetFloorPlanAreaId` (optional) must be an area of the TARGET floor plan; omit it (or send `null`) to land on the target layout with no area. The source plan’s area is never carried over, because an area belongs to exactly one floor plan.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"targetFloorPlanId\": \"{{floorPlanId}}\"\n}",
+                  "raw": "{\n  \"targetFloorPlanId\": \"{{floorPlanId}}\",\n  \"targetFloorPlanAreaId\": \"{{floorPlanAreaId}}\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"

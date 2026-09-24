@@ -10,6 +10,12 @@ import { TableShape } from '../../domain/enums/table.enums';
 export interface UpdateTableCommand {
   actor: AuthenticatedOrganizationMemberActor;
   tableId: string;
+  /**
+   * ADR-040 - must name a live Area of the table's CURRENT FloorPlan; `null`
+   * clears the assignment. Changing the FloorPlan itself remains Move Table's
+   * exclusive responsibility.
+   */
+  floorPlanAreaId: string | null;
   tableNumber: string;
   capacity: number;
   floor: number | null;
@@ -19,6 +25,8 @@ export interface UpdateTableCommand {
   height: number | null;
   rotation: number | null;
   shape: TableShape;
+  /** ADR-040 - `#RRGGBB` override, or `null` to inherit the Area's color. */
+  color: string | null;
   layer: number | null;
   indoor: boolean;
   vip: boolean;

@@ -187,6 +187,7 @@ export class TableController {
     const result = await this.updateTableUseCase.execute({
       actor,
       tableId,
+      floorPlanAreaId: body.floorPlanAreaId ?? null,
       tableNumber: body.tableNumber,
       capacity: body.capacity,
       floor: body.floor ?? null,
@@ -196,6 +197,7 @@ export class TableController {
       height: body.height ?? null,
       rotation: body.rotation ?? null,
       shape: body.shape ?? TableShape.Rectangle,
+      color: body.color ?? null,
       layer: body.layer ?? null,
       indoor: body.indoor ?? true,
       vip: body.vip ?? false,
@@ -248,7 +250,7 @@ export class TableController {
     operationId: 'tablesMove',
     summary: 'Move a table to a different floor plan (Domain Action)',
     description:
-      'Phase 6.2 architecture decision: a dedicated Domain Action, not a partial update - changes ONLY floorPlanId, nothing else. The target FloorPlan must exist, belong to this table’s own branch, and not be soft-deleted; cross-branch and cross-restaurant moves are rejected. No reservation, bounds, or collision validation is performed. Produces a table.moved audit-log entry only - no domain event is published.',
+      'Phase 6.2 architecture decision: a dedicated Domain Action, not a partial update - changes ONLY the table’s placement, nothing else. The target FloorPlan must exist, belong to this table’s own branch, and not be soft-deleted; cross-branch and cross-restaurant moves are rejected. ADR-040: the move also reconciles dining-area membership - supply targetFloorPlanAreaId to land in an area of the TARGET plan, or omit it to land on the target layout with no area; the source plan’s area is never carried over. No reservation, bounds, or collision validation is performed. Publishes TableMoved (Phase 8), audited as table.moved.',
   })
   @ApiParam({ name: 'tableId', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'Table moved', type: TableResponseDto })
@@ -261,7 +263,7 @@ export class TableController {
   @ApiErrorResponse(404, 'Table not found (or belongs to another organization)', ['NOT_FOUND'])
   @ApiErrorResponse(
     404,
-    'Target floor plan not found, belongs to a different branch, or is soft-deleted',
+    'Target floor plan not found, belongs to a different branch, or is soft-deleted; or target floor plan area not found (or belongs to another floor plan)',
     ['NOT_FOUND'],
   )
   async move(
@@ -274,6 +276,7 @@ export class TableController {
       actor,
       tableId,
       targetFloorPlanId: body.targetFloorPlanId,
+      targetFloorPlanAreaId: body.targetFloorPlanAreaId ?? null,
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
     return toTableResponse(result);

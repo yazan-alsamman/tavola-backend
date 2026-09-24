@@ -20,6 +20,11 @@ import {
   FLOOR_PLAN_REPOSITORY,
 } from '../../domain/repositories/floor-plan.repository';
 import { TableNotFoundException } from '../../domain/exceptions/table-not-found.exception';
+import {
+  FloorPlanAreaRepository,
+  FLOOR_PLAN_AREA_REPOSITORY,
+} from '../../domain/repositories/floor-plan-area.repository';
+import { resolveFloorPlanAreaId } from '../services/resolve-floor-plan-area';
 import { FloorPlanNotFoundException } from '../../domain/exceptions/floor-plan-not-found.exception';
 import { TableMergedOperationForbiddenException } from '../../domain/exceptions/table-merged-operation-forbidden.exception';
 import { TableMovedEvent } from '../../domain/events/table.events';
@@ -37,12 +42,21 @@ import { TableResult } from '../dto/table.result';
  * supersedes the prior "Phase 6.2 decision #7" audit-log-only precedent);
  * `table.moved` auditing now flows through `AuditingEventPublisher` like
  * every other domain event.
+ *
+ * ADR-040 decision #8 - a move also reconciles Area membership, because an Area
+ * belongs to exactly one FloorPlan and therefore cannot survive the move.
+ * `targetFloorPlanAreaId` is resolved against the TARGET plan (not the current
+ * one); omitting it lands the table on the target layout with no area. Keeping
+ * the old value was never an option - the composite foreign key would reject
+ * the cross-plan reference at the database anyway.
  */
 @Injectable()
 export class MoveTableUseCase {
   constructor(
     @Inject(TABLE_REPOSITORY) private readonly tableRepository: TableRepository,
     @Inject(FLOOR_PLAN_REPOSITORY) private readonly floorPlanRepository: FloorPlanRepository,
+    @Inject(FLOOR_PLAN_AREA_REPOSITORY)
+    private readonly floorPlanAreaRepository: FloorPlanAreaRepository,
     @Inject(BRANCH_REPOSITORY) private readonly branchRepository: BranchRepository,
     @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
     @Inject(CLOCK) private readonly clock: ClockPort,
@@ -90,9 +104,15 @@ export class MoveTableUseCase {
       throw new FloorPlanNotFoundException();
     }
 
+    const targetFloorPlanAreaId = await resolveFloorPlanAreaId(
+      this.floorPlanAreaRepository,
+      targetFloorPlanId,
+      command.targetFloorPlanAreaId,
+    );
+
     const now = this.clock.now();
     const oldFloorPlanId = existing.floorPlanId.value;
-    const moved = existing.moveToFloorPlan(targetFloorPlanId.value, now);
+    const moved = existing.moveToFloorPlan(targetFloorPlanId.value, targetFloorPlanAreaId, now);
     await this.tableRepository.save(moved);
 
     await this.eventPublisher.publish(

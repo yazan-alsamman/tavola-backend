@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { RestaurantResult } from '@modules/restaurants/application/dto/restaurant.result';
 import { BranchResult } from '@modules/branches/application/dto/branch.result';
 import { FloorPlanResult } from '@modules/tables/application/dto/floor-plan.result';
+import { FloorPlanAreaResult } from '@modules/tables/application/dto/floor-plan-area.result';
 import { TableResult } from '@modules/tables/application/dto/table.result';
 import { RedisQueryCache } from '@infrastructure/redis/redis-query-cache.service';
 import {
@@ -72,6 +73,10 @@ export class CachingDiscoveryReader implements DiscoveryReaderPort {
 
   getActiveFloorPlanByBranchId(branchId: string): Promise<FloorPlanResult | null> {
     return this.inner.getActiveFloorPlanByBranchId(branchId);
+  }
+
+  listFloorPlanAreasByFloorPlanId(floorPlanId: string): Promise<FloorPlanAreaResult[]> {
+    return this.inner.listFloorPlanAreasByFloorPlanId(floorPlanId);
   }
 
   listTablesByFloorPlanId(floorPlanId: string): Promise<TableResult[]> {

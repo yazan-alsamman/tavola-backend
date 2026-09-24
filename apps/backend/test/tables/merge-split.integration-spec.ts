@@ -168,6 +168,7 @@ describe('Phase 6 Merge/Split Tables - schema, atomicity, and concurrency (integ
       data: {
         branchId,
         floorPlanId,
+        floorPlanAreaId: null,
         tableNumber,
         capacity,
         status: overrides.status ?? 'Available',

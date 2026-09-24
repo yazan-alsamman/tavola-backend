@@ -5,6 +5,13 @@ export interface ListTablesByFloorPlanCommand {
   restaurantId: string;
   branchId: string;
   floorPlanId: string;
+  /**
+   * ADR-040 - optional filter narrowing the result to one Area (hall) of this
+   * FloorPlan. `undefined` returns the whole plan, areas and unassigned tables
+   * alike; an id that is not a live Area of this plan is rejected, never
+   * silently treated as "no filter".
+   */
+  floorPlanAreaId?: string;
   page: number;
   limit: number;
 }

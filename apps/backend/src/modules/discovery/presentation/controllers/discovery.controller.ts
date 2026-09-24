@@ -41,6 +41,7 @@ import {
   toDiscoverableRestaurantResponse,
   toDiscoveryBranchResponse,
   toDiscoveryRestaurantResponse,
+  toFloorPlanAreaPublicResponse,
   toFloorPlanPublicResponse,
   toNearbyRestaurantResponse,
   toTablePublicResponse,
@@ -306,6 +307,7 @@ export class DiscoveryController {
     });
     return {
       floorPlan: toFloorPlanPublicResponse(result.floorPlan),
+      areas: result.areas.map(toFloorPlanAreaPublicResponse),
       tables: result.tables.map(toTablePublicResponse),
     };
   }

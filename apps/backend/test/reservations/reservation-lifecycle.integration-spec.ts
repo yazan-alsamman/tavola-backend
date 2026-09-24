@@ -122,6 +122,7 @@ describe('Phase 7.3 Reservation Lifecycle - Prisma repositories (integration)', 
         data: {
           branchId: branch.id,
           floorPlanId: floorPlan.id,
+          floorPlanAreaId: null,
           tableNumber: `T${i + 1}`,
           capacity: 4,
         },

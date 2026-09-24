@@ -902,11 +902,58 @@ model FloorPlan {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  branch Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  branch Branch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  areas  FloorPlanArea[]
   tables Table[]
 
   @@index([branchId])
   @@map("floor_plans")
+}
+
+// ---------------------------------------------------------------------------
+// Floor Plan Areas (ADR-040 - concurrent dining areas/halls, DATABASE_SCHEMA.md
+// "Floor Plan Areas"). Child entity of FloorPlan, one level below Table's own
+// parent: a FloorPlan describes ONE layout of a branch (at most one active at a
+// time - that axis is untouched by this model), while its FloorPlanAreas are
+// the concurrent halls/sections WITHIN that single layout ("Main Hall",
+// "Guests", terrace...), all valid simultaneously. `FloorPlan.isActive` is
+// never overloaded to express this (ADR-040 decision #1). Tenant-owned
+// transitively via floorPlanId -> FloorPlan.branchId -> Branch.restaurantId ->
+// Restaurant.organizationId (three hops) - NOT added to withTenantScoping's
+// DIRECT_TENANT_OWNED_MODELS, same pattern as FloorPlan/Table. No denormalized
+// `branchId` column (ADR-040 decision #3): unlike Table, this model has no flat
+// route and no branch-scoped unique constraint, so the column would carry a
+// consistency burden with no consumer.
+//
+// `color` is a validated `#RRGGBB` string (uppercase, exactly 7 characters -
+// see `HexColor`); `VarChar(7)` is the storage bound of that format, not an
+// independent rule. `sortOrder` drives the editor's tab order, ties broken by
+// `createdAt` ascending - no uniqueness is enforced on it (re-ordering a set of
+// tabs would otherwise need a transactional shuffle for no product benefit).
+// The name partial unique index (`floor_plan_areas_floor_plan_id_name_key`,
+// `WHERE deleted_at IS NULL`) is added by hand in this sub-phase's migration
+// SQL - Prisma's schema DSL cannot express a partial index, exactly like
+// `floor_plans_branch_id_active_key`. The `@@unique([floorPlanId, id])` below
+// exists solely as the target of `Table`'s composite foreign key - see that
+// model's own comment.
+// ---------------------------------------------------------------------------
+
+model FloorPlanArea {
+  id          String    @id @default(uuid()) @db.Uuid
+  floorPlanId String    @map("floor_plan_id") @db.Uuid
+  name        String
+  color       String    @db.VarChar(7)
+  sortOrder   Int       @default(0) @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  floorPlan FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+  tables    Table[]
+
+  @@unique([floorPlanId, id])
+  @@index([floorPlanId])
+  @@map("floor_plan_areas")
 }
 
 // ---------------------------------------------------------------------------
@@ -933,39 +980,60 @@ model FloorPlan {
 // (non-partial) unique constraint, exactly as DATABASE_SCHEMA.md's index
 // table documents it - a soft-deleted table's number is not released for
 // reuse.
+//
+// ADR-040 adds `floorPlanAreaId` and `color`. `floorPlanAreaId` is NULLABLE
+// (decision #2): `null` means "placed on the layout itself, in no named area" -
+// the state every row predating ADR-040 is in, and the only state a branch that
+// never defines an area will ever have. Its foreign key is deliberately
+// COMPOSITE, `(floor_plan_id, floor_plan_area_id)` -> `floor_plan_areas
+// (floor_plan_id, id)` (decision #4), which makes assigning a Table to an Area
+// belonging to a DIFFERENT FloorPlan structurally impossible rather than merely
+// rejected in code. PostgreSQL's default `MATCH SIMPLE` semantics skip the
+// check entirely while `floor_plan_area_id IS NULL`, which is exactly the
+// intended behavior for an unassigned table. `ON DELETE RESTRICT` matches the
+// FloorPlan->Table deletion-guard precedent (an Area still referenced by a live
+// Table cannot be removed); Areas are soft-deleted in practice, so it is a
+// backstop, not the primary guard. `color` is an optional per-table `#RRGGBB`
+// presentation override (decision #5): `null` means "inherit the Area's
+// color", NOT "no color" - the client resolves that fallback, and the API never
+// materializes an inherited value into this column.
 // ---------------------------------------------------------------------------
 
 model Table {
-  id             String      @id @default(uuid()) @db.Uuid
-  branchId       String      @map("branch_id") @db.Uuid
-  floorPlanId    String      @map("floor_plan_id") @db.Uuid
-  tableNumber    String      @map("table_number")
-  capacity       Int
-  floor          Int?
-  positionX      Float?      @map("position_x")
-  positionY      Float?      @map("position_y")
-  width          Float?
-  height         Float?
-  rotation       Float?
-  shape          TableShape  @default(Rectangle)
-  layer          Int?
-  indoor         Boolean     @default(true)
-  vip            Boolean     @default(false)
-  smoking        Boolean     @default(false)
-  status         TableStatus @default(Available)
-  mergeGroupId   String?     @map("merge_group_id") @db.Uuid
-  isMergePrimary Boolean     @default(false) @map("is_merge_primary")
-  createdAt      DateTime    @default(now()) @map("created_at")
-  updatedAt      DateTime    @updatedAt @map("updated_at")
-  deletedAt      DateTime?   @map("deleted_at")
+  id              String      @id @default(uuid()) @db.Uuid
+  branchId        String      @map("branch_id") @db.Uuid
+  floorPlanId     String      @map("floor_plan_id") @db.Uuid
+  floorPlanAreaId String?     @map("floor_plan_area_id") @db.Uuid
+  tableNumber     String      @map("table_number")
+  capacity        Int
+  floor           Int?
+  positionX       Float?      @map("position_x")
+  positionY       Float?      @map("position_y")
+  width           Float?
+  height          Float?
+  rotation        Float?
+  shape           TableShape  @default(Rectangle)
+  color           String?     @db.VarChar(7)
+  layer           Int?
+  indoor          Boolean     @default(true)
+  vip             Boolean     @default(false)
+  smoking         Boolean     @default(false)
+  status          TableStatus @default(Available)
+  mergeGroupId    String?     @map("merge_group_id") @db.Uuid
+  isMergePrimary  Boolean     @default(false) @map("is_merge_primary")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+  deletedAt       DateTime?   @map("deleted_at")
 
-  branch       Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  floorPlan    FloorPlan     @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
-  reservations Reservation[]
+  branch        Branch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  floorPlan     FloorPlan      @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+  floorPlanArea FloorPlanArea? @relation(fields: [floorPlanId, floorPlanAreaId], references: [floorPlanId, id], onDelete: Restrict)
+  reservations  Reservation[]
 
   @@unique([branchId, tableNumber])
   @@index([branchId])
   @@index([floorPlanId])
+  @@index([floorPlanAreaId])
   @@index([status])
   @@index([mergeGroupId])
   @@map("tables")

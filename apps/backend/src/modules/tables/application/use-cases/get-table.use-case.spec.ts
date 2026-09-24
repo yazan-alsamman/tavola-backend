@@ -16,6 +16,7 @@ import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/su
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
 import { InMemoryFloorPlanRepository } from '../../../../../test/tables/support/in-memory-floor-plan.repository';
 import { InMemoryTableRepository } from '../../../../../test/tables/support/in-memory-table.repository';
+import { InMemoryFloorPlanAreaRepository } from '../../../../../test/tables/support/in-memory-floor-plan-area.repository';
 import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 
 describe('GetTableUseCase', () => {
@@ -93,9 +94,11 @@ describe('GetTableUseCase', () => {
       }),
     );
 
+    const floorPlanAreaRepository = new InMemoryFloorPlanAreaRepository(tableRepository);
     const createUseCase = new CreateTableUseCase(
       tableRepository,
       floorPlanRepository,
+      floorPlanAreaRepository,
       branchRepository,
       restaurantRepository,
       new FixedClock(fixedNow),
@@ -107,6 +110,7 @@ describe('GetTableUseCase', () => {
       restaurantId,
       branchId,
       floorPlanId,
+      floorPlanAreaId: null,
       tableNumber: 'T1',
       capacity: 4,
       floor: 1,
@@ -116,6 +120,7 @@ describe('GetTableUseCase', () => {
       height: null,
       rotation: null,
       shape: TableShape.Rectangle,
+      color: null,
       layer: null,
       indoor: true,
       vip: false,

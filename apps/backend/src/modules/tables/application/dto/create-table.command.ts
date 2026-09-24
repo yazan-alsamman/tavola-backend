@@ -6,6 +6,11 @@ export interface CreateTableCommand {
   restaurantId: string;
   branchId: string;
   floorPlanId: string;
+  /**
+   * ADR-040 - must name a live Area of `floorPlanId` itself; `null` places the
+   * table on the layout with no area.
+   */
+  floorPlanAreaId: string | null;
   tableNumber: string;
   capacity: number;
   floor: number | null;
@@ -15,6 +20,8 @@ export interface CreateTableCommand {
   height: number | null;
   rotation: number | null;
   shape: TableShape;
+  /** ADR-040 - `#RRGGBB` override, or `null` to inherit the Area's color. */
+  color: string | null;
   layer: number | null;
   indoor: boolean;
   vip: boolean;

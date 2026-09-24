@@ -9,7 +9,9 @@ import { BranchPublicResponseDto } from '../dto/branch-public.response.dto';
 import { WorkingHoursEntryPublicResponseDto } from '../dto/working-hours-entry-public.response.dto';
 import { DiscoverableRestaurant } from '../../application/use-cases/list-discoverable-restaurants.use-case';
 import { NearbyDiscoverableRestaurant } from '../../application/use-cases/nearby-restaurants.use-case';
+import { FloorPlanAreaResult } from '@modules/tables/application/dto/floor-plan-area.result';
 import { FloorPlanPublicResponseDto } from '../dto/floor-plan-public.response.dto';
+import { FloorPlanAreaPublicResponseDto } from '../dto/floor-plan-area-public.response.dto';
 import { TablePublicResponseDto } from '../dto/table-public.response.dto';
 import { DiscoverableRestaurantResponseDto } from '../dto/discoverable-restaurant.response.dto';
 import { NearbyRestaurantResponseDto } from '../dto/nearby-restaurant.response.dto';
@@ -106,6 +108,24 @@ export function toNearbyRestaurantResponse(
   };
 }
 
+/**
+ * ADR-040: the customer-safe FloorPlanArea projection - name, color and tab
+ * order only. Those three are exactly what a seating chart needs to render the
+ * same halls the staff editor shows; `floorPlanId` is redundant with the parent
+ * object and timestamps carry no customer value, so both are excluded on the
+ * same D11 grounds as the FloorPlan projection below.
+ */
+export function toFloorPlanAreaPublicResponse(
+  result: FloorPlanAreaResult,
+): FloorPlanAreaPublicResponseDto {
+  return {
+    floorPlanAreaId: result.floorPlanAreaId,
+    name: result.name,
+    color: result.color,
+    sortOrder: result.sortOrder,
+  };
+}
+
 /** D11: the customer-safe FloorPlan projection - excludes isActive/timestamps (see FloorPlanPublicResponseDto's own doc comment). */
 export function toFloorPlanPublicResponse(result: FloorPlanResult): FloorPlanPublicResponseDto {
   return {
@@ -120,9 +140,11 @@ export function toTablePublicResponse(result: TableResult): TablePublicResponseD
   return {
     tableId: result.tableId,
     floorPlanId: result.floorPlanId,
+    floorPlanAreaId: result.floorPlanAreaId,
     tableNumber: result.tableNumber,
     capacity: result.capacity,
     shape: result.shape,
+    color: result.color,
     floor: result.floor,
     positionX: result.positionX,
     positionY: result.positionY,

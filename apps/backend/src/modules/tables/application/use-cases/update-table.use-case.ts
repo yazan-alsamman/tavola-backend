@@ -15,6 +15,11 @@ import {
   BRANCH_REPOSITORY,
 } from '@modules/branches/domain/repositories/branch.repository';
 import { TableRepository, TABLE_REPOSITORY } from '../../domain/repositories/table.repository';
+import {
+  FloorPlanAreaRepository,
+  FLOOR_PLAN_AREA_REPOSITORY,
+} from '../../domain/repositories/floor-plan-area.repository';
+import { resolveFloorPlanAreaId } from '../services/resolve-floor-plan-area';
 import { TableNotFoundException } from '../../domain/exceptions/table-not-found.exception';
 import { TableNumberAlreadyExistsException } from '../../domain/exceptions/table-number-already-exists.exception';
 import { TableUpdatedEvent } from '../../domain/events/table.events';
@@ -27,11 +32,19 @@ import { TableResult } from '../dto/table.result';
  * Branch -> Restaurant, see `GetTableUseCase`'s own comment. Never accepts
  * `branchId`/`floorPlanId` (Move Table out of scope) or `status` (Phase 6.1
  * architecture decision: fixed to `Available`).
+ *
+ * ADR-040 - this is the endpoint the floor editor's drag-to-save calls, so it
+ * persists the full layout set (position, size, rotation, shape) together with
+ * `floorPlanAreaId` and `color` in one full-replace write. `floorPlanAreaId` is
+ * resolved against the table's OWN current FloorPlan, never against a
+ * caller-supplied one - a table cannot change plans here.
  */
 @Injectable()
 export class UpdateTableUseCase {
   constructor(
     @Inject(TABLE_REPOSITORY) private readonly tableRepository: TableRepository,
+    @Inject(FLOOR_PLAN_AREA_REPOSITORY)
+    private readonly floorPlanAreaRepository: FloorPlanAreaRepository,
     @Inject(BRANCH_REPOSITORY) private readonly branchRepository: BranchRepository,
     @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
     @Inject(CLOCK) private readonly clock: ClockPort,
@@ -67,11 +80,18 @@ export class UpdateTableUseCase {
       }
     }
 
+    const floorPlanAreaId = await resolveFloorPlanAreaId(
+      this.floorPlanAreaRepository,
+      existing.floorPlanId,
+      command.floorPlanAreaId,
+    );
+
     const now = this.clock.now();
     const table = existing.updateProfile(
       {
         tableNumber: command.tableNumber,
         capacity: command.capacity,
+        floorPlanAreaId,
         floor: command.floor,
         positionX: command.positionX,
         positionY: command.positionY,
@@ -79,6 +99,7 @@ export class UpdateTableUseCase {
         height: command.height,
         rotation: command.rotation,
         shape: command.shape,
+        color: command.color,
         layer: command.layer,
         indoor: command.indoor,
         vip: command.vip,

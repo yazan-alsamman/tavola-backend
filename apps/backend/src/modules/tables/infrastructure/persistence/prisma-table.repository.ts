@@ -60,17 +60,27 @@ export class PrismaTableRepository implements TableRepository {
     floorPlanId: FloorPlanId,
     page: number,
     limit: number,
+    floorPlanAreaId?: string,
   ): Promise<TableListPage> {
+    // ADR-040: one predicate object shared by the page query and its count, so
+    // the two can never disagree about what is being listed. Omitting
+    // `floorPlanAreaId` leaves the key out entirely rather than sending
+    // `undefined`, which Prisma would also ignore - being explicit keeps the
+    // "no filter" case obvious to a reader. Served by the
+    // `tables_floor_plan_area_id_idx` index when the filter is present.
+    const where = {
+      floorPlanId: floorPlanId.value,
+      deletedAt: null,
+      ...(floorPlanAreaId === undefined ? {} : { floorPlanAreaId }),
+    };
     const [rows, total] = await Promise.all([
       this.prismaContext.client.table.findMany({
-        where: { floorPlanId: floorPlanId.value, deletedAt: null },
+        where,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
-      this.prismaContext.client.table.count({
-        where: { floorPlanId: floorPlanId.value, deletedAt: null },
-      }),
+      this.prismaContext.client.table.count({ where }),
     ]);
 
     return { items: rows.map(TablePrismaMapper.toDomain), total };
@@ -148,6 +158,7 @@ export class PrismaTableRepository implements TableRepository {
       create: data,
       update: {
         floorPlanId: data.floorPlanId,
+        floorPlanAreaId: data.floorPlanAreaId,
         tableNumber: data.tableNumber,
         capacity: data.capacity,
         floor: data.floor,
@@ -157,6 +168,7 @@ export class PrismaTableRepository implements TableRepository {
         height: data.height,
         rotation: data.rotation,
         shape: data.shape,
+        color: data.color,
         layer: data.layer,
         indoor: data.indoor,
         vip: data.vip,

@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsUUID } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsUUID } from 'class-validator';
 
 export class MoveTableRequestDto {
   @ApiProperty({
@@ -9,4 +9,14 @@ export class MoveTableRequestDto {
   })
   @IsUUID()
   targetFloorPlanId!: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'ADR-040 - the dining area inside the TARGET floor plan the table lands in. Must be a live area of the target plan. Omit (or send null) to land on the target layout with no area. The source plan area is never carried over, because an area belongs to exactly one floor plan.',
+  })
+  @IsOptional()
+  @IsUUID()
+  targetFloorPlanAreaId?: string | null;
 }

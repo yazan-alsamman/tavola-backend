@@ -110,6 +110,16 @@ export class FloorPlanId extends UuidId {
   }
 }
 
+export class FloorPlanAreaId extends UuidId {
+  private constructor(value: string) {
+    super(value, 'FloorPlanAreaId');
+  }
+
+  static create(value: string): FloorPlanAreaId {
+    return new FloorPlanAreaId(value);
+  }
+}
+
 export class TableId extends UuidId {
   private constructor(value: string) {
     super(value, 'TableId');

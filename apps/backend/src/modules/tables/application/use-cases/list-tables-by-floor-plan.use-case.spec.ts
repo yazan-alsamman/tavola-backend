@@ -16,6 +16,11 @@ import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/su
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
 import { InMemoryFloorPlanRepository } from '../../../../../test/tables/support/in-memory-floor-plan.repository';
 import { InMemoryTableRepository } from '../../../../../test/tables/support/in-memory-table.repository';
+import { InMemoryFloorPlanAreaRepository } from '../../../../../test/tables/support/in-memory-floor-plan-area.repository';
+import { FloorPlanArea } from '../../domain/entities/floor-plan-area.entity';
+import { Table } from '../../domain/entities/table.entity';
+import { TableId } from '@shared/domain/value-objects/identifiers.vo';
+import { FloorPlanAreaNotFoundException } from '../../domain/exceptions/floor-plan-area-not-found.exception';
 
 describe('ListTablesByFloorPlanUseCase', () => {
   const fixedNow = new Date('2026-07-17T12:00:00.000Z');
@@ -91,9 +96,11 @@ describe('ListTablesByFloorPlanUseCase', () => {
       }),
     );
 
+    const floorPlanAreaRepository = new InMemoryFloorPlanAreaRepository(tableRepository);
     const createUseCase = new CreateTableUseCase(
       tableRepository,
       floorPlanRepository,
+      floorPlanAreaRepository,
       branchRepository,
       restaurantRepository,
       new FixedClock(fixedNow),
@@ -108,6 +115,7 @@ describe('ListTablesByFloorPlanUseCase', () => {
       restaurantId,
       branchId,
       floorPlanId,
+      floorPlanAreaId: null,
       tableNumber: 'T1',
       capacity: 4,
       floor: 1,
@@ -117,6 +125,7 @@ describe('ListTablesByFloorPlanUseCase', () => {
       height: null,
       rotation: null,
       shape: TableShape.Rectangle,
+      color: null,
       layer: null,
       indoor: true,
       vip: false,
@@ -126,10 +135,11 @@ describe('ListTablesByFloorPlanUseCase', () => {
     const useCase = new ListTablesByFloorPlanUseCase(
       tableRepository,
       floorPlanRepository,
+      floorPlanAreaRepository,
       branchRepository,
       restaurantRepository,
     );
-    return { useCase };
+    return { useCase, tableRepository, floorPlanAreaRepository };
   }
 
   it('lists tables scoped to one floor plan', async () => {
@@ -161,5 +171,73 @@ describe('ListTablesByFloorPlanUseCase', () => {
         limit: 20,
       }),
     ).rejects.toBeInstanceOf(FloorPlanNotFoundException);
+  });
+
+  // --- ADR-040: optional area filter ----------------------------------------
+
+  describe('floorPlanAreaId filter (ADR-040 decision #10)', () => {
+    const areaId = '77777777-7777-4777-8777-777777777771';
+    const seededTableId = '11111111-1111-4111-8111-111111111111';
+
+    async function buildWithArea(areaFloorPlanId: string) {
+      const context = await build();
+      await context.floorPlanAreaRepository.save(
+        FloorPlanArea.create({
+          id: areaId,
+          floorPlanId: areaFloorPlanId,
+          name: 'Main Hall',
+          color: '#14B8A6',
+          sortOrder: 0,
+          createdAt: fixedNow,
+          updatedAt: fixedNow,
+          deletedAt: null,
+        }),
+      );
+      return context;
+    }
+
+    const listCommand = {
+      actor: baseActor(),
+      restaurantId,
+      branchId,
+      floorPlanId,
+      page: 1,
+      limit: 20,
+    };
+
+    it('returns every table of the plan when the filter is omitted', async () => {
+      const { useCase } = await buildWithArea(floorPlanId);
+
+      const result = await useCase.execute(listCommand);
+
+      expect(result.total).toBe(1);
+    });
+
+    it('returns only the tables assigned to the requested area', async () => {
+      const context = await buildWithArea(floorPlanId);
+
+      const unfiltered = await context.useCase.execute({
+        ...listCommand,
+        floorPlanAreaId: areaId,
+      });
+      expect(unfiltered.total).toBe(0);
+
+      const seeded = await context.tableRepository.findById(TableId.create(seededTableId));
+      await context.tableRepository.save(
+        Table.reconstitute({ ...seeded!.toProps(), floorPlanAreaId: areaId }),
+      );
+
+      const filtered = await context.useCase.execute({ ...listCommand, floorPlanAreaId: areaId });
+      expect(filtered.total).toBe(1);
+      expect(filtered.items[0].floorPlanAreaId).toBe(areaId);
+    });
+
+    it('rejects an area of another floor plan instead of silently listing everything', async () => {
+      const { useCase } = await buildWithArea('99999999-9999-4999-8999-999999999998');
+
+      await expect(
+        useCase.execute({ ...listCommand, floorPlanAreaId: areaId }),
+      ).rejects.toBeInstanceOf(FloorPlanAreaNotFoundException);
+    });
   });
 });

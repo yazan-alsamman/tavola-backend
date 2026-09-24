@@ -23,6 +23,11 @@ import {
   FloorPlanRepository,
   FLOOR_PLAN_REPOSITORY,
 } from '../../domain/repositories/floor-plan.repository';
+import {
+  FloorPlanAreaRepository,
+  FLOOR_PLAN_AREA_REPOSITORY,
+} from '../../domain/repositories/floor-plan-area.repository';
+import { resolveFloorPlanAreaId } from '../services/resolve-floor-plan-area';
 import { FloorPlanNotFoundException } from '../../domain/exceptions/floor-plan-not-found.exception';
 import { TableNumberAlreadyExistsException } from '../../domain/exceptions/table-number-already-exists.exception';
 import { TableCreatedEvent } from '../../domain/events/table.events';
@@ -35,6 +40,8 @@ export class CreateTableUseCase {
   constructor(
     @Inject(TABLE_REPOSITORY) private readonly tableRepository: TableRepository,
     @Inject(FLOOR_PLAN_REPOSITORY) private readonly floorPlanRepository: FloorPlanRepository,
+    @Inject(FLOOR_PLAN_AREA_REPOSITORY)
+    private readonly floorPlanAreaRepository: FloorPlanAreaRepository,
     @Inject(BRANCH_REPOSITORY) private readonly branchRepository: BranchRepository,
     @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
     @Inject(CLOCK) private readonly clock: ClockPort,
@@ -67,11 +74,21 @@ export class CreateTableUseCase {
       throw new TableNumberAlreadyExistsException(command.tableNumber);
     }
 
+    // ADR-040: resolved against the FloorPlan this table is being created in,
+    // so an Area of a different plan can never be assigned. `null` in means
+    // "no area" and costs no query.
+    const floorPlanAreaId = await resolveFloorPlanAreaId(
+      this.floorPlanAreaRepository,
+      floorPlanId,
+      command.floorPlanAreaId,
+    );
+
     const now = this.clock.now();
     const table = Table.create({
       id: this.idGenerator.generate(),
       branchId: branchId.value,
       floorPlanId: floorPlanId.value,
+      floorPlanAreaId,
       tableNumber: command.tableNumber,
       capacity: command.capacity,
       floor: command.floor,
@@ -81,6 +98,7 @@ export class CreateTableUseCase {
       height: command.height,
       rotation: command.rotation,
       shape: command.shape,
+      color: command.color,
       layer: command.layer,
       indoor: command.indoor,
       vip: command.vip,

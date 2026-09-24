@@ -6,6 +6,9 @@ import { TableNumberAlreadyExistsException } from '../../domain/exceptions/table
 import { TableCreatedEvent } from '../../domain/events/table.events';
 import { TableShape, TableStatus } from '../../domain/enums/table.enums';
 import { FloorPlan } from '../../domain/entities/floor-plan.entity';
+import { FloorPlanArea } from '../../domain/entities/floor-plan-area.entity';
+import { FloorPlanAreaNotFoundException } from '../../domain/exceptions/floor-plan-area-not-found.exception';
+import { InvalidHexColorException } from '../../domain/exceptions/invalid-hex-color.exception';
 import { Restaurant } from '@modules/restaurants/domain/entities/restaurant.entity';
 import { RestaurantStatus } from '@modules/restaurants/domain/enums/restaurant.enums';
 import { Branch } from '@modules/branches/domain/entities/branch.entity';
@@ -19,6 +22,7 @@ import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/su
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
 import { InMemoryFloorPlanRepository } from '../../../../../test/tables/support/in-memory-floor-plan.repository';
 import { InMemoryTableRepository } from '../../../../../test/tables/support/in-memory-table.repository';
+import { InMemoryFloorPlanAreaRepository } from '../../../../../test/tables/support/in-memory-floor-plan-area.repository';
 
 describe('CreateTableUseCase', () => {
   const fixedNow = new Date('2026-07-17T12:00:00.000Z');
@@ -97,16 +101,24 @@ describe('CreateTableUseCase', () => {
     );
 
     const eventPublisher = new CollectingEventPublisher();
+    const floorPlanAreaRepository = new InMemoryFloorPlanAreaRepository(tableRepository);
     const useCase = new CreateTableUseCase(
       tableRepository,
       floorPlanRepository,
+      floorPlanAreaRepository,
       branchRepository,
       restaurantRepository,
       new FixedClock(fixedNow),
       new SequentialIdGenerator([tableId, eventId]),
       eventPublisher,
     );
-    return { useCase, tableRepository, eventPublisher };
+    return {
+      useCase,
+      tableRepository,
+      floorPlanRepository,
+      floorPlanAreaRepository,
+      eventPublisher,
+    };
   }
 
   const validCommand = {
@@ -114,6 +126,7 @@ describe('CreateTableUseCase', () => {
     restaurantId,
     branchId,
     floorPlanId,
+    floorPlanAreaId: null,
     tableNumber: 'T1',
     capacity: 4,
     floor: 1,
@@ -123,6 +136,7 @@ describe('CreateTableUseCase', () => {
     height: 100,
     rotation: 0,
     shape: TableShape.Rectangle,
+    color: null,
     layer: 0,
     indoor: true,
     vip: false,
@@ -145,9 +159,11 @@ describe('CreateTableUseCase', () => {
     const floorPlanRepository = new InMemoryFloorPlanRepository();
     const branchRepository = new InMemoryBranchRepository();
     const restaurantRepository = new InMemoryRestaurantRepository();
+    const floorPlanAreaRepository = new InMemoryFloorPlanAreaRepository(tableRepository);
     const useCase = new CreateTableUseCase(
       tableRepository,
       floorPlanRepository,
+      floorPlanAreaRepository,
       branchRepository,
       restaurantRepository,
       new FixedClock(fixedNow),
@@ -181,9 +197,11 @@ describe('CreateTableUseCase', () => {
         deletedAt: null,
       }),
     );
+    const floorPlanAreaRepository = new InMemoryFloorPlanAreaRepository(tableRepository);
     const useCase = new CreateTableUseCase(
       tableRepository,
       floorPlanRepository,
+      floorPlanAreaRepository,
       branchRepository,
       restaurantRepository,
       new FixedClock(fixedNow),
@@ -225,6 +243,95 @@ describe('CreateTableUseCase', () => {
       floorPlanId,
       organizationId,
       actorId: 'user-1',
+    });
+  });
+
+  // --- ADR-040: concurrent dining areas + per-table color --------------------
+
+  describe('floorPlanAreaId / color (ADR-040)', () => {
+    const areaId = '77777777-7777-4777-8777-777777777777';
+    const otherFloorPlanId = '88888888-8888-4888-8888-888888888888';
+
+    async function buildWithArea(areaFloorPlanId = floorPlanId) {
+      const context = await build();
+      await context.floorPlanRepository.save(
+        FloorPlan.create({
+          id: otherFloorPlanId,
+          branchId,
+          name: 'Patio',
+          isActive: false,
+          createdAt: fixedNow,
+          updatedAt: fixedNow,
+          deletedAt: null,
+        }),
+      );
+      await context.floorPlanAreaRepository.save(
+        FloorPlanArea.create({
+          id: areaId,
+          floorPlanId: areaFloorPlanId,
+          name: 'Main Hall',
+          color: '#14B8A6',
+          sortOrder: 0,
+          createdAt: fixedNow,
+          updatedAt: fixedNow,
+          deletedAt: null,
+        }),
+      );
+      return context;
+    }
+
+    it('places the table in an area of its own floor plan', async () => {
+      const { useCase } = await buildWithArea();
+
+      const result = await useCase.execute({ ...validCommand, floorPlanAreaId: areaId });
+
+      expect(result.floorPlanAreaId).toBe(areaId);
+    });
+
+    it('defaults to no area, which is a fully valid placement', async () => {
+      const { useCase } = await build();
+
+      const result = await useCase.execute(validCommand);
+
+      expect(result.floorPlanAreaId).toBeNull();
+    });
+
+    it('rejects an area belonging to a DIFFERENT floor plan of the same branch', async () => {
+      const { useCase } = await buildWithArea(otherFloorPlanId);
+
+      await expect(
+        useCase.execute({ ...validCommand, floorPlanAreaId: areaId }),
+      ).rejects.toBeInstanceOf(FloorPlanAreaNotFoundException);
+    });
+
+    it('rejects an unknown area id', async () => {
+      const { useCase } = await build();
+
+      await expect(
+        useCase.execute({
+          ...validCommand,
+          floorPlanAreaId: '99999999-9999-4999-8999-999999999999',
+        }),
+      ).rejects.toBeInstanceOf(FloorPlanAreaNotFoundException);
+    });
+
+    it('stores an explicit color normalized, and null as null (inherit)', async () => {
+      const { useCase } = await build();
+
+      const colored = await useCase.execute({ ...validCommand, color: '#f97316' });
+      expect(colored.color).toBe('#F97316');
+
+      const { useCase: second } = await build();
+      const inherited = await second.execute(validCommand);
+      expect(inherited.color).toBeNull();
+    });
+
+    it('rejects a malformed color', async () => {
+      const { useCase } = await build();
+
+      await expect(useCase.execute({ ...validCommand, color: 'orange' })).rejects.toBeInstanceOf(
+        InvalidHexColorException,
+      );
     });
   });
 });

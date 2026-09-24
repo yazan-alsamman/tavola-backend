@@ -2,6 +2,9 @@ import { MoveTableUseCase } from './move-table.use-case';
 import { CreateTableUseCase } from './create-table.use-case';
 import { TableNotFoundException } from '../../domain/exceptions/table-not-found.exception';
 import { FloorPlanNotFoundException } from '../../domain/exceptions/floor-plan-not-found.exception';
+import { FloorPlanAreaNotFoundException } from '../../domain/exceptions/floor-plan-area-not-found.exception';
+import { FloorPlanArea } from '../../domain/entities/floor-plan-area.entity';
+import { Table } from '../../domain/entities/table.entity';
 import { TableMergedOperationForbiddenException } from '../../domain/exceptions/table-merged-operation-forbidden.exception';
 import { TableMovedEvent } from '../../domain/events/table.events';
 import { TableId } from '@shared/domain/value-objects/identifiers.vo';
@@ -21,6 +24,7 @@ import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/su
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
 import { InMemoryFloorPlanRepository } from '../../../../../test/tables/support/in-memory-floor-plan.repository';
 import { InMemoryTableRepository } from '../../../../../test/tables/support/in-memory-table.repository';
+import { InMemoryFloorPlanAreaRepository } from '../../../../../test/tables/support/in-memory-floor-plan-area.repository';
 
 describe('MoveTableUseCase', () => {
   const fixedNow = new Date('2026-07-17T12:00:00.000Z');
@@ -140,9 +144,11 @@ describe('MoveTableUseCase', () => {
       }),
     );
 
+    const floorPlanAreaRepository = new InMemoryFloorPlanAreaRepository(tableRepository);
     const createUseCase = new CreateTableUseCase(
       tableRepository,
       floorPlanRepository,
+      floorPlanAreaRepository,
       branchRepository,
       restaurantRepository,
       new FixedClock(fixedNow),
@@ -154,6 +160,7 @@ describe('MoveTableUseCase', () => {
       restaurantId,
       branchId,
       floorPlanId: mainFloorId,
+      floorPlanAreaId: null,
       tableNumber: 'T1',
       capacity: 4,
       floor: 1,
@@ -163,6 +170,7 @@ describe('MoveTableUseCase', () => {
       height: null,
       rotation: null,
       shape: TableShape.Rectangle,
+      color: null,
       layer: null,
       indoor: true,
       vip: false,
@@ -173,13 +181,14 @@ describe('MoveTableUseCase', () => {
     const useCase = new MoveTableUseCase(
       tableRepository,
       floorPlanRepository,
+      floorPlanAreaRepository,
       branchRepository,
       restaurantRepository,
       new FixedClock(fixedNow),
       new UuidGenerator(),
       eventPublisher,
     );
-    return { useCase, tableRepository, eventPublisher };
+    return { useCase, tableRepository, floorPlanAreaRepository, eventPublisher };
   }
 
   it('moves a table to another floor plan of the same branch, changing only floorPlanId', async () => {
@@ -189,6 +198,7 @@ describe('MoveTableUseCase', () => {
       actor: baseActor(),
       tableId,
       targetFloorPlanId: patioId,
+      targetFloorPlanAreaId: null,
     });
 
     expect(result.floorPlanId).toBe(patioId);
@@ -209,6 +219,7 @@ describe('MoveTableUseCase', () => {
         actor: baseActor(),
         tableId: '99999999-9999-4999-8999-999999999999',
         targetFloorPlanId: patioId,
+        targetFloorPlanAreaId: null,
       }),
     ).rejects.toBeInstanceOf(TableNotFoundException);
   });
@@ -221,6 +232,7 @@ describe('MoveTableUseCase', () => {
         actor: baseActor(),
         tableId,
         targetFloorPlanId: '99999999-9999-4999-8999-999999999995',
+        targetFloorPlanAreaId: null,
       }),
     ).rejects.toBeInstanceOf(FloorPlanNotFoundException);
   });
@@ -233,6 +245,7 @@ describe('MoveTableUseCase', () => {
         actor: baseActor(),
         tableId,
         targetFloorPlanId: otherBranchFloorId,
+        targetFloorPlanAreaId: null,
       }),
     ).rejects.toBeInstanceOf(FloorPlanNotFoundException);
   });
@@ -302,9 +315,11 @@ describe('MoveTableUseCase', () => {
         deletedAt: null,
       }),
     );
+    const floorPlanAreaRepository = new InMemoryFloorPlanAreaRepository(isolatedTableRepository);
     const createUseCase = new CreateTableUseCase(
       isolatedTableRepository,
       isolatedFloorPlanRepository,
+      floorPlanAreaRepository,
       branchRepository,
       restaurantRepository,
       new FixedClock(fixedNow),
@@ -316,6 +331,7 @@ describe('MoveTableUseCase', () => {
       restaurantId,
       branchId,
       floorPlanId: mainFloorId,
+      floorPlanAreaId: null,
       tableNumber: 'T1',
       capacity: 4,
       floor: null,
@@ -325,6 +341,7 @@ describe('MoveTableUseCase', () => {
       height: null,
       rotation: null,
       shape: TableShape.Rectangle,
+      color: null,
       layer: null,
       indoor: true,
       vip: false,
@@ -334,6 +351,7 @@ describe('MoveTableUseCase', () => {
     const isolatedUseCase = new MoveTableUseCase(
       isolatedTableRepository,
       isolatedFloorPlanRepository,
+      floorPlanAreaRepository,
       branchRepository,
       restaurantRepository,
       new FixedClock(fixedNow),
@@ -342,7 +360,12 @@ describe('MoveTableUseCase', () => {
     );
 
     await expect(
-      isolatedUseCase.execute({ actor: baseActor(), tableId, targetFloorPlanId: patioId }),
+      isolatedUseCase.execute({
+        actor: baseActor(),
+        tableId,
+        targetFloorPlanId: patioId,
+        targetFloorPlanAreaId: null,
+      }),
     ).rejects.toBeInstanceOf(FloorPlanNotFoundException);
   });
 
@@ -354,7 +377,12 @@ describe('MoveTableUseCase', () => {
     await tableRepository.save(merged);
 
     await expect(
-      useCase.execute({ actor: baseActor(), tableId, targetFloorPlanId: patioId }),
+      useCase.execute({
+        actor: baseActor(),
+        tableId,
+        targetFloorPlanId: patioId,
+        targetFloorPlanAreaId: null,
+      }),
     ).rejects.toBeInstanceOf(TableMergedOperationForbiddenException);
 
     // Rejected BEFORE the target floor plan lookup - even an unknown target
@@ -364,6 +392,7 @@ describe('MoveTableUseCase', () => {
         actor: baseActor(),
         tableId,
         targetFloorPlanId: '99999999-9999-4999-8999-999999999995',
+        targetFloorPlanAreaId: null,
       }),
     ).rejects.toBeInstanceOf(TableMergedOperationForbiddenException);
 
@@ -379,6 +408,7 @@ describe('MoveTableUseCase', () => {
       actor: baseActor(),
       tableId,
       targetFloorPlanId: patioId,
+      targetFloorPlanAreaId: null,
       correlationId: 'corr-1',
     });
 
@@ -394,6 +424,82 @@ describe('MoveTableUseCase', () => {
       oldFloorPlanId: mainFloorId,
       newFloorPlanId: patioId,
       actorId: 'user-1',
+    });
+  });
+
+  // --- ADR-040: a move reconciles dining-area membership ---------------------
+
+  describe('targetFloorPlanAreaId (ADR-040 decision #8)', () => {
+    const mainHallId = '77777777-7777-4777-8777-777777777771';
+    const patioHallId = '77777777-7777-4777-8777-777777777772';
+
+    async function buildWithHalls() {
+      const context = await build();
+      for (const [id, planId, name] of [
+        [mainHallId, mainFloorId, 'Main Hall'],
+        [patioHallId, patioId, 'Terrace'],
+      ] as const) {
+        await context.floorPlanAreaRepository.save(
+          FloorPlanArea.create({
+            id,
+            floorPlanId: planId,
+            name,
+            color: '#14B8A6',
+            sortOrder: 0,
+            createdAt: fixedNow,
+            updatedAt: fixedNow,
+            deletedAt: null,
+          }),
+        );
+      }
+      return context;
+    }
+
+    it('lands the table in an area of the TARGET plan when one is given', async () => {
+      const { useCase } = await buildWithHalls();
+
+      const result = await useCase.execute({
+        actor: baseActor(),
+        tableId,
+        targetFloorPlanId: patioId,
+        targetFloorPlanAreaId: patioHallId,
+      });
+
+      expect(result.floorPlanId).toBe(patioId);
+      expect(result.floorPlanAreaId).toBe(patioHallId);
+    });
+
+    it('clears area membership when no target area is given', async () => {
+      const context = await buildWithHalls();
+      const existing = await context.tableRepository.findById(TableId.create(tableId));
+      await context.tableRepository.save(
+        Table.reconstitute({ ...existing!.toProps(), floorPlanAreaId: mainHallId }),
+      );
+
+      const result = await context.useCase.execute({
+        actor: baseActor(),
+        tableId,
+        targetFloorPlanId: patioId,
+        targetFloorPlanAreaId: null,
+      });
+
+      expect(result.floorPlanAreaId).toBeNull();
+    });
+
+    it('rejects an area of the SOURCE plan as the target area, leaving the table where it was', async () => {
+      const context = await buildWithHalls();
+
+      await expect(
+        context.useCase.execute({
+          actor: baseActor(),
+          tableId,
+          targetFloorPlanId: patioId,
+          targetFloorPlanAreaId: mainHallId,
+        }),
+      ).rejects.toBeInstanceOf(FloorPlanAreaNotFoundException);
+
+      const unchanged = await context.tableRepository.findById(TableId.create(tableId));
+      expect(unchanged!.floorPlanId.value).toBe(mainFloorId);
     });
   });
 });

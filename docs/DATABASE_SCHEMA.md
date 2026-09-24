@@ -833,7 +833,41 @@ Notes
 
 * **Phase 6.1 architecture decision:** every Table belongs to exactly one FloorPlan (`Table.floorPlanId` is required, never nullable - see "Restaurant Tables" below). A Branch with only one physical floor still gets one `FloorPlan` row (e.g., named "Main Floor"); there is no "tableless"/"floor-plan-less" state. A FloorPlan is the owner of its table layout - retrieving all Tables belonging to one FloorPlan is a required read capability (exact endpoint shape decided at implementation time, not fixed here).
 * **Activation invariants** (Aggregate Invariants, not optional validation - see DOMAIN_MODEL.md's Branch Aggregate Notes for full detail): the first FloorPlan created for a Branch becomes `isActive = true` automatically, with no manual activation step; activating a different FloorPlan atomically deactivates the previously active one in the same operation, so the `composite partial unique (branchId) WHERE isActive = true` index above is never violated even transiently; a FloorPlan cannot be deleted while any Table still references it via `floorPlanId` (the delete must be rejected); a Branch's last remaining FloorPlan cannot be deleted (a Branch always owns at least one).
+* **Concurrent areas (ADR-040):** a FloorPlan describes ONE layout; the concurrent halls *inside* that layout are `FloorPlanArea` rows (see below). `isActive` is never overloaded to express them — every area of a FloorPlan is live at the same time, whereas at most one FloorPlan per branch is active. A FloorPlan with zero areas is fully valid: its tables simply sit on the layout itself.
 * **Cascade:** soft-deleting a Branch cascades to soft-deleting its FloorPlans, alongside its Tables (see "Restaurant Tables" below and DOMAIN_MODEL.md's Branch Aggregate Notes) - both are child entities of the Branch Aggregate, so this is aggregate consistency, not a new feature. **This cascade executes inside one database transaction; partial completion (e.g., Branch deleted but Tables/FloorPlans not) is forbidden.**
+
+---
+
+## Floor Plan Areas
+
+Purpose
+
+The concurrent dining areas (halls/sections) **inside one** `FloorPlan` — "الصالة الرئيسية" (Main Hall), "للضيوف" (Guests), a terrace — each with its own presentation colour and tab order. Added by **ADR-040**. This is a different axis from `FloorPlan.isActive`: every area of a floor plan is live simultaneously, while at most one floor plan per branch is active. Justification for a dedicated table rather than a `Table.areaName`/`Table.areaColor` pair: an area needs identity, so that renaming or recolouring a hall is one row, an empty hall can exist, and tab order has somewhere to live.
+
+Fields
+
+* id (UUID)
+* floorPlanId (required — an area belongs to exactly one layout and never migrates between layouts)
+* name
+* color (required, exactly `#RRGGBB`, stored uppercase — see Notes)
+* sortOrder (int, default 0 — editor tab order)
+* createdAt
+* updatedAt
+* deletedAt
+
+Indexes
+
+* floorPlanId
+* partial unique (floorPlanId, name) WHERE deletedAt IS NULL — area names are unique per floor plan among live rows; a soft-deleted area releases its name for reuse
+* composite unique (floorPlanId, id) — exists solely as the target of `Table`'s composite foreign key (see "Restaurant Tables" below); `id` is already unique on its own
+
+Notes
+
+* **No denormalized `branchId` (ADR-040 decision #3):** tenant-owned transitively via `floorPlanId -> FloorPlan.branchId -> Branch.restaurantId -> Restaurant.organizationId` (three hops) — not registered in the tenant-scoping Prisma extension's `DIRECT_TENANT_OWNED_MODELS`, same pattern as FloorPlan/Table. Unlike `Table`, this model has no flat route and no branch-scoped unique constraint, so a denormalized column would carry a consistency burden with no consumer. Every use case resolves Restaurant, then Branch, then FloorPlan first.
+* **`color` (ADR-040 decision #5):** validated and normalized by the `HexColor` value object — exactly six hexadecimal digits behind one `#`, uppercased before storage. Three-digit shorthand (`#FFF`) and eight-digit alpha (`#RRGGBBAA`) are rejected rather than expanded or truncated, so two colours are equal exactly when their stored strings are; `VarChar(7)` is the storage bound of that format, not an independent rule. Presentation metadata only, exactly like `Table.shape` — it participates in no reservation, capacity or merge/split rule.
+* **`sortOrder`:** ascending, ties broken by `createdAt` ascending. Deliberately **not** unique — re-ordering a set of tabs would otherwise require a transactional shuffle for no product benefit.
+* **Deletion guard (ADR-040 decision #7):** an area cannot be deleted while any non-soft-deleted Table still references it via `floorPlanAreaId`; the operation is rejected (409), never silently reassigning or orphaning those tables. Mirrors the FloorPlan deletion guard above. Soft delete only; deleting is not idempotent.
+* **Cascade:** the FK to `floor_plans` is `ON DELETE CASCADE`, matching `Table`'s. Branch soft-delete cascades to FloorPlans and Tables as before; areas are reached through their FloorPlan and need no separate bulk path, since an area with no live tables is inert.
 
 ---
 
@@ -846,6 +880,7 @@ Fields
 * id
 * branchId
 * floorPlanId (required — every Table belongs to exactly one FloorPlan; never nullable, per Phase 6.1's architecture decision)
+* floorPlanAreaId (nullable — the dining area *inside* that FloorPlan the table sits in; `null` means "placed on the layout itself, in no named area" (**ADR-040**))
 * tableNumber
 * capacity
 * floor
@@ -855,6 +890,7 @@ Fields
 * height
 * rotation
 * shape (`Rectangle`, `Round` only — Phase 6.1 architecture decision; see Notes)
+* color (nullable — optional per-table `#RRGGBB` presentation override; `null` means "inherit the area's colour", never "no colour" (**ADR-040**))
 * layer
 * indoor
 * vip
@@ -870,6 +906,7 @@ Indexes
 
 * branchId
 * floorPlanId
+* floorPlanAreaId (**ADR-040**)
 * status
 * mergeGroupId
 * composite unique (branchId, tableNumber) — table numbers are unique within a branch
@@ -878,7 +915,8 @@ Indexes
 Notes
 
 * **Cascade:** soft-deleting a Branch cascades to soft-deleting its Tables (and its FloorPlans - see "Floor Plans" above), but never its historical Reservations, which are immutable per the Soft Delete Policy above (DOMAIN_MODEL.md's Branch Aggregate Notes, "Branch deletion"). **Executes inside one database transaction; partial completion is forbidden** - the system must never reach a state where the Branch is soft-deleted but its Tables and/or FloorPlans are not.
-* **Deletion guard:** a FloorPlan cannot be deleted while any (non-soft-deleted) Table still references it via `floorPlanId`; the operation must be rejected, not silently reassigned or orphaned (Aggregate Invariant, see "Floor Plans" above and DOMAIN_MODEL.md).
+* **Deletion guard:** a FloorPlan cannot be deleted while any (non-soft-deleted) Table still references it via `floorPlanId`; the operation must be rejected, not silently reassigned or orphaned (Aggregate Invariant, see "Floor Plans" above and DOMAIN_MODEL.md). The same guard applies to a `FloorPlanArea` and `floorPlanAreaId` (**ADR-040**).
+* **`floorPlanAreaId` / `color` (ADR-040):** the foreign key from `tables` to `floor_plan_areas` is deliberately **composite** — `(floor_plan_id, floor_plan_area_id) -> floor_plan_areas(floor_plan_id, id)`, `ON DELETE RESTRICT` — which makes assigning a Table to an Area of a *different* FloorPlan structurally impossible rather than merely rejected in code. PostgreSQL's default `MATCH SIMPLE` semantics skip the check entirely while `floor_plan_area_id IS NULL`, which is exactly the intended behaviour for an unassigned table. `floorPlanAreaId` is set by Create Table, by `PATCH /tables/:tableId` (the floor editor's drag-to-save call, which writes it together with the position/size/rotation fields), and by Move Table — which always reconciles it against the **target** plan, because an Area belongs to exactly one FloorPlan and the old membership cannot survive a move. `color` is validated by the same `HexColor` value object as `FloorPlanArea.color` and is never resolved server-side: `null` is returned as `null`, and the client applies the area fallback.
 * **`status` (Phase 6.1 decision, superseded by the Status Management architecture decision; `Merged` added by ADR-026):** `Create Table` still always produces `Available`. The `TableStatus` enum also defines `Occupied`, `Cleaning`, and `Disabled` (Status Management architecture decision) - transitioned exclusively through the single dedicated Domain Action `POST /tables/{tableId}/status` (see API_GUIDELINES.md); `Update Table` (`PATCH /tables/:tableId`) never modifies `status`. Allowed manual transitions are restricted to `Available ↔ Occupied`, `Available ↔ Cleaning`, and `Available ↔ Disabled` only - every other combination is rejected. `Reserved` (**Phase 7.2**) is set/cleared exclusively by `Table.reserve()` / `Table.release()`. **`Merged` (ADR-026)** applies only to **secondary** members of an active merge group and is set/cleared exclusively by Merge/Split — never via `POST /tables/{tableId}/status`. Status transitions publish `TableStatusChanged` for manual transitions only (Phase 8).
 * **`mergeGroupId` / `isMergePrimary` (ADR-026):** `mergeGroupId` remains a plain nullable UUID (not an FK — no MergeGroup table). Invariant: `mergeGroupId IS NULL ⇒ isMergePrimary = false`. For every non-null `mergeGroupId`, exactly one row has `isMergePrimary = true` (the reservable primary). Permanent `capacity` is never overwritten for merge; effective capacity of the primary while merged is the **sum** of member capacities (derived at read/search time).
 * **`shape` (Phase 6.1 architecture decision):** `TableShape` is presentation metadata only - it describes how a table renders on the floor plan and does not participate in reservation rules, capacity, or merge/split behavior. Its initial value set is intentionally minimal: `Rectangle` and `Round` only. A square table is represented as `Rectangle` with `width == height`; there is no separate `Square` value. `Oval`/`Triangle`/`Hexagon`/`Custom`/any other value are not defined and must not be inferred - a future product requirement may extend the enum, but only through an explicit architectural decision.
@@ -2225,6 +2263,9 @@ This section consolidates the highest-value composite indexes defined per-table 
 | Reservations | exclusion constraint on (tableId, time range) | Database-level safety net guaranteeing no overlapping confirmed reservation can exist, independent of application-layer locking (ADR-013). |
 | Restaurant Tables | (branchId, tableNumber) unique | Enforces the business rule that table numbers are unique within a branch, and serves per-branch table listing. |
 | Floor Plans | (branchId) partial unique WHERE isActive | Enforces at most one active floor plan per branch. |
+| Floor Plan Areas | (floorPlanId, name) partial unique WHERE deletedAt IS NULL | Enforces unique hall names within a layout among live rows only, so a deleted hall releases its name (ADR-040). |
+| Floor Plan Areas | (floorPlanId, id) unique | Target of the composite FK from Restaurant Tables that binds a table's area to the table's own floor plan (ADR-040). |
+| Restaurant Tables | floorPlanAreaId | Serves the per-area table listing and the area deletion guard (ADR-040). |
 | Organization Members | (organizationId, userId) unique | Enforces at most one membership role per user per organization; serves permission-resolution lookups on every authenticated request. |
 | Role Permissions | (employeeId, permissionId) partial unique | Serves `PermissionResolver` RBAC queries (AUTHORIZATION_ARCHITECTURE.md). |
 | Activity Feed | (organizationId, occurredAt) | Serves the dashboard's "recent activity" feed without scanning unrelated tenants' events. |

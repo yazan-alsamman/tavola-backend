@@ -269,6 +269,7 @@ export async function seedAdditionalTable(
     data: {
       branchId: world.branchId,
       floorPlanId: world.floorPlanId,
+      floorPlanAreaId: null,
       tableNumber: `T-${randomUUID().slice(0, 8)}`,
       capacity: 4,
     },

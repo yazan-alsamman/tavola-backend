@@ -2333,6 +2333,85 @@ Affects: `src/shared/domain/value-objects/password.vo.ts`, the three login use c
 
 ---
 
+## ADR-040
+
+### Title
+
+Concurrent Dining Areas Inside One Floor Plan (`FloorPlanArea`)
+
+### Status
+
+**Accepted — implemented 2026-09-24.** Additive: no existing API contract, invariant or row semantics changes.
+
+### Date
+
+2026-09-24
+
+### Context
+
+The restaurant floor editor presents one branch layout as several **concurrent** halls — "الصالة الرئيسية" (Main Hall), "للضيوف" (Guests), a terrace — each with its own colour, with tables placed inside a hall and rendered from their existing layout metadata (`positionX`/`positionY`/`width`/`height`/`rotation`/`shape`). Some tables are highlighted in a colour of their own, independent of the hall.
+
+The schema had nowhere to put this. `FloorPlan` (Phase 6.1) models **alternate layouts over time** — seasonal indoor vs. outdoor — and carries the invariant "at most one active `FloorPlan` per branch" (TASKS.md Phase 6.1 decision #5, enforced by the partial unique index `floor_plans_branch_id_active_key`). Concurrent halls are the orthogonal axis: every hall of a layout is live at the same moment. Expressing halls as extra `FloorPlan` rows would require either abandoning that invariant or leaving every hall but one inactive, and would also fragment `Table.floorPlanId`, which the whole Move/Merge/Split/availability surface depends on.
+
+`Table` likewise had no colour of any kind, and `TableShape` is explicitly presentation-only metadata with a deliberately minimal value set.
+
+### Decision
+
+Introduce **`FloorPlanArea`**, a child entity of `FloorPlan` (and therefore two levels below the Branch Aggregate Root), plus two nullable columns on `Table`. Eleven decisions, referenced by number throughout the code:
+
+1. **A first-class entity, not an overload of `FloorPlan.isActive`.** Areas of one `FloorPlan` are all live simultaneously; the entity has no activation concept at all. `FloorPlan`'s "at most one active layout per branch" invariant, its partial unique index, and `ActivateFloorPlanUseCase` are untouched by this ADR.
+2. **`Table.floorPlanAreaId` is nullable.** `null` means "placed on the layout itself, in no named area" — the state of every row predating this ADR, and the permanent state of any branch that never divides its layout. Making it required would be a breaking API change (a new mandatory request field) and would force a migration that invents business rows, which `MIGRATION_POLICY.md` forbids. The cost is a domain that admits an un-area'd table; that is accepted, because it is the honest model of a single-room restaurant.
+3. **No denormalized `branchId` on the area.** `Table` carries one because of its flat `/tables/:tableId` routes and its `(branchId, tableNumber)` unique constraint; an area has neither. Every area route resolves Restaurant → Branch → FloorPlan first (`resolveFloorPlanScope`), so the branch is always one hop away. A denormalized column with no consumer is a consistency burden, not an optimization.
+4. **The Table→Area foreign key is composite:** `tables(floor_plan_id, floor_plan_area_id) → floor_plan_areas(floor_plan_id, id)`, with a supporting `@@unique([floorPlanId, id])` on the area. Assigning a table to an area of a *different* floor plan is therefore structurally impossible, not merely rejected in code. PostgreSQL's default `MATCH SIMPLE` semantics skip the check entirely while `floor_plan_area_id IS NULL`, which is exactly the desired behaviour for decision #2. `ON DELETE RESTRICT` mirrors the existing FloorPlan→Table deletion-guard posture.
+5. **Colour is a `HexColor` value object, exactly `#RRGGBB`, normalized uppercase, stored in `VarChar(7)`.** Three-digit shorthand and eight-digit alpha are rejected rather than expanded or truncated, so two colours are equal exactly when their stored strings are. `FloorPlanArea.color` is required; `Table.color` is nullable and means "inherit the area's colour" — never "no colour". The API never materializes an inherited value; the client resolves the fallback. Like `TableShape`, colour is presentation metadata only and touches no reservation, capacity or merge/split rule.
+6. **Area names are unique per floor plan among live rows only** — a partial unique index `(floor_plan_id, name) WHERE deleted_at IS NULL`, hand-written in the migration exactly like `floor_plans_branch_id_active_key`, since Prisma's DSL cannot express a partial index. This deliberately differs from `(branch_id, table_number)`, which is non-partial: a deleted hall's name should be reusable, whereas silently recycling a table number would confuse staff and historical records. Names are trimmed before comparison and storage, so one name cannot exist twice under two spellings.
+7. **Deletion is a guarded soft delete.** An area still referenced by any non-soft-deleted table cannot be deleted; the request is rejected with `409`, never silently reassigning or orphaning tables. This mirrors the documented FloorPlan→Table guard. Deleting an area is not idempotent (a second attempt is `404`), matching `DELETE /tables/:tableId`.
+8. **Move Table reconciles area membership.** An area belongs to exactly one floor plan, so membership cannot survive a move. `POST /tables/:tableId/move` gains an optional `targetFloorPlanAreaId`, resolved against the **target** plan; omitting it lands the table on the target layout with no area. Carrying the old value over would leave a cross-plan reference the composite FK would reject at the database anyway.
+9. **Audit-only, no new domain events.** Area create/update/delete write `floor_plan_area.created`/`.updated`/`.deleted` audit entries, following `CreateFloorPlanUseCase`'s existing precedent exactly: `EVENTS.md` defines no FloorPlan event class, Phase 8 has no floor-plan room, and no consumer exists. Area and colour changes on a table ride the existing `TableCreated`/`TableUpdated` events with unchanged payloads, so neither the Phase 8 realtime allow-list nor the Phase 9 notification allow-list needs to change. The Move Table precedent (ADR-026 / Phase 8 §6) shows the upgrade path if a consumer ever appears.
+10. **Area-scoped table reads are a filter, not a fifth nesting level.** `GET .../floor-plans/:floorPlanId/tables` accepts an optional `floorPlanAreaId`. A `.../areas/:areaId/tables` route would add no capability and would duplicate the pagination and ordering contract. An id that is not a live area of that plan is rejected with `404` rather than silently widening to "everything".
+11. **Authorization is Owner/Admin, the `FloorPlansController` stack** (`JwtAuthGuard` + `SessionVersionGuard` + `OrganizationMemberGuard`), not the dual-actor `assertActorCanManageTables` pattern Merge/Split uses. Defining the halls of a layout is floor-plan configuration, not a front-of-house operation an employee performs during service. No new permission slug is introduced.
+
+**Public surface:** `GET /api/v1/discovery/restaurants/:id/branches/:id/floor-plan` gains an `areas` array and exposes `floorPlanAreaId`/`color` on each table, so a customer seating chart renders the same grouping the staff editor shows. Both are static presentation metadata; the Phase 15.5 D11 customer-safe discipline is unchanged — no status, no merge topology, no timestamps.
+
+### Alternatives Considered
+
+**Model halls as additional `FloorPlan` rows.** Rejected — it either breaks the "one active layout per branch" invariant or leaves every hall but one inactive, and it splits one layout's tables across several `floorPlanId` values, which Move/Merge/Split, availability search and the discovery projection all treat as one unit.
+
+**A `Table.areaName` string plus a `Table.areaColor` string.** Rejected — an area would then have no identity, so renaming or recolouring a hall would be an N-row update with no way to enforce consistency, an empty hall could not exist, and tab ordering would have nowhere to live.
+
+**Make `Table.floorPlanAreaId` required, with a backfill that auto-creates a "Default" area per floor plan.** Rejected — `MIGRATION_POLICY.md` forbids inserting business data in a migration, and it would make `floorPlanAreaId` a mandatory request field, a breaking change under `CHANGE_POLICY.md` for a purely additive feature. It would also invent a hall name in every tenant's data that no one asked for.
+
+**Enforce the same-plan rule in the application layer only.** Rejected as insufficient on its own — the composite FK costs one extra unique index and makes the invariant unbreakable by any future code path, including raw SQL and seeds. The application check is kept as well, so callers get a clean `404` instead of a constraint violation.
+
+**A single-column FK with a database trigger checking the plan.** Rejected — a trigger is a second, invisible place where the rule lives, and the codebase has no trigger precedent.
+
+**Reuse class-validator's `@IsHexColor()`.** Rejected — it also accepts `#RGB`, `#RGBA` and `#RRGGBBAA`, which the value object would then reject one layer deeper with a vaguer message.
+
+**A new `tables:areas:manage` permission slug.** Rejected — ADR-026 decision #12 already established that this module does not mint slugs for sub-capabilities.
+
+### Consequences
+
+#### Positive
+
+* The editor's real model is expressible: concurrent, coloured, ordered halls inside one layout, with tables placed in them and full layout metadata preserved.
+* The FloorPlan activation invariant survives untouched, so seasonal layouts and halls remain independently usable.
+* Cross-plan area assignment is impossible at the database level, not merely validated — including for future code paths, raw SQL and seeds.
+* Entirely additive: every existing request body, response shape and stored row keeps working unchanged, so no version bump and no expand-contract are required.
+* Neither realtime nor notification allow-lists change, so the feature ships without touching Phase 8/9 fan-out.
+
+#### Negative
+
+* A nullable `floorPlanAreaId` means "unassigned" is a permanent, legal state a client must render. Mitigated by making the fallback explicit in the DTO documentation and the discovery projection, and by never resolving it server-side.
+* The composite foreign key is an unusual shape a future reader may not expect, and it forces `moveToFloorPlan` to accept the target area rather than silently keeping the old one. Both are documented at the schema, the entity and the use case.
+* An area cannot be moved between floor plans at all. This is deliberate — its tables are positioned relative to one specific layout — but a restaurant reorganizing its plans must recreate the area and move the tables.
+* Deleting a populated hall is a two-step operation for the client (empty it, then delete it). This is the same trade-off the FloorPlan guard already makes, and the 409 reports how many tables remain.
+
+### Impact
+
+Affects: `prisma/schema.prisma` and migration `20260924120000_adr_040_floor_plan_areas`; `src/modules/tables/**` (new `FloorPlanArea` entity, `HexColor` value object, repository port + Prisma adapter, five use cases, `FloorPlanAreasController`, and the `Table` entity/DTO/use-case changes for `floorPlanAreaId`/`color`); `src/modules/discovery/**` (reader port, Prisma reader, caching reader, floor-plan use case, public DTOs and mapper); `docs/DATABASE_SCHEMA.md`, `docs/DOMAIN_MODEL.md`, `docs/EVENTS.md`, `docs/API_GUIDELINES.md`, `TASKS.md`; and the Postman collection/environment (new **Floor Plan Areas** folder, extended Table create/update/move bodies, `floorPlanAreaId`/`floorPlanAreaColor`/`tableColor` variables).
+
+---
+
 # Future Decisions
 
 The following topics require an ADR before implementation:

@@ -96,6 +96,7 @@ describe('ReservationGuest round-trip + Phase 7.4 atomicity (integration)', () =
       data: {
         branchId: branch.id,
         floorPlanId: floorPlan.id,
+        floorPlanAreaId: null,
         tableNumber: 'T1',
         capacity: 4,
       },

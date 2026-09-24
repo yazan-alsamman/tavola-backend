@@ -21,6 +21,7 @@ import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/su
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
 import { InMemoryFloorPlanRepository } from '../../../../../test/tables/support/in-memory-floor-plan.repository';
 import { InMemoryTableRepository } from '../../../../../test/tables/support/in-memory-table.repository';
+import { InMemoryFloorPlanAreaRepository } from '../../../../../test/tables/support/in-memory-floor-plan-area.repository';
 
 describe('ChangeTableStatusUseCase', () => {
   const fixedNow = new Date('2026-07-17T12:00:00.000Z');
@@ -97,9 +98,11 @@ describe('ChangeTableStatusUseCase', () => {
       }),
     );
 
+    const floorPlanAreaRepository = new InMemoryFloorPlanAreaRepository(tableRepository);
     const createUseCase = new CreateTableUseCase(
       tableRepository,
       floorPlanRepository,
+      floorPlanAreaRepository,
       branchRepository,
       restaurantRepository,
       new FixedClock(fixedNow),
@@ -111,6 +114,7 @@ describe('ChangeTableStatusUseCase', () => {
       restaurantId,
       branchId,
       floorPlanId,
+      floorPlanAreaId: null,
       tableNumber: 'T1',
       capacity: 4,
       floor: null,
@@ -120,6 +124,7 @@ describe('ChangeTableStatusUseCase', () => {
       height: null,
       rotation: null,
       shape: TableShape.Rectangle,
+      color: null,
       layer: null,
       indoor: true,
       vip: false,

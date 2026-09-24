@@ -11,6 +11,14 @@ export class TableResponseDto {
   @ApiProperty({ format: 'uuid' })
   floorPlanId!: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'ADR-040: the dining area (hall) inside this table’s floor plan, or null when the table sits on the layout itself. Always an area of floorPlanId - never of another plan.',
+  })
+  floorPlanAreaId!: string | null;
+
   @ApiProperty({ example: 'T1' })
   tableNumber!: string;
 
@@ -37,6 +45,14 @@ export class TableResponseDto {
 
   @ApiProperty({ enum: TableShape })
   shape!: TableShape;
+
+  @ApiPropertyOptional({
+    example: '#F97316',
+    nullable: true,
+    description:
+      'ADR-040: per-table presentation override (#RRGGBB, uppercase), or null to inherit the area’s color. Never resolved server-side - null is returned as null.',
+  })
+  color!: string | null;
 
   @ApiPropertyOptional({ example: 0, nullable: true })
   layer!: number | null;

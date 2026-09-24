@@ -2,6 +2,9 @@ import { UpdateTableUseCase } from './update-table.use-case';
 import { CreateTableUseCase } from './create-table.use-case';
 import { TableNotFoundException } from '../../domain/exceptions/table-not-found.exception';
 import { TableNumberAlreadyExistsException } from '../../domain/exceptions/table-number-already-exists.exception';
+import { FloorPlanAreaNotFoundException } from '../../domain/exceptions/floor-plan-area-not-found.exception';
+import { FloorPlanArea } from '../../domain/entities/floor-plan-area.entity';
+import { TableId } from '@shared/domain/value-objects/identifiers.vo';
 import { TableUpdatedEvent } from '../../domain/events/table.events';
 import { TableShape, TableStatus } from '../../domain/enums/table.enums';
 import { FloorPlan } from '../../domain/entities/floor-plan.entity';
@@ -18,6 +21,7 @@ import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/su
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
 import { InMemoryFloorPlanRepository } from '../../../../../test/tables/support/in-memory-floor-plan.repository';
 import { InMemoryTableRepository } from '../../../../../test/tables/support/in-memory-table.repository';
+import { InMemoryFloorPlanAreaRepository } from '../../../../../test/tables/support/in-memory-floor-plan-area.repository';
 
 describe('UpdateTableUseCase', () => {
   const fixedNow = new Date('2026-07-17T12:00:00.000Z');
@@ -95,9 +99,11 @@ describe('UpdateTableUseCase', () => {
       }),
     );
 
+    const floorPlanAreaRepository = new InMemoryFloorPlanAreaRepository(tableRepository);
     const createUseCase = new CreateTableUseCase(
       tableRepository,
       floorPlanRepository,
+      floorPlanAreaRepository,
       branchRepository,
       restaurantRepository,
       new FixedClock(fixedNow),
@@ -114,6 +120,7 @@ describe('UpdateTableUseCase', () => {
       restaurantId,
       branchId,
       floorPlanId,
+      floorPlanAreaId: null,
       tableNumber: 'T1',
       capacity: 4,
       floor: 1,
@@ -123,6 +130,7 @@ describe('UpdateTableUseCase', () => {
       height: null,
       rotation: null,
       shape: TableShape.Rectangle,
+      color: null,
       layer: null,
       indoor: true,
       vip: false,
@@ -133,6 +141,7 @@ describe('UpdateTableUseCase', () => {
       restaurantId,
       branchId,
       floorPlanId,
+      floorPlanAreaId: null,
       tableNumber: 'T2',
       capacity: 2,
       floor: 1,
@@ -142,6 +151,7 @@ describe('UpdateTableUseCase', () => {
       height: null,
       rotation: null,
       shape: TableShape.Round,
+      color: null,
       layer: null,
       indoor: true,
       vip: false,
@@ -151,6 +161,7 @@ describe('UpdateTableUseCase', () => {
     const eventPublisher = new CollectingEventPublisher();
     const useCase = new UpdateTableUseCase(
       tableRepository,
+      floorPlanAreaRepository,
       branchRepository,
       restaurantRepository,
       new FixedClock(fixedNow),
@@ -161,12 +172,13 @@ describe('UpdateTableUseCase', () => {
       ]),
       eventPublisher,
     );
-    return { useCase, tableRepository, eventPublisher };
+    return { useCase, tableRepository, floorPlanAreaRepository, eventPublisher };
   }
 
   const baseUpdate = {
     actor: baseActor(),
     tableId: table1Id,
+    floorPlanAreaId: null,
     tableNumber: 'T1',
     capacity: 6,
     floor: 2,
@@ -176,6 +188,7 @@ describe('UpdateTableUseCase', () => {
     height: 50,
     rotation: 90,
     shape: TableShape.Round,
+    color: null,
     layer: 1,
     indoor: false,
     vip: true,
@@ -228,5 +241,76 @@ describe('UpdateTableUseCase', () => {
 
     expect(eventPublisher.events).toHaveLength(1);
     expect(eventPublisher.events[0]).toBeInstanceOf(TableUpdatedEvent);
+  });
+
+  // --- ADR-040: drag-to-save writes area + color alongside the layout fields --
+
+  describe('floorPlanAreaId / color (ADR-040)', () => {
+    const areaId = '77777777-7777-4777-8777-777777777777';
+
+    async function seedArea(context: Awaited<ReturnType<typeof build>>, floorPlanIdOfArea: string) {
+      await context.floorPlanAreaRepository.save(
+        FloorPlanArea.create({
+          id: areaId,
+          floorPlanId: floorPlanIdOfArea,
+          name: 'Main Hall',
+          color: '#14B8A6',
+          sortOrder: 0,
+          createdAt: fixedNow,
+          updatedAt: fixedNow,
+          deletedAt: null,
+        }),
+      );
+    }
+
+    it('assigns an area of the table’s own floor plan and persists the layout fields with it', async () => {
+      const context = await build();
+      const table = await context.tableRepository.findById(TableId.create(table1Id));
+      await seedArea(context, table!.floorPlanId.value);
+
+      const result = await context.useCase.execute({
+        ...baseUpdate,
+        floorPlanAreaId: areaId,
+        positionX: 12.5,
+        positionY: 34.5,
+        rotation: 45,
+        color: '#f97316',
+      });
+
+      expect(result.floorPlanAreaId).toBe(areaId);
+      expect(result.positionX).toBe(12.5);
+      expect(result.positionY).toBe(34.5);
+      expect(result.rotation).toBe(45);
+      expect(result.color).toBe('#F97316');
+    });
+
+    it('clears the assignment when null is sent (full-replace semantics)', async () => {
+      const context = await build();
+      const table = await context.tableRepository.findById(TableId.create(table1Id));
+      await seedArea(context, table!.floorPlanId.value);
+      await context.useCase.execute({ ...baseUpdate, floorPlanAreaId: areaId });
+
+      const result = await context.useCase.execute({ ...baseUpdate, floorPlanAreaId: null });
+
+      expect(result.floorPlanAreaId).toBeNull();
+    });
+
+    it('rejects an area that belongs to another floor plan', async () => {
+      const context = await build();
+      await seedArea(context, '99999999-9999-4999-8999-999999999998');
+
+      await expect(
+        context.useCase.execute({ ...baseUpdate, floorPlanAreaId: areaId }),
+      ).rejects.toBeInstanceOf(FloorPlanAreaNotFoundException);
+    });
+
+    it('never changes the table’s floor plan - that is Move Table’s job alone', async () => {
+      const context = await build();
+      const before = await context.tableRepository.findById(TableId.create(table1Id));
+
+      const result = await context.useCase.execute(baseUpdate);
+
+      expect(result.floorPlanId).toBe(before!.floorPlanId.value);
+    });
   });
 });

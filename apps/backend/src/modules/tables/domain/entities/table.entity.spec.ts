@@ -16,6 +16,7 @@ describe('Table entity', () => {
       id: '11111111-1111-4111-8111-111111111111',
       branchId: '22222222-2222-4222-8222-222222222222',
       floorPlanId: '33333333-3333-4333-8333-333333333333',
+      floorPlanAreaId: null,
       tableNumber: 'T1',
       capacity: 4,
       floor: null,
@@ -25,6 +26,7 @@ describe('Table entity', () => {
       height: null,
       rotation: null,
       shape: TableShape.Rectangle,
+      color: null,
       layer: null,
       indoor: true,
       vip: false,
@@ -51,6 +53,7 @@ describe('Table entity', () => {
       id: '11111111-1111-4111-8111-111111111111',
       branchId: '22222222-2222-4222-8222-222222222222',
       floorPlanId: '33333333-3333-4333-8333-333333333333',
+      floorPlanAreaId: null,
       tableNumber: 'T1',
       capacity: 4,
       floor: null,
@@ -60,6 +63,7 @@ describe('Table entity', () => {
       height: null,
       rotation: null,
       shape: TableShape.Rectangle,
+      color: null,
       layer: null,
       indoor: true,
       vip: false,
@@ -252,21 +256,21 @@ describe('Table entity', () => {
   describe('moveToFloorPlan() rejects a table that is part of an active merge group (ADR-026 decision #11/#13)', () => {
     it('throws InvalidTableException for a Primary', () => {
       const primary = mergedTable(TableStatus.Available, { isMergePrimary: true });
-      expect(() => primary.moveToFloorPlan('44444444-4444-4444-8444-444444444444', later)).toThrow(
-        InvalidTableException,
-      );
+      expect(() =>
+        primary.moveToFloorPlan('44444444-4444-4444-8444-444444444444', null, later),
+      ).toThrow(InvalidTableException);
     });
 
     it('throws InvalidTableException for a Secondary', () => {
       const secondary = mergedTable(TableStatus.Merged, { isMergePrimary: false });
       expect(() =>
-        secondary.moveToFloorPlan('44444444-4444-4444-8444-444444444444', later),
+        secondary.moveToFloorPlan('44444444-4444-4444-8444-444444444444', null, later),
       ).toThrow(InvalidTableException);
     });
 
     it('still allows moving an ordinary (non-merged) table', () => {
       const table = baseTable(TableStatus.Available);
-      const moved = table.moveToFloorPlan('44444444-4444-4444-8444-444444444444', later);
+      const moved = table.moveToFloorPlan('44444444-4444-4444-8444-444444444444', null, later);
       expect(moved.floorPlanId.value).toBe('44444444-4444-4444-8444-444444444444');
     });
   });

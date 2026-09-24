@@ -12,6 +12,16 @@ export class InMemoryTableRepository implements TableRepository {
   private readonly rows = new Map<string, Table>();
   public readonly acquiredLockKeys: string[] = [];
 
+  /**
+   * ADR-040 - every stored row, soft-deleted included. Exists so
+   * `InMemoryFloorPlanAreaRepository.countAssignedTables` can answer the area
+   * deletion guard from the SAME store the table repository serves, instead of
+   * keeping a second copy the two could disagree about.
+   */
+  all(): Table[] {
+    return [...this.rows.values()];
+  }
+
   async findById(id: TableId): Promise<Table | null> {
     const table = this.rows.get(id.value);
     if (!table || table.isSoftDeleted()) {
@@ -44,9 +54,15 @@ export class InMemoryTableRepository implements TableRepository {
     floorPlanId: FloorPlanId,
     page: number,
     limit: number,
+    floorPlanAreaId?: string,
   ): Promise<TableListPage> {
     const active = [...this.rows.values()]
-      .filter((row) => row.floorPlanId.value === floorPlanId.value && !row.isSoftDeleted())
+      .filter(
+        (row) =>
+          row.floorPlanId.value === floorPlanId.value &&
+          !row.isSoftDeleted() &&
+          (floorPlanAreaId === undefined || row.floorPlanAreaId === floorPlanAreaId),
+      )
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     const start = (page - 1) * limit;
     return { items: active.slice(start, start + limit), total: active.length };

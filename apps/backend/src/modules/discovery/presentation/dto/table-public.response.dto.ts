@@ -15,6 +15,12 @@ import { TableShape } from '@modules/tables/domain/enums/table.enums';
  * D8, and would leak real-time occupancy publicly with no browsing purpose),
  * `branchId` (redundant with the URL/parent FloorPlan), `createdAt`/
  * `updatedAt` (internal audit metadata, no customer value).
+ *
+ * ADR-040 adds `floorPlanAreaId` and `color` - both pure presentation metadata,
+ * exactly like the `shape`/position/dimension fields already here, and both
+ * required for a customer-facing seating chart to render the same grouping the
+ * staff editor shows. Neither exposes operational state: the area is a static
+ * part of the layout, not a live status.
  */
 export class TablePublicResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -22,6 +28,14 @@ export class TablePublicResponseDto {
 
   @ApiProperty({ format: 'uuid' })
   floorPlanId!: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'ADR-040: the dining area of this floor plan the table sits in, or null when it sits on the layout itself. Always one of the ids in the accompanying `areas` list.',
+  })
+  floorPlanAreaId!: string | null;
 
   @ApiProperty({ example: 'T1' })
   tableNumber!: string;
@@ -31,6 +45,14 @@ export class TablePublicResponseDto {
 
   @ApiProperty({ enum: TableShape })
   shape!: TableShape;
+
+  @ApiPropertyOptional({
+    example: '#F97316',
+    nullable: true,
+    description:
+      'ADR-040: per-table color override (#RRGGBB), or null to inherit the color of its area. Presentation metadata only - it carries no operational meaning.',
+  })
+  color!: string | null;
 
   @ApiPropertyOptional({ example: 1, nullable: true })
   floor!: number | null;

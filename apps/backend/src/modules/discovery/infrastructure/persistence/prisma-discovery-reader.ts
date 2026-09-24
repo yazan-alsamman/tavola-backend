@@ -5,6 +5,7 @@ import { RestaurantStatus } from '@modules/restaurants/domain/enums/restaurant.e
 import { RestaurantResult } from '@modules/restaurants/application/dto/restaurant.result';
 import { BranchResult } from '@modules/branches/application/dto/branch.result';
 import { FloorPlanResult } from '@modules/tables/application/dto/floor-plan.result';
+import { FloorPlanAreaResult } from '@modules/tables/application/dto/floor-plan-area.result';
 import { TableResult } from '@modules/tables/application/dto/table.result';
 import { TableShape, TableStatus } from '@modules/tables/domain/enums/table.enums';
 import { computeBoundingBox } from '../../domain/services/nearby-search-geo.util';
@@ -158,6 +159,17 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
       where: { branchId, isActive: true, deletedAt: null },
     });
     return row ? this.toFloorPlanResult(row) : null;
+  }
+
+  async listFloorPlanAreasByFloorPlanId(floorPlanId: string): Promise<FloorPlanAreaResult[]> {
+    const rows = await this.prisma.floorPlanArea.findMany({
+      where: { floorPlanId, deletedAt: null },
+      // Same ordering as `PrismaFloorPlanAreaRepository.findManyByFloorPlanId`
+      // so the public seating chart and the staff editor never disagree about
+      // tab order.
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+    return rows.map((row) => this.toFloorPlanAreaResult(row));
   }
 
   async listTablesByFloorPlanId(floorPlanId: string): Promise<TableResult[]> {
@@ -408,10 +420,31 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
     };
   }
 
+  private toFloorPlanAreaResult(row: {
+    id: string;
+    floorPlanId: string;
+    name: string;
+    color: string;
+    sortOrder: number;
+    createdAt: Date;
+    updatedAt: Date;
+  }): FloorPlanAreaResult {
+    return {
+      floorPlanAreaId: row.id,
+      floorPlanId: row.floorPlanId,
+      name: row.name,
+      color: row.color,
+      sortOrder: row.sortOrder,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
   private toTableResult(row: {
     id: string;
     branchId: string;
     floorPlanId: string;
+    floorPlanAreaId: string | null;
     tableNumber: string;
     capacity: number;
     floor: number | null;
@@ -421,6 +454,7 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
     height: number | null;
     rotation: number | null;
     shape: string;
+    color: string | null;
     layer: number | null;
     indoor: boolean;
     vip: boolean;
@@ -435,6 +469,7 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
       tableId: row.id,
       branchId: row.branchId,
       floorPlanId: row.floorPlanId,
+      floorPlanAreaId: row.floorPlanAreaId,
       tableNumber: row.tableNumber,
       capacity: row.capacity,
       floor: row.floor,
@@ -444,6 +479,7 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
       height: row.height,
       rotation: row.rotation,
       shape: row.shape as TableShape,
+      color: row.color,
       layer: row.layer,
       indoor: row.indoor,
       vip: row.vip,

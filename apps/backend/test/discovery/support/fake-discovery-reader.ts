@@ -2,6 +2,7 @@ import { RestaurantResult } from '@modules/restaurants/application/dto/restauran
 import { BranchResult } from '@modules/branches/application/dto/branch.result';
 import { FloorPlanResult } from '@modules/tables/application/dto/floor-plan.result';
 import { TableResult } from '@modules/tables/application/dto/table.result';
+import { FloorPlanAreaResult } from '@modules/tables/application/dto/floor-plan-area.result';
 import { calculateHaversineDistanceKm } from '@modules/discovery/domain/services/nearby-search-geo.util';
 import {
   DiscoverableRestaurantFilters,
@@ -28,6 +29,7 @@ export class FakeDiscoveryReader implements DiscoveryReaderPort {
   restaurants: RestaurantResult[] = [];
   branches: BranchResult[] = [];
   floorPlans: FloorPlanResult[] = [];
+  floorPlanAreas: FloorPlanAreaResult[] = [];
   tables: TableResult[] = [];
   /** Test-only: restaurantId -> assigned CuisineCategory ids. */
   restaurantCuisineCategoryIds = new Map<string, string[]>();
@@ -121,6 +123,17 @@ export class FakeDiscoveryReader implements DiscoveryReaderPort {
 
   async getActiveFloorPlanByBranchId(branchId: string): Promise<FloorPlanResult | null> {
     return this.floorPlans.find((f) => f.branchId === branchId && f.isActive) ?? null;
+  }
+
+  /**
+   * ADR-040 - mirrors `PrismaDiscoveryReader`'s own ordering (`sortOrder` then
+   * `createdAt`, both ascending) rather than returning seed order, so a test
+   * that asserts tab order proves the same thing the real reader guarantees.
+   */
+  async listFloorPlanAreasByFloorPlanId(floorPlanId: string): Promise<FloorPlanAreaResult[]> {
+    return this.floorPlanAreas
+      .filter((a) => a.floorPlanId === floorPlanId)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.getTime() - b.createdAt.getTime());
   }
 
   async listTablesByFloorPlanId(floorPlanId: string): Promise<TableResult[]> {

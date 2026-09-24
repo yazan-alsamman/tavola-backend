@@ -154,6 +154,7 @@ describe('WaitlistPromotionService concurrency (real Postgres, real advisory loc
       data: {
         branchId: branch.id,
         floorPlanId: floorPlan.id,
+        floorPlanAreaId: null,
         tableNumber: 'T1',
         capacity: tableCapacity,
       },

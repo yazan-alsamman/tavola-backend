@@ -22,10 +22,18 @@ export interface TableRepository {
   findById(id: TableId): Promise<Table | null>;
   findByIdAndBranchId(id: TableId, branchId: BranchId): Promise<Table | null>;
   findManyByBranchId(branchId: BranchId, page: number, limit: number): Promise<TableListPage>;
+  /**
+   * ADR-040 - `floorPlanAreaId` is an optional narrowing filter on the same
+   * FloorPlan-scoped page: `undefined` returns every table of the plan (in any
+   * area or none), a concrete id returns only that area's tables. It is never
+   * a tenant boundary - the caller has already verified that the area belongs
+   * to `floorPlanId` - so implementations may treat it as a plain predicate.
+   */
   findManyByFloorPlanId(
     floorPlanId: FloorPlanId,
     page: number,
     limit: number,
+    floorPlanAreaId?: string,
   ): Promise<TableListPage>;
   /**
    * Phase 7.1 (Reservation Core, Search Availability) - every non-soft-deleted

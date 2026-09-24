@@ -108,6 +108,7 @@ describe('Phase 7.2 Approval Workflow - PrismaReservationRepository + PrismaTabl
       data: {
         branchId: branch.id,
         floorPlanId: floorPlan.id,
+        floorPlanAreaId: null,
         tableNumber: 'T1',
         capacity: 4,
       },

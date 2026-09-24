@@ -12,6 +12,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { TableShape } from '@modules/tables/domain/enums/table.enums';
+import { IsHexColor6 } from '../decorators/is-hex-color.decorator';
 
 export class CreateTableRequestDto {
   @ApiProperty({
@@ -20,6 +21,16 @@ export class CreateTableRequestDto {
   })
   @IsUUID()
   floorPlanId!: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'ADR-040 - the dining area (hall) inside this floor plan the table is placed in. Must be a live area of THAT SAME floor plan; null (or omitted) places the table on the layout itself, in no named area.',
+  })
+  @IsOptional()
+  @IsUUID()
+  floorPlanAreaId?: string | null;
 
   @ApiProperty({ example: 'T1' })
   @IsString()
@@ -71,6 +82,17 @@ export class CreateTableRequestDto {
   @IsOptional()
   @IsEnum(TableShape)
   shape?: TableShape;
+
+  @ApiPropertyOptional({
+    example: '#F97316',
+    nullable: true,
+    description:
+      "ADR-040 - per-table presentation override, exactly #RRGGBB (stored uppercase). null (or omitted) means the table inherits its area's color; it does not mean the table has no color.",
+  })
+  @IsOptional()
+  @IsString()
+  @IsHexColor6()
+  color?: string | null;
 
   @ApiPropertyOptional({ example: 0, nullable: true })
   @IsOptional()

@@ -88,6 +88,7 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
       data: {
         branchId: branch.id,
         floorPlanId: floorPlan.id,
+        floorPlanAreaId: null,
         tableNumber: 'T1',
         capacity: 4,
       },

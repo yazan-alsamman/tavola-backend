@@ -1,6 +1,7 @@
 import { RestaurantResult } from '@modules/restaurants/application/dto/restaurant.result';
 import { BranchResult } from '@modules/branches/application/dto/branch.result';
 import { FloorPlanResult } from '@modules/tables/application/dto/floor-plan.result';
+import { FloorPlanAreaResult } from '@modules/tables/application/dto/floor-plan-area.result';
 import { TableResult } from '@modules/tables/application/dto/table.result';
 
 export interface DiscoveryListPage<T> {
@@ -110,6 +111,14 @@ export interface DiscoveryReaderPort {
 
   /** Returns `null` if the branch has no active, non-soft-deleted FloorPlan. */
   getActiveFloorPlanByBranchId(branchId: string): Promise<FloorPlanResult | null>;
+
+  /**
+   * ADR-040 - the concurrent dining areas (halls) of one layout, ordered by
+   * `sortOrder` then `createdAt` ascending, excluding soft-deleted rows; the
+   * same order the staff editor uses, so both surfaces present the same tabs in
+   * the same sequence. An empty array is a valid layout, not a missing one.
+   */
+  listFloorPlanAreasByFloorPlanId(floorPlanId: string): Promise<FloorPlanAreaResult[]>;
 
   /** Ordered by `tableNumber` ascending; excludes soft-deleted tables. */
   listTablesByFloorPlanId(floorPlanId: string): Promise<TableResult[]>;

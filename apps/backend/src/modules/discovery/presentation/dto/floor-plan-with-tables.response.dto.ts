@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { FloorPlanPublicResponseDto } from './floor-plan-public.response.dto';
+import { FloorPlanAreaPublicResponseDto } from './floor-plan-area-public.response.dto';
 import { TablePublicResponseDto } from './table-public.response.dto';
 
 /**
@@ -13,6 +14,13 @@ import { TablePublicResponseDto } from './table-public.response.dto';
 export class FloorPlanWithTablesResponseDto {
   @ApiProperty({ type: FloorPlanPublicResponseDto })
   floorPlan!: FloorPlanPublicResponseDto;
+
+  @ApiProperty({
+    type: [FloorPlanAreaPublicResponseDto],
+    description:
+      'ADR-040: the concurrent dining areas (halls) of this layout, ordered for presentation. Empty when the branch has not divided its layout into named areas - every table then sits on the layout itself and carries floorPlanAreaId: null.',
+  })
+  areas!: FloorPlanAreaPublicResponseDto[];
 
   @ApiProperty({ type: [TablePublicResponseDto] })
   tables!: TablePublicResponseDto[];

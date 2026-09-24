@@ -90,6 +90,7 @@ describe('Table round-trip via PrismaTableRepository (integration)', () => {
       id: randomUUID(),
       branchId,
       floorPlanId,
+      floorPlanAreaId: null,
       tableNumber: overrides.tableNumber ?? 'T1',
       capacity: overrides.capacity ?? 4,
       floor: 1,
@@ -99,6 +100,7 @@ describe('Table round-trip via PrismaTableRepository (integration)', () => {
       height: 100,
       rotation: 0,
       shape: TableShape.Rectangle,
+      color: null,
       layer: 0,
       indoor: true,
       vip: false,
@@ -138,7 +140,7 @@ describe('Table round-trip via PrismaTableRepository (integration)', () => {
     const table = buildTable(branchId, floorPlanId);
     await repository.save(table);
 
-    const moved = table.moveToFloorPlan(otherFloorPlan.id, new Date());
+    const moved = table.moveToFloorPlan(otherFloorPlan.id, null, new Date());
     await repository.save(moved);
 
     const found = await repository.findByIdAndBranchId(table.tableId, BranchId.create(branchId));

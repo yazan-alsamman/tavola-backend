@@ -4,6 +4,7 @@ export interface TableResult {
   tableId: string;
   branchId: string;
   floorPlanId: string;
+  floorPlanAreaId: string | null;
   tableNumber: string;
   capacity: number;
   floor: number | null;
@@ -13,6 +14,7 @@ export interface TableResult {
   height: number | null;
   rotation: number | null;
   shape: TableShape;
+  color: string | null;
   layer: number | null;
   indoor: boolean;
   vip: boolean;

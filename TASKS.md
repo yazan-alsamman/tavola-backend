@@ -6611,3 +6611,56 @@ Running the Postman collection against a **running backend** (not just inspectin
 **Live verification performed against the rebuilt production container image** (`docker compose build backend`, force-recreated, healthy, zero boot errors, `database`/`redis`/`minio` all `up`): login returns all seven fields including `refreshToken`; `/me`, `/accounts`, `/notifications`, `/restaurants`, `/organizations` and `/refresh` all 200. The full session lifecycle was exercised end to end over HTTP: login → refresh rotates the token → replaying the consumed token returns `401 AUTH_INVALID_REFRESH_TOKEN` **and revokes the rotated token too** (whole-admin revocation) → logout 204 → refresh after logout 401 → repeat logout still 204. Invalid credentials return `401 AUTH_INVALID_CREDENTIALS`, including for a wrong password that fails the creation policy; unauthenticated requests return 401.
 
 **Note on the first production image build:** it failed on a network timeout fetching the `prisma`/`@prisma/client` tarballs (819 of 820 packages had downloaded). A plain retry succeeded with no code or Dockerfile change. Recorded because the failure is transient/environmental, not a defect in the build definition.
+# Phase 6 — Floor Plan Areas: Concurrent Dining Areas Inside One Layout (ADR-040, 2026-09-24)
+
+An extension of the existing Table Module (Phase 6.1/6.2), not a new phase: `FloorPlanArea` is a child of `FloorPlan`, which `TablesModule` already owns (Phase 6.1 decision #1). Read before writing anything: `PRODUCT_REQUIREMENTS.md`, `ARCHITECTURE.md`, `ARCHITECTURE_LOCK.md`, `DOMAIN_MODEL.md`, `DATABASE_SCHEMA.md`, `API_GUIDELINES.md`, `CODING_STANDARDS.md`, `EVENTS.md`, `DECISIONS.md`, `CHANGE_POLICY.md`, `MIGRATION_POLICY.md`, `AUTHORIZATION_ARCHITECTURE.md`, `AUTHENTICATION_ARCHITECTURE.md`, `TENANCY.md`, `TESTING_STRATEGY.md`, and the whole existing `src/modules/tables` tree.
+
+## Why this was treated as Architectural
+
+The floor editor splits one branch layout into several **concurrent** halls ("الصالة الرئيسية", "للضيوف"), each coloured, with tables placed inside them. `FloorPlan` means the opposite axis — alternate layouts over time, at most one active per branch — so there was nowhere to put this without either overloading `FloorPlan.isActive` or fragmenting `Table.floorPlanId`. Per `CHANGE_POLICY.md` ("when in doubt, treat the change as Architectural"), **ADR-040** was written first and the docs synced from it.
+
+## Scope implemented
+
+`FloorPlanArea`: Create, List (unpaginated, tab order), Get by id, Update (full replace), Soft Delete (guarded). `Table`: nullable `floorPlanAreaId` + optional `color` on Create/Update/Move, an optional `floorPlanAreaId` filter on the floor-plan-scoped table list, and area reconciliation on Move. Discovery: the public floor-plan projection gained `areas` plus per-table `floorPlanAreaId`/`color`. The FloorPlan "one active layout per branch" invariant, `TableShape`'s value set, availability search, and Merge/Split are all untouched.
+
+## Architecture compliance
+
+All eleven ADR-040 decisions implemented as written, each referenced by number in the code that enforces it. No new permission slug (decision #11 follows ADR-026 decision #12's precedent), no new domain event class (decision #9 follows `floor_plan.created`'s precedent), no new documentation file.
+
+## Files created
+
+Prisma: migration `20260924120000_adr_040_floor_plan_areas`.
+
+Domain (`src/modules/tables/domain/`): `value-objects/hex-color.vo.ts` (+ spec), `entities/floor-plan-area.entity.ts` (+ spec), `repositories/floor-plan-area.repository.ts`, and four exceptions (`floor-plan-area-not-found`, `floor-plan-area-name-already-exists`, `floor-plan-area-in-use`, `invalid-floor-plan-area`, `invalid-hex-color`).
+
+Application: 5 command DTOs, 2 result DTOs, `mappers/floor-plan-area-result.mapper.ts`, `services/resolve-floor-plan-scope.ts` (the shared Restaurant → Branch → FloorPlan tenant gate the five area use cases share instead of copying it five times), `services/resolve-floor-plan-area.ts` (the single place all three Table write paths turn a requested area id into a value the entity may accept), and 5 use cases + 5 matching `.spec.ts`.
+
+Infrastructure: `floor-plan-area.prisma-mapper.ts`, `prisma-floor-plan-area.repository.ts`.
+
+Presentation: 4 request/response DTOs, `decorators/is-hex-color.decorator.ts`, `controllers/floor-plan-areas.controller.ts`.
+
+Tests: `test/tables/support/in-memory-floor-plan-area.repository.ts`, `test/tables/support/floor-plan-area-world.ts`, `test/tables/prisma-floor-plan-area.integration-spec.ts`, `test/tables/floor-plan-areas.e2e-spec.ts`.
+
+## Files modified
+
+`prisma/schema.prisma`; `src/shared/domain/value-objects/identifiers.vo.ts` (`FloorPlanAreaId`); the `Table` entity, its Prisma mapper, `TableRepository`/`PrismaTableRepository` (area filter on `findManyByFloorPlanId`), the Create/Update/Move/List-by-floor-plan use cases and their commands/results/DTOs/controllers; `tables.module.ts`; the Discovery reader port, Prisma reader, caching reader, floor-plan use case, public DTOs and response mapper; and the test doubles (`InMemoryTableRepository` gained an `all()` accessor so the area deletion guard reads the same store the table repository serves, `FakeDiscoveryReader` gained the areas list).
+
+## Database changes
+
+Migration `20260924120000_adr_040_floor_plan_areas` — purely additive, Tier 1 rollback, no downtime, **no backfill** (`MIGRATION_POLICY.md` forbids business-data writes in a migration; every existing table row keeps `floor_plan_area_id = NULL`, the documented "no named area" state). Creates `floor_plan_areas`; adds the nullable `floor_plan_area_id` and `color` columns to `tables`; adds two hand-written objects Prisma's DSL cannot express — the partial unique index `floor_plan_areas_floor_plan_id_name_key (WHERE deleted_at IS NULL)` and, deliberately composite, the foreign key `tables(floor_plan_id, floor_plan_area_id) -> floor_plan_areas(floor_plan_id, id) ON DELETE RESTRICT`, which makes a cross-plan area assignment structurally impossible while `MATCH SIMPLE` leaves an unassigned table unconstrained.
+
+## API changes
+
+- `POST`/`GET /api/v1/restaurants/:restaurantId/branches/:branchId/floor-plans/:floorPlanId/areas`
+- `GET`/`PATCH`/`DELETE /api/v1/restaurants/:restaurantId/branches/:branchId/floor-plans/:floorPlanId/areas/:areaId`
+- `GET .../floor-plans/:floorPlanId/tables` gains an optional `floorPlanAreaId` filter
+- `POST`/`PATCH` table bodies gain `floorPlanAreaId` + `color`; `POST /tables/:tableId/move` gains `targetFloorPlanAreaId`
+- `GET /api/v1/discovery/restaurants/:restaurantId/branches/:branchId/floor-plan` gains `areas`, and each table gains `floorPlanAreaId`/`color`
+
+Every change is additive — no existing field was removed, renamed or made mandatory — so `/api/v1` is unchanged and no expand-contract was required.
+
+## Verification performed
+
+`tsc --noEmit` and `tsc -p tsconfig.eslint.json --noEmit` (src **and** test) clean; ESLint clean at `--max-warnings 0` across the touched modules and tests. Unit suite: **2,347 passed / 2,359** (84 new tests), with the same 12 pre-existing `DeviceSession.status` failures documented in the Phase 19.10 audit above and no others — every `tables`/`discovery` suite green (270 tests across 33 suites). `verify-postman-coverage.ts`: **238/238 routes, 100.00%, exact coverage**, after adding the Floor Plan Areas folder and the `floorPlanAreaId`/`floorPlanAreaColor`/`tableColor` variables.
+
+**Not executed — Docker was unavailable in this session, so no PostgreSQL was reachable:** `prisma migrate deploy` (the migration SQL was instead generated from `prisma migrate diff --from-empty --to-schema-datamodel` and hand-assembled, and `prisma validate` + `prisma generate` both pass against the datamodel), the new `prisma-floor-plan-area.integration-spec.ts` (which is what proves the partial unique index and the composite FK against real SQL), the new `floor-plan-areas.e2e-spec.ts`, and `verify-postman-live.ts`. All four skip cleanly when the database is unreachable. **Before merge, run the migration and those three suites against a live database** — the composite FK and partial index are the two guarantees that exist only in hand-written SQL and therefore have no other proof.

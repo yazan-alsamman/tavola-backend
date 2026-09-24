@@ -1,6 +1,7 @@
 import { Entity } from '@shared/domain/base/entity.base';
 import { BranchId, FloorPlanId, TableId } from '@shared/domain/value-objects/identifiers.vo';
 import { TableShape, TableStatus } from '../enums/table.enums';
+import { HexColor } from '../value-objects/hex-color.vo';
 import { InvalidTableException } from '../exceptions/invalid-table.exception';
 import { InvalidTableStatusTransitionException } from '../exceptions/invalid-table-status-transition.exception';
 import { TableMergeConflictException } from '../exceptions/table-merge-conflict.exception';
@@ -10,6 +11,7 @@ export interface TableProps {
   id: string;
   branchId: string;
   floorPlanId: string;
+  floorPlanAreaId: string | null;
   tableNumber: string;
   capacity: number;
   floor: number | null;
@@ -19,6 +21,7 @@ export interface TableProps {
   height: number | null;
   rotation: number | null;
   shape: TableShape;
+  color: string | null;
   layer: number | null;
   indoor: boolean;
   vip: boolean;
@@ -44,6 +47,18 @@ export interface TableProps {
  * `updateProfile` never touches either. `Create Table` always produces
  * `mergeGroupId = null`/`isMergePrimary = false` (enforced here in `create`,
  * not merely by caller convention).
+ *
+ * `floorPlanAreaId` (ADR-040) is the concurrent dining area (hall) this table
+ * sits in WITHIN its FloorPlan, or `null` for "placed on the layout itself, in
+ * no named area". The entity cannot verify that the referenced Area belongs to
+ * this table's own FloorPlan - that needs a repository - so every caller is
+ * responsible for resolving the Area through
+ * `FloorPlanAreaRepository.findByIdAndFloorPlanId` first
+ * (`resolveFloorPlanAreaId` does exactly that for all three write paths);
+ * the composite foreign key documented in `schema.prisma` is the structural
+ * backstop. `color` is the optional per-table `#RRGGBB` override: `null` means
+ * "inherit the Area's color", never "no color" - the client resolves that
+ * fallback, and this entity never materializes an inherited value.
  */
 export class Table extends Entity<TableProps> {
   private constructor(props: TableProps) {
@@ -52,7 +67,12 @@ export class Table extends Entity<TableProps> {
 
   static create(props: TableProps): Table {
     validate(props);
-    return new Table({ ...props, mergeGroupId: null, isMergePrimary: false });
+    return new Table({
+      ...props,
+      color: HexColor.createNullable(props.color)?.value ?? null,
+      mergeGroupId: null,
+      isMergePrimary: false,
+    });
   }
 
   static reconstitute(props: TableProps): Table {
@@ -69,6 +89,16 @@ export class Table extends Entity<TableProps> {
 
   get floorPlanId(): FloorPlanId {
     return FloorPlanId.create(this.props.floorPlanId);
+  }
+
+  /**
+   * ADR-040 - the Area (hall) inside this table's FloorPlan, or `null` when the
+   * table is placed on the layout itself. Returned as a raw string rather than
+   * a `FloorPlanAreaId` because the nullable case has no value object to
+   * construct; callers that need one build it from this value.
+   */
+  get floorPlanAreaId(): string | null {
+    return this.props.floorPlanAreaId;
   }
 
   get tableNumber(): string {
@@ -105,6 +135,14 @@ export class Table extends Entity<TableProps> {
 
   get shape(): TableShape {
     return this.props.shape;
+  }
+
+  /**
+   * ADR-040 - normalized `#RRGGBB` presentation override, or `null` to inherit
+   * the Area's color.
+   */
+  get color(): string | null {
+    return this.props.color;
   }
 
   get layer(): number | null {
@@ -168,11 +206,19 @@ export class Table extends Entity<TableProps> {
    * decision), or `mergeGroupId`/`isMergePrimary` (exclusively
    * `asMergePrimary`/`asMergeSecondary`/`clearMergeMembership`'s
    * responsibility - Phase 6 Merge/Split, ADR-026).
+   *
+   * ADR-040 adds `floorPlanAreaId` and `color` to the replaced set: both are
+   * attributes of the table's placement within its own FloorPlan, which is
+   * exactly what this method owns. `floorPlanAreaId` here can only ever name an
+   * Area of the table's CURRENT FloorPlan (the caller resolves it against
+   * `this.floorPlanId`); reassigning the FloorPlan itself remains exclusively
+   * `moveToFloorPlan`'s responsibility.
    */
   updateProfile(
     props: {
       tableNumber: string;
       capacity: number;
+      floorPlanAreaId: string | null;
       floor: number | null;
       positionX: number | null;
       positionY: number | null;
@@ -180,6 +226,7 @@ export class Table extends Entity<TableProps> {
       height: number | null;
       rotation: number | null;
       shape: TableShape;
+      color: string | null;
       layer: number | null;
       indoor: boolean;
       vip: boolean;
@@ -192,6 +239,7 @@ export class Table extends Entity<TableProps> {
       ...this.props,
       tableNumber: props.tableNumber,
       capacity: props.capacity,
+      floorPlanAreaId: props.floorPlanAreaId,
       floor: props.floor,
       positionX: props.positionX,
       positionY: props.positionY,
@@ -199,6 +247,7 @@ export class Table extends Entity<TableProps> {
       height: props.height,
       rotation: props.rotation,
       shape: props.shape,
+      color: HexColor.createNullable(props.color)?.value ?? null,
       layer: props.layer,
       indoor: props.indoor,
       vip: props.vip,
@@ -217,12 +266,21 @@ export class Table extends Entity<TableProps> {
 
   /**
    * Move Table (Phase 6.2 architecture decision, TASKS.md) - a dedicated
-   * Domain Action, not a partial update. Changes ONLY `floorPlanId`; nothing
-   * else (`branchId`, `tableNumber`, `capacity`, `shape`,
+   * Domain Action, not a partial update. Changes ONLY `floorPlanId` and, as of
+   * ADR-040, the `floorPlanAreaId` that is meaningless without it; nothing else
+   * (`branchId`, `tableNumber`, `capacity`, `shape`, `color`,
    * position/rotation/dimensions, `status`, `mergeGroupId` are all
    * untouched). The caller (`MoveTableUseCase`) is responsible for verifying
    * the target FloorPlan exists, belongs to this Table's own branch, and is
    * not soft-deleted before calling this method.
+   *
+   * ADR-040 decision #8 - Area membership is never carried across a move: an
+   * Area belongs to exactly one FloorPlan, so the old membership cannot
+   * survive. `targetFloorPlanAreaId` is the Area IN THE TARGET PLAN the table
+   * lands in (resolved and verified by `MoveTableUseCase`), or `null` to land
+   * on the target layout itself. Silently keeping the previous value would
+   * leave a cross-plan reference that the composite foreign key would reject at
+   * the database anyway.
    *
    * Phase 6 (Merge/Split Tables, ADR-026 decision #11/#13) - a table
    * currently part of an active merge group can never be moved; Split
@@ -230,7 +288,7 @@ export class Table extends Entity<TableProps> {
    * dedicated `TableMergedOperationForbiddenException` for a clearer error;
    * this guard is the entity-level invariant of last resort.
    */
-  moveToFloorPlan(floorPlanId: string, at: Date): Table {
+  moveToFloorPlan(floorPlanId: string, targetFloorPlanAreaId: string | null, at: Date): Table {
     if (this.props.mergeGroupId !== null) {
       throw new InvalidTableException(
         'Cannot move a table that is part of an active merge group - split it first.',
@@ -239,6 +297,7 @@ export class Table extends Entity<TableProps> {
     return Table.reconstitute({
       ...this.props,
       floorPlanId,
+      floorPlanAreaId: targetFloorPlanAreaId,
       updatedAt: at,
     });
   }

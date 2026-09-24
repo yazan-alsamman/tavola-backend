@@ -65,7 +65,7 @@ export class TablesController {
     operationId: 'tablesCreate',
     summary: 'Create a table under a branch',
     description:
-      'Always created with status Available (Phase 6.1 architecture decision) - no request field controls status. tableNumber must be unique within the branch. floorPlanId must reference a floor plan already belonging to this branch.',
+      'Always created with status Available (Phase 6.1 architecture decision) - no request field controls status. tableNumber must be unique within the branch. floorPlanId must reference a floor plan already belonging to this branch. floorPlanAreaId (ADR-040), when supplied, must reference a live dining area of THAT floor plan - an area of any other plan is rejected as not found.',
   })
   @ApiParam({ name: 'restaurantId', format: 'uuid' })
   @ApiParam({ name: 'branchId', format: 'uuid' })
@@ -78,7 +78,7 @@ export class TablesController {
   @ApiErrorResponse(403, 'Caller is not an Owner/Admin organization member', ['FORBIDDEN'])
   @ApiErrorResponse(
     404,
-    'Restaurant not found, branch not found, or floor plan not found (or belongs to another branch)',
+    'Restaurant not found, branch not found, floor plan not found (or belongs to another branch), or floor plan area not found (or belongs to another floor plan)',
     ['NOT_FOUND'],
   )
   @ApiErrorResponse(409, 'tableNumber is already taken within this branch', ['CONFLICT'])
@@ -94,6 +94,7 @@ export class TablesController {
       restaurantId,
       branchId,
       floorPlanId: body.floorPlanId,
+      floorPlanAreaId: body.floorPlanAreaId ?? null,
       tableNumber: body.tableNumber,
       capacity: body.capacity,
       floor: body.floor ?? null,
@@ -103,6 +104,7 @@ export class TablesController {
       height: body.height ?? null,
       rotation: body.rotation ?? null,
       shape: body.shape ?? TableShape.Rectangle,
+      color: body.color ?? null,
       layer: body.layer ?? null,
       indoor: body.indoor ?? true,
       vip: body.vip ?? false,

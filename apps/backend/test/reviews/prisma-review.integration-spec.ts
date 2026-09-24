@@ -409,6 +409,7 @@ describe('Review/ReviewImage/RestaurantReply round-trip via Prisma repositories 
       data: {
         branchId: localBranch.id,
         floorPlanId: localFloorPlan.id,
+        floorPlanAreaId: null,
         tableNumber: 'T1',
         capacity: 4,
       },
@@ -528,6 +529,7 @@ describe('Review/ReviewImage/RestaurantReply round-trip via Prisma repositories 
           data: {
             branchId: localBranch.id,
             floorPlanId: localFloorPlan.id,
+            floorPlanAreaId: null,
             tableNumber: `T${index}`,
             capacity: 4,
           },
@@ -620,6 +622,7 @@ describe('Review/ReviewImage/RestaurantReply round-trip via Prisma repositories 
           data: {
             branchId: localBranch.id,
             floorPlanId: localFloorPlan.id,
+            floorPlanAreaId: null,
             tableNumber: `RT${index}`,
             capacity: 4,
           },

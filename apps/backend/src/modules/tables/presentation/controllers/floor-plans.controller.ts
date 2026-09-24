@@ -199,7 +199,7 @@ export class FloorPlansController {
     operationId: 'floorPlansListTables',
     summary: 'List tables belonging to one floor plan',
     description:
-      'FloorPlan-scoped Table read capability (TASKS.md Phase 6.1 decision #4) - FloorPlan is the owner of the table layout.',
+      'FloorPlan-scoped Table read capability (TASKS.md Phase 6.1 decision #4) - FloorPlan is the owner of the table layout. ADR-040: pass floorPlanAreaId to narrow the result to one dining area of this plan; omit it (or send it blank) for every table of the plan, in any area or none.',
   })
   @ApiParam({ name: 'restaurantId', format: 'uuid' })
   @ApiParam({ name: 'branchId', format: 'uuid' })
@@ -213,7 +213,7 @@ export class FloorPlansController {
   @ApiErrorResponse(403, 'Caller is not an Owner/Admin organization member', ['FORBIDDEN'])
   @ApiErrorResponse(
     404,
-    'Restaurant not found, branch not found, or floor plan not found (or belongs to another branch)',
+    'Restaurant not found, branch not found, floor plan not found (or belongs to another branch), or floor plan area not found (or belongs to another floor plan)',
     ['NOT_FOUND'],
   )
   async listTables(
@@ -228,6 +228,7 @@ export class FloorPlansController {
       restaurantId,
       branchId,
       floorPlanId,
+      floorPlanAreaId: query.floorPlanAreaId,
       page: query.page ?? 1,
       limit: query.limit ?? 20,
     });
