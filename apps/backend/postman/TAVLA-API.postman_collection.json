@@ -5322,6 +5322,56 @@
               ]
             },
             {
+              "name": "Upload Restaurant Cover",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/cover",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["restaurants", "{{restaurantId}}", "cover"]
+                },
+                "description": "## Purpose\nUpload the image the customer app shows as the restaurant cover.\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\n## Body\nMultipart field `file` (JPEG/PNG/WebP).\n## Behavior\nStores the object in the public bucket and sets `Restaurant.coverImageId`. Replaces any previous cover and deletes the previous object. Gallery upload does not set this field. Discovery signs `coverImageUrl` from the stored id.\n## Success Response\n201 `{ coverImageId, coverImageUrl }` where `coverImageUrl` is a short-lived signed URL.\n## Notes\n- Full path: `/api/v1/restaurants/:id/cover`",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": [],
+                      "description": "Cover image (jpeg/png/webp). This becomes coverImageId, not a gallery item."
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Upload Restaurant Logo",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/logo",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["restaurants", "{{restaurantId}}", "logo"]
+                },
+                "description": "## Purpose\nUpload the restaurant logo.\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\n## Body\nMultipart field `file` (JPEG/PNG/WebP).\n## Behavior\nSets `Restaurant.logoId`. This is not the customer cover. The mobile app displays `coverImageUrl` only.\n## Success Response\n201 `{ logoId, logoUrl }`.\n## Notes\n- Full path: `/api/v1/restaurants/:id/logo`",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": [],
+                      "description": "Logo image (jpeg/png/webp)"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
               "name": "Soft-delete a restaurant",
               "id": "5ed4b8e9-624b-4112-af6e-b550041784c2",
               "request": {
@@ -11222,6 +11272,56 @@
                   }
                 }
               ]
+            },
+            {
+              "name": "Upload Restaurant Cover (Platform Admin)",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/platform-admin/restaurants/{{restaurantId}}/cover",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["platform-admin", "restaurants", "{{restaurantId}}", "cover"]
+                },
+                "description": "## Purpose\nPlatform Owner upload of the cover the customer app displays.\n## Authorization\nBearer `{{platformAdminAccessToken}}`. Guards: PlatformAdminGuard, PlatformAdminRoleGuard\n## Required Role\nPlatformAdmin (PlatformSupport is read-only)\n## Body\nMultipart field `file` (JPEG/PNG/WebP).\n## Behavior\nRebinds to the restaurant's organization, stores the object, and sets `coverImageId`. Gallery upload does not do this. A soft-deleted restaurant is rejected.\n## Success Response\n201 `{ coverImageId, coverImageUrl }` — `coverImageUrl` is a short-lived signed URL.\n## Notes\n- Full path: `/api/v1/platform-admin/restaurants/:id/cover`",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": [],
+                      "description": "Cover image (jpeg/png/webp)"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Upload Restaurant Logo (Platform Admin)",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/platform-admin/restaurants/{{restaurantId}}/logo",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["platform-admin", "restaurants", "{{restaurantId}}", "logo"]
+                },
+                "description": "## Purpose\nPlatform Owner upload of the restaurant logo.\n## Authorization\nBearer `{{platformAdminAccessToken}}`.\n## Required Role\nPlatformAdmin\n## Body\nMultipart field `file`.\n## Behavior\nSets `logoId` only. The customer app does not use the logo as the cover.\n## Success Response\n201 `{ logoId, logoUrl }`.\n## Notes\n- Full path: `/api/v1/platform-admin/restaurants/:id/logo`",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": [],
+                      "description": "Logo image (jpeg/png/webp)"
+                    }
+                  ]
+                }
+              },
+              "response": []
             },
             {
               "name": "Restore Restaurant (Platform Admin)",

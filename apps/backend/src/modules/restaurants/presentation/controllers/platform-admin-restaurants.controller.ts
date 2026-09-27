@@ -9,10 +9,15 @@ import {
   Post,
   Query,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiExtraModels,
   ApiOperation,
   ApiParam,
@@ -36,11 +41,17 @@ import { PlatformAdminRestoreRestaurantUseCase } from '../../application/use-cas
 import { SearchRestaurantsUseCase } from '../../application/use-cases/search-restaurants.use-case';
 import { PlatformAdminCreateRestaurantUseCase } from '../../application/use-cases/platform-admin-create-restaurant.use-case';
 import { PlatformAdminGetRestaurantUseCase } from '../../application/use-cases/platform-admin-get-restaurant.use-case';
+import { PlatformAdminUploadRestaurantImageUseCase } from '../../application/use-cases/platform-admin-upload-restaurant-image.use-case';
+import { GALLERY_IMAGE_MAX_SIZE_BYTES } from '../../application/policies/gallery-upload.policy';
 import { PlatformAdminRestaurantResponseDto } from '../dto/platform-admin-restaurant.response.dto';
 import { SearchRestaurantsQueryDto } from '../dto/search-restaurants.query.dto';
 import { RestaurantLookupListResponseDto } from '../dto/restaurant-lookup.response.dto';
 import { PlatformAdminCreateRestaurantRequestDto } from '../dto/platform-admin-create-restaurant.request.dto';
 import { PlatformAdminRestaurantDetailResponseDto } from '../dto/platform-admin-restaurant-detail.response.dto';
+import {
+  RestaurantCoverImageResponseDto,
+  RestaurantLogoImageResponseDto,
+} from '../dto/restaurant-brand-image.response.dto';
 import { toPlatformAdminRestaurantResponse } from './platform-admin-restaurant-response.mapper';
 
 /**
@@ -65,6 +76,7 @@ export class PlatformAdminRestaurantsController {
     private readonly searchRestaurantsUseCase: SearchRestaurantsUseCase,
     private readonly createRestaurantUseCase: PlatformAdminCreateRestaurantUseCase,
     private readonly getRestaurantUseCase: PlatformAdminGetRestaurantUseCase,
+    private readonly uploadRestaurantImageUseCase: PlatformAdminUploadRestaurantImageUseCase,
   ) {}
 
   @Get()
@@ -340,5 +352,89 @@ export class PlatformAdminRestaurantsController {
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
     return toPlatformAdminRestaurantResponse(result);
+  }
+
+  @Post(':id/cover')
+  @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)
+  @RequirePlatformAdminRole(PlatformAdminRole.PlatformAdmin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: GALLERY_IMAGE_MAX_SIZE_BYTES, files: 1 } }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+      required: ['file'],
+    },
+  })
+  @ResponseMessage('Restaurant cover image uploaded successfully.')
+  @ApiOperation({
+    operationId: 'platformAdminUploadRestaurantCover',
+    summary: 'Upload a restaurant cover from the Platform Owner console',
+    description:
+      'Rebinds to the restaurant organization, stores the object, and sets coverImageId. Gallery uploads do not set this field. A soft-deleted restaurant is rejected.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 201, type: RestaurantCoverImageResponseDto })
+  @ApiErrorResponse(404, 'Restaurant not found or soft-deleted', ['NOT_FOUND'])
+  async uploadCover(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @CurrentPlatformAdmin() actor: PlatformAdminActor,
+    @Req() request: Request,
+  ): Promise<RestaurantCoverImageResponseDto> {
+    const result = await this.uploadRestaurantImageUseCase.execute({
+      restaurantId: id,
+      actorId: actor.userId,
+      slot: 'cover',
+      file: file ? { buffer: file.buffer, mimeType: file.mimetype, sizeBytes: file.size } : null,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return { coverImageId: result.fileId, coverImageUrl: result.imageUrl };
+  }
+
+  @Post(':id/logo')
+  @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)
+  @RequirePlatformAdminRole(PlatformAdminRole.PlatformAdmin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: GALLERY_IMAGE_MAX_SIZE_BYTES, files: 1 } }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+      required: ['file'],
+    },
+  })
+  @ResponseMessage('Restaurant logo uploaded successfully.')
+  @ApiOperation({
+    operationId: 'platformAdminUploadRestaurantLogo',
+    summary: 'Upload a restaurant logo from the Platform Owner console',
+    description:
+      'Rebinds to the restaurant organization, stores the object, and sets logoId. This is not the customer cover image.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 201, type: RestaurantLogoImageResponseDto })
+  @ApiErrorResponse(404, 'Restaurant not found or soft-deleted', ['NOT_FOUND'])
+  async uploadLogo(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @CurrentPlatformAdmin() actor: PlatformAdminActor,
+    @Req() request: Request,
+  ): Promise<RestaurantLogoImageResponseDto> {
+    const result = await this.uploadRestaurantImageUseCase.execute({
+      restaurantId: id,
+      actorId: actor.userId,
+      slot: 'logo',
+      file: file ? { buffer: file.buffer, mimeType: file.mimetype, sizeBytes: file.size } : null,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return { logoId: result.fileId, logoUrl: result.imageUrl };
   }
 }

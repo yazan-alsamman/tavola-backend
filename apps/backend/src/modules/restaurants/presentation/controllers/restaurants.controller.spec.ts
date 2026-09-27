@@ -20,6 +20,7 @@ import { GetRestaurantCuisineCategoriesUseCase } from '../../application/use-cas
 import { SetRestaurantCuisineCategoriesUseCase } from '../../application/use-cases/set-restaurant-cuisine-categories.use-case';
 import { GetRestaurantOccasionCategoriesUseCase } from '../../application/use-cases/get-restaurant-occasion-categories.use-case';
 import { SetRestaurantOccasionCategoriesUseCase } from '../../application/use-cases/set-restaurant-occasion-categories.use-case';
+import { UploadRestaurantImageUseCase } from '../../application/use-cases/upload-restaurant-image.use-case';
 import { RestaurantNotFoundException } from '../../domain/exceptions/restaurant-not-found.exception';
 import { InvalidWorkingHoursException } from '../../domain/exceptions/invalid-working-hours.exception';
 import { RestaurantGalleryLimitExceededException } from '../../domain/exceptions/restaurant-gallery-limit-exceeded.exception';
@@ -48,6 +49,7 @@ describe('RestaurantsController', () => {
   const setCuisineCategoriesExecute = jest.fn();
   const getOccasionCategoriesExecute = jest.fn();
   const setOccasionCategoriesExecute = jest.fn();
+  const uploadRestaurantImageExecute = jest.fn();
 
   const actor: AuthenticatedOrganizationMemberActor = {
     actorType: AccessTokenActorType.OrganizationMember,
@@ -213,6 +215,10 @@ describe('RestaurantsController', () => {
         {
           provide: SetRestaurantOccasionCategoriesUseCase,
           useValue: { execute: setOccasionCategoriesExecute },
+        },
+        {
+          provide: UploadRestaurantImageUseCase,
+          useValue: { execute: uploadRestaurantImageExecute },
         },
       ],
     })

@@ -21,6 +21,7 @@ import { GetRestaurantCuisineCategoriesUseCase } from '../../application/use-cas
 import { SetRestaurantCuisineCategoriesUseCase } from '../../application/use-cases/set-restaurant-cuisine-categories.use-case';
 import { GetRestaurantOccasionCategoriesUseCase } from '../../application/use-cases/get-restaurant-occasion-categories.use-case';
 import { SetRestaurantOccasionCategoriesUseCase } from '../../application/use-cases/set-restaurant-occasion-categories.use-case';
+import { UploadRestaurantImageUseCase } from '../../application/use-cases/upload-restaurant-image.use-case';
 import { ListCuisineCategoriesUseCase } from '../../application/use-cases/list-cuisine-categories.use-case';
 import { ListOccasionCategoriesUseCase } from '../../application/use-cases/list-occasion-categories.use-case';
 import { TaxonomyCategoriesController } from './taxonomy-categories.controller';
@@ -67,6 +68,7 @@ describe('RestaurantsController Swagger document', () => {
         { provide: SetRestaurantCuisineCategoriesUseCase, useValue: {} },
         { provide: GetRestaurantOccasionCategoriesUseCase, useValue: {} },
         { provide: SetRestaurantOccasionCategoriesUseCase, useValue: {} },
+        { provide: UploadRestaurantImageUseCase, useValue: {} },
         { provide: ListCuisineCategoriesUseCase, useValue: {} },
         { provide: ListOccasionCategoriesUseCase, useValue: {} },
       ],

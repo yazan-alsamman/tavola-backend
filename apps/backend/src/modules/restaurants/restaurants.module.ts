@@ -34,6 +34,8 @@ import { GetRestaurantCuisineCategoriesUseCase } from './application/use-cases/g
 import { SetRestaurantCuisineCategoriesUseCase } from './application/use-cases/set-restaurant-cuisine-categories.use-case';
 import { GetRestaurantOccasionCategoriesUseCase } from './application/use-cases/get-restaurant-occasion-categories.use-case';
 import { SetRestaurantOccasionCategoriesUseCase } from './application/use-cases/set-restaurant-occasion-categories.use-case';
+import { UploadRestaurantImageUseCase } from './application/use-cases/upload-restaurant-image.use-case';
+import { PlatformAdminUploadRestaurantImageUseCase } from './application/use-cases/platform-admin-upload-restaurant-image.use-case';
 import { RESTAURANT_REPOSITORY } from './domain/repositories/restaurant.repository';
 import { RESTAURANT_SETTINGS_REPOSITORY } from './domain/repositories/restaurant-settings.repository';
 import { WORKING_HOURS_REPOSITORY } from './domain/repositories/working-hours.repository';
@@ -164,6 +166,8 @@ import { PlatformAdminRestaurantsController } from './presentation/controllers/p
     SetRestaurantCuisineCategoriesUseCase,
     GetRestaurantOccasionCategoriesUseCase,
     SetRestaurantOccasionCategoriesUseCase,
+    UploadRestaurantImageUseCase,
+    PlatformAdminUploadRestaurantImageUseCase,
     PrismaRestaurantRepository,
     PrismaRestaurantSettingsRepository,
     PrismaWorkingHoursRepository,

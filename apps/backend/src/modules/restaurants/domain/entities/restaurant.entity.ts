@@ -106,6 +106,19 @@ export class Restaurant extends Entity<RestaurantProps> {
    * client-settable - accepting it here would let an owner fake their own
    * rating).
    */
+  /**
+   * Points the restaurant at a newly stored cover or logo file. Presentation
+   * only — never inferred from the gallery. `null` is not assigned here;
+   * clearing a brand image is a separate action.
+   */
+  assignBrandImage(slot: 'cover' | 'logo', fileId: string, at: Date): Restaurant {
+    return Restaurant.reconstitute({
+      ...this.props,
+      ...(slot === 'cover' ? { coverImageId: fileId } : { logoId: fileId }),
+      updatedAt: at,
+    });
+  }
+
   updateProfile(
     props: {
       name: string;

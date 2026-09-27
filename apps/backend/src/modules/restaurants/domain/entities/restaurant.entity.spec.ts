@@ -81,6 +81,31 @@ describe('Restaurant entity', () => {
     });
   });
 
+  describe('assignBrandImage', () => {
+    it('sets coverImageId without touching logoId or profile fields', () => {
+      const restaurant = createRestaurant();
+      const at = new Date('2026-02-01T00:00:00.000Z');
+      const fileId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+      const updated = restaurant.assignBrandImage('cover', fileId, at);
+
+      expect(updated.coverImageId).toBe(fileId);
+      expect(updated.logoId).toBe(restaurant.logoId);
+      expect(updated.name).toBe(restaurant.name);
+      expect(updated.updatedAt).toEqual(at);
+    });
+
+    it('sets logoId without touching coverImageId', () => {
+      const restaurant = createRestaurant();
+      const fileId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+      const updated = restaurant.assignBrandImage('logo', fileId, new Date('2026-02-01T00:00:00.000Z'));
+
+      expect(updated.logoId).toBe(fileId);
+      expect(updated.coverImageId).toBe(restaurant.coverImageId);
+    });
+  });
+
   describe('activate / suspend', () => {
     it('suspend() transitions an active restaurant to Suspended', () => {
       const restaurant = createRestaurant();

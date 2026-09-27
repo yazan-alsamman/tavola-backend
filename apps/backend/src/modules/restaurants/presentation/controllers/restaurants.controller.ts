@@ -54,6 +54,7 @@ import { GetRestaurantCuisineCategoriesUseCase } from '../../application/use-cas
 import { SetRestaurantCuisineCategoriesUseCase } from '../../application/use-cases/set-restaurant-cuisine-categories.use-case';
 import { GetRestaurantOccasionCategoriesUseCase } from '../../application/use-cases/get-restaurant-occasion-categories.use-case';
 import { SetRestaurantOccasionCategoriesUseCase } from '../../application/use-cases/set-restaurant-occasion-categories.use-case';
+import { UploadRestaurantImageUseCase } from '../../application/use-cases/upload-restaurant-image.use-case';
 import { RestaurantResult } from '../../application/dto/restaurant.result';
 import { RestaurantListResult } from '../../application/dto/restaurant-list.result';
 import { RestaurantSettingsResult } from '../../application/dto/restaurant-settings.result';
@@ -83,6 +84,10 @@ import {
 } from '../dto/restaurant-gallery-image.response.dto';
 import { RestaurantCuisineCategoriesResponseDto } from '../dto/cuisine-category.response.dto';
 import { RestaurantOccasionCategoriesResponseDto } from '../dto/occasion-category.response.dto';
+import {
+  RestaurantCoverImageResponseDto,
+  RestaurantLogoImageResponseDto,
+} from '../dto/restaurant-brand-image.response.dto';
 
 /**
  * Organization-administrative only (Phase 4.1 scope decision, disclosed in
@@ -116,6 +121,7 @@ export class RestaurantsController {
     private readonly setRestaurantCuisineCategoriesUseCase: SetRestaurantCuisineCategoriesUseCase,
     private readonly getRestaurantOccasionCategoriesUseCase: GetRestaurantOccasionCategoriesUseCase,
     private readonly setRestaurantOccasionCategoriesUseCase: SetRestaurantOccasionCategoriesUseCase,
+    private readonly uploadRestaurantImageUseCase: UploadRestaurantImageUseCase,
   ) {}
 
   @Post()
@@ -464,6 +470,106 @@ export class RestaurantsController {
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
     return this.toWorkingHoursResponse(result);
+  }
+
+  @Post(':id/cover')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
+  @RequireOrgRole(OrganizationMemberRole.Owner, OrganizationMemberRole.Admin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: GALLERY_IMAGE_MAX_SIZE_BYTES, files: 1 } }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+      required: ['file'],
+    },
+  })
+  @ResponseMessage('Restaurant cover image uploaded successfully.')
+  @ApiOperation({
+    operationId: 'restaurantsUploadCoverImage',
+    summary: 'Upload a restaurant cover image',
+    description:
+      'Stores the file in the public bucket and sets Restaurant.coverImageId to the new File id. Replaces any previous cover. Does not write the gallery and does not use the logo. Discovery then signs coverImageUrl from this id.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 201, type: RestaurantCoverImageResponseDto })
+  @ApiErrorResponse(400, 'Missing file or the file is not a valid supported image', [
+    'VALIDATION_ERROR',
+    'INVALID_FILE',
+  ])
+  @ApiErrorResponse(404, 'Restaurant not found (or belongs to another organization)', ['NOT_FOUND'])
+  @ApiErrorResponse(413, 'Image file exceeds the maximum allowed size', ['FILE_TOO_LARGE'])
+  @ApiErrorResponse(415, 'Unsupported image file type', ['UNSUPPORTED_FILE_TYPE'])
+  @ApiErrorResponse(503, 'Image storage is temporarily unavailable', ['STORAGE_UNAVAILABLE'])
+  async uploadCover(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @CurrentActor() actor: AuthenticatedOrganizationMemberActor,
+    @Req() request: Request,
+  ): Promise<RestaurantCoverImageResponseDto> {
+    const result = await this.uploadRestaurantImageUseCase.execute({
+      actorUserId: actor.userId,
+      organizationId: actor.organizationId,
+      restaurantId: id,
+      slot: 'cover',
+      file: file ? { buffer: file.buffer, mimeType: file.mimetype, sizeBytes: file.size } : null,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return { coverImageId: result.fileId, coverImageUrl: result.imageUrl };
+  }
+
+  @Post(':id/logo')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
+  @RequireOrgRole(OrganizationMemberRole.Owner, OrganizationMemberRole.Admin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: GALLERY_IMAGE_MAX_SIZE_BYTES, files: 1 } }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+      required: ['file'],
+    },
+  })
+  @ResponseMessage('Restaurant logo uploaded successfully.')
+  @ApiOperation({
+    operationId: 'restaurantsUploadLogo',
+    summary: 'Upload a restaurant logo',
+    description:
+      'Stores the file in the public bucket and sets Restaurant.logoId. Replaces any previous logo. The customer app does not display the logo as the cover.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 201, type: RestaurantLogoImageResponseDto })
+  @ApiErrorResponse(400, 'Missing file or the file is not a valid supported image', [
+    'VALIDATION_ERROR',
+    'INVALID_FILE',
+  ])
+  @ApiErrorResponse(404, 'Restaurant not found (or belongs to another organization)', ['NOT_FOUND'])
+  @ApiErrorResponse(413, 'Image file exceeds the maximum allowed size', ['FILE_TOO_LARGE'])
+  @ApiErrorResponse(415, 'Unsupported image file type', ['UNSUPPORTED_FILE_TYPE'])
+  @ApiErrorResponse(503, 'Image storage is temporarily unavailable', ['STORAGE_UNAVAILABLE'])
+  async uploadLogo(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @CurrentActor() actor: AuthenticatedOrganizationMemberActor,
+    @Req() request: Request,
+  ): Promise<RestaurantLogoImageResponseDto> {
+    const result = await this.uploadRestaurantImageUseCase.execute({
+      actorUserId: actor.userId,
+      organizationId: actor.organizationId,
+      restaurantId: id,
+      slot: 'logo',
+      file: file ? { buffer: file.buffer, mimeType: file.mimetype, sizeBytes: file.size } : null,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return { logoId: result.fileId, logoUrl: result.imageUrl };
   }
 
   @Post(':id/gallery')
