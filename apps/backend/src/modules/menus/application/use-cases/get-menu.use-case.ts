@@ -39,7 +39,7 @@ import {
 import { MenuItem } from '../../domain/entities/menu-item.entity';
 import { MenuItemAddOn } from '../../domain/entities/menu-item-add-on.entity';
 import { MenuItemAvailability } from '../../domain/entities/menu-item-availability.entity';
-import { resolveMenuImageUrls } from '../services/resolve-menu-image-urls';
+import { resolveSignedReadUrls } from '@modules/files/application/services/resolve-signed-read-urls';
 import { GetMenuCommand } from '../dto/menu.commands';
 import {
   MenuTreeResult,
@@ -127,7 +127,7 @@ export class GetMenuUseCase {
       ...categories.map((c) => c.imageFileId?.value ?? null),
       ...allItems.map((i) => i.imageFileId?.value ?? null),
     ];
-    const imageUrlByFileId = await resolveMenuImageUrls(
+    const imageUrlByFileId = await resolveSignedReadUrls(
       imageFileIds,
       this.fileRepository,
       this.storagePort,

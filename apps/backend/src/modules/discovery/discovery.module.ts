@@ -3,6 +3,7 @@ import { OffersModule } from '@modules/offers/offers.module';
 import { MenusModule } from '@modules/menus/menus.module';
 import { RestaurantsModule } from '@modules/restaurants/restaurants.module';
 import { BranchesModule } from '@modules/branches/branches.module';
+import { FilesModule } from '@modules/files/files.module';
 import { RedisSlidingWindowRateLimiter } from '@modules/authentication/infrastructure/redis/redis-sliding-window-rate-limiter';
 import { DISCOVERY_READER } from './application/ports/discovery-reader.port';
 import { DISCOVERY_RATE_LIMITER } from './domain/tokens/discovery.tokens';
@@ -16,6 +17,7 @@ import { GetDiscoverableFloorPlanUseCase } from './application/use-cases/get-dis
 import { ListDiscoverableOffersUseCase } from './application/use-cases/list-discoverable-offers.use-case';
 import { NearbyRestaurantsUseCase } from './application/use-cases/nearby-restaurants.use-case';
 import { CompareRestaurantsUseCase } from './application/use-cases/compare-restaurants.use-case';
+import { RestaurantCoverImageUrlResolver } from './application/services/restaurant-cover-image-url.resolver';
 import { DiscoveryController } from './presentation/controllers/discovery.controller';
 import { DiscoveryRateLimitGuard } from './presentation/guards/discovery-rate-limit.guard';
 
@@ -43,9 +45,12 @@ import { DiscoveryRateLimitGuard } from './presentation/guards/discovery-rate-li
  * needs no `AuthenticationModule` import either (D12 - see
  * `DiscoveryRateLimitGuard`'s own doc comment for why this is deliberately
  * not a coupling into Authentication's bounded context).
+ * `FilesModule` supplies `FILE_REPOSITORY`/`STORAGE_PORT` for
+ * `RestaurantCoverImageUrlResolver` (signed `coverImageUrl`); `File` is not
+ * a tenant-scoped model, so the lookup needs no bound tenant context.
  */
 @Module({
-  imports: [OffersModule, MenusModule, RestaurantsModule, BranchesModule],
+  imports: [OffersModule, MenusModule, RestaurantsModule, BranchesModule, FilesModule],
   controllers: [DiscoveryController],
   providers: [
     ListDiscoverableRestaurantsUseCase,
@@ -56,6 +61,7 @@ import { DiscoveryRateLimitGuard } from './presentation/guards/discovery-rate-li
     ListDiscoverableOffersUseCase,
     NearbyRestaurantsUseCase,
     CompareRestaurantsUseCase,
+    RestaurantCoverImageUrlResolver,
     PrismaDiscoveryReader,
     CachingDiscoveryReader,
     // Post-Audit Remediation (2026-08-02, L7): DISCOVERY_READER now resolves

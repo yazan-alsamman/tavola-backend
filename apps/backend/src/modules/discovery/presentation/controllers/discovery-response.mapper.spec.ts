@@ -70,6 +70,7 @@ describe('discovery-response.mapper', () => {
       const response = toDiscoveryRestaurantResponse({
         ...restaurant(),
         workingHours: [workingHoursEntry],
+        coverImageUrl: null,
       });
 
       expect(response.workingHours).toEqual([
@@ -86,8 +87,39 @@ describe('discovery-response.mapper', () => {
     });
 
     it('defaults to an empty workingHours array', () => {
-      const response = toDiscoveryRestaurantResponse({ ...restaurant(), workingHours: [] });
+      const response = toDiscoveryRestaurantResponse({
+        ...restaurant(),
+        workingHours: [],
+        coverImageUrl: null,
+      });
       expect(response.workingHours).toEqual([]);
+    });
+
+    it('carries both coverImageId and the resolved coverImageUrl, never storage internals', () => {
+      const signedUrl = 'https://media.example.com/object?X-Amz-Signature=abc';
+      const response = toDiscoveryRestaurantResponse({
+        ...restaurant(),
+        coverImageId: 'aa6da0ad-e204-4fc8-b4a4-90dc957d729d',
+        workingHours: [],
+        coverImageUrl: signedUrl,
+      });
+
+      expect(response.coverImageId).toBe('aa6da0ad-e204-4fc8-b4a4-90dc957d729d');
+      expect(response.coverImageUrl).toBe(signedUrl);
+      expect(response).not.toHaveProperty('bucket');
+      expect(response).not.toHaveProperty('objectKey');
+    });
+
+    it('keeps coverImageUrl null alongside a null coverImageId', () => {
+      const response = toDiscoveryRestaurantResponse({
+        ...restaurant(),
+        coverImageId: null,
+        workingHours: [],
+        coverImageUrl: null,
+      });
+
+      expect(response.coverImageId).toBeNull();
+      expect(response.coverImageUrl).toBeNull();
     });
   });
 

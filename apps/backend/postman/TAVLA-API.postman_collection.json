@@ -1661,7 +1661,7 @@
                     "compare"
                   ]
                 },
-                "description": "## Purpose\nCompare 2-5 restaurants side-by-side (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n_None_\n## Query Params\n_None_\n## Body\nJSON body — DTO: `CompareRestaurantsRequestDto`\n## Success Response\nEnvelope message: \"Restaurants compared successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Public Working Hours\nEach item now includes `workingHours` (the Restaurant-level default weekly schedule, `WorkingHours` - empty array when unconfigured).\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/compare`\n- Callers (from source): Public",
+                "description": "## Purpose\nCompare 2-5 restaurants side-by-side (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n_None_\n## Query Params\n_None_\n## Body\nJSON body — DTO: `CompareRestaurantsRequestDto`\n## Success Response\nEnvelope message: \"Restaurants compared successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Public Working Hours\nEach item now includes `workingHours` (the Restaurant-level default weekly schedule, `WorkingHours` - empty array when unconfigured).\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/compare`\n- Callers (from source): Public\n\n## Cover Image\nEvery restaurant object carries both `coverImageId` (the media asset id, unchanged) and `coverImageUrl`. `coverImageUrl` is a short-lived signed read URL produced by the API at request time (lifetime = `MINIO_SIGNED_URL_EXPIRY_SECONDS`, 3600s by default). Load it with a plain HTTP GET and no Authorization header. It is not a client-built storage path: never construct, rewrite, or persist it past its expiry - re-fetch the restaurant for a fresh one. When the restaurant has no cover (or its file no longer exists) `coverImageUrl` is `null`; clients must not substitute the logo or a gallery image.\n",
                 "auth": {
                   "type": "noauth"
                 },
@@ -1721,7 +1721,7 @@
                     }
                   ],
                   "cookie": [],
-                  "body": "{\n  \"success\": true,\n  \"message\": \"Restaurants compared successfully.\",\n  \"data\": {\n    \"items\": [\n      {\n        \"restaurantId\": \"11111111-1111-4111-8111-111111111111\",\n        \"name\": \"The Old Mill\",\n        \"slug\": \"the-old-mill\",\n        \"logoId\": null,\n        \"coverImageId\": null,\n        \"description\": \"A cozy neighborhood restaurant.\",\n        \"cuisineType\": \"Italian\",\n        \"averageRating\": 4.5,\n        \"priceLevel\": 2,\n        \"status\": \"Active\",\n        \"createdAt\": \"2026-07-16T12:00:00.000Z\",\n        \"updatedAt\": \"2026-07-16T12:00:00.000Z\",\n        \"workingHours\": [\n          {\n            \"dayOfWeek\": 1,\n            \"openingTime\": \"09:00\",\n            \"closingTime\": \"17:00\",\n            \"breakStartTime\": null,\n            \"breakEndTime\": null\n          },\n          {\n            \"dayOfWeek\": 3,\n            \"openingTime\": \"10:00\",\n            \"closingTime\": \"18:00\",\n            \"breakStartTime\": \"13:00\",\n            \"breakEndTime\": \"14:00\"\n          }\n        ],\n        \"hasActiveOffer\": false,\n        \"hasMenu\": false\n      }\n    ]\n  }\n}"
+                  "body": "{\n  \"success\": true,\n  \"message\": \"Restaurants compared successfully.\",\n  \"data\": {\n    \"items\": [\n      {\n        \"restaurantId\": \"11111111-1111-4111-8111-111111111111\",\n        \"name\": \"The Old Mill\",\n        \"slug\": \"the-old-mill\",\n        \"logoId\": null,\n        \"coverImageId\": null,\n        \"coverImageUrl\": null,\n        \"description\": \"A cozy neighborhood restaurant.\",\n        \"cuisineType\": \"Italian\",\n        \"averageRating\": 4.5,\n        \"priceLevel\": 2,\n        \"status\": \"Active\",\n        \"createdAt\": \"2026-07-16T12:00:00.000Z\",\n        \"updatedAt\": \"2026-07-16T12:00:00.000Z\",\n        \"workingHours\": [\n          {\n            \"dayOfWeek\": 1,\n            \"openingTime\": \"09:00\",\n            \"closingTime\": \"17:00\",\n            \"breakStartTime\": null,\n            \"breakEndTime\": null\n          },\n          {\n            \"dayOfWeek\": 3,\n            \"openingTime\": \"10:00\",\n            \"closingTime\": \"18:00\",\n            \"breakStartTime\": \"13:00\",\n            \"breakEndTime\": \"14:00\"\n          }\n        ],\n        \"hasActiveOffer\": false,\n        \"hasMenu\": false\n      },\n      {\n        \"restaurantId\": \"22222222-2222-4222-8222-222222222222\",\n        \"name\": \"La Joya\",\n        \"slug\": \"la-joya\",\n        \"logoId\": null,\n        \"coverImageId\": \"aa6da0ad-e204-4fc8-b4a4-90dc957d729d\",\n        \"coverImageUrl\": \"https://media.example.com/<signed-object>?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential-scope>&X-Amz-Date=20260927T120000Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=<signature>\",\n        \"description\": \"A cozy neighborhood restaurant.\",\n        \"cuisineType\": \"Italian\",\n        \"averageRating\": 4.5,\n        \"priceLevel\": 2,\n        \"status\": \"Active\",\n        \"createdAt\": \"2026-07-16T12:00:00.000Z\",\n        \"updatedAt\": \"2026-07-16T12:00:00.000Z\",\n        \"workingHours\": [\n          {\n            \"dayOfWeek\": 1,\n            \"openingTime\": \"09:00\",\n            \"closingTime\": \"17:00\",\n            \"breakStartTime\": null,\n            \"breakEndTime\": null\n          },\n          {\n            \"dayOfWeek\": 3,\n            \"openingTime\": \"10:00\",\n            \"closingTime\": \"18:00\",\n            \"breakStartTime\": \"13:00\",\n            \"breakEndTime\": \"14:00\"\n          }\n        ],\n        \"hasActiveOffer\": false,\n        \"hasMenu\": false\n      }\n    ]\n  }\n}"
                 }
               ],
               "event": [
@@ -1730,7 +1730,17 @@
                   "script": {
                     "type": "text/javascript",
                     "exec": [
-                      "pm.test('Restaurants compared (200)', function () { pm.response.to.have.status(200); });"
+                      "pm.test('Restaurants compared (200)', function () { pm.response.to.have.status(200); });",
+                      "pm.test('Every restaurant carries coverImageId + coverImageUrl (signed URL or null)', function () {",
+                      "  pm.response.json().data.items.forEach(function (r) {",
+                      "    pm.expect(r).to.have.property('coverImageId');",
+                      "    pm.expect(r).to.have.property('coverImageUrl');",
+                      "    if (r.coverImageId === null) { pm.expect(r.coverImageUrl).to.equal(null); }",
+                      "    if (r.coverImageUrl !== null) { pm.expect(r.coverImageUrl).to.match(/^https?:\\/\\//); }",
+                      "    pm.expect(r).to.not.have.property('bucket');",
+                      "    pm.expect(r).to.not.have.property('objectKey');",
+                      "  });",
+                      "});"
                     ]
                   }
                 }
@@ -1875,7 +1885,7 @@
                     }
                   ]
                 },
-                "description": "## Purpose\nSearch restaurants near a location (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n_None_\n## Query Params\nQuery DTO: `NearbyRestaurantsQueryDto` (see schema / examples in query params).\n## Body\n_None_\n## Success Response\nEnvelope message: \"Nearby restaurants retrieved successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Public Working Hours\nEach item now includes `workingHours` (the Restaurant-level default weekly schedule, `WorkingHours` - empty array when unconfigured).\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/nearby`\n- Callers (from source): Public",
+                "description": "## Purpose\nSearch restaurants near a location (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n_None_\n## Query Params\nQuery DTO: `NearbyRestaurantsQueryDto` (see schema / examples in query params).\n## Body\n_None_\n## Success Response\nEnvelope message: \"Nearby restaurants retrieved successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Public Working Hours\nEach item now includes `workingHours` (the Restaurant-level default weekly schedule, `WorkingHours` - empty array when unconfigured).\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/nearby`\n- Callers (from source): Public\n\n## Cover Image\nEvery restaurant object carries both `coverImageId` (the media asset id, unchanged) and `coverImageUrl`. `coverImageUrl` is a short-lived signed read URL produced by the API at request time (lifetime = `MINIO_SIGNED_URL_EXPIRY_SECONDS`, 3600s by default). Load it with a plain HTTP GET and no Authorization header. It is not a client-built storage path: never construct, rewrite, or persist it past its expiry - re-fetch the restaurant for a fresh one. When the restaurant has no cover (or its file no longer exists) `coverImageUrl` is `null`; clients must not substitute the logo or a gallery image.\n",
                 "auth": {
                   "type": "noauth"
                 }
@@ -1960,7 +1970,7 @@
                     }
                   ],
                   "cookie": [],
-                  "body": "{\n  \"success\": true,\n  \"message\": \"Nearby restaurants retrieved successfully.\",\n  \"data\": {\n    \"items\": [\n      {\n        \"restaurantId\": \"11111111-1111-4111-8111-111111111111\",\n        \"name\": \"The Old Mill\",\n        \"slug\": \"the-old-mill\",\n        \"logoId\": null,\n        \"coverImageId\": null,\n        \"description\": \"A cozy neighborhood restaurant.\",\n        \"cuisineType\": \"Italian\",\n        \"averageRating\": 4.5,\n        \"priceLevel\": 2,\n        \"status\": \"Active\",\n        \"createdAt\": \"2026-07-16T12:00:00.000Z\",\n        \"updatedAt\": \"2026-07-16T12:00:00.000Z\",\n        \"workingHours\": [\n          {\n            \"dayOfWeek\": 1,\n            \"openingTime\": \"09:00\",\n            \"closingTime\": \"17:00\",\n            \"breakStartTime\": null,\n            \"breakEndTime\": null\n          },\n          {\n            \"dayOfWeek\": 3,\n            \"openingTime\": \"10:00\",\n            \"closingTime\": \"18:00\",\n            \"breakStartTime\": \"13:00\",\n            \"breakEndTime\": \"14:00\"\n          }\n        ],\n        \"hasActiveOffer\": false,\n        \"hasMenu\": false,\n        \"nearestBranchId\": \"22222222-2222-4222-8222-222222222221\",\n        \"distanceKm\": 0.42\n      }\n    ],\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 1\n  }\n}"
+                  "body": "{\n  \"success\": true,\n  \"message\": \"Nearby restaurants retrieved successfully.\",\n  \"data\": {\n    \"items\": [\n      {\n        \"restaurantId\": \"11111111-1111-4111-8111-111111111111\",\n        \"name\": \"The Old Mill\",\n        \"slug\": \"the-old-mill\",\n        \"logoId\": null,\n        \"coverImageId\": null,\n        \"coverImageUrl\": null,\n        \"description\": \"A cozy neighborhood restaurant.\",\n        \"cuisineType\": \"Italian\",\n        \"averageRating\": 4.5,\n        \"priceLevel\": 2,\n        \"status\": \"Active\",\n        \"createdAt\": \"2026-07-16T12:00:00.000Z\",\n        \"updatedAt\": \"2026-07-16T12:00:00.000Z\",\n        \"workingHours\": [\n          {\n            \"dayOfWeek\": 1,\n            \"openingTime\": \"09:00\",\n            \"closingTime\": \"17:00\",\n            \"breakStartTime\": null,\n            \"breakEndTime\": null\n          },\n          {\n            \"dayOfWeek\": 3,\n            \"openingTime\": \"10:00\",\n            \"closingTime\": \"18:00\",\n            \"breakStartTime\": \"13:00\",\n            \"breakEndTime\": \"14:00\"\n          }\n        ],\n        \"hasActiveOffer\": false,\n        \"hasMenu\": false,\n        \"nearestBranchId\": \"22222222-2222-4222-8222-222222222221\",\n        \"distanceKm\": 0.42\n      },\n      {\n        \"restaurantId\": \"22222222-2222-4222-8222-222222222222\",\n        \"name\": \"La Joya\",\n        \"slug\": \"la-joya\",\n        \"logoId\": null,\n        \"coverImageId\": \"aa6da0ad-e204-4fc8-b4a4-90dc957d729d\",\n        \"coverImageUrl\": \"https://media.example.com/<signed-object>?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential-scope>&X-Amz-Date=20260927T120000Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=<signature>\",\n        \"description\": \"A cozy neighborhood restaurant.\",\n        \"cuisineType\": \"Italian\",\n        \"averageRating\": 4.5,\n        \"priceLevel\": 2,\n        \"status\": \"Active\",\n        \"createdAt\": \"2026-07-16T12:00:00.000Z\",\n        \"updatedAt\": \"2026-07-16T12:00:00.000Z\",\n        \"workingHours\": [\n          {\n            \"dayOfWeek\": 1,\n            \"openingTime\": \"09:00\",\n            \"closingTime\": \"17:00\",\n            \"breakStartTime\": null,\n            \"breakEndTime\": null\n          },\n          {\n            \"dayOfWeek\": 3,\n            \"openingTime\": \"10:00\",\n            \"closingTime\": \"18:00\",\n            \"breakStartTime\": \"13:00\",\n            \"breakEndTime\": \"14:00\"\n          }\n        ],\n        \"hasActiveOffer\": false,\n        \"hasMenu\": false,\n        \"nearestBranchId\": \"22222222-2222-4222-8222-222222222221\",\n        \"distanceKm\": 0.42\n      }\n    ],\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 2\n  }\n}"
                 }
               ],
               "event": [
@@ -1969,7 +1979,17 @@
                   "script": {
                     "type": "text/javascript",
                     "exec": [
-                      "pm.test('Nearby restaurants retrieved (200)', function () { pm.response.to.have.status(200); });"
+                      "pm.test('Nearby restaurants retrieved (200)', function () { pm.response.to.have.status(200); });",
+                      "pm.test('Every restaurant carries coverImageId + coverImageUrl (signed URL or null)', function () {",
+                      "  pm.response.json().data.items.forEach(function (r) {",
+                      "    pm.expect(r).to.have.property('coverImageId');",
+                      "    pm.expect(r).to.have.property('coverImageUrl');",
+                      "    if (r.coverImageId === null) { pm.expect(r.coverImageUrl).to.equal(null); }",
+                      "    if (r.coverImageUrl !== null) { pm.expect(r.coverImageUrl).to.match(/^https?:\\/\\//); }",
+                      "    pm.expect(r).to.not.have.property('bucket');",
+                      "    pm.expect(r).to.not.have.property('objectKey');",
+                      "  });",
+                      "});"
                     ]
                   }
                 }
@@ -2039,7 +2059,7 @@
                     }
                   ]
                 },
-                "description": "## Purpose\nSearch/browse restaurants (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n_None_\n## Query Params\nQuery DTO: `SearchRestaurantsQueryDto` (see schema / examples in query params).\n## Body\n_None_\n## Success Response\nEnvelope message: \"Restaurants retrieved successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Public Working Hours\nEach item now includes `workingHours` (the Restaurant-level default weekly schedule, `WorkingHours` - empty array when unconfigured).\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants`\n- Callers (from source): Public",
+                "description": "## Purpose\nSearch/browse restaurants (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n_None_\n## Query Params\nQuery DTO: `SearchRestaurantsQueryDto` (see schema / examples in query params).\n## Body\n_None_\n## Success Response\nEnvelope message: \"Restaurants retrieved successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Public Working Hours\nEach item now includes `workingHours` (the Restaurant-level default weekly schedule, `WorkingHours` - empty array when unconfigured).\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants`\n- Callers (from source): Public\n\n## Cover Image\nEvery restaurant object carries both `coverImageId` (the media asset id, unchanged) and `coverImageUrl`. `coverImageUrl` is a short-lived signed read URL produced by the API at request time (lifetime = `MINIO_SIGNED_URL_EXPIRY_SECONDS`, 3600s by default). Load it with a plain HTTP GET and no Authorization header. It is not a client-built storage path: never construct, rewrite, or persist it past its expiry - re-fetch the restaurant for a fresh one. When the restaurant has no cover (or its file no longer exists) `coverImageUrl` is `null`; clients must not substitute the logo or a gallery image.\n",
                 "auth": {
                   "type": "noauth"
                 }
@@ -2123,7 +2143,27 @@
                     }
                   ],
                   "cookie": [],
-                  "body": "{\n  \"success\": true,\n  \"message\": \"Restaurants retrieved successfully.\",\n  \"data\": {\n    \"items\": [\n      {\n        \"restaurantId\": \"11111111-1111-4111-8111-111111111111\",\n        \"name\": \"The Old Mill\",\n        \"slug\": \"the-old-mill\",\n        \"logoId\": null,\n        \"coverImageId\": null,\n        \"description\": \"A cozy neighborhood restaurant.\",\n        \"cuisineType\": \"Italian\",\n        \"averageRating\": 4.5,\n        \"priceLevel\": 2,\n        \"status\": \"Active\",\n        \"createdAt\": \"2026-07-16T12:00:00.000Z\",\n        \"updatedAt\": \"2026-07-16T12:00:00.000Z\",\n        \"workingHours\": [\n          {\n            \"dayOfWeek\": 1,\n            \"openingTime\": \"09:00\",\n            \"closingTime\": \"17:00\",\n            \"breakStartTime\": null,\n            \"breakEndTime\": null\n          },\n          {\n            \"dayOfWeek\": 3,\n            \"openingTime\": \"10:00\",\n            \"closingTime\": \"18:00\",\n            \"breakStartTime\": \"13:00\",\n            \"breakEndTime\": \"14:00\"\n          }\n        ],\n        \"hasActiveOffer\": false,\n        \"hasMenu\": false\n      }\n    ],\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 1\n  }\n}"
+                  "body": "{\n  \"success\": true,\n  \"message\": \"Restaurants retrieved successfully.\",\n  \"data\": {\n    \"items\": [\n      {\n        \"restaurantId\": \"11111111-1111-4111-8111-111111111111\",\n        \"name\": \"The Old Mill\",\n        \"slug\": \"the-old-mill\",\n        \"logoId\": null,\n        \"coverImageId\": null,\n        \"coverImageUrl\": null,\n        \"description\": \"A cozy neighborhood restaurant.\",\n        \"cuisineType\": \"Italian\",\n        \"averageRating\": 4.5,\n        \"priceLevel\": 2,\n        \"status\": \"Active\",\n        \"createdAt\": \"2026-07-16T12:00:00.000Z\",\n        \"updatedAt\": \"2026-07-16T12:00:00.000Z\",\n        \"workingHours\": [\n          {\n            \"dayOfWeek\": 1,\n            \"openingTime\": \"09:00\",\n            \"closingTime\": \"17:00\",\n            \"breakStartTime\": null,\n            \"breakEndTime\": null\n          },\n          {\n            \"dayOfWeek\": 3,\n            \"openingTime\": \"10:00\",\n            \"closingTime\": \"18:00\",\n            \"breakStartTime\": \"13:00\",\n            \"breakEndTime\": \"14:00\"\n          }\n        ],\n        \"hasActiveOffer\": false,\n        \"hasMenu\": false\n      },\n      {\n        \"restaurantId\": \"22222222-2222-4222-8222-222222222222\",\n        \"name\": \"La Joya\",\n        \"slug\": \"la-joya\",\n        \"logoId\": null,\n        \"coverImageId\": \"aa6da0ad-e204-4fc8-b4a4-90dc957d729d\",\n        \"coverImageUrl\": \"https://media.example.com/<signed-object>?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential-scope>&X-Amz-Date=20260927T120000Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=<signature>\",\n        \"description\": \"A cozy neighborhood restaurant.\",\n        \"cuisineType\": \"Italian\",\n        \"averageRating\": 4.5,\n        \"priceLevel\": 2,\n        \"status\": \"Active\",\n        \"createdAt\": \"2026-07-16T12:00:00.000Z\",\n        \"updatedAt\": \"2026-07-16T12:00:00.000Z\",\n        \"workingHours\": [\n          {\n            \"dayOfWeek\": 1,\n            \"openingTime\": \"09:00\",\n            \"closingTime\": \"17:00\",\n            \"breakStartTime\": null,\n            \"breakEndTime\": null\n          },\n          {\n            \"dayOfWeek\": 3,\n            \"openingTime\": \"10:00\",\n            \"closingTime\": \"18:00\",\n            \"breakStartTime\": \"13:00\",\n            \"breakEndTime\": \"14:00\"\n          }\n        ],\n        \"hasActiveOffer\": false,\n        \"hasMenu\": false\n      }\n    ],\n    \"page\": 1,\n    \"limit\": 20,\n    \"total\": 2\n  }\n}"
+                }
+              ],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Every restaurant carries coverImageId + coverImageUrl (signed URL or null)', function () {",
+                      "  pm.response.json().data.items.forEach(function (r) {",
+                      "    pm.expect(r).to.have.property('coverImageId');",
+                      "    pm.expect(r).to.have.property('coverImageUrl');",
+                      "    if (r.coverImageId === null) { pm.expect(r.coverImageUrl).to.equal(null); }",
+                      "    if (r.coverImageUrl !== null) { pm.expect(r.coverImageUrl).to.match(/^https?:\\/\\//); }",
+                      "    pm.expect(r).to.not.have.property('bucket');",
+                      "    pm.expect(r).to.not.have.property('objectKey');",
+                      "  });",
+                      "});"
+                    ]
+                  }
                 }
               ]
             },
@@ -2233,7 +2273,7 @@
                     "{{restaurantId}}"
                   ]
                 },
-                "description": "## Purpose\nGet a restaurant by id (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Restaurant retrieved successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **404**: NOT_FOUND\n- **429**: RATE_LIMIT_EXCEEDED\n## Public Working Hours\nResponse now includes `workingHours` (the Restaurant-level default weekly schedule, `WorkingHours` - empty array when unconfigured).\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/:restaurantId`\n- Callers (from source): Public",
+                "description": "## Purpose\nGet a restaurant by id (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Restaurant retrieved successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **404**: NOT_FOUND\n- **429**: RATE_LIMIT_EXCEEDED\n## Public Working Hours\nResponse now includes `workingHours` (the Restaurant-level default weekly schedule, `WorkingHours` - empty array when unconfigured).\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/:restaurantId`\n- Callers (from source): Public\n\n## Cover Image\nEvery restaurant object carries both `coverImageId` (the media asset id, unchanged) and `coverImageUrl`. `coverImageUrl` is a short-lived signed read URL produced by the API at request time (lifetime = `MINIO_SIGNED_URL_EXPIRY_SECONDS`, 3600s by default). Load it with a plain HTTP GET and no Authorization header. It is not a client-built storage path: never construct, rewrite, or persist it past its expiry - re-fetch the restaurant for a fresh one. When the restaurant has no cover (or its file no longer exists) `coverImageUrl` is `null`; clients must not substitute the logo or a gallery image.\n",
                 "auth": {
                   "type": "noauth"
                 }
@@ -2270,7 +2310,60 @@
                     }
                   ],
                   "cookie": [],
-                  "body": "{\n  \"success\": true,\n  \"message\": \"Restaurant retrieved successfully.\",\n  \"data\": {\n    \"restaurantId\": \"11111111-1111-4111-8111-111111111111\",\n    \"name\": \"The Old Mill\",\n    \"slug\": \"the-old-mill\",\n    \"logoId\": null,\n    \"coverImageId\": null,\n    \"description\": \"A cozy neighborhood restaurant.\",\n    \"cuisineType\": \"Italian\",\n    \"averageRating\": 4.5,\n    \"priceLevel\": 2,\n    \"status\": \"Active\",\n    \"createdAt\": \"2026-07-16T12:00:00.000Z\",\n    \"updatedAt\": \"2026-07-16T12:00:00.000Z\",\n    \"workingHours\": [\n      {\n        \"dayOfWeek\": 1,\n        \"openingTime\": \"09:00\",\n        \"closingTime\": \"17:00\",\n        \"breakStartTime\": null,\n        \"breakEndTime\": null\n      },\n      {\n        \"dayOfWeek\": 3,\n        \"openingTime\": \"10:00\",\n        \"closingTime\": \"18:00\",\n        \"breakStartTime\": \"13:00\",\n        \"breakEndTime\": \"14:00\"\n      }\n    ]\n  }\n}"
+                  "body": "{\n  \"success\": true,\n  \"message\": \"Restaurant retrieved successfully.\",\n  \"data\": {\n    \"restaurantId\": \"11111111-1111-4111-8111-111111111111\",\n    \"name\": \"The Old Mill\",\n    \"slug\": \"the-old-mill\",\n    \"logoId\": null,\n    \"coverImageId\": null,\n    \"coverImageUrl\": null,\n    \"description\": \"A cozy neighborhood restaurant.\",\n    \"cuisineType\": \"Italian\",\n    \"averageRating\": 4.5,\n    \"priceLevel\": 2,\n    \"status\": \"Active\",\n    \"createdAt\": \"2026-07-16T12:00:00.000Z\",\n    \"updatedAt\": \"2026-07-16T12:00:00.000Z\",\n    \"workingHours\": [\n      {\n        \"dayOfWeek\": 1,\n        \"openingTime\": \"09:00\",\n        \"closingTime\": \"17:00\",\n        \"breakStartTime\": null,\n        \"breakEndTime\": null\n      },\n      {\n        \"dayOfWeek\": 3,\n        \"openingTime\": \"10:00\",\n        \"closingTime\": \"18:00\",\n        \"breakStartTime\": \"13:00\",\n        \"breakEndTime\": \"14:00\"\n      }\n    ]\n  }\n}"
+                },
+                {
+                  "name": "OK - with cover image (signed coverImageUrl)",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "{{baseUrl}}/discovery/restaurants/{{restaurantId}}",
+                      "host": [
+                        "{{baseUrl}}"
+                      ],
+                      "path": [
+                        "discovery",
+                        "restaurants",
+                        "{{restaurantId}}"
+                      ]
+                    },
+                    "description": "## Purpose\nGet a restaurant by id (public, unauthenticated)\n## Authorization\nNone (public — auth disabled on this request).\nGuards: DiscoveryRateLimitGuard\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Restaurant retrieved successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **404**: NOT_FOUND\n- **429**: RATE_LIMIT_EXCEEDED\n## Public Working Hours\nResponse now includes `workingHours` (the Restaurant-level default weekly schedule, `WorkingHours` - empty array when unconfigured).\n## Notes\n- Controller: `DiscoveryController`.`unknown`\n- Full path: `/api/v1/discovery/restaurants/:restaurantId`\n- Callers (from source): Public",
+                    "auth": {
+                      "type": "noauth"
+                    }
+                  },
+                  "status": "OK",
+                  "code": 200,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json; charset=utf-8"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n  \"success\": true,\n  \"message\": \"Restaurant retrieved successfully.\",\n  \"data\": {\n    \"restaurantId\": \"11111111-1111-4111-8111-111111111111\",\n    \"name\": \"The Old Mill\",\n    \"slug\": \"the-old-mill\",\n    \"logoId\": null,\n    \"coverImageId\": \"aa6da0ad-e204-4fc8-b4a4-90dc957d729d\",\n    \"coverImageUrl\": \"https://media.example.com/<signed-object>?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=<credential-scope>&X-Amz-Date=20260927T120000Z&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature=<signature>\",\n    \"description\": \"A cozy neighborhood restaurant.\",\n    \"cuisineType\": \"Italian\",\n    \"averageRating\": 4.5,\n    \"priceLevel\": 2,\n    \"status\": \"Active\",\n    \"createdAt\": \"2026-07-16T12:00:00.000Z\",\n    \"updatedAt\": \"2026-07-16T12:00:00.000Z\",\n    \"workingHours\": [\n      {\n        \"dayOfWeek\": 1,\n        \"openingTime\": \"09:00\",\n        \"closingTime\": \"17:00\",\n        \"breakStartTime\": null,\n        \"breakEndTime\": null\n      },\n      {\n        \"dayOfWeek\": 3,\n        \"openingTime\": \"10:00\",\n        \"closingTime\": \"18:00\",\n        \"breakStartTime\": \"13:00\",\n        \"breakEndTime\": \"14:00\"\n      }\n    ]\n  }\n}"
+                }
+              ],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Restaurant retrieved (200)', function () { pm.response.to.have.status(200); });",
+                      "pm.test('Restaurant carries coverImageId + coverImageUrl (signed URL or null)', function () {",
+                      "  var r = pm.response.json().data;",
+                      "  pm.expect(r).to.have.property('coverImageId');",
+                      "  pm.expect(r).to.have.property('coverImageUrl');",
+                      "  if (r.coverImageId === null) { pm.expect(r.coverImageUrl).to.equal(null); }",
+                      "  if (r.coverImageUrl !== null) { pm.expect(r.coverImageUrl).to.match(/^https?:\\/\\//); }",
+                      "  pm.expect(r).to.not.have.property('bucket');",
+                      "  pm.expect(r).to.not.have.property('objectKey');",
+                      "});"
+                    ]
+                  }
                 }
               ]
             },

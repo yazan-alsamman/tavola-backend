@@ -4,6 +4,7 @@ import { WorkingHoursEntryResult } from '@modules/restaurants/application/dto/wo
 import { RestaurantNotFoundException } from '@modules/restaurants/domain/exceptions/restaurant-not-found.exception';
 import { ListWorkingHoursByRestaurantIdsUseCase } from '@modules/restaurants/application/use-cases/list-working-hours-by-restaurant-ids.use-case';
 import { DiscoveryReaderPort, DISCOVERY_READER } from '../ports/discovery-reader.port';
+import { RestaurantCoverImageUrlResolver } from '../services/restaurant-cover-image-url.resolver';
 
 export interface GetDiscoverableRestaurantCommand {
   restaurantId: string;
@@ -11,6 +12,7 @@ export interface GetDiscoverableRestaurantCommand {
 
 export type DiscoverableRestaurantDetail = RestaurantResult & {
   workingHours: WorkingHoursEntryResult[];
+  coverImageUrl: string | null;
 };
 
 /**
@@ -29,6 +31,7 @@ export class GetDiscoverableRestaurantUseCase {
   constructor(
     @Inject(DISCOVERY_READER) private readonly discoveryReader: DiscoveryReaderPort,
     private readonly listWorkingHoursByRestaurantIdsUseCase: ListWorkingHoursByRestaurantIdsUseCase,
+    private readonly restaurantCoverImageUrlResolver: RestaurantCoverImageUrlResolver,
   ) {}
 
   async execute(command: GetDiscoverableRestaurantCommand): Promise<DiscoverableRestaurantDetail> {
@@ -37,12 +40,15 @@ export class GetDiscoverableRestaurantUseCase {
       throw new RestaurantNotFoundException();
     }
 
-    const workingHoursByRestaurantId = await this.listWorkingHoursByRestaurantIdsUseCase.execute({
-      restaurantIds: [restaurant.restaurantId],
-    });
+    const [workingHoursByRestaurantId, [restaurantWithCoverImageUrl]] = await Promise.all([
+      this.listWorkingHoursByRestaurantIdsUseCase.execute({
+        restaurantIds: [restaurant.restaurantId],
+      }),
+      this.restaurantCoverImageUrlResolver.attach([restaurant]),
+    ]);
 
     return {
-      ...restaurant,
+      ...restaurantWithCoverImageUrl,
       workingHours: workingHoursByRestaurantId.get(restaurant.restaurantId) ?? [],
     };
   }

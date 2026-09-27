@@ -191,6 +191,67 @@ describe('/api/v1/discovery/restaurants (e2e)', () => {
     expect(floorPlanResponse.body.data.tables[0].tableId).toBe(tableId);
   });
 
+  it('exposes coverImageUrl: a signed absolute URL for a restaurant with a cover, null/null without one, unauthenticated', async () => {
+    if (!dbAvailable) return;
+
+    const owner = await registerAndLoginOwner('cover');
+    const { restaurantId: coveredId } = await setUpRestaurantBranchTable(
+      owner.accessToken,
+      'Covered',
+    );
+    const { restaurantId: uncoveredId } = await setUpRestaurantBranchTable(
+      owner.accessToken,
+      'Uncovered',
+    );
+    const coverFile = await prisma.file.create({
+      data: {
+        ownerId: coveredId,
+        ownerType: 'Restaurant',
+        bucket: `${TEST_PREFIX}bucket`,
+        objectKey: `${TEST_PREFIX}${uniqueId()}.jpg`,
+        mimeType: 'image/jpeg',
+        sizeBytes: 1024,
+        accessPolicy: 'Public',
+      },
+    });
+    try {
+      await prisma.restaurant.update({
+        where: { id: coveredId },
+        data: { coverImageId: coverFile.id },
+      });
+
+      const listResponse = await request(app!.getHttpServer())
+        .get('/api/v1/discovery/restaurants')
+        .query({ limit: 100 })
+        .expect(200);
+      const byId = new Map<string, Record<string, unknown>>(
+        listResponse.body.data.items.map((item: Record<string, unknown>) => [
+          item.restaurantId,
+          item,
+        ]),
+      );
+
+      const covered = byId.get(coveredId)!;
+      expect(covered.coverImageId).toBe(coverFile.id);
+      expect(new URL(covered.coverImageUrl as string).protocol).toMatch(/^https?:$/);
+      expect(covered.coverImageUrl).toContain('X-Amz-Signature=');
+      expect(covered).not.toHaveProperty('bucket');
+      expect(covered).not.toHaveProperty('objectKey');
+      expect(byId.get(uncoveredId)).toMatchObject({ coverImageId: null, coverImageUrl: null });
+
+      const detailResponse = await request(app!.getHttpServer())
+        .get(`/api/v1/discovery/restaurants/${coveredId}`)
+        .expect(200);
+      expect(detailResponse.body.data.coverImageUrl).toContain('X-Amz-Signature=');
+    } finally {
+      await prisma.restaurant.update({
+        where: { id: coveredId },
+        data: { coverImageId: null },
+      });
+      await prisma.file.delete({ where: { id: coverFile.id } });
+    }
+  });
+
   it('404s for an unknown restaurant id (never leaks existence of another status)', async () => {
     if (!dbAvailable) return;
     await request(app!.getHttpServer())

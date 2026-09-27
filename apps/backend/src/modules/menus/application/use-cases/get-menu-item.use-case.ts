@@ -31,7 +31,7 @@ import {
   MenuItemAvailabilityRepository,
   MENU_ITEM_AVAILABILITY_REPOSITORY,
 } from '../../domain/repositories/menu-item-availability.repository';
-import { resolveMenuImageUrls } from '../services/resolve-menu-image-urls';
+import { resolveSignedReadUrls } from '@modules/files/application/services/resolve-signed-read-urls';
 import { GetMenuItemCommand } from '../dto/menu-item.commands';
 import { MenuItemTreeResult } from '../dto/menu-tree.result';
 
@@ -77,7 +77,7 @@ export class GetMenuItemUseCase {
     );
 
     const imageFileId = item.imageFileId?.value ?? null;
-    const urlByFileId = await resolveMenuImageUrls(
+    const urlByFileId = await resolveSignedReadUrls(
       [imageFileId],
       this.fileRepository,
       this.storagePort,

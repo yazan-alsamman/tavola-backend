@@ -8,6 +8,7 @@ import {
   DiscoveryReaderPort,
   DISCOVERY_READER,
 } from '../ports/discovery-reader.port';
+import { RestaurantCoverImageUrlResolver } from '../services/restaurant-cover-image-url.resolver';
 
 export interface NearbyRestaurantsCommand {
   lat: number;
@@ -26,6 +27,7 @@ export type NearbyDiscoverableRestaurant = NearbyRestaurantResult & {
   hasActiveOffer: boolean;
   hasMenu: boolean;
   workingHours: WorkingHoursEntryResult[];
+  coverImageUrl: string | null;
 };
 
 export interface NearbyRestaurantListResult {
@@ -53,6 +55,7 @@ export class NearbyRestaurantsUseCase {
     private readonly listRestaurantIdsWithActiveOfferUseCase: ListRestaurantIdsWithActiveOfferUseCase,
     private readonly listRestaurantIdsWithMenuUseCase: ListRestaurantIdsWithMenuUseCase,
     private readonly listWorkingHoursByRestaurantIdsUseCase: ListWorkingHoursByRestaurantIdsUseCase,
+    private readonly restaurantCoverImageUrlResolver: RestaurantCoverImageUrlResolver,
   ) {}
 
   async execute(command: NearbyRestaurantsCommand): Promise<NearbyRestaurantListResult> {
@@ -70,15 +73,20 @@ export class NearbyRestaurantsUseCase {
     });
 
     const restaurantIds = page.items.map((item) => item.restaurantId);
-    const [restaurantsWithActiveOffer, restaurantsWithMenu, workingHoursByRestaurantId] =
-      await Promise.all([
-        this.listRestaurantIdsWithActiveOfferUseCase.execute({ restaurantIds }),
-        this.listRestaurantIdsWithMenuUseCase.execute({ restaurantIds }),
-        this.listWorkingHoursByRestaurantIdsUseCase.execute({ restaurantIds }),
-      ]);
+    const [
+      restaurantsWithActiveOffer,
+      restaurantsWithMenu,
+      workingHoursByRestaurantId,
+      restaurantsWithCoverImageUrl,
+    ] = await Promise.all([
+      this.listRestaurantIdsWithActiveOfferUseCase.execute({ restaurantIds }),
+      this.listRestaurantIdsWithMenuUseCase.execute({ restaurantIds }),
+      this.listWorkingHoursByRestaurantIdsUseCase.execute({ restaurantIds }),
+      this.restaurantCoverImageUrlResolver.attach(page.items),
+    ]);
 
     return {
-      items: page.items.map((item) => ({
+      items: restaurantsWithCoverImageUrl.map((item) => ({
         ...item,
         hasActiveOffer: restaurantsWithActiveOffer.has(item.restaurantId),
         hasMenu: restaurantsWithMenu.has(item.restaurantId),

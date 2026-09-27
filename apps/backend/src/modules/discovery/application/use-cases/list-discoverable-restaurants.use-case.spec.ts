@@ -14,6 +14,10 @@ import {
   testOfferContent,
 } from '../../../../../test/offers/support/offer-test-fixtures';
 import { RestaurantResult } from '@modules/restaurants/application/dto/restaurant.result';
+import { FileRecord } from '@modules/files/domain/entities/file-record.entity';
+import { RestaurantCoverImageUrlResolver } from '../services/restaurant-cover-image-url.resolver';
+import { InMemoryFileRepository } from '../../../../../test/restaurants/support/in-memory-file-repository';
+import { FakeStoragePort } from '../../../../../test/restaurants/support/fake-storage-port';
 
 function restaurant(
   id: string,
@@ -37,6 +41,21 @@ function restaurant(
   };
 }
 
+function coverFile(id: string): FileRecord {
+  return FileRecord.create({
+    id,
+    ownerId: '11111111-1111-4111-8111-111111111111',
+    ownerType: 'Restaurant',
+    bucket: 'tavla-public',
+    objectKey: `restaurants/covers/${id}.jpg`,
+    mimeType: 'image/jpeg',
+    sizeBytes: 2048,
+    accessPolicy: 'Public',
+    createdAt: new Date('2026-08-01T00:00:00.000Z'),
+    deletedAt: null,
+  });
+}
+
 function buildUseCase(reader: FakeDiscoveryReader, now = new Date('2026-08-15T00:00:00.000Z')) {
   const offerRepository = new InMemoryOfferRepository();
   const listRestaurantIdsWithActiveOfferUseCase = new ListRestaurantIdsWithActiveOfferUseCase(
@@ -50,15 +69,18 @@ function buildUseCase(reader: FakeDiscoveryReader, now = new Date('2026-08-15T00
   const listWorkingHoursByRestaurantIdsUseCase = new ListWorkingHoursByRestaurantIdsUseCase(
     workingHoursRepository,
   );
+  const fileRepository = new InMemoryFileRepository();
   return {
     useCase: new ListDiscoverableRestaurantsUseCase(
       reader,
       listRestaurantIdsWithActiveOfferUseCase,
       listRestaurantIdsWithMenuUseCase,
       listWorkingHoursByRestaurantIdsUseCase,
+      new RestaurantCoverImageUrlResolver(fileRepository, new FakeStoragePort()),
     ),
     offerRepository,
     workingHoursRepository,
+    fileRepository,
   };
 }
 
@@ -238,5 +260,35 @@ describe('ListDiscoverableRestaurantsUseCase', () => {
 
     expect(result.items).toHaveLength(0);
     expect(result.total).toBe(0);
+  });
+
+  it('annotates coverImageUrl per restaurant: signed when the cover file exists, null when coverImageId is null or its file is missing', async () => {
+    const coverId = 'aa6da0ad-e204-4fc8-b4a4-90dc957d729d';
+    const missingId = 'cc6da0ad-e204-4fc8-b4a4-90dc957d729d';
+    const reader = new FakeDiscoveryReader();
+    reader.restaurants = [
+      restaurant('11111111-1111-4111-8111-111111111111', 'La Joya', { coverImageId: coverId }),
+      restaurant('11111111-1111-4111-8111-111111111112', 'No Cover'),
+      restaurant('11111111-1111-4111-8111-111111111113', 'Orphaned Cover', {
+        coverImageId: missingId,
+      }),
+    ];
+
+    const { useCase, fileRepository } = buildUseCase(reader);
+    fileRepository.seed(coverFile(coverId));
+    const findManySpy = jest.spyOn(fileRepository, 'findManyByIds');
+    const result = await useCase.execute({ page: 1, limit: 20 });
+
+    const byName = new Map(result.items.map((item) => [item.name, item]));
+    expect(byName.get('La Joya')).toMatchObject({
+      coverImageId: coverId,
+      coverImageUrl: `https://signed.example.com/tavla-public/restaurants/covers/${coverId}.jpg`,
+    });
+    expect(byName.get('No Cover')).toMatchObject({ coverImageId: null, coverImageUrl: null });
+    expect(byName.get('Orphaned Cover')).toMatchObject({
+      coverImageId: missingId,
+      coverImageUrl: null,
+    });
+    expect(findManySpy).toHaveBeenCalledTimes(1);
   });
 });

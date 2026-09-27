@@ -8,6 +8,9 @@ import { InMemoryOfferRepository } from '../../../../../test/offers/support/in-m
 import { InMemoryMenuRepository } from '../../../../../test/menus/support/in-memory-menu.repository';
 import { InMemoryWorkingHoursRepository } from '../../../../../test/restaurants/support/in-memory-working-hours.repository';
 import { RestaurantResult } from '@modules/restaurants/application/dto/restaurant.result';
+import { RestaurantCoverImageUrlResolver } from '../services/restaurant-cover-image-url.resolver';
+import { InMemoryFileRepository } from '../../../../../test/restaurants/support/in-memory-file-repository';
+import { FakeStoragePort } from '../../../../../test/restaurants/support/fake-storage-port';
 import { BranchResult } from '@modules/branches/application/dto/branch.result';
 
 const DAMASCUS = { lat: 33.5138, lng: 36.2765 };
@@ -76,6 +79,7 @@ function buildUseCase(reader: FakeDiscoveryReader) {
     listRestaurantIdsWithActiveOfferUseCase,
     listRestaurantIdsWithMenuUseCase,
     listWorkingHoursByRestaurantIdsUseCase,
+    new RestaurantCoverImageUrlResolver(new InMemoryFileRepository(), new FakeStoragePort()),
   );
 }
 

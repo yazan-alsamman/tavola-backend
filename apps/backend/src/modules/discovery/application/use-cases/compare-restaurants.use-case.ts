@@ -5,6 +5,7 @@ import { RestaurantResult } from '@modules/restaurants/application/dto/restauran
 import { WorkingHoursEntryResult } from '@modules/restaurants/application/dto/working-hours.result';
 import { ListWorkingHoursByRestaurantIdsUseCase } from '@modules/restaurants/application/use-cases/list-working-hours-by-restaurant-ids.use-case';
 import { DiscoveryReaderPort, DISCOVERY_READER } from '../ports/discovery-reader.port';
+import { RestaurantCoverImageUrlResolver } from '../services/restaurant-cover-image-url.resolver';
 
 export interface CompareRestaurantsCommand {
   restaurantIds: string[];
@@ -14,6 +15,7 @@ export type ComparableRestaurant = RestaurantResult & {
   hasActiveOffer: boolean;
   hasMenu: boolean;
   workingHours: WorkingHoursEntryResult[];
+  coverImageUrl: string | null;
 };
 
 export interface CompareRestaurantsResult {
@@ -49,6 +51,7 @@ export class CompareRestaurantsUseCase {
     private readonly listRestaurantIdsWithActiveOfferUseCase: ListRestaurantIdsWithActiveOfferUseCase,
     private readonly listRestaurantIdsWithMenuUseCase: ListRestaurantIdsWithMenuUseCase,
     private readonly listWorkingHoursByRestaurantIdsUseCase: ListWorkingHoursByRestaurantIdsUseCase,
+    private readonly restaurantCoverImageUrlResolver: RestaurantCoverImageUrlResolver,
   ) {}
 
   async execute(command: CompareRestaurantsCommand): Promise<CompareRestaurantsResult> {
@@ -64,15 +67,20 @@ export class CompareRestaurantsUseCase {
       .filter((restaurant): restaurant is RestaurantResult => restaurant !== undefined);
 
     const restaurantIds = orderedVisible.map((restaurant) => restaurant.restaurantId);
-    const [restaurantsWithActiveOffer, restaurantsWithMenu, workingHoursByRestaurantId] =
-      await Promise.all([
-        this.listRestaurantIdsWithActiveOfferUseCase.execute({ restaurantIds }),
-        this.listRestaurantIdsWithMenuUseCase.execute({ restaurantIds }),
-        this.listWorkingHoursByRestaurantIdsUseCase.execute({ restaurantIds }),
-      ]);
+    const [
+      restaurantsWithActiveOffer,
+      restaurantsWithMenu,
+      workingHoursByRestaurantId,
+      restaurantsWithCoverImageUrl,
+    ] = await Promise.all([
+      this.listRestaurantIdsWithActiveOfferUseCase.execute({ restaurantIds }),
+      this.listRestaurantIdsWithMenuUseCase.execute({ restaurantIds }),
+      this.listWorkingHoursByRestaurantIdsUseCase.execute({ restaurantIds }),
+      this.restaurantCoverImageUrlResolver.attach(orderedVisible),
+    ]);
 
     return {
-      items: orderedVisible.map((restaurant) => ({
+      items: restaurantsWithCoverImageUrl.map((restaurant) => ({
         ...restaurant,
         hasActiveOffer: restaurantsWithActiveOffer.has(restaurant.restaurantId),
         hasMenu: restaurantsWithMenu.has(restaurant.restaurantId),

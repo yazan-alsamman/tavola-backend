@@ -4,13 +4,19 @@ import { StoragePort } from '@modules/files/application/ports/storage.port';
 
 /**
  * ADR-031 decision #5: "Signed read URLs are resolved at read time and
- * never persisted." Batches every distinct, non-null `imageFileId` across a
- * full Menu tree into one `findManyByIds` call (Phase 15 precedent) instead
- * of one lookup per Category/Item, then resolves one signed URL per file -
- * MinIO's presign operation is local/cryptographic (no network round trip
- * per call), so this is not itself a further batching concern.
+ * never persisted." Batches every distinct, non-null file id into one
+ * `findManyByIds` call (Phase 15 precedent) instead of one lookup per
+ * owning row, then resolves one signed URL per file - MinIO's presign
+ * operation is local/cryptographic (no network round trip per call), so
+ * this is not itself a further batching concern.
+ *
+ * An id with no `File` row is simply absent from the returned map; callers
+ * render that as a `null` URL (the same rule `ListRestaurantGalleryUseCase`
+ * applies), never an error that fails the surrounding read. Originally
+ * Menus-only (ADR-031); shared here so Discovery's restaurant cover image
+ * reuses the exact same batching/signing path instead of a second copy.
  */
-export async function resolveMenuImageUrls(
+export async function resolveSignedReadUrls(
   fileIds: Array<string | null>,
   fileRepository: FileRepository,
   storagePort: StoragePort,

@@ -89,7 +89,7 @@ export class DiscoveryController {
     operationId: 'discoveryListRestaurants',
     summary: 'Search/browse restaurants (public, unauthenticated)',
     description:
-      'Paginated. With no filters/sort supplied, identical to the pre-Phase-15.5 plain listing (most-recently-created first). Phase 15.5 (architecture frozen 2026-07-29) adds optional `q` (name-only ILIKE), `cuisineId`/`occasionId` (relational taxonomy), `priceLevel`, `minRating`, `city`, and deterministic `sort`/`order`. Only `Active`, non-soft-deleted restaurants across every organization - discovery intentionally crosses tenant boundaries (this is the product purpose), never leaking `organizationId` or any other tenant-internal field. Each result also carries `hasActiveOffer`.',
+      'Paginated. With no filters/sort supplied, identical to the pre-Phase-15.5 plain listing (most-recently-created first). Phase 15.5 (architecture frozen 2026-07-29) adds optional `q` (name-only ILIKE), `cuisineId`/`occasionId` (relational taxonomy), `priceLevel`, `minRating`, `city`, and deterministic `sort`/`order`. Only `Active`, non-soft-deleted restaurants across every organization - discovery intentionally crosses tenant boundaries (this is the product purpose), never leaking `organizationId` or any other tenant-internal field. Each result also carries `hasActiveOffer` and `coverImageUrl` (a short-lived signed read URL for `coverImageId`, or null when there is no cover).',
   })
   @ApiResponse({
     status: 200,
@@ -194,7 +194,7 @@ export class DiscoveryController {
     operationId: 'discoveryGetRestaurant',
     summary: 'Get a restaurant by id (public, unauthenticated)',
     description:
-      'Unknown, soft-deleted, or non-Active (e.g. Suspended) restaurants 404. Includes workingHours (the Restaurant-level default weekly schedule, Phase 4.3) - Public Working Hours, customer-facing correction.',
+      'Unknown, soft-deleted, or non-Active (e.g. Suspended) restaurants 404. Includes workingHours (the Restaurant-level default weekly schedule, Phase 4.3) - Public Working Hours, customer-facing correction. `coverImageUrl` is a short-lived signed read URL for `coverImageId` (null when there is no cover).',
   })
   @ApiParam({ name: 'restaurantId', format: 'uuid' })
   @ApiResponse({

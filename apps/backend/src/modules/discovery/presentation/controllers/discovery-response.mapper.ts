@@ -48,7 +48,10 @@ function toWorkingHoursEntryPublicResponse(
 }
 
 export function toDiscoveryRestaurantResponse(
-  result: RestaurantResult & { workingHours: WorkingHoursEntryResult[] },
+  result: RestaurantResult & {
+    workingHours: WorkingHoursEntryResult[];
+    coverImageUrl: string | null;
+  },
 ): RestaurantPublicResponseDto {
   return {
     restaurantId: result.restaurantId,
@@ -56,6 +59,7 @@ export function toDiscoveryRestaurantResponse(
     slug: result.slug,
     logoId: result.logoId,
     coverImageId: result.coverImageId,
+    coverImageUrl: result.coverImageUrl,
     description: result.description,
     cuisineType: result.cuisineType,
     averageRating: result.averageRating,

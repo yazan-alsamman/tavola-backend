@@ -15,7 +15,7 @@ import {
   MENU_CATEGORY_REPOSITORY,
 } from '../../domain/repositories/menu-category.repository';
 import { MenuCategoryNotFoundException } from '../../domain/exceptions/menu-category-not-found.exception';
-import { resolveMenuImageUrls } from '../services/resolve-menu-image-urls';
+import { resolveSignedReadUrls } from '@modules/files/application/services/resolve-signed-read-urls';
 import { GetMenuCategoryCommand } from '../dto/menu-category.commands';
 
 export interface MenuCategoryPublicResult {
@@ -53,7 +53,7 @@ export class GetMenuCategoryUseCase {
     }
 
     const imageFileId = category.imageFileId?.value ?? null;
-    const urlByFileId = await resolveMenuImageUrls(
+    const urlByFileId = await resolveSignedReadUrls(
       [imageFileId],
       this.fileRepository,
       this.storagePort,
