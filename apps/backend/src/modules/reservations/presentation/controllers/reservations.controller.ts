@@ -25,13 +25,10 @@ import { ApiErrorResponse } from '@common/decorators/api-error-response.decorato
 import { ErrorResponseDto } from '@common/dto/error-response.dto';
 import {
   AuthenticatedActor,
-  AuthenticatedEmployeeActor,
 } from '@modules/authentication/application/dto/authenticated-actor.dto';
 import { CurrentActor } from '@modules/authentication/presentation/decorators/current-actor.decorator';
 import { JwtAuthGuard } from '@modules/authentication/presentation/guards/jwt-auth.guard';
 import { SessionVersionGuard } from '@modules/authentication/presentation/guards/session-version.guard';
-import { PermissionsGuard } from '@modules/authorization/presentation/guards/permissions.guard';
-import { RequirePermission } from '@modules/authorization/presentation/decorators/require-permission.decorator';
 import { SearchAvailabilityUseCase } from '../../application/use-cases/search-availability.use-case';
 import { CreateReservationUseCase } from '../../application/use-cases/create-reservation.use-case';
 import { ListMyReservationsUseCase } from '../../application/use-cases/list-my-reservations.use-case';
@@ -397,8 +394,7 @@ export class ReservationsController {
   }
 
   @Post(':id/approve')
-  @UseGuards(JwtAuthGuard, SessionVersionGuard, PermissionsGuard)
-  @RequirePermission('reservations:approve')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ResponseMessage('Reservation approved successfully.')
@@ -406,7 +402,7 @@ export class ReservationsController {
     operationId: 'reservationsApprove',
     summary: 'Approve a Pending reservation (Domain Action, Phase 7.2)',
     description:
-      'Only a Pending reservation may be approved. Calls Table.reserve() atomically with the status transition (ADR-013 advisory lock + re-check, same mechanism as Create). Automatically rejects any other overlapping Pending reservation for the same table (no Table operation for those) - Reject and automatic rejection never call Table.release(), since a Pending reservation never reserved the table in the first place. Requires the reservations:approve permission and Employee branch scope.',
+      'Only a Pending reservation may be approved. Calls Table.reserve() atomically with the status transition (ADR-013 advisory lock + re-check, same mechanism as Create). Automatically rejects any other overlapping Pending reservation for the same table (no Table operation for those). Owner/Admin of the owning organization, or an Employee holding reservations:approve and branch scope. Authorization is resolved in the use case (PermissionsGuard would deny every OrganizationMember).',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'Reservation approved', type: ReservationResponseDto })
@@ -415,7 +411,7 @@ export class ReservationsController {
     'AUTH_INVALID_TOKEN',
     'AUTH_EXPIRED_TOKEN',
   ])
-  @ApiErrorResponse(403, 'Caller lacks reservations:approve or is outside branch scope', [
+  @ApiErrorResponse(403, 'Caller lacks reservations:approve, is not Owner/Admin, or is outside branch scope', [
     'FORBIDDEN',
     'EMPLOYEE_BRANCH_NOT_ASSIGNED',
   ])
@@ -425,7 +421,7 @@ export class ReservationsController {
   ])
   async approve(
     @Param('id', ParseUUIDPipe) id: string,
-    @CurrentActor() actor: AuthenticatedEmployeeActor,
+    @CurrentActor() actor: AuthenticatedActor,
     @Req() request: Request,
   ): Promise<ReservationResponseDto> {
     const result = await this.approveReservationUseCase.execute({
@@ -437,8 +433,7 @@ export class ReservationsController {
   }
 
   @Post(':id/reject')
-  @UseGuards(JwtAuthGuard, SessionVersionGuard, PermissionsGuard)
-  @RequirePermission('reservations:approve')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ResponseMessage('Reservation rejected successfully.')
@@ -446,7 +441,7 @@ export class ReservationsController {
     operationId: 'reservationsReject',
     summary: 'Reject a Pending reservation (Domain Action, Phase 7.2)',
     description:
-      'Only a Pending reservation may be rejected. Performs NO Table operation (Phase 7.2 Architecture Correction: a Pending reservation never reserved the table, so there is nothing to release). Requires the reservations:approve permission and Employee branch scope.',
+      'Only a Pending reservation may be rejected. Performs NO Table operation (Phase 7.2 Architecture Correction: a Pending reservation never reserved the table, so there is nothing to release). Owner/Admin of the owning organization, or an Employee holding reservations:approve and branch scope.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'Reservation rejected', type: ReservationResponseDto })
@@ -455,14 +450,14 @@ export class ReservationsController {
     'AUTH_INVALID_TOKEN',
     'AUTH_EXPIRED_TOKEN',
   ])
-  @ApiErrorResponse(403, 'Caller lacks reservations:approve or is outside branch scope', [
+  @ApiErrorResponse(403, 'Caller lacks reservations:approve, is not Owner/Admin, or is outside branch scope', [
     'FORBIDDEN',
     'EMPLOYEE_BRANCH_NOT_ASSIGNED',
   ])
   @ApiErrorResponse(404, 'Reservation not found', ['NOT_FOUND'])
   async reject(
     @Param('id', ParseUUIDPipe) id: string,
-    @CurrentActor() actor: AuthenticatedEmployeeActor,
+    @CurrentActor() actor: AuthenticatedActor,
     @Req() request: Request,
   ): Promise<ReservationResponseDto> {
     const result = await this.rejectReservationUseCase.execute({
@@ -569,8 +564,7 @@ export class ReservationsController {
   }
 
   @Post(':id/complete')
-  @UseGuards(JwtAuthGuard, SessionVersionGuard, PermissionsGuard)
-  @RequirePermission('reservations:complete')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ResponseMessage('Reservation completed successfully.')
@@ -578,7 +572,7 @@ export class ReservationsController {
     operationId: 'reservationsComplete',
     summary: 'Mark an Approved reservation Completed (Domain Action, Phase 7.3)',
     description:
-      'Staff-only (reservations:complete, branch-scoped) - a Customer cannot complete their own reservation. Only reachable once the scheduled service window has begun. Calls Table.release() atomically, returning the table directly to Available - never through TableStatus.Cleaning.',
+      'Owner/Admin of the owning organization, or an Employee holding reservations:complete and branch scope. A Customer cannot complete their own reservation. Only reachable once the scheduled service window has begun. Calls Table.release() atomically, returning the table directly to Available.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'Reservation completed', type: ReservationResponseDto })
@@ -591,14 +585,14 @@ export class ReservationsController {
     'AUTH_INVALID_TOKEN',
     'AUTH_EXPIRED_TOKEN',
   ])
-  @ApiErrorResponse(403, 'Caller lacks reservations:complete or is outside branch scope', [
+  @ApiErrorResponse(403, 'Caller lacks reservations:complete, is not Owner/Admin, or is outside branch scope', [
     'FORBIDDEN',
     'EMPLOYEE_BRANCH_NOT_ASSIGNED',
   ])
   @ApiErrorResponse(404, 'Reservation not found', ['NOT_FOUND'])
   async complete(
     @Param('id', ParseUUIDPipe) id: string,
-    @CurrentActor() actor: AuthenticatedEmployeeActor,
+    @CurrentActor() actor: AuthenticatedActor,
     @Req() request: Request,
   ): Promise<ReservationResponseDto> {
     const result = await this.completeReservationUseCase.execute({
@@ -610,8 +604,7 @@ export class ReservationsController {
   }
 
   @Post(':id/no-show')
-  @UseGuards(JwtAuthGuard, SessionVersionGuard, PermissionsGuard)
-  @RequirePermission('reservations:noshow')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ResponseMessage('Reservation marked as No-Show successfully.')
@@ -619,7 +612,7 @@ export class ReservationsController {
     operationId: 'reservationsNoShow',
     summary: 'Mark an Approved reservation NoShow (Domain Action, Phase 7.3)',
     description:
-      'Staff-only (reservations:noshow - a dedicated permission slug, never a reuse of reservations:approve; hyphen-free because PermissionSlug rejects hyphenated segments). Only reachable after the scheduled time has passed. Calls Table.release() atomically, identically to Complete. No-show customer restriction/counting policy remains a deferred future product decision, out of scope here.',
+      'Owner/Admin of the owning organization, or an Employee holding reservations:noshow (a dedicated permission slug, never a reuse of reservations:approve) and branch scope. Only reachable after the scheduled time has passed. Calls Table.release() atomically, identically to Complete.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({
@@ -636,14 +629,14 @@ export class ReservationsController {
     'AUTH_INVALID_TOKEN',
     'AUTH_EXPIRED_TOKEN',
   ])
-  @ApiErrorResponse(403, 'Caller lacks reservations:noshow or is outside branch scope', [
+  @ApiErrorResponse(403, 'Caller lacks reservations:noshow, is not Owner/Admin, or is outside branch scope', [
     'FORBIDDEN',
     'EMPLOYEE_BRANCH_NOT_ASSIGNED',
   ])
   @ApiErrorResponse(404, 'Reservation not found', ['NOT_FOUND'])
   async markNoShow(
     @Param('id', ParseUUIDPipe) id: string,
-    @CurrentActor() actor: AuthenticatedEmployeeActor,
+    @CurrentActor() actor: AuthenticatedActor,
     @Req() request: Request,
   ): Promise<ReservationResponseDto> {
     const result = await this.markNoShowReservationUseCase.execute({
@@ -655,8 +648,7 @@ export class ReservationsController {
   }
 
   @Post(':id/table-ready')
-  @UseGuards(JwtAuthGuard, SessionVersionGuard, PermissionsGuard)
-  @RequirePermission('reservations:tableready')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ResponseMessage('Reservation marked table-ready successfully.')
@@ -664,7 +656,7 @@ export class ReservationsController {
     operationId: 'reservationsMarkTableReady',
     summary: "Mark an Approved reservation's table as ready (Operational Signal, Phase 7.6)",
     description:
-      'Staff-only (reservations:tableready, branch-scoped) - not a status transition, status remains Approved and no Table operation is performed. Informational only for the front-of-house flow; may only be called once per reservation while it remains Approved.',
+      'Owner/Admin of the owning organization, or an Employee holding reservations:tableready and branch scope. Not a status transition: status remains Approved and no Table operation is performed. May only be called once per reservation while it remains Approved.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({
@@ -681,14 +673,14 @@ export class ReservationsController {
     'AUTH_INVALID_TOKEN',
     'AUTH_EXPIRED_TOKEN',
   ])
-  @ApiErrorResponse(403, 'Caller lacks reservations:tableready or is outside branch scope', [
+  @ApiErrorResponse(403, 'Caller lacks reservations:tableready, is not Owner/Admin, or is outside branch scope', [
     'FORBIDDEN',
     'EMPLOYEE_BRANCH_NOT_ASSIGNED',
   ])
   @ApiErrorResponse(404, 'Reservation not found', ['NOT_FOUND'])
   async markTableReady(
     @Param('id', ParseUUIDPipe) id: string,
-    @CurrentActor() actor: AuthenticatedEmployeeActor,
+    @CurrentActor() actor: AuthenticatedActor,
     @Req() request: Request,
   ): Promise<ReservationResponseDto> {
     const result = await this.markTableReadyReservationUseCase.execute({

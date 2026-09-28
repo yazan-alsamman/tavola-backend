@@ -12,6 +12,10 @@ import {
   TABLE_REPOSITORY,
 } from '@modules/tables/domain/repositories/table.repository';
 import { TableNotFoundException } from '@modules/tables/domain/exceptions/table-not-found.exception';
+import {
+  RestaurantRepository,
+  RESTAURANT_REPOSITORY,
+} from '@modules/restaurants/domain/repositories/restaurant.repository';
 import { ReservationStatus } from '../../domain/enums/reservation.enums';
 import { ReservationHistory } from '../../domain/entities/reservation-history.entity';
 import { ReservationNotFoundException } from '../../domain/exceptions/reservation-not-found.exception';
@@ -25,7 +29,10 @@ import {
   ReservationHistoryRepository,
   RESERVATION_HISTORY_REPOSITORY,
 } from '../../domain/repositories/reservation-history.repository';
-import { assertEmployeeCanActOnReservation } from '../services/assert-employee-reservation-scope';
+import {
+  assertActorCanOperateReservation,
+  resolveReservationOperatorId,
+} from '../services/assert-employee-reservation-scope';
 import {
   WaitlistRecheckSchedulerPort,
   WAITLIST_RECHECK_SCHEDULER,
@@ -37,9 +44,10 @@ import { ReservationResult } from '../dto/reservation.result';
 
 /**
  * Phase 7.3 (Reservation Lifecycle, architecture frozen 2026-07-23).
- * `Approved -> NoShow` only, staff-only (`reservations:noshow` - a
- * dedicated slug, never a reuse of `reservations:approve`). Only reachable
- * once the reservation's scheduled time has passed (enforced by
+ * `Approved -> NoShow` only. Owner/Admin of the owning organization, or an
+ * Employee holding `reservations:noshow` (a dedicated slug, never a reuse of
+ * `reservations:approve`) and branch scope. Only reachable once the
+ * reservation's scheduled time has passed (enforced by
  * `Reservation.markNoShow()` itself). Calls `Table.release()` atomically,
  * identically to Complete. No-show customer restriction/counting policy
  * remains a deferred future product decision - out of scope here. Phase 7.5
@@ -63,6 +71,7 @@ export class MarkNoShowReservationUseCase {
     @Inject(WAITLIST_RECHECK_SCHEDULER)
     private readonly waitlistRecheckScheduler: WaitlistRecheckSchedulerPort,
     private readonly scheduleApprovedReservationSignals: ScheduleApprovedReservationSignalsService,
+    @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
   ) {}
 
   async execute(command: MarkNoShowReservationCommand): Promise<ReservationResult> {
@@ -71,7 +80,13 @@ export class MarkNoShowReservationUseCase {
     if (existing === null) {
       throw new ReservationNotFoundException();
     }
-    assertEmployeeCanActOnReservation(command.actor, existing);
+    await assertActorCanOperateReservation(
+      command.actor,
+      existing,
+      'reservations:noshow',
+      this.restaurantRepository,
+    );
+    const operatorId = resolveReservationOperatorId(command.actor);
 
     const now = this.clock.now();
     const markedNoShow = existing.markNoShow(now);
@@ -107,7 +122,7 @@ export class MarkNoShowReservationUseCase {
           oldTableId: null,
           newTableId: null,
           withinCancellationWindow: null,
-          changedBy: command.actor.employeeId,
+          changedBy: operatorId,
           changedAt: now,
           reason: null,
         }),
@@ -141,7 +156,7 @@ export class MarkNoShowReservationUseCase {
           restaurantId: existing.restaurantId.value,
           branchId: existing.branchId.value,
           tableId: existing.tableId.value,
-          markedBy: command.actor.employeeId,
+          markedBy: operatorId,
         },
         now,
         command.correlationId,

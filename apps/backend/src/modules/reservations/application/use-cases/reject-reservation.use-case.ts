@@ -10,10 +10,17 @@ import { ReservationNotFoundException } from '../../domain/exceptions/reservatio
 import { InvalidReservationStatusTransitionException } from '../../domain/exceptions/invalid-reservation-status-transition.exception';
 import { ReservationRejectedEvent } from '../../domain/events/reservation.events';
 import {
+  RestaurantRepository,
+  RESTAURANT_REPOSITORY,
+} from '@modules/restaurants/domain/repositories/restaurant.repository';
+import {
   ReservationRepository,
   RESERVATION_REPOSITORY,
 } from '../../domain/repositories/reservation.repository';
-import { assertEmployeeCanActOnReservation } from '../services/assert-employee-reservation-scope';
+import {
+  assertActorCanOperateReservation,
+  resolveReservationOperatorId,
+} from '../services/assert-employee-reservation-scope';
 import {
   ReservationExpirationSchedulerPort,
   RESERVATION_EXPIRATION_SCHEDULER,
@@ -45,6 +52,7 @@ export class RejectReservationUseCase {
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
     @Inject(RESERVATION_EXPIRATION_SCHEDULER)
     private readonly expirationScheduler: ReservationExpirationSchedulerPort,
+    @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
   ) {}
 
   async execute(command: RejectReservationCommand): Promise<ReservationResult> {
@@ -53,7 +61,13 @@ export class RejectReservationUseCase {
     if (existing === null) {
       throw new ReservationNotFoundException();
     }
-    assertEmployeeCanActOnReservation(command.actor, existing);
+    await assertActorCanOperateReservation(
+      command.actor,
+      existing,
+      'reservations:approve',
+      this.restaurantRepository,
+    );
+    const operatorId = resolveReservationOperatorId(command.actor);
 
     const now = this.clock.now();
     const rejected = existing.reject(now);
@@ -81,7 +95,7 @@ export class RejectReservationUseCase {
           restaurantId: existing.restaurantId.value,
           branchId: existing.branchId.value,
           tableId: existing.tableId.value,
-          rejectedBy: command.actor.employeeId,
+          rejectedBy: operatorId,
           automatic: false,
         },
         now,

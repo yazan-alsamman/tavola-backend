@@ -7,30 +7,37 @@ import {
 } from '@shared/application/ports/event-publisher.port';
 import { ReservationId } from '@shared/domain/value-objects/identifiers.vo';
 import { ReservationNotFoundException } from '../../domain/exceptions/reservation-not-found.exception';
+import {
+  RestaurantRepository,
+  RESTAURANT_REPOSITORY,
+} from '@modules/restaurants/domain/repositories/restaurant.repository';
 import { InvalidReservationStatusTransitionException } from '../../domain/exceptions/invalid-reservation-status-transition.exception';
 import { TableReadyNotifiedEvent } from '../../domain/events/reservation.events';
 import {
   ReservationRepository,
   RESERVATION_REPOSITORY,
 } from '../../domain/repositories/reservation.repository';
-import { assertEmployeeCanActOnReservation } from '../services/assert-employee-reservation-scope';
+import {
+  assertActorCanOperateReservation,
+  resolveReservationOperatorId,
+} from '../services/assert-employee-reservation-scope';
 import { toReservationResult } from '../mappers/reservation-result.mapper';
 import { MarkTableReadyReservationCommand } from '../dto/mark-table-ready-reservation.command';
 import { ReservationResult } from '../dto/reservation.result';
 
 /**
- * Phase 7.6 (Operational Signals, ADR-019). Staff-initiated (`POST
- * /reservations/:id/table-ready`, `reservations:tableready`, staff-only,
- * exactly like Complete/NoShow's own `assertEmployeeCanActOnReservation`
- * scope check). Not a status transition - `status` remains `Approved` - so
- * unlike Complete/NoShow this performs no `Table` operation and needs no
- * `UnitOfWorkPort`/`ReservationHistory` row: the repository's own
- * single-column CAS (`markTableReadyNotifiedIfEligible`) is the sole write,
- * applied outside any transaction (mirrors the Late-Arrival job's own
- * CAS-only write). A `false` CAS result here (already Approved-left, or
- * already marked ready) is a genuine staff-facing error, not a silent
- * no-op - the direct HTTP caller expects to be told, unlike a background
- * sweep landing on a stale row.
+ * Phase 7.6 (Operational Signals, ADR-019). Owner/Admin of the owning
+ * organization, or an Employee holding `reservations:tableready` and branch
+ * scope (`POST /reservations/:id/table-ready`). Not a status transition -
+ * `status` remains `Approved` - so unlike Complete/NoShow this performs no
+ * `Table` operation and needs no `UnitOfWorkPort`/`ReservationHistory` row:
+ * the repository's own single-column CAS
+ * (`markTableReadyNotifiedIfEligible`) is the sole write, applied outside
+ * any transaction (mirrors the Late-Arrival job's own CAS-only write). A
+ * `false` CAS result here (already Approved-left, or already marked ready)
+ * is a genuine staff-facing error, not a silent no-op - the direct HTTP
+ * caller expects to be told, unlike a background sweep landing on a stale
+ * row.
  */
 @Injectable()
 export class MarkTableReadyReservationUseCase {
@@ -39,6 +46,7 @@ export class MarkTableReadyReservationUseCase {
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
+    @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
   ) {}
 
   async execute(command: MarkTableReadyReservationCommand): Promise<ReservationResult> {
@@ -47,7 +55,13 @@ export class MarkTableReadyReservationUseCase {
     if (existing === null) {
       throw new ReservationNotFoundException();
     }
-    assertEmployeeCanActOnReservation(command.actor, existing);
+    await assertActorCanOperateReservation(
+      command.actor,
+      existing,
+      'reservations:tableready',
+      this.restaurantRepository,
+    );
+    const operatorId = resolveReservationOperatorId(command.actor);
 
     const now = this.clock.now();
     // Validates the Approved-and-not-already-notified guard against the
@@ -76,7 +90,7 @@ export class MarkTableReadyReservationUseCase {
           branchId: existing.branchId.value,
           reservationStartTime: existing.reservationStartTime.toISOString(),
           tableReadyNotifiedAt: now.toISOString(),
-          markedBy: command.actor.employeeId,
+          markedBy: operatorId,
         },
         now,
         command.correlationId,

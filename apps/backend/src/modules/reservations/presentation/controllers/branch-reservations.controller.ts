@@ -43,13 +43,13 @@ import { toBranchReservationItemResponse } from './reservation-response.mapper';
  * routes, per the frozen scope decision: prefer one properly-filtered
  * date-range endpoint over redundant view-specific routes.
  *
- * Employee actor only, `JwtAuthGuard` + `SessionVersionGuard` only - no
+ * Owner/Admin of the organization that owns the restaurant, or a
+ * branch-scoped Employee. `JwtAuthGuard` + `SessionVersionGuard` only - no
  * `PermissionsGuard`/`@RequirePermission` and no new permission slug
  * (TASKS.md Phase 8 §9 explicitly forbids inventing `reservations:read`;
  * existing `reservations:*` permissions remain mutation-only). Authorization
  * (actor-type gate, restaurant/branch scope) is resolved entirely inside
- * `ListBranchReservationsUseCase`, mirroring Cancel/Reschedule's own
- * "resolved inside the use case, not new guard composition" precedent.
+ * `ListBranchReservationsUseCase`.
  */
 @ApiTags('Reservations')
 @ApiExtraModels(ErrorResponseDto)
@@ -66,7 +66,7 @@ export class BranchReservationsController {
     operationId: 'branchReservationsList',
     summary: "List a branch's reservations within a date range (Restaurant Dashboard Calendar)",
     description:
-      "Employee actor only, branch-scoped (empty branchIds on the JWT = restaurant-wide scope). dateFrom/dateTo are both required (inclusive, against reservationDate) and serve Day/Week/Month calendar views from this single endpoint - see this controller's own doc comment. Ordered reservationStartTime ascending. Served by the existing (branchId, reservationDate, status) index - no N+1.",
+      "Owner/Admin of the owning organization, or a branch-scoped Employee (empty branchIds on the Employee JWT = restaurant-wide scope). dateFrom/dateTo are both required (inclusive, against reservationDate) and serve Day/Week/Month calendar views from this single endpoint. Ordered reservationStartTime ascending. Each item includes guest name, phone, time, and table.",
   })
   @ApiParam({ name: 'restaurantId', format: 'uuid' })
   @ApiParam({ name: 'branchId', format: 'uuid' })
@@ -84,7 +84,7 @@ export class BranchReservationsController {
     'AUTH_INVALID_TOKEN',
     'AUTH_EXPIRED_TOKEN',
   ])
-  @ApiErrorResponse(403, 'Caller is not an Employee, or is outside branch scope', [
+  @ApiErrorResponse(403, 'Caller is not Owner/Admin or an Employee, or the Employee is outside branch scope', [
     'FORBIDDEN',
     'EMPLOYEE_BRANCH_NOT_ASSIGNED',
   ])

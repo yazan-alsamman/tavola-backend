@@ -315,18 +315,18 @@ describe('/api/v1/restaurants/:restaurantId/branches/:branchId/reservations (e2e
       .expect(401);
   });
 
-  it('rejects a Customer actor with 403', async () => {
+  it('collapses a foreign organization Owner to 404 (IDOR-safe)', async () => {
     if (!dbAvailable) return;
 
     const owner = await registerAndLoginOwner('customer-403-owner');
     const { restaurantId, branchId } = await setUpRestaurantBranchTable(owner.accessToken);
-    const customer = await registerAndLoginOwner('customer-403-customer');
+    const foreignOwner = await registerAndLoginOwner('customer-403-customer');
 
     await request(app!.getHttpServer())
       .get(calendarUrl(restaurantId, branchId))
       .query({ dateFrom: '2026-11-01', dateTo: '2026-11-30' })
-      .set('Authorization', `Bearer ${customer.accessToken}`)
-      .expect(403);
+      .set('Authorization', `Bearer ${foreignOwner.accessToken}`)
+      .expect(404);
   });
 
   it('collapses a cross-restaurant Employee to 404 (IDOR-safe)', async () => {

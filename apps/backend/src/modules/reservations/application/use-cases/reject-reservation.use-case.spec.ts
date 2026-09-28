@@ -12,6 +12,7 @@ import {
   SequentialIdGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryReservationRepository } from '../../../../../test/reservations/support/in-memory-reservation.repository';
+import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryReservationExpirationScheduler } from '../../../../../test/reservations/support/in-memory-reservation-expiration-scheduler';
 
 describe('RejectReservationUseCase', () => {
@@ -76,6 +77,7 @@ describe('RejectReservationUseCase', () => {
       ]),
       eventPublisher,
       expirationScheduler,
+      new InMemoryRestaurantRepository(),
     );
     return { useCase, reservationRepository, eventPublisher, expirationScheduler };
   }

@@ -21,6 +21,7 @@ import { InMemoryReservationRepository } from '../../../../../test/reservations/
 import { InMemoryReservationHistoryRepository } from '../../../../../test/reservations/support/in-memory-reservation-history.repository';
 import { InMemoryApprovedReservationOperationalScheduler } from '../../../../../test/reservations/support/in-memory-approved-reservation-operational-scheduler';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
+import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { ScheduleApprovedReservationSignalsService } from '../services/schedule-approved-reservation-signals.service';
 
 describe('CompleteReservationUseCase', () => {
@@ -125,6 +126,7 @@ describe('CompleteReservationUseCase', () => {
       eventPublisher,
       new ImmediateUnitOfWork(),
       scheduleApprovedReservationSignals,
+      new InMemoryRestaurantRepository(),
     );
 
     return {

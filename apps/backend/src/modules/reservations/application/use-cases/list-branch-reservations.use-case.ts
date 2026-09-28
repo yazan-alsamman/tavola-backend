@@ -7,6 +7,11 @@ import {
   BranchRepository,
   BRANCH_REPOSITORY,
 } from '@modules/branches/domain/repositories/branch.repository';
+import { OrganizationMemberRole } from '@modules/organizations/domain/enums/organization.enums';
+import {
+  RestaurantRepository,
+  RESTAURANT_REPOSITORY,
+} from '@modules/restaurants/domain/repositories/restaurant.repository';
 import { BranchId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import {
   StaffReservationsReaderPort,
@@ -31,24 +36,22 @@ const MS_PER_DAY = 86_400_000;
 
 /**
  * Restaurant Dashboard Calendar (`GET
- * /restaurants/:restaurantId/branches/:branchId/reservations`). Employee
- * actor only, branch-scoped - mirrors `assertEmployeeCanActOnReservation`'s
- * exact restaurant/branch comparison (cross-restaurant collapses to
+ * /restaurants/:restaurantId/branches/:branchId/reservations`). Owner/Admin
+ * of the organization that owns the restaurant, or a branch-scoped Employee.
+ * The Employee path mirrors `assertEmployeeCanActOnReservation`'s restaurant
+ * and branch comparison (cross-restaurant collapses to
  * `BranchNotFoundException` 404, IDOR-safe; out-of-scope branch is
- * `EmployeeBranchNotAssignedException` 403), but resolved here against the
- * URL's `restaurantId`/`branchId` path params rather than an already-loaded
- * `Reservation` row, since this is a list query with no single target
- * resource. No `PermissionsGuard`/`@RequirePermission` on this route and no
- * new permission slug - TASKS.md (Phase 8, Realtime Rooms §9) is explicit:
- * "Do NOT invent `realtime:*`, `websocket:*`, or `reservations:read`...
- * Existing mutation permissions remain on REST command paths only." A
- * branch-authorized Employee may read the branch's reservation calendar
- * without holding any specific `reservations:*` mutation permission, exactly
- * like the passive branch-room WebSocket precedent that decision describes.
- * `OrganizationMember` has no legitimate claim to a Reservation resource at
- * all (`assertActorCanModifyReservation`'s own documented rule, reused here
- * verbatim) and a `User`/Customer actor is denied outright - both collapse to
- * the same structural `PermissionDeniedException` (403).
+ * `EmployeeBranchNotAssignedException` 403), resolved against the URL's
+ * `restaurantId`/`branchId` path params. An OrganizationMember Owner/Admin is
+ * proven by the tenant-scoped `RestaurantRepository.findById` (a missing or
+ * cross-organization restaurant collapses to the same 404). No
+ * `PermissionsGuard`/`@RequirePermission` on this route and no new permission
+ * slug - TASKS.md (Phase 8, Realtime Rooms §9) is explicit: "Do NOT invent
+ * `realtime:*`, `websocket:*`, or `reservations:read`... Existing mutation
+ * permissions remain on REST command paths only." A branch-authorized
+ * Employee may read the calendar without a `reservations:*` mutation
+ * permission. Staff/Billing organization members and Customer actors are
+ * denied with `PermissionDeniedException` (403).
  */
 @Injectable()
 export class ListBranchReservationsUseCase {
@@ -56,13 +59,26 @@ export class ListBranchReservationsUseCase {
     @Inject(STAFF_RESERVATIONS_READER)
     private readonly reader: StaffReservationsReaderPort,
     @Inject(BRANCH_REPOSITORY) private readonly branchRepository: BranchRepository,
+    @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
   ) {}
 
   async execute(command: ListBranchReservationsCommand): Promise<BranchReservationsListResult> {
-    if (command.actor.actorType !== AccessTokenActorType.Employee) {
+    if (command.actor.actorType === AccessTokenActorType.OrganizationMember) {
+      if (
+        command.actor.orgRole !== OrganizationMemberRole.Owner &&
+        command.actor.orgRole !== OrganizationMemberRole.Admin
+      ) {
+        throw new PermissionDeniedException();
+      }
+      const restaurant = await this.restaurantRepository.findById(
+        RestaurantId.create(command.restaurantId),
+      );
+      if (restaurant === null) {
+        throw new BranchNotFoundException();
+      }
+    } else if (command.actor.actorType !== AccessTokenActorType.Employee) {
       throw new PermissionDeniedException();
-    }
-    if (command.restaurantId !== command.actor.restaurantId) {
+    } else if (command.restaurantId !== command.actor.restaurantId) {
       throw new BranchNotFoundException();
     }
 
@@ -74,7 +90,11 @@ export class ListBranchReservationsUseCase {
       throw new BranchNotFoundException();
     }
 
-    if (command.actor.branchIds.length > 0 && !command.actor.branchIds.includes(command.branchId)) {
+    if (
+      command.actor.actorType === AccessTokenActorType.Employee &&
+      command.actor.branchIds.length > 0 &&
+      !command.actor.branchIds.includes(command.branchId)
+    ) {
       throw new EmployeeBranchNotAssignedException();
     }
 

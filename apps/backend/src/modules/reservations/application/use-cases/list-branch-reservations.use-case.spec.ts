@@ -9,6 +9,10 @@ import { ReservationSource, ReservationStatus } from '../../domain/enums/reserva
 import { StaffReservationItem } from '../ports/staff-reservations-reader.port';
 import { InMemoryStaffReservationsReader } from '../../../../../test/reservations/support/in-memory-staff-reservations-reader';
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
+import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
+import { Restaurant } from '@modules/restaurants/domain/entities/restaurant.entity';
+import { RestaurantStatus } from '@modules/restaurants/domain/enums/restaurant.enums';
+import { OrganizationMemberRole } from '@modules/organizations/domain/enums/organization.enums';
 
 describe('ListBranchReservationsUseCase', () => {
   const restaurantId = '33333333-3333-4333-8333-333333333333';
@@ -42,15 +46,15 @@ describe('ListBranchReservationsUseCase', () => {
     };
   }
 
-  function orgMemberActor() {
+  function orgMemberActor(orgRole: string = OrganizationMemberRole.Owner) {
     return {
       actorType: AccessTokenActorType.OrganizationMember as const,
       userId: 'user-1',
       sessionId: 'session-1',
       sessionVersion: 1,
       tokenFamilyId: 'family-1',
-      organizationId: 'org-1',
-      orgRole: 'Owner',
+      organizationId: '11111111-1111-4111-8111-111111111111',
+      orgRole,
       permissionsVersion: 1,
     };
   }
@@ -99,8 +103,30 @@ describe('ListBranchReservationsUseCase', () => {
   function makeUseCase(
     reader: InMemoryStaffReservationsReader,
     branchRepository: InMemoryBranchRepository,
+    restaurantRepository: InMemoryRestaurantRepository = new InMemoryRestaurantRepository(),
   ) {
-    return new ListBranchReservationsUseCase(reader, branchRepository);
+    return new ListBranchReservationsUseCase(reader, branchRepository, restaurantRepository);
+  }
+
+  async function seedRestaurant(restaurantRepository: InMemoryRestaurantRepository): Promise<void> {
+    await restaurantRepository.save(
+      Restaurant.create({
+        id: restaurantId,
+        organizationId: '11111111-1111-4111-8111-111111111111',
+        name: 'Abu Raihana',
+        slug: 'abu-raihana',
+        logoId: null,
+        coverImageId: null,
+        description: null,
+        cuisineType: null,
+        averageRating: null,
+        priceLevel: null,
+        status: RestaurantStatus.Active,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        deletedAt: null,
+      }),
+    );
   }
 
   it("returns a branch-scoped Employee's own branch reservations within the date range", async () => {
@@ -213,7 +239,7 @@ describe('ListBranchReservationsUseCase', () => {
     ).rejects.toBeInstanceOf(PermissionDeniedException);
   });
 
-  it('rejects an OrganizationMember actor with PermissionDeniedException (no legitimate claim to a Reservation resource)', async () => {
+  it('rejects a Staff organization member with PermissionDeniedException', async () => {
     const reader = new InMemoryStaffReservationsReader();
     const branchRepository = new InMemoryBranchRepository();
     await seedBranch(branchRepository);
@@ -221,7 +247,7 @@ describe('ListBranchReservationsUseCase', () => {
 
     await expect(
       useCase.execute({
-        actor: orgMemberActor(),
+        actor: orgMemberActor(OrganizationMemberRole.Staff),
         restaurantId,
         branchId,
         dateFrom: new Date('2026-08-01T00:00:00.000Z'),
@@ -230,6 +256,49 @@ describe('ListBranchReservationsUseCase', () => {
         limit: 20,
       }),
     ).rejects.toBeInstanceOf(PermissionDeniedException);
+  });
+
+  it('returns branch reservation details to the owning organization Owner', async () => {
+    const reader = new InMemoryStaffReservationsReader();
+    reader.seed(makeItem());
+    const branchRepository = new InMemoryBranchRepository();
+    await seedBranch(branchRepository);
+    const restaurantRepository = new InMemoryRestaurantRepository();
+    await seedRestaurant(restaurantRepository);
+    const useCase = makeUseCase(reader, branchRepository, restaurantRepository);
+
+    const result = await useCase.execute({
+      actor: orgMemberActor(OrganizationMemberRole.Owner),
+      restaurantId,
+      branchId,
+      dateFrom: new Date('2026-08-01T00:00:00.000Z'),
+      dateTo: new Date('2026-08-31T00:00:00.000Z'),
+      page: 1,
+      limit: 20,
+    });
+
+    expect(result.total).toBe(1);
+    expect(result.items[0].customer.name).toBe('Jane Doe');
+    expect(result.items[0].table.tableNumber).toBe('T1');
+  });
+
+  it('collapses an Owner whose tenant does not own the restaurant to BranchNotFoundException', async () => {
+    const reader = new InMemoryStaffReservationsReader();
+    const branchRepository = new InMemoryBranchRepository();
+    await seedBranch(branchRepository);
+    const useCase = makeUseCase(reader, branchRepository);
+
+    await expect(
+      useCase.execute({
+        actor: orgMemberActor(OrganizationMemberRole.Owner),
+        restaurantId,
+        branchId,
+        dateFrom: new Date('2026-08-01T00:00:00.000Z'),
+        dateTo: new Date('2026-08-31T00:00:00.000Z'),
+        page: 1,
+        limit: 20,
+      }),
+    ).rejects.toBeInstanceOf(BranchNotFoundException);
   });
 
   it('collapses a cross-restaurant Employee to BranchNotFoundException (IDOR-safe 404)', async () => {

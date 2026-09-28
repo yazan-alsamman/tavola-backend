@@ -355,7 +355,7 @@ describe('/api/v1/reservations/:id/approve|reject (e2e, Phase 7.2)', () => {
       expect(crossTenant.body.code).toBe('NOT_FOUND');
     });
 
-    it('returns 401 unauthenticated, 403 for a Customer actor, and 403 for an Employee outside branch scope', async () => {
+    it('returns 401 unauthenticated, 404 for a foreign organization Owner, and 403 for an Employee outside branch scope', async () => {
       if (!dbAvailable) return;
 
       const owner = await registerAndLoginOwner('authz-owner');
@@ -392,7 +392,7 @@ describe('/api/v1/reservations/:id/approve|reject (e2e, Phase 7.2)', () => {
       await request(app!.getHttpServer())
         .post(`/api/v1/reservations/${reservationId}/approve`)
         .set('Authorization', `Bearer ${customer.accessToken}`)
-        .expect(403);
+        .expect(404);
 
       const scopedEmployee = await inviteAndLoginEmployee(owner.accessToken, restaurantId, [
         otherBranchId,

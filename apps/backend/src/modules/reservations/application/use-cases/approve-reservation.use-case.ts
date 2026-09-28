@@ -16,6 +16,10 @@ import {
   RestaurantSettingsRepository,
   RESTAURANT_SETTINGS_REPOSITORY,
 } from '@modules/restaurants/domain/repositories/restaurant-settings.repository';
+import {
+  RestaurantRepository,
+  RESTAURANT_REPOSITORY,
+} from '@modules/restaurants/domain/repositories/restaurant.repository';
 import { Reservation } from '../../domain/entities/reservation.entity';
 import { ReservationAvailabilityService } from '../../domain/services/reservation-availability.service';
 import { ReservationNotFoundException } from '../../domain/exceptions/reservation-not-found.exception';
@@ -29,7 +33,10 @@ import {
   ReservationRepository,
   RESERVATION_REPOSITORY,
 } from '../../domain/repositories/reservation.repository';
-import { assertEmployeeCanActOnReservation } from '../services/assert-employee-reservation-scope';
+import {
+  assertActorCanOperateReservation,
+  resolveReservationOperatorId,
+} from '../services/assert-employee-reservation-scope';
 import { AutoRejectOverlappingPendingReservationsService } from '../services/auto-reject-overlapping-pending-reservations.service';
 import {
   ReservationExpirationSchedulerPort,
@@ -77,6 +84,7 @@ export class ApproveReservationUseCase {
     private readonly autoRejectOverlappingPendingReservations: AutoRejectOverlappingPendingReservationsService,
     private readonly scheduleApprovedReservationSignals: ScheduleApprovedReservationSignalsService,
     private readonly recordCustomerAcquisitionOnApproval: RecordCustomerAcquisitionOnApprovalService,
+    @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
   ) {}
 
   async execute(command: ApproveReservationCommand): Promise<ReservationResult> {
@@ -85,14 +93,20 @@ export class ApproveReservationUseCase {
     if (existing === null) {
       throw new ReservationNotFoundException();
     }
-    assertEmployeeCanActOnReservation(command.actor, existing);
+    await assertActorCanOperateReservation(
+      command.actor,
+      existing,
+      'reservations:approve',
+      this.restaurantRepository,
+    );
+    const operatorId = resolveReservationOperatorId(command.actor);
 
     const now = this.clock.now();
     // Entity-level snapshot guard - the first, cheaper line of defense
     // against approving a reservation that is no longer Pending. The
     // database-level conditional update below is the authoritative,
     // race-safe gate (ADR-013).
-    const approved = existing.approve(command.actor.employeeId, now);
+    const approved = existing.approve(operatorId, now);
 
     const settings = await this.restaurantSettingsRepository.findByRestaurantId(
       existing.restaurantId,
@@ -198,7 +212,7 @@ export class ApproveReservationUseCase {
           restaurantId: existing.restaurantId.value,
           branchId: existing.branchId.value,
           tableId: existing.tableId.value,
-          approvedBy: command.actor.employeeId,
+          approvedBy: operatorId,
           automatic: false,
         },
         now,

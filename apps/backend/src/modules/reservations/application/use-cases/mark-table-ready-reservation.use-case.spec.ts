@@ -12,6 +12,7 @@ import {
   SequentialIdGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryReservationRepository } from '../../../../../test/reservations/support/in-memory-reservation.repository';
+import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 
 describe('MarkTableReadyReservationUseCase', () => {
   const fixedNow = new Date('2026-08-01T10:00:00.000Z');
@@ -74,6 +75,7 @@ describe('MarkTableReadyReservationUseCase', () => {
       new FixedClock(clockAt),
       new SequentialIdGenerator(['aaaaaaaa-0007-4000-8000-000000000001']),
       eventPublisher,
+      new InMemoryRestaurantRepository(),
     );
 
     return { useCase, reservationRepository, eventPublisher };

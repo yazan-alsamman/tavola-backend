@@ -22,6 +22,7 @@ import { InMemoryReservationHistoryRepository } from '../../../../../test/reserv
 import { InMemoryWaitlistRecheckScheduler } from '../../../../../test/reservations/support/in-memory-waitlist-recheck-scheduler';
 import { InMemoryApprovedReservationOperationalScheduler } from '../../../../../test/reservations/support/in-memory-approved-reservation-operational-scheduler';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
+import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { ScheduleApprovedReservationSignalsService } from '../services/schedule-approved-reservation-signals.service';
 
 describe('MarkNoShowReservationUseCase', () => {
@@ -128,6 +129,7 @@ describe('MarkNoShowReservationUseCase', () => {
       new ImmediateUnitOfWork(),
       waitlistRecheckScheduler,
       scheduleApprovedReservationSignals,
+      new InMemoryRestaurantRepository(),
     );
 
     return {

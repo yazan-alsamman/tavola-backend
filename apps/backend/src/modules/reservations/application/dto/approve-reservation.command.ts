@@ -1,7 +1,7 @@
-import { AuthenticatedEmployeeActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
+import { AuthenticatedActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
 
 export interface ApproveReservationCommand {
-  actor: AuthenticatedEmployeeActor;
+  actor: AuthenticatedActor;
   reservationId: string;
   correlationId?: string;
 }

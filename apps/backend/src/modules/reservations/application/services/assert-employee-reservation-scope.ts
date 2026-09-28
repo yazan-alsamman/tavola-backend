@@ -1,7 +1,12 @@
-import { AuthenticatedEmployeeActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
+import { AuthenticatedActor, AuthenticatedEmployeeActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
+import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
+import { OrganizationMemberRole } from '@modules/organizations/domain/enums/organization.enums';
 import { EmployeeBranchNotAssignedException } from '@modules/authorization/domain/exceptions/employee-branch-not-assigned.exception';
 import { PermissionDeniedException } from '@modules/authorization/domain/exceptions/permission-denied.exception';
 import { BranchNotFoundException } from '@modules/branches/domain/exceptions/branch-not-found.exception';
+import {
+  RestaurantRepository,
+} from '@modules/restaurants/domain/repositories/restaurant.repository';
 import { BranchId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import { Reservation } from '../../domain/entities/reservation.entity';
 import { ReservationNotFoundException } from '../../domain/exceptions/reservation-not-found.exception';
@@ -59,4 +64,45 @@ export function assertEmployeeCanCreateReservation(
   if (!actor.permissions.includes(employeePermission)) {
     throw new PermissionDeniedException(employeePermission);
   }
+}
+
+/**
+ * Owner/Admin of the organization that owns the restaurant may operate the
+ * reservation without an Employee permission slug. An Employee still needs
+ * the slug and branch scope. The restaurant lookup is tenant-scoped, so a
+ * cross-organization caller gets the same 404 as a missing reservation.
+ */
+export async function assertActorCanOperateReservation(
+  actor: AuthenticatedActor,
+  reservation: Reservation,
+  employeePermission: string,
+  restaurantRepository: RestaurantRepository,
+): Promise<void> {
+  if (actor.actorType === AccessTokenActorType.OrganizationMember) {
+    if (
+      actor.orgRole !== OrganizationMemberRole.Owner &&
+      actor.orgRole !== OrganizationMemberRole.Admin
+    ) {
+      throw new PermissionDeniedException(employeePermission);
+    }
+    const restaurant = await restaurantRepository.findById(reservation.restaurantId);
+    if (restaurant === null) {
+      throw new ReservationNotFoundException();
+    }
+    return;
+  }
+
+  if (actor.actorType !== AccessTokenActorType.Employee) {
+    throw new PermissionDeniedException(employeePermission);
+  }
+
+  assertEmployeeCanActOnReservation(actor, reservation);
+  if (!actor.permissions.includes(employeePermission)) {
+    throw new PermissionDeniedException(employeePermission);
+  }
+}
+
+/** Employee id for staff actors, user id for the organization owner/admin. */
+export function resolveReservationOperatorId(actor: AuthenticatedActor): string {
+  return actor.actorType === AccessTokenActorType.Employee ? actor.employeeId : actor.userId;
 }

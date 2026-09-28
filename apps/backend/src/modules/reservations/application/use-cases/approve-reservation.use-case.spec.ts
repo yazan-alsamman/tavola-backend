@@ -16,6 +16,9 @@ import { EmployeeBranchNotAssignedException } from '@modules/authorization/domai
 import { Table } from '@modules/tables/domain/entities/table.entity';
 import { TableShape, TableStatus } from '@modules/tables/domain/enums/table.enums';
 import { RestaurantSettings } from '@modules/restaurants/domain/entities/restaurant-settings.entity';
+import { Restaurant } from '@modules/restaurants/domain/entities/restaurant.entity';
+import { RestaurantStatus } from '@modules/restaurants/domain/enums/restaurant.enums';
+import { OrganizationMemberRole } from '@modules/organizations/domain/enums/organization.enums';
 import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
 import { ReservationId, TableId } from '@shared/domain/value-objects/identifiers.vo';
 import {
@@ -26,6 +29,7 @@ import {
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryTableRepository } from '../../../../../test/tables/support/in-memory-table.repository';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
+import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryReservationRepository } from '../../../../../test/reservations/support/in-memory-reservation.repository';
 import { InMemoryAcquisitionRecordingService } from '../../../../../test/reservations/support/in-memory-acquisition-recording.service';
 import type { RecordCustomerAcquisitionOnApprovalService } from '@modules/customer-acquisition/application/services/record-customer-acquisition-on-approval.service';
@@ -128,6 +132,7 @@ describe('ApproveReservationUseCase', () => {
       operationalScheduler,
       restaurantSettingsRepository,
     );
+    const restaurantRepository = new InMemoryRestaurantRepository();
     const useCase = new ApproveReservationUseCase(
       reservationRepository,
       tableRepository,
@@ -147,6 +152,7 @@ describe('ApproveReservationUseCase', () => {
       new AutoRejectOverlappingPendingReservationsService(reservationRepository),
       scheduleApprovedReservationSignals,
       new InMemoryAcquisitionRecordingService() as unknown as RecordCustomerAcquisitionOnApprovalService,
+      restaurantRepository,
     );
 
     return {
@@ -156,6 +162,7 @@ describe('ApproveReservationUseCase', () => {
       eventPublisher,
       expirationScheduler,
       operationalScheduler,
+      restaurantRepository,
     };
   }
 
@@ -171,6 +178,46 @@ describe('ApproveReservationUseCase', () => {
 
     const table = await tableRepository.findById(TableId.create(tableId));
     expect(table?.status).toBe(TableStatus.Reserved);
+  });
+
+  it('lets the owning organization Owner approve without an employee permission', async () => {
+    const { useCase, reservationRepository, restaurantRepository } = await build();
+    await reservationRepository.seed(pendingReservation());
+    await restaurantRepository.save(
+      Restaurant.create({
+        id: restaurantId,
+        organizationId: '11111111-1111-4111-8111-111111111111',
+        name: 'Abu Raihana',
+        slug: 'abu-raihana',
+        logoId: null,
+        coverImageId: null,
+        description: null,
+        cuisineType: null,
+        averageRating: null,
+        priceLevel: null,
+        status: RestaurantStatus.Active,
+        createdAt: fixedNow,
+        updatedAt: fixedNow,
+        deletedAt: null,
+      }),
+    );
+
+    const result = await useCase.execute({
+      actor: {
+        actorType: AccessTokenActorType.OrganizationMember,
+        userId: 'owner-user-1',
+        sessionId: 'session-1',
+        sessionVersion: 1,
+        tokenFamilyId: 'family-1',
+        organizationId: '11111111-1111-4111-8111-111111111111',
+        orgRole: OrganizationMemberRole.Owner,
+        permissionsVersion: 1,
+      },
+      reservationId,
+    });
+
+    expect(result.status).toBe('Approved');
+    expect(result.approvedBy).toBe('owner-user-1');
   });
 
   it('publishes ReservationApproved with automatic: false and the approving employeeId', async () => {

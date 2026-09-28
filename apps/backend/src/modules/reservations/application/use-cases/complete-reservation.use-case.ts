@@ -12,6 +12,10 @@ import {
   TABLE_REPOSITORY,
 } from '@modules/tables/domain/repositories/table.repository';
 import { TableNotFoundException } from '@modules/tables/domain/exceptions/table-not-found.exception';
+import {
+  RestaurantRepository,
+  RESTAURANT_REPOSITORY,
+} from '@modules/restaurants/domain/repositories/restaurant.repository';
 import { ReservationStatus } from '../../domain/enums/reservation.enums';
 import { ReservationHistory } from '../../domain/entities/reservation-history.entity';
 import { ReservationNotFoundException } from '../../domain/exceptions/reservation-not-found.exception';
@@ -25,7 +29,10 @@ import {
   ReservationHistoryRepository,
   RESERVATION_HISTORY_REPOSITORY,
 } from '../../domain/repositories/reservation-history.repository';
-import { assertEmployeeCanActOnReservation } from '../services/assert-employee-reservation-scope';
+import {
+  assertActorCanOperateReservation,
+  resolveReservationOperatorId,
+} from '../services/assert-employee-reservation-scope';
 import { ScheduleApprovedReservationSignalsService } from '../services/schedule-approved-reservation-signals.service';
 import { toReservationResult } from '../mappers/reservation-result.mapper';
 import { CompleteReservationCommand } from '../dto/complete-reservation.command';
@@ -33,14 +40,13 @@ import { ReservationResult } from '../dto/reservation.result';
 
 /**
  * Phase 7.3 (Reservation Lifecycle, architecture frozen 2026-07-23).
- * `Approved -> Completed` only, staff-only (`reservations:complete`,
- * `PermissionsGuard` + branch scope at the controller/use-case layer,
- * exactly like Approve/Reject). Only reachable once the reservation's
- * scheduled service window has begun (enforced by `Reservation.complete()`
- * itself). Calls `Table.release()` atomically with the transition, returning
- * the table directly to `Available` - never through `Cleaning`. No advisory
- * lock needed (same reasoning as Cancel/Reject - no new confirmed occupancy
- * is created).
+ * `Approved -> Completed` only. Owner/Admin of the owning organization, or
+ * an Employee holding `reservations:complete` and branch scope. Only
+ * reachable once the reservation's scheduled service window has begun
+ * (enforced by `Reservation.complete()` itself). Calls `Table.release()`
+ * atomically with the transition, returning the table directly to
+ * `Available` - never through `Cleaning`. No advisory lock needed (same
+ * reasoning as Cancel/Reject - no new confirmed occupancy is created).
  */
 @Injectable()
 export class CompleteReservationUseCase {
@@ -54,6 +60,7 @@ export class CompleteReservationUseCase {
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
     private readonly scheduleApprovedReservationSignals: ScheduleApprovedReservationSignalsService,
+    @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
   ) {}
 
   async execute(command: CompleteReservationCommand): Promise<ReservationResult> {
@@ -62,7 +69,13 @@ export class CompleteReservationUseCase {
     if (existing === null) {
       throw new ReservationNotFoundException();
     }
-    assertEmployeeCanActOnReservation(command.actor, existing);
+    await assertActorCanOperateReservation(
+      command.actor,
+      existing,
+      'reservations:complete',
+      this.restaurantRepository,
+    );
+    const operatorId = resolveReservationOperatorId(command.actor);
 
     const now = this.clock.now();
     const completed = existing.complete(now);
@@ -98,7 +111,7 @@ export class CompleteReservationUseCase {
           oldTableId: null,
           newTableId: null,
           withinCancellationWindow: null,
-          changedBy: command.actor.employeeId,
+          changedBy: operatorId,
           changedAt: now,
           reason: null,
         }),
@@ -118,7 +131,7 @@ export class CompleteReservationUseCase {
           restaurantId: existing.restaurantId.value,
           branchId: existing.branchId.value,
           tableId: existing.tableId.value,
-          completedBy: command.actor.employeeId,
+          completedBy: operatorId,
         },
         now,
         command.correlationId,
