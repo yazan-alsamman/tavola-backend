@@ -88,7 +88,7 @@ describe('ListRestaurantGalleryUseCase', () => {
       new FakeStoragePort(),
     );
 
-    const result = await useCase.execute({ actor: baseActor(), restaurantId });
+    const result = await useCase.execute({ restaurantId });
 
     expect(result).toEqual({ restaurantId, items: [] });
   });
@@ -157,7 +157,7 @@ describe('ListRestaurantGalleryUseCase', () => {
       new FakeStoragePort(),
     );
 
-    const result = await useCase.execute({ actor: baseActor(), restaurantId });
+    const result = await useCase.execute({ restaurantId });
 
     expect(result.items.map((item) => item.caption)).toEqual(['First', 'Second']);
     expect(result.items[0].imageUrl).toContain(fileA.objectKey);
@@ -189,7 +189,7 @@ describe('ListRestaurantGalleryUseCase', () => {
       new FakeStoragePort(),
     );
 
-    const result = await useCase.execute({ actor: baseActor(), restaurantId });
+    const result = await useCase.execute({ restaurantId });
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0].imageUrl).toBeNull();
@@ -205,7 +205,6 @@ describe('ListRestaurantGalleryUseCase', () => {
 
     await expect(
       useCase.execute({
-        actor: baseActor(),
         restaurantId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
       }),
     ).rejects.toBeInstanceOf(RestaurantNotFoundException);

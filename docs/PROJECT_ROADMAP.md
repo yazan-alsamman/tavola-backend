@@ -323,7 +323,7 @@ Authentication fully tested (unit + integration + E2E per TESTING_STRATEGY.md).
 * Restaurant profiles ✅ (Restaurant CRUD — `POST`/`GET`/`PATCH`/`DELETE /api/v1/restaurants`, `GET /api/v1/restaurants/:id`; `OrganizationMember` Owner/Admin only)
 * Restaurant reservation settings ✅ (Restaurant Settings — `GET`/`PATCH /api/v1/restaurants/:id/settings`; `OrganizationMember` Owner/Admin only)
 * Restaurant-level working hours ✅ (`GET`/`PATCH /api/v1/restaurants/:id/working-hours`; `OrganizationMember` Owner/Admin only; branch-level override is Phase 5)
-* Restaurant gallery ✅ (`POST`/`GET /api/v1/restaurants/:id/gallery`, `DELETE .../gallery/:galleryItemId`; `OrganizationMember` Owner/Admin only; max 20 images, reuses the Files module completely)
+* Restaurant gallery ✅ (`POST /api/v1/restaurants/:id/gallery` and `DELETE .../gallery/:galleryItemId` are OrganizationMember Owner/Admin; `GET` is public and unauthenticated so a guest session can read it; max 20 images, reuses the Files module completely)
 * Cuisine & Occasion Taxonomy Assignment ✅ (`GET`/`PATCH /api/v1/restaurants/:id/cuisine-categories`, `GET`/`PATCH /api/v1/restaurants/:id/occasion-categories`; `OrganizationMember` Owner/Admin only; plus public `GET /api/v1/cuisine-categories`/`GET /api/v1/occasion-categories`; ADR-018)
 * Branches
 * Employees

@@ -640,16 +640,13 @@ export class RestaurantsController {
   }
 
   @Get(':id/gallery')
-  @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
-  @RequireOrgRole(OrganizationMemberRole.Owner, OrganizationMemberRole.Admin)
-  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ResponseMessage('Restaurant gallery retrieved successfully.')
   @ApiOperation({
     operationId: 'restaurantsListGallery',
     summary: 'List a restaurant gallery',
     description:
-      'Ordered by sortOrder. Only restaurants belonging to the caller organization are ever visible - tenant scoping is automatic (TENANCY.md). A brand-new restaurant has an empty gallery until images are explicitly added.',
+      'Public, unauthenticated, including guest sessions with no access token. Ordered by sortOrder. A missing or soft-deleted restaurant returns 404. A brand-new restaurant has an empty gallery until images are explicitly added. Adding and removing images remain Owner/Admin.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({
@@ -658,18 +655,11 @@ export class RestaurantsController {
     type: RestaurantGalleryListResponseDto,
   })
   @ApiErrorResponse(400, 'id is not a valid UUID', ['VALIDATION_ERROR'])
-  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
-    'AUTH_INVALID_TOKEN',
-    'AUTH_EXPIRED_TOKEN',
-  ])
-  @ApiErrorResponse(403, 'Caller is not an Owner/Admin organization member', ['FORBIDDEN'])
-  @ApiErrorResponse(404, 'Restaurant not found (or belongs to another organization)', ['NOT_FOUND'])
+  @ApiErrorResponse(404, 'Restaurant not found', ['NOT_FOUND'])
   async listGallery(
     @Param('id', ParseUUIDPipe) id: string,
-    @CurrentActor() actor: AuthenticatedOrganizationMemberActor,
   ): Promise<RestaurantGalleryListResponseDto> {
     const result = await this.listRestaurantGalleryUseCase.execute({
-      actor,
       restaurantId: id,
     });
     return this.toGalleryListResponse(result);

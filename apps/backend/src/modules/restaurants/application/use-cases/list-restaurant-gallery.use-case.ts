@@ -19,6 +19,12 @@ import { toRestaurantGalleryImageResult } from '../mappers/restaurant-gallery-im
 import { ListRestaurantGalleryCommand } from '../dto/list-restaurant-gallery.command';
 import { RestaurantGalleryListResult } from '../dto/restaurant-gallery-image.result';
 
+/**
+ * Public read for the customer app, including guest sessions that have no
+ * access token. `Restaurant` is tenant-scoped, so this uses
+ * `existsPubliclyById` (raw existence check, no TenantContext) rather than
+ * `findById`. Adding and removing gallery images stay Owner/Admin.
+ */
 @Injectable()
 export class ListRestaurantGalleryUseCase {
   constructor(
@@ -31,10 +37,8 @@ export class ListRestaurantGalleryUseCase {
 
   async execute(command: ListRestaurantGalleryCommand): Promise<RestaurantGalleryListResult> {
     const restaurantId = RestaurantId.create(command.restaurantId);
-
-    // Tenant isolation gate - see AddRestaurantGalleryImageUseCase's own comment.
-    const restaurant = await this.restaurantRepository.findById(restaurantId);
-    if (restaurant === null) {
+    const exists = await this.restaurantRepository.existsPubliclyById(restaurantId);
+    if (!exists) {
       throw new RestaurantNotFoundException();
     }
 

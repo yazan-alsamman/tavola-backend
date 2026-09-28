@@ -655,10 +655,9 @@ describe('RestaurantsController', () => {
     it('delegates to the use case and maps the documented fields', async () => {
       listGalleryExecute.mockResolvedValue(galleryListResult);
 
-      const response = await controller.listGallery(galleryListResult.restaurantId, actor);
+      const response = await controller.listGallery(galleryListResult.restaurantId);
 
       expect(listGalleryExecute).toHaveBeenCalledWith({
-        actor,
         restaurantId: galleryListResult.restaurantId,
       });
       expect(response.items).toHaveLength(1);
@@ -669,7 +668,7 @@ describe('RestaurantsController', () => {
       listGalleryExecute.mockRejectedValue(new RestaurantNotFoundException());
 
       await expect(
-        controller.listGallery(galleryListResult.restaurantId, actor),
+        controller.listGallery(galleryListResult.restaurantId),
       ).rejects.toBeInstanceOf(RestaurantNotFoundException);
     });
   });

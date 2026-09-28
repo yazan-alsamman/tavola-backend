@@ -4915,7 +4915,10 @@
                     "gallery"
                   ]
                 },
-                "description": "## Purpose\nList a restaurant gallery\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `id` | `{{restaurantId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Restaurant gallery retrieved successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `RestaurantsController`.`unknown`\n- Full path: `/api/v1/restaurants/:id/gallery`\n- Callers (from source): Owner/Admin (Owner, Admin)"
+                "description": "## Purpose\nList a restaurant gallery for the customer app, including guest sessions with no access token.\n## Authorization\nNone (public — auth disabled on this request).\nGuards: (none)\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `id` | `{{restaurantId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Restaurant gallery retrieved successfully.\" Items are ordered by sortOrder and include a signed imageUrl.\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **404**: NOT_FOUND\n## Notes\n- Controller: `RestaurantsController.listGallery`\n- Full path: `/api/v1/restaurants/:id/gallery`\n- Callers (from source): Public\n- Adding and removing gallery images remain Owner/Admin.",
+                "auth": {
+                  "type": "noauth"
+                }
               },
               "response": []
             },

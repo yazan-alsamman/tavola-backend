@@ -42,7 +42,7 @@ describe('RestaurantsController Swagger document', () => {
     { path: '/restaurants/{id}', methods: ['get', 'patch', 'delete'] },
     { path: '/restaurants/{id}/settings', methods: ['get', 'patch'] },
     { path: '/restaurants/{id}/working-hours', methods: ['get', 'patch'] },
-    { path: '/restaurants/{id}/gallery', methods: ['post', 'get'] },
+    { path: '/restaurants/{id}/gallery', methods: ['post'] },
     { path: '/restaurants/{id}/gallery/{galleryItemId}', methods: ['delete'] },
     { path: '/restaurants/{id}/cuisine-categories', methods: ['get', 'patch'] },
     { path: '/restaurants/{id}/occasion-categories', methods: ['get', 'patch'] },
@@ -174,7 +174,14 @@ describe('RestaurantsController Swagger document', () => {
     expect(pathItem.patch).toBeDefined();
   });
 
-  it('documents POST and GET /restaurants/{id}/gallery, and DELETE /restaurants/{id}/gallery/{galleryItemId}', () => {
+  it('documents public GET /restaurants/{id}/gallery with no bearer auth', () => {
+    const galleryGet = document.paths['/restaurants/{id}/gallery'].get;
+    expect(galleryGet).toBeDefined();
+    expect(galleryGet?.security ?? []).toEqual([]);
+    expect(galleryGet?.responses['401']).toBeUndefined();
+  });
+
+  it('documents POST /restaurants/{id}/gallery and DELETE /restaurants/{id}/gallery/{galleryItemId}', () => {
     const collectionPathItem = document.paths['/restaurants/{id}/gallery'];
     expect(collectionPathItem).toBeDefined();
     expect(collectionPathItem.post).toBeDefined();
