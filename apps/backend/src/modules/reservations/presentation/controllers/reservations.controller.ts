@@ -23,13 +23,12 @@ import type { Request } from 'express';
 import { ResponseMessage } from '@common/decorators/response-message.decorator';
 import { ApiErrorResponse } from '@common/decorators/api-error-response.decorator';
 import { ErrorResponseDto } from '@common/dto/error-response.dto';
-import {
-  AuthenticatedActor,
-} from '@modules/authentication/application/dto/authenticated-actor.dto';
+import { AuthenticatedActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
 import { CurrentActor } from '@modules/authentication/presentation/decorators/current-actor.decorator';
 import { JwtAuthGuard } from '@modules/authentication/presentation/guards/jwt-auth.guard';
 import { SessionVersionGuard } from '@modules/authentication/presentation/guards/session-version.guard';
 import { SearchAvailabilityUseCase } from '../../application/use-cases/search-availability.use-case';
+import { ListReservationTimeSlotsUseCase } from '../../application/use-cases/list-reservation-time-slots.use-case';
 import { CreateReservationUseCase } from '../../application/use-cases/create-reservation.use-case';
 import { ListMyReservationsUseCase } from '../../application/use-cases/list-my-reservations.use-case';
 import { SearchMyReservationsUseCase } from '../../application/use-cases/search-my-reservations.use-case';
@@ -43,6 +42,8 @@ import { CompleteReservationUseCase } from '../../application/use-cases/complete
 import { MarkNoShowReservationUseCase } from '../../application/use-cases/mark-no-show-reservation.use-case';
 import { MarkTableReadyReservationUseCase } from '../../application/use-cases/mark-table-ready-reservation.use-case';
 import { SearchAvailabilityQueryDto } from '../dto/search-availability.query.dto';
+import { ListReservationTimeSlotsQueryDto } from '../dto/list-reservation-time-slots.query.dto';
+import { ReservationTimeSlotsResponseDto } from '../dto/reservation-time-slots.response.dto';
 import { CreateReservationRequestDto } from '../dto/create-reservation.request.dto';
 import { CancelReservationRequestDto } from '../dto/cancel-reservation.request.dto';
 import { RescheduleReservationRequestDto } from '../dto/reschedule-reservation.request.dto';
@@ -76,6 +77,7 @@ import {
 export class ReservationsController {
   constructor(
     private readonly searchAvailabilityUseCase: SearchAvailabilityUseCase,
+    private readonly listReservationTimeSlotsUseCase: ListReservationTimeSlotsUseCase,
     private readonly createReservationUseCase: CreateReservationUseCase,
     private readonly listMyReservationsUseCase: ListMyReservationsUseCase,
     private readonly searchMyReservationsUseCase: SearchMyReservationsUseCase,
@@ -137,7 +139,7 @@ export class ReservationsController {
     operationId: 'reservationsSearchAvailability',
     summary: 'Search table availability for a branch (informational only)',
     description:
-      'Phase 7.1 Availability Search Contract: every table matching the search criteria is returned, never hidden - each carries an isAvailable indicator. A table already holding a Pending/Approved reservation for the requested window remains visible, marked unavailable. This endpoint never performs a conflict check and reserves nothing - Reservation creation (POST /reservations) remains the sole authoritative conflict check (ADR-013).',
+      'Requires an access token (JwtAuthGuard, SessionVersionGuard). Any authenticated actor may call it; there is no permission slug. A guest with no token receives 401. Query contract is unchanged: branchId, reservationStartTime, optional reservationEndTime, partySize. Every Available-status table whose effective capacity is at least partySize is returned with isAvailable. isAvailable is false when a Pending or Approved reservation overlaps the window. Tables are never omitted and nothing is reserved. When reservationEndTime is omitted, the restaurant defaultReservationDurationMinutes is used. GET /reservations/available-slots already returns only bookable windows; call this endpoint after the customer picks one window when the screen needs the matching tables.',
   })
   @ApiResponse({
     status: 200,
@@ -160,6 +162,41 @@ export class ReservationsController {
       partySize: query.partySize,
     });
     return results.map(toTableAvailabilityResponse);
+  }
+
+  @Get('available-slots')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Available reservation slots retrieved successfully.')
+  @ApiOperation({
+    operationId: 'reservationsListAvailableSlots',
+    summary: 'List bookable reservation windows for a branch date',
+    description:
+      'Customer reservation flow. Requires an access token (JwtAuthGuard, SessionVersionGuard). Any authenticated actor may call it; there is no permission slug. A guest with no token receives 401. The backend builds candidate starts from the branch weekday working hours (branch row wins, otherwise the restaurant row; a missing row is closed), stepped by reservationIntervalMinutes, each window lasting durationMinutes or the restaurant defaultReservationDurationMinutes. A window is returned only when at least one Available table can seat partySize and has no Pending or Approved overlap. Occupied, Cleaning, Disabled, Reserved, and Merged-secondary tables are not candidates. slots is empty when outcome is not AVAILABLE. This does not replace GET /reservations/availability: after the customer picks a window, that endpoint still lists the matching tables. Creating a reservation remains the authoritative conflict check.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Bookable reservation windows',
+    type: ReservationTimeSlotsResponseDto,
+  })
+  @ApiErrorResponse(400, 'Invalid branchId, date, partySize, or durationMinutes, or a past date', [
+    'VALIDATION_ERROR',
+  ])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(404, 'Branch not found', ['NOT_FOUND'])
+  async listAvailableSlots(
+    @Query() query: ListReservationTimeSlotsQueryDto,
+  ): Promise<ReservationTimeSlotsResponseDto> {
+    return this.listReservationTimeSlotsUseCase.execute({
+      branchId: query.branchId,
+      date: query.date,
+      partySize: query.partySize,
+      durationMinutes: query.durationMinutes,
+    });
   }
 
   @Get('my')
@@ -411,10 +448,11 @@ export class ReservationsController {
     'AUTH_INVALID_TOKEN',
     'AUTH_EXPIRED_TOKEN',
   ])
-  @ApiErrorResponse(403, 'Caller lacks reservations:approve, is not Owner/Admin, or is outside branch scope', [
-    'FORBIDDEN',
-    'EMPLOYEE_BRANCH_NOT_ASSIGNED',
-  ])
+  @ApiErrorResponse(
+    403,
+    'Caller lacks reservations:approve, is not Owner/Admin, or is outside branch scope',
+    ['FORBIDDEN', 'EMPLOYEE_BRANCH_NOT_ASSIGNED'],
+  )
   @ApiErrorResponse(404, 'Reservation not found', ['NOT_FOUND'])
   @ApiErrorResponse(409, 'A confirmed reservation now conflicts for this table/window', [
     'CONFLICT',
@@ -450,10 +488,11 @@ export class ReservationsController {
     'AUTH_INVALID_TOKEN',
     'AUTH_EXPIRED_TOKEN',
   ])
-  @ApiErrorResponse(403, 'Caller lacks reservations:approve, is not Owner/Admin, or is outside branch scope', [
-    'FORBIDDEN',
-    'EMPLOYEE_BRANCH_NOT_ASSIGNED',
-  ])
+  @ApiErrorResponse(
+    403,
+    'Caller lacks reservations:approve, is not Owner/Admin, or is outside branch scope',
+    ['FORBIDDEN', 'EMPLOYEE_BRANCH_NOT_ASSIGNED'],
+  )
   @ApiErrorResponse(404, 'Reservation not found', ['NOT_FOUND'])
   async reject(
     @Param('id', ParseUUIDPipe) id: string,
@@ -585,10 +624,11 @@ export class ReservationsController {
     'AUTH_INVALID_TOKEN',
     'AUTH_EXPIRED_TOKEN',
   ])
-  @ApiErrorResponse(403, 'Caller lacks reservations:complete, is not Owner/Admin, or is outside branch scope', [
-    'FORBIDDEN',
-    'EMPLOYEE_BRANCH_NOT_ASSIGNED',
-  ])
+  @ApiErrorResponse(
+    403,
+    'Caller lacks reservations:complete, is not Owner/Admin, or is outside branch scope',
+    ['FORBIDDEN', 'EMPLOYEE_BRANCH_NOT_ASSIGNED'],
+  )
   @ApiErrorResponse(404, 'Reservation not found', ['NOT_FOUND'])
   async complete(
     @Param('id', ParseUUIDPipe) id: string,
@@ -629,10 +669,11 @@ export class ReservationsController {
     'AUTH_INVALID_TOKEN',
     'AUTH_EXPIRED_TOKEN',
   ])
-  @ApiErrorResponse(403, 'Caller lacks reservations:noshow, is not Owner/Admin, or is outside branch scope', [
-    'FORBIDDEN',
-    'EMPLOYEE_BRANCH_NOT_ASSIGNED',
-  ])
+  @ApiErrorResponse(
+    403,
+    'Caller lacks reservations:noshow, is not Owner/Admin, or is outside branch scope',
+    ['FORBIDDEN', 'EMPLOYEE_BRANCH_NOT_ASSIGNED'],
+  )
   @ApiErrorResponse(404, 'Reservation not found', ['NOT_FOUND'])
   async markNoShow(
     @Param('id', ParseUUIDPipe) id: string,
@@ -673,10 +714,11 @@ export class ReservationsController {
     'AUTH_INVALID_TOKEN',
     'AUTH_EXPIRED_TOKEN',
   ])
-  @ApiErrorResponse(403, 'Caller lacks reservations:tableready, is not Owner/Admin, or is outside branch scope', [
-    'FORBIDDEN',
-    'EMPLOYEE_BRANCH_NOT_ASSIGNED',
-  ])
+  @ApiErrorResponse(
+    403,
+    'Caller lacks reservations:tableready, is not Owner/Admin, or is outside branch scope',
+    ['FORBIDDEN', 'EMPLOYEE_BRANCH_NOT_ASSIGNED'],
+  )
   @ApiErrorResponse(404, 'Reservation not found', ['NOT_FOUND'])
   async markTableReady(
     @Param('id', ParseUUIDPipe) id: string,

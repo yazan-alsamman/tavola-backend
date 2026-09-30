@@ -431,6 +431,8 @@ STORAGE_UNAVAILABLE
 * The UI is responsible for how the Reserved/Unavailable state is displayed.
 * This endpoint performs no conflict check and reserves nothing. Reservation creation (`POST /reservations`) remains the sole authoritative conflict check, enforced at two independent layers per ADR-013 (an advisory lock and a database exclusion constraint) - a table shown as available here may no longer be available by the time a client submits a create request, and vice versa.
 
+`GET /reservations/available-slots?branchId&date&partySize&durationMinutes?` returns the reservation windows a customer can book on that calendar date. It requires the same access token as availability (any authenticated actor, no permission slug). Working hours are only the open window: a branch weekday row wins over the restaurant row, and a missing row means the day is closed. Candidate starts step from opening by `reservationIntervalMinutes`, and each window lasts the client `durationMinutes` or, when omitted, `defaultReservationDurationMinutes`. A window is included only when at least one `Available` table can seat `partySize` and has no overlapping `Pending` or `Approved` reservation. `outcome` distinguishes a closed day (`CLOSED`), candidates with no fitting free table (`NO_SUITABLE_TABLE`), and a date whose starts are already past (`NO_REMAINING_SLOTS`). The availability query contract above is unchanged; call it after a window is chosen when the screen needs the matching tables.
+
 ---
 
 # Notification Endpoints (Phase 9, implemented 2026-07-25)

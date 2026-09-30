@@ -167,6 +167,7 @@ import { BranchReservationsController } from './presentation/controllers/branch-
   controllers: [ReservationsController, BranchReservationsController],
   providers: [
     SearchAvailabilityUseCase,
+    ListReservationTimeSlotsUseCase,
     CreateReservationUseCase,
     ListMyReservationsUseCase,
     SearchMyReservationsUseCase,

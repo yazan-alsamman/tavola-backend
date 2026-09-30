@@ -3297,13 +3297,13 @@
               "response": []
             },
             {
-              "name": "Replace Item Availability Windows",
+              "name": "Search Table Availability",
               "id": "f13016dc-fed5-4efe-a281-5ce11c58775c",
               "request": {
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/reservations/availability?page=1&pageSize=20&restaurantId=%7B%7BrestaurantId%7D%7D&branchId=%7B%7BbranchId%7D%7D&date=2026-08-15&partySize=2",
+                  "raw": "{{baseUrl}}/reservations/availability?branchId={{branchId}}&reservationStartTime=2026-09-30T16:30:00.000Z&reservationEndTime=2026-09-30T18:00:00.000Z&partySize=4",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -3313,48 +3313,76 @@
                   ],
                   "query": [
                     {
-                      "key": "page",
-                      "value": "1",
-                      "description": "Page number (1-based)",
-                      "disabled": false
+                      "key": "branchId",
+                      "value": "{{branchId}}"
                     },
                     {
-                      "key": "pageSize",
-                      "value": "20",
-                      "description": "Page size",
-                      "disabled": false
+                      "key": "reservationStartTime",
+                      "value": "2026-09-30T16:30:00.000Z",
+                      "description": "Window start. Use startTime from GET /reservations/available-slots."
                     },
                     {
-                      "key": "limit",
-                      "value": "20",
-                      "description": "Cursor page size",
-                      "disabled": true
+                      "key": "reservationEndTime",
+                      "value": "2026-09-30T18:00:00.000Z",
+                      "description": "Window end. Optional. Use endTime from the chosen slot. When omitted, the restaurant default duration is applied."
                     },
                     {
-                      "key": "cursor",
-                      "value": "",
-                      "description": "Opaque cursor",
-                      "disabled": true
-                    },
+                      "key": "partySize",
+                      "value": "4"
+                    }
+                  ]
+                },
+                "description": "## Purpose\nSearch table availability for one window. Informational only: every Available table that can seat partySize is returned with isAvailable. A Pending or Approved overlap sets isAvailable to false. Nothing is reserved. The query contract is unchanged.\n## Authorization\nBearer `{{customerAccessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nAny authenticated actor. No permission slug. A guest with no token receives 401.\n## Headers\n- `Authorization: Bearer <token>`\n## Path Params\n_None_\n## Query Params\n- `branchId` — UUID\n- `reservationStartTime` — ISO-8601 UTC\n- `reservationEndTime` — ISO-8601 UTC, optional\n- `partySize` — integer >= 1\n## Body\n_None_\n## Success Response\nEnvelope message: \"Availability retrieved successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **401**: AUTH_INVALID_TOKEN, AUTH_EXPIRED_TOKEN\n- **404**: NOT_FOUND\n## Notes\n- Controller: `ReservationsController.searchAvailability`\n- Full path: `/api/v1/reservations/availability`",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
                     {
-                      "key": "restaurantId",
-                      "value": "{{restaurantId}}"
-                    },
+                      "key": "token",
+                      "value": "{{customerAccessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "List Available Reservation Slots",
+              "id": "c4e1a9b2-7d33-4f10-9a61-2b8e6c0d4f17",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/reservations/available-slots?branchId={{branchId}}&date=2026-09-30&partySize=4&durationMinutes=120",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "reservations",
+                    "available-slots"
+                  ],
+                  "query": [
                     {
                       "key": "branchId",
                       "value": "{{branchId}}"
                     },
                     {
                       "key": "date",
-                      "value": "2026-08-15"
+                      "value": "2026-09-30",
+                      "description": "Calendar date in the branch timezone (YYYY-MM-DD)."
                     },
                     {
                       "key": "partySize",
-                      "value": "2"
+                      "value": "4"
+                    },
+                    {
+                      "key": "durationMinutes",
+                      "value": "120",
+                      "description": "Optional. 15-480. When omitted, the restaurant defaultReservationDurationMinutes is used."
                     }
                   ]
                 },
-                "description": "## Purpose\nSearch table availability for a branch (informational only)\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nCustomer | Employee\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n_None_\n## Query Params\nQuery DTO: `SearchAvailabilityQueryDto` (see schema / examples in query params).\n## Body\n_None_\n## Success Response\nEnvelope message: \"Availability retrieved successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `ReservationsController`.`unknown`\n- Full path: `/api/v1/reservations/availability`\n- Callers (from source): Customer or Employee (use-case resolved)",
+                "description": "## Purpose\nReturn reservation windows the customer can actually book. Working hours bound the open window. Starts step by reservationIntervalMinutes. Each window lasts durationMinutes (or the restaurant default). A window is included only when an Available table can seat partySize and has no Pending or Approved overlap.\n## Authorization\nBearer `{{customerAccessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nAny authenticated actor. No permission slug. A guest with no token receives 401.\n## Headers\n- `Authorization: Bearer <token>`\n## Query Params\n- `branchId` — UUID\n- `date` — YYYY-MM-DD in the branch timezone\n- `partySize` — integer 1-100, also capped by maxGuestsPerReservation\n- `durationMinutes` — optional integer 15-480\n## Body\n_None_\n## Example response\n```json\n{\n  \"success\": true,\n  \"message\": \"Available reservation slots retrieved successfully.\",\n  \"data\": {\n    \"branchId\": \"44444444-4444-4444-8444-444444444444\",\n    \"date\": \"2026-09-30\",\n    \"timezone\": \"Asia/Damascus\",\n    \"dayOfWeek\": 3,\n    \"openingTime\": \"18:00\",\n    \"closingTime\": \"23:00\",\n    \"intervalMinutes\": 30,\n    \"durationMinutes\": 120,\n    \"outcome\": \"AVAILABLE\",\n    \"slots\": [\n      {\n        \"startTime\": \"2026-09-30T16:30:00.000Z\",\n        \"endTime\": \"2026-09-30T18:30:00.000Z\"\n      }\n    ]\n  }\n}\n```\n`outcome` is `CLOSED`, `NO_SUITABLE_TABLE`, or `NO_REMAINING_SLOTS` when `slots` is empty.\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **401**: AUTH_INVALID_TOKEN, AUTH_EXPIRED_TOKEN\n- **404**: NOT_FOUND\n## Notes\n- Controller: `ReservationsController.listAvailableSlots`\n- Full path: `/api/v1/reservations/available-slots`\n- After the customer picks a window, GET /reservations/availability lists the matching tables. This list already excludes windows with no free table.",
                 "auth": {
                   "type": "bearer",
                   "bearer": [
