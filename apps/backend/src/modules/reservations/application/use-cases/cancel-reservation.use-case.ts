@@ -16,6 +16,11 @@ import {
   RestaurantSettingsRepository,
   RESTAURANT_SETTINGS_REPOSITORY,
 } from '@modules/restaurants/domain/repositories/restaurant-settings.repository';
+import {
+  RestaurantRepository,
+  RESTAURANT_REPOSITORY,
+} from '@modules/restaurants/domain/repositories/restaurant.repository';
+import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
 import { ReservationStatus } from '../../domain/enums/reservation.enums';
 import { ReservationHistory } from '../../domain/entities/reservation-history.entity';
 import { CancellationWindowService } from '../../domain/services/cancellation-window.service';
@@ -34,6 +39,7 @@ import {
   assertActorCanModifyReservation,
   resolveActingId,
 } from '../services/assert-actor-can-modify-reservation';
+import { assertActorCanOperateReservation } from '../services/assert-employee-reservation-scope';
 import {
   ReservationExpirationSchedulerPort,
   RESERVATION_EXPIRATION_SCHEDULER,
@@ -49,9 +55,10 @@ import { ReservationResult } from '../dto/reservation.result';
 
 /**
  * Phase 7.3 (Reservation Lifecycle, architecture frozen 2026-07-23). Reachable
- * from `Pending` or `Approved`, by either the reservation's own Customer or a
- * branch-scoped Employee holding `reservations:cancel` (resolved via
- * `assertActorCanModifyReservation` - one route, no new guard composition).
+ * from `Pending` or `Approved`, by the reservation's own Customer, a
+ * branch-scoped Employee holding `reservations:cancel`, or an organization
+ * Owner/Admin of the restaurant (resolved inside this use case - one route,
+ * no new guard composition).
  * Never blocked by the cancellation window - only flagged on the resulting
  * `ReservationHistory` row. `Pending -> Cancelled` performs no Table
  * operation; `Approved -> Cancelled` calls `Table.release()` atomically with
@@ -80,6 +87,7 @@ export class CancelReservationUseCase {
     @Inject(WAITLIST_RECHECK_SCHEDULER)
     private readonly waitlistRecheckScheduler: WaitlistRecheckSchedulerPort,
     private readonly scheduleApprovedReservationSignals: ScheduleApprovedReservationSignalsService,
+    @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
   ) {}
 
   async execute(command: CancelReservationCommand): Promise<ReservationResult> {
@@ -88,7 +96,16 @@ export class CancelReservationUseCase {
     if (existing === null) {
       throw new ReservationNotFoundException();
     }
-    assertActorCanModifyReservation(command.actor, existing, 'reservations:cancel');
+    if (command.actor.actorType === AccessTokenActorType.OrganizationMember) {
+      await assertActorCanOperateReservation(
+        command.actor,
+        existing,
+        'reservations:cancel',
+        this.restaurantRepository,
+      );
+    } else {
+      assertActorCanModifyReservation(command.actor, existing, 'reservations:cancel');
+    }
 
     const now = this.clock.now();
     const sourceStatus = existing.status;

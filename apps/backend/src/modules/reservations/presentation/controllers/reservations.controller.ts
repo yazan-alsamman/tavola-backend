@@ -516,7 +516,7 @@ export class ReservationsController {
     operationId: 'reservationsCancel',
     summary: 'Cancel a Pending or Approved reservation (Domain Action, Phase 7.3)',
     description:
-      "Reachable from Pending or Approved, by either the reservation's own Customer (ownership-enforced) or a branch-scoped Employee holding reservations:cancel - one route, no PermissionsGuard (which would otherwise deny every Customer actor); actor branching happens inside the use case. Never blocked by the cancellation window - only flagged (withinCancellationWindow) on the resulting ReservationHistory row. Pending -> Cancelled performs no Table operation; Approved -> Cancelled calls Table.release() atomically, returning the table to Available.",
+      "Reachable from Pending or Approved, by the reservation's own Customer (ownership-enforced), a branch-scoped Employee holding reservations:cancel, or an organization Owner/Admin of the restaurant. One route, no PermissionsGuard; actor branching happens inside the use case. Never blocked by the cancellation window - only flagged (withinCancellationWindow) on the resulting ReservationHistory row. Pending -> Cancelled performs no Table operation; Approved -> Cancelled calls Table.release() atomically, returning the table to Available.",
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'Reservation cancelled', type: ReservationResponseDto })
@@ -525,10 +525,11 @@ export class ReservationsController {
     'AUTH_INVALID_TOKEN',
     'AUTH_EXPIRED_TOKEN',
   ])
-  @ApiErrorResponse(403, 'Employee lacks reservations:cancel or is outside branch scope', [
-    'FORBIDDEN',
-    'EMPLOYEE_BRANCH_NOT_ASSIGNED',
-  ])
+  @ApiErrorResponse(
+    403,
+    'Caller is not the customer, lacks reservations:cancel, is not Owner/Admin, or is outside branch scope',
+    ['FORBIDDEN', 'EMPLOYEE_BRANCH_NOT_ASSIGNED'],
+  )
   @ApiErrorResponse(404, 'Reservation not found, or does not belong to the caller', ['NOT_FOUND'])
   async cancel(
     @Param('id', ParseUUIDPipe) id: string,

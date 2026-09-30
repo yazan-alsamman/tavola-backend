@@ -340,6 +340,35 @@ describe('/api/v1/reservations/:id/{cancel,reschedule,complete,no-show} (e2e, Ph
       expect(tableRow?.status).toBe('Available');
     });
 
+    it("lets the restaurant owner cancel a customer's Pending reservation", async () => {
+      if (!dbAvailable) return;
+
+      const owner = await registerAndLoginOwner('cancel-by-owner');
+      const { branchId, tableIds } = await setUpRestaurantBranchTables(owner.accessToken);
+      const customer = await registerAndLoginCustomer('cancel-by-owner-customer');
+      const reservationId = await createPendingReservation(
+        customer.accessToken,
+        branchId,
+        tableIds[0],
+        {
+          reservationStartTime: '2026-12-02T18:00:00.000Z',
+          reservationEndTime: '2026-12-02T19:30:00.000Z',
+        },
+      );
+
+      const response = await request(app!.getHttpServer())
+        .post(`/api/v1/reservations/${reservationId}/cancel`)
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .send({ reason: 'Closed for a private event' })
+        .expect(200);
+
+      expect(response.body.data.status).toBe('Cancelled');
+      const historyRow = await prisma.reservationHistory.findFirst({
+        where: { reservationId, newStatus: 'Cancelled' },
+      });
+      expect(historyRow?.changedBy).toBe(owner.userId);
+    });
+
     it("returns 404 for another Customer's reservation (IDOR)", async () => {
       if (!dbAvailable) return;
 

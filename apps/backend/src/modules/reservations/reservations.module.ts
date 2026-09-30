@@ -59,8 +59,9 @@ import { BranchReservationsController } from './presentation/controllers/branch-
  * comment). Phase 7.2 (Approval Workflow) adds Approve/Reject, staff-facing
  * (`PermissionsGuard` + `reservations:approve`, Employee actor only) - hence
  * the `AuthorizationModule` import (exports `PermissionsGuard`). Phase 7.3
- * (Reservation Lifecycle) adds Cancel/Reschedule (dual-actor: Customer
- * ownership or Employee `reservations:cancel`/`reservations:reschedule`, no
+ * (Reservation Lifecycle) adds Cancel/Reschedule (Customer ownership,
+ * Employee `reservations:cancel`/`reservations:reschedule`, and for Cancel
+ * also organization Owner/Admin; no
  * `PermissionsGuard` at the route level - resolved inside the use cases),
  * Complete/No-Show (Employee-only, `reservations:complete`/
  * `reservations:noshow`, same pattern as Approve/Reject), and the

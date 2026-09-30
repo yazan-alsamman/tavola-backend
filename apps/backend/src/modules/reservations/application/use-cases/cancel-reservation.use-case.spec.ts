@@ -9,6 +9,9 @@ import { PermissionDeniedException } from '@modules/authorization/domain/excepti
 import { Table } from '@modules/tables/domain/entities/table.entity';
 import { TableShape, TableStatus } from '@modules/tables/domain/enums/table.enums';
 import { RestaurantSettings } from '@modules/restaurants/domain/entities/restaurant-settings.entity';
+import { Restaurant } from '@modules/restaurants/domain/entities/restaurant.entity';
+import { RestaurantStatus } from '@modules/restaurants/domain/enums/restaurant.enums';
+import { OrganizationMemberRole } from '@modules/organizations/domain/enums/organization.enums';
 import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
 import { TableId } from '@shared/domain/value-objects/identifiers.vo';
 import {
@@ -19,6 +22,7 @@ import {
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryTableRepository } from '../../../../../test/tables/support/in-memory-table.repository';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
+import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryReservationRepository } from '../../../../../test/reservations/support/in-memory-reservation.repository';
 import { InMemoryReservationHistoryRepository } from '../../../../../test/reservations/support/in-memory-reservation-history.repository';
 import { InMemoryReservationExpirationScheduler } from '../../../../../test/reservations/support/in-memory-reservation-expiration-scheduler';
@@ -98,6 +102,7 @@ describe('CancelReservationUseCase', () => {
     const reservationHistoryRepository = new InMemoryReservationHistoryRepository();
     const tableRepository = new InMemoryTableRepository();
     const restaurantSettingsRepository = new InMemoryRestaurantSettingsRepository();
+    const restaurantRepository = new InMemoryRestaurantRepository();
     const expirationScheduler = new InMemoryReservationExpirationScheduler();
     const waitlistRecheckScheduler = new InMemoryWaitlistRecheckScheduler();
 
@@ -155,11 +160,13 @@ describe('CancelReservationUseCase', () => {
       expirationScheduler,
       waitlistRecheckScheduler,
       scheduleApprovedReservationSignals,
+      restaurantRepository,
     );
 
     return {
       useCase,
       reservationRepository,
+      restaurantRepository,
       reservationHistoryRepository,
       tableRepository,
       waitlistRecheckScheduler,
@@ -207,6 +214,110 @@ describe('CancelReservationUseCase', () => {
 
     await expect(
       useCase.execute({ actor: userActor(otherCustomerId), reservationId, reason: null }),
+    ).rejects.toBeInstanceOf(ReservationNotFoundException);
+  });
+
+  it('lets the owning organization Owner cancel without an employee permission', async () => {
+    const { useCase, reservationRepository, restaurantRepository, reservationHistoryRepository } =
+      await build();
+    await reservationRepository.seed(reservation());
+    await restaurantRepository.save(
+      Restaurant.create({
+        id: restaurantId,
+        organizationId: '11111111-1111-4111-8111-111111111111',
+        name: 'Abu Raihana',
+        slug: 'abu-raihana',
+        logoId: null,
+        coverImageId: null,
+        description: null,
+        cuisineType: null,
+        averageRating: null,
+        priceLevel: null,
+        status: RestaurantStatus.Active,
+        createdAt: fixedNow,
+        updatedAt: fixedNow,
+        deletedAt: null,
+      }),
+    );
+
+    const result = await useCase.execute({
+      actor: {
+        actorType: AccessTokenActorType.OrganizationMember,
+        userId: 'owner-user-1',
+        sessionId: 'session-1',
+        sessionVersion: 1,
+        tokenFamilyId: 'family-1',
+        organizationId: '11111111-1111-4111-8111-111111111111',
+        orgRole: OrganizationMemberRole.Owner,
+        permissionsVersion: 1,
+      },
+      reservationId,
+      reason: 'Closed for a private event',
+    });
+
+    expect(result.status).toBe('Cancelled');
+    expect(reservationHistoryRepository.rows[0]?.changedBy).toBe('owner-user-1');
+  });
+
+  it('rejects a Staff organization member', async () => {
+    const { useCase, reservationRepository, restaurantRepository } = await build();
+    await reservationRepository.seed(reservation());
+    await restaurantRepository.save(
+      Restaurant.create({
+        id: restaurantId,
+        organizationId: '11111111-1111-4111-8111-111111111111',
+        name: 'Abu Raihana',
+        slug: 'abu-raihana',
+        logoId: null,
+        coverImageId: null,
+        description: null,
+        cuisineType: null,
+        averageRating: null,
+        priceLevel: null,
+        status: RestaurantStatus.Active,
+        createdAt: fixedNow,
+        updatedAt: fixedNow,
+        deletedAt: null,
+      }),
+    );
+
+    await expect(
+      useCase.execute({
+        actor: {
+          actorType: AccessTokenActorType.OrganizationMember,
+          userId: 'staff-user-1',
+          sessionId: 'session-1',
+          sessionVersion: 1,
+          tokenFamilyId: 'family-1',
+          organizationId: '11111111-1111-4111-8111-111111111111',
+          orgRole: OrganizationMemberRole.Staff,
+          permissionsVersion: 1,
+        },
+        reservationId,
+        reason: null,
+      }),
+    ).rejects.toBeInstanceOf(PermissionDeniedException);
+  });
+
+  it('returns not found when the owner cannot see the restaurant', async () => {
+    const { useCase, reservationRepository } = await build();
+    await reservationRepository.seed(reservation());
+
+    await expect(
+      useCase.execute({
+        actor: {
+          actorType: AccessTokenActorType.OrganizationMember,
+          userId: 'owner-user-1',
+          sessionId: 'session-1',
+          sessionVersion: 1,
+          tokenFamilyId: 'family-1',
+          organizationId: '22222222-2222-4222-8222-222222222222',
+          orgRole: OrganizationMemberRole.Owner,
+          permissionsVersion: 1,
+        },
+        reservationId,
+        reason: null,
+      }),
     ).rejects.toBeInstanceOf(ReservationNotFoundException);
   });
 
