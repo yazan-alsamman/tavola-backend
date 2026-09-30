@@ -8,6 +8,7 @@ import { TablesModule } from '@modules/tables/tables.module';
 import { CustomerAcquisitionModule } from '@modules/customer-acquisition/customer-acquisition.module';
 import { WAITLIST_RECHECK_QUEUE_NAME } from '@shared/infrastructure/bullmq/waitlist-recheck-queue.constants';
 import { SearchAvailabilityUseCase } from './application/use-cases/search-availability.use-case';
+import { ListReservationTimeSlotsUseCase } from './application/use-cases/list-reservation-time-slots.use-case';
 import { CreateReservationUseCase } from './application/use-cases/create-reservation.use-case';
 import { ListMyReservationsUseCase } from './application/use-cases/list-my-reservations.use-case';
 import { SearchMyReservationsUseCase } from './application/use-cases/search-my-reservations.use-case';
