@@ -214,6 +214,22 @@ export class Offer extends Entity<OfferProps> {
     );
   }
 
+  /**
+   * The status as of `at`: a Published offer whose `endsAt` has passed reads
+   * as Expired even when its expiration job never ran (lost Redis job, or a
+   * row written without one). The stored row is corrected by that job; this
+   * keeps the management listing truthful in the meantime.
+   */
+  statusAt(at: Date): OfferStatus {
+    if (
+      this.props.status === OfferStatus.Published &&
+      this.props.endsAt.getTime() <= at.getTime()
+    ) {
+      return OfferStatus.Expired;
+    }
+    return this.props.status;
+  }
+
   toProps(): Readonly<OfferProps> {
     return { ...this.props };
   }

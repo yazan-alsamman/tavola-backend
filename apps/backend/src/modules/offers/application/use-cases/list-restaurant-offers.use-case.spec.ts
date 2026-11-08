@@ -8,6 +8,7 @@ import {
   testOffer,
   testRestaurant,
 } from '../../../../../test/offers/support/offer-test-fixtures';
+import { FixedClock } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 
 describe('ListRestaurantOffersUseCase', () => {
   const restaurantId = '33333333-3333-4333-8333-333333333333';
@@ -17,7 +18,11 @@ describe('ListRestaurantOffersUseCase', () => {
     const restaurantRepository = new InMemoryRestaurantRepository();
     const offerRepository = new InMemoryOfferRepository();
     await restaurantRepository.save(testRestaurant({ id: restaurantId }));
-    const useCase = new ListRestaurantOffersUseCase(restaurantRepository, offerRepository);
+    const useCase = new ListRestaurantOffersUseCase(
+      restaurantRepository,
+      offerRepository,
+      new FixedClock(fixedNow),
+    );
     return { useCase, offerRepository };
   }
 
@@ -49,6 +54,27 @@ describe('ListRestaurantOffersUseCase', () => {
     );
   });
 
+  it('reports a Published offer past its end as Expired even if the expiry job never ran', async () => {
+    const restaurantRepository = new InMemoryRestaurantRepository();
+    const offerRepository = new InMemoryOfferRepository();
+    await restaurantRepository.save(testRestaurant({ id: restaurantId }));
+    await offerRepository.seed(testOffer({ restaurantId }).publish(fixedNow));
+    const afterEnd = new Date('2026-09-02T00:00:00.000Z');
+    const useCase = new ListRestaurantOffersUseCase(
+      restaurantRepository,
+      offerRepository,
+      new FixedClock(afterEnd),
+    );
+
+    const result = await useCase.execute({
+      actor: orgMemberActor(),
+      restaurantId,
+      page: 1,
+      limit: 20,
+    });
+    expect(result.items.map((item) => item.status)).toEqual([OfferStatus.Expired]);
+  });
+
   it('excludes soft-deleted offers', async () => {
     const { useCase, offerRepository } = await build();
     const offer = testOffer({ id: '22222222-2222-4222-8222-222222222221', restaurantId });
@@ -66,7 +92,11 @@ describe('ListRestaurantOffersUseCase', () => {
   it('404s when the restaurant does not exist', async () => {
     const restaurantRepository = new InMemoryRestaurantRepository();
     const offerRepository = new InMemoryOfferRepository();
-    const useCase = new ListRestaurantOffersUseCase(restaurantRepository, offerRepository);
+    const useCase = new ListRestaurantOffersUseCase(
+      restaurantRepository,
+      offerRepository,
+      new FixedClock(fixedNow),
+    );
     await expect(
       useCase.execute({ actor: orgMemberActor(), restaurantId, page: 1, limit: 20 }),
     ).rejects.toBeInstanceOf(RestaurantNotFoundException);

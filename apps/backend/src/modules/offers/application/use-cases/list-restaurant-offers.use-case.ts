@@ -1,4 +1,5 @@
 import { Injectable, Inject } from '@nestjs/common';
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import {
   RestaurantRepository,
@@ -23,6 +24,7 @@ export class ListRestaurantOffersUseCase {
   constructor(
     @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
     @Inject(OFFER_REPOSITORY) private readonly offerRepository: OfferRepository,
+    @Inject(CLOCK) private readonly clock: ClockPort,
   ) {}
 
   async execute(command: ListRestaurantOffersCommand): Promise<OfferListResult> {
@@ -37,8 +39,9 @@ export class ListRestaurantOffersUseCase {
       command.page,
       command.limit,
     );
+    const now = this.clock.now();
     return {
-      items: page.items.map(toOfferResult),
+      items: page.items.map((offer) => toOfferResult(offer, now)),
       page: command.page,
       limit: command.limit,
       total: page.total,

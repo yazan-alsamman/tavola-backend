@@ -37,7 +37,7 @@ export class ListPublicOffersUseCase {
       command.limit,
     );
     return {
-      items: page.items.map(toOfferResult),
+      items: page.items.map((offer) => toOfferResult(offer)),
       page: command.page,
       limit: command.limit,
       total: page.total,
