@@ -8,6 +8,7 @@ import { UserRepository } from '@modules/authentication/domain/repositories/auth
 import {
   ReservationApprovedEvent,
   ReservationCancelledEvent,
+  ReservationCreatedEvent,
   ReservationNoShowEvent,
   ReservationRescheduledEvent,
   ReservationReminderDueEvent,
@@ -17,7 +18,11 @@ import {
   RESERVATION_REPOSITORY,
   ReservationRepository,
 } from '@modules/reservations/domain/repositories/reservation.repository';
-import { WaitlistEntryPromotedEvent } from '@modules/waitlist/domain/events/waitlist.events';
+import {
+  WaitlistEntryCreatedEvent,
+  WaitlistEntryPromotedEvent,
+} from '@modules/waitlist/domain/events/waitlist.events';
+import { ReservationSource } from '@modules/reservations/domain/enums/reservation.enums';
 import {
   RESERVATION_WAITLIST_ENTRY_REPOSITORY,
   ReservationWaitlistEntryRepository,
@@ -45,6 +50,75 @@ import {
   NOTIFICATION_DELIVERY_SCHEDULER,
   NotificationDeliverySchedulerPort,
 } from '../ports/notification-delivery-scheduler.port';
+import {
+  STAFF_NOTIFICATION_RECIPIENT_READER,
+  StaffNotificationRecipientReaderPort,
+} from '../ports/staff-notification-recipient-reader.port';
+
+/** Restaurant-side, In-App only notification types (no Push, no customer recipient). */
+export const StaffNotificationType = {
+  ReservationCreated: 'StaffReservationCreated',
+  ReservationCancelled: 'StaffReservationCancelled',
+  WaitlistEntryCreated: 'StaffWaitlistEntryCreated',
+} as const;
+
+interface StaffNotificationIntent {
+  readonly type: string;
+  readonly reservationId: string | null;
+  readonly entryId: string | null;
+  readonly restaurantId: string;
+  readonly branchId: string;
+  /** For a cancellation: only notify when this id is the reservation's own customer. */
+  readonly cancelledBy: string | null;
+}
+
+/**
+ * Customer-originated activity the restaurant should hear about. Staff
+ * actions (a phone/walk-in booking, a staff cancel, a staff-added guest)
+ * never notify staff - the person who did it already knows.
+ */
+export function resolveStaffNotificationIntent(event: DomainEvent): StaffNotificationIntent | null {
+  if (event instanceof ReservationCreatedEvent) {
+    const p = event.payload;
+    if (p.source !== ReservationSource.Online || p.userId === null) {
+      return null;
+    }
+    return {
+      type: StaffNotificationType.ReservationCreated,
+      reservationId: p.reservationId,
+      entryId: null,
+      restaurantId: p.restaurantId,
+      branchId: p.branchId,
+      cancelledBy: null,
+    };
+  }
+  if (event instanceof ReservationCancelledEvent) {
+    const p = event.payload;
+    return {
+      type: StaffNotificationType.ReservationCancelled,
+      reservationId: p.reservationId,
+      entryId: null,
+      restaurantId: p.restaurantId,
+      branchId: p.branchId,
+      cancelledBy: p.cancelledBy,
+    };
+  }
+  if (event instanceof WaitlistEntryCreatedEvent) {
+    const p = event.payload;
+    if (p.userId === null || p.createdBy !== p.userId) {
+      return null;
+    }
+    return {
+      type: StaffNotificationType.WaitlistEntryCreated,
+      reservationId: null,
+      entryId: p.entryId,
+      restaurantId: p.restaurantId,
+      branchId: p.branchId,
+      cancelledBy: null,
+    };
+  }
+  return null;
+}
 
 /**
  * Internal shape produced by `resolveNotificationIntent` for each of the
@@ -209,7 +283,88 @@ export class NotificationDispatcher {
     private readonly conversationParticipantRepository: ConversationParticipantRepository,
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
+    @Inject(STAFF_NOTIFICATION_RECIPIENT_READER)
+    private readonly staffRecipientReader: StaffNotificationRecipientReaderPort,
   ) {}
+
+  /**
+   * The restaurant-side counterpart of `dispatch`: one In-App row per
+   * Owner/Admin/branch Employee for a customer's new booking, cancellation,
+   * or waitlist join. Never Push (owner decision 2026-11-08). Same
+   * best-effort contract as `dispatch` - the caller swallows failures.
+   */
+  async dispatchToStaff(event: DomainEvent): Promise<NotificationCreatedEvent[]> {
+    const intent = resolveStaffNotificationIntent(event);
+    if (intent === null) {
+      return [];
+    }
+
+    if (intent.cancelledBy !== null && intent.reservationId !== null) {
+      const reservation = await this.reservationRepository.findById(
+        ReservationId.create(intent.reservationId),
+      );
+      if (reservation?.userId?.value !== intent.cancelledBy) {
+        return [];
+      }
+    }
+
+    const recipientIds = await this.staffRecipientReader.findRecipientUserIds(
+      intent.restaurantId,
+      intent.branchId,
+    );
+    const data = {
+      ...(intent.reservationId !== null ? { reservationId: intent.reservationId } : {}),
+      ...(intent.entryId !== null ? { entryId: intent.entryId } : {}),
+      restaurantId: intent.restaurantId,
+      branchId: intent.branchId,
+    };
+
+    const created: NotificationCreatedEvent[] = [];
+    for (const recipientId of recipientIds) {
+      const userId = UserId.create(recipientId);
+      const user = await this.userRepository.findById(userId);
+      if (user === null) {
+        continue;
+      }
+      const template = await this.resolveTemplate(
+        intent.type,
+        user.language,
+        NotificationChannel.InApp,
+      );
+      if (template === null) {
+        this.logger.error(
+          `NotificationDispatcher: no NotificationTemplate for eventType=${intent.type} channel=InApp - staff notification not created. Seed data is missing.`,
+        );
+        return created;
+      }
+      const now = this.clock.now();
+      const notification = Notification.create({
+        id: this.idGenerator.generate(),
+        userId: recipientId,
+        type: intent.type,
+        templateId: template.id,
+        title: template.title,
+        body: template.body,
+        data,
+        now,
+      });
+      await this.notificationRepository.save(notification);
+      created.push(
+        new NotificationCreatedEvent(
+          this.idGenerator.generate(),
+          {
+            notificationId: notification.id,
+            userId: recipientId,
+            type: intent.type,
+            reservationId: intent.reservationId,
+            correlationId: event.correlationId,
+          },
+          now,
+        ),
+      );
+    }
+    return created;
+  }
 
   /**
    * Returns the `NotificationCreatedEvent` to publish through the rest of

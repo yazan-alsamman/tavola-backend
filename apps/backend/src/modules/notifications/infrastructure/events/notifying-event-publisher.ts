@@ -61,5 +61,16 @@ export class NotifyingEventPublisher implements EventPublisherPort {
         (error as Error).stack,
       );
     }
+    try {
+      const staffNotifications = await this.notificationDispatcher.dispatchToStaff(event);
+      for (const notificationCreated of staffNotifications) {
+        await this.inner.publish(notificationCreated);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Staff notification dispatch failed for ${event.eventName} (${event.eventId}): ${(error as Error).message}`,
+        (error as Error).stack,
+      );
+    }
   }
 }

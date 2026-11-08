@@ -2447,3 +2447,27 @@ Every significant architectural decision must:
 3. Record trade-offs.
 4. Describe long-term consequences.
 5. Remain immutable after acceptance unless superseded by a new ADR.
+
+---
+## ADR-041
+
+### Title
+
+Restaurant-side In-App notifications for customer booking activity
+
+### Status
+
+**Accepted — owner-approved 2026-11-08.** Additive.
+
+### Context
+
+Phase 9 notified customers only. Restaurant owners and staff got no notification row when a customer booked, cancelled, or joined the waitlist from the app, so the Restaurant Dashboard's notifications page stayed empty.
+
+### Decision
+
+`NotificationDispatcher.dispatchToStaff` runs alongside `dispatch` in `NotifyingEventPublisher`, under the same best-effort contract (never rethrown). It handles a separate three-event allow-list (EVENTS.md, "Restaurant-side In-App notifications"). Recipients are resolved by `StaffNotificationRecipientReaderPort` with one raw query keyed by the restaurant, because the triggering request is usually a customer's and has no TenantContext. The notifications are In-App only, so no Push is attempted and no OneSignal configuration is needed. Templates are seeded in English (default) and Arabic.
+
+### Consequences
+
+An owner who also uses the customer app with the same account sees these rows in that app's list too. Push for staff can be added later by marking the intent push-eligible once OneSignal is configured.
+

@@ -276,6 +276,7 @@ describe('Notification dispatch + delivery pipeline (integration, real Postgres 
       conversationParticipantRepository,
       new FixedClock(new Date('2026-07-25T12:00:00.000Z')),
       new UuidGenerator(),
+      { findRecipientUserIds: async () => [] },
     );
   }
 
