@@ -10,7 +10,10 @@ import {
   TableReadyNotifiedEvent,
 } from '@modules/reservations/domain/events/reservation.events';
 import { ReservationSource } from '@modules/reservations/domain/enums/reservation.enums';
-import { WaitlistEntryPromotedEvent } from '@modules/waitlist/domain/events/waitlist.events';
+import {
+  WaitlistEntryCreatedEvent,
+  WaitlistEntryPromotedEvent,
+} from '@modules/waitlist/domain/events/waitlist.events';
 import { MessageSentEvent } from '@modules/messaging/domain/events/messaging.events';
 import { MessageSenderType, MessageType } from '@modules/messaging/domain/enums/messaging.enums';
 import { ConversationParticipant } from '@modules/messaging/domain/entities/conversation-participant.entity';
@@ -324,6 +327,7 @@ describe('NotificationDispatcher', () => {
     notificationOptIn?: boolean;
     template?: NotificationTemplate | null;
     conversationCustomerUserId?: string | null;
+    staffRecipientIds?: string[];
   }) {
     const reservationOwnerId =
       overrides.reservationUserId !== undefined ? overrides.reservationUserId : userId;
@@ -362,6 +366,9 @@ describe('NotificationDispatcher', () => {
             }),
       ),
     };
+    const staffRecipientReader = {
+      findRecipientUserIds: jest.fn().mockResolvedValue(overrides.staffRecipientIds ?? []),
+    };
     const clock = { now: () => now };
     let counter = 0;
     const idGenerator = { generate: () => `generated-id-${++counter}` };
@@ -376,10 +383,12 @@ describe('NotificationDispatcher', () => {
       conversationParticipantRepository as never,
       clock as never,
       idGenerator as never,
+      staffRecipientReader as never,
     );
 
     return {
       dispatcher,
+      staffRecipientReader,
       notificationRepository,
       deliveryScheduler,
       userRepository,
@@ -501,5 +510,111 @@ describe('NotificationDispatcher', () => {
 
     expect(result).toBeNull();
     expect(notificationRepository.save).not.toHaveBeenCalled();
+  });
+
+  describe('dispatchToStaff (restaurant-side In-App notifications)', () => {
+    const ownerId = '31313131-3131-4313-8313-313131313131';
+    const employeeUserId = '32323232-3232-4323-8323-323232323232';
+
+    function createdEvent(source: ReservationSource, customerId: string | null = userId) {
+      return new ReservationCreatedEvent('e1', {
+        reservationId,
+        restaurantId,
+        branchId,
+        tableId,
+        userId: customerId,
+        reservationGuestId: customerId === null ? '41414141-4141-4414-8414-414141414141' : null,
+        source,
+        createdBy: customerId,
+      });
+    }
+
+    function cancelledEvent(cancelledBy: string) {
+      return new ReservationCancelledEvent('e1', {
+        reservationId,
+        restaurantId,
+        branchId,
+        tableId,
+        cancelledBy,
+        withinCancellationWindow: false,
+      });
+    }
+
+    it("notifies every staff recipient of a customer's online booking, In-App only", async () => {
+      const { dispatcher, notificationRepository, deliveryScheduler, staffRecipientReader } =
+        buildDispatcher({ staffRecipientIds: [ownerId, employeeUserId] });
+
+      const created = await dispatcher.dispatchToStaff(createdEvent(ReservationSource.Online));
+
+      expect(staffRecipientReader.findRecipientUserIds).toHaveBeenCalledWith(
+        restaurantId,
+        branchId,
+      );
+      expect(created.map((e) => e.payload.userId)).toEqual([ownerId, employeeUserId]);
+      expect(notificationRepository.save).toHaveBeenCalledTimes(2);
+      const saved = notificationRepository.save.mock.calls[0][0];
+      expect(saved.type).toBe('StaffReservationCreated');
+      expect(saved.pushStatus).not.toBe('Queued');
+      expect(deliveryScheduler.enqueueDelivery).not.toHaveBeenCalled();
+    });
+
+    it('stays silent for a booking staff made (phone, walk-in)', async () => {
+      const { dispatcher, notificationRepository } = buildDispatcher({
+        staffRecipientIds: [ownerId],
+      });
+      await expect(
+        dispatcher.dispatchToStaff(createdEvent(ReservationSource.Phone, null)),
+      ).resolves.toEqual([]);
+      await expect(
+        dispatcher.dispatchToStaff(createdEvent(ReservationSource.WalkIn, null)),
+      ).resolves.toEqual([]);
+      expect(notificationRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('notifies when the customer cancels, not when staff cancel', async () => {
+      const customerCancel = buildDispatcher({ staffRecipientIds: [ownerId] });
+      await expect(
+        customerCancel.dispatcher.dispatchToStaff(cancelledEvent(userId)),
+      ).resolves.toHaveLength(1);
+      expect(customerCancel.notificationRepository.save.mock.calls[0][0].type).toBe(
+        'StaffReservationCancelled',
+      );
+
+      const staffCancel = buildDispatcher({ staffRecipientIds: [ownerId] });
+      await expect(
+        staffCancel.dispatcher.dispatchToStaff(cancelledEvent(ownerId)),
+      ).resolves.toEqual([]);
+      expect(staffCancel.notificationRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('notifies when a customer joins the waitlist, not for a staff-added guest', async () => {
+      const joined = (createdBy: string, customerId: string | null) =>
+        new WaitlistEntryCreatedEvent('e1', {
+          entryId,
+          restaurantId,
+          branchId,
+          userId: customerId,
+          reservationGuestId: customerId === null ? '41414141-4141-4414-8414-414141414141' : null,
+          createdBy,
+        });
+
+      const app = buildDispatcher({ staffRecipientIds: [ownerId] });
+      const created = await app.dispatcher.dispatchToStaff(joined(userId, userId));
+      expect(created).toHaveLength(1);
+      expect(app.notificationRepository.save.mock.calls[0][0].type).toBe(
+        'StaffWaitlistEntryCreated',
+      );
+
+      const staff = buildDispatcher({ staffRecipientIds: [ownerId] });
+      await expect(staff.dispatcher.dispatchToStaff(joined(ownerId, null))).resolves.toEqual([]);
+    });
+
+    it('ignores events outside the staff list', async () => {
+      const { dispatcher, staffRecipientReader } = buildDispatcher({
+        staffRecipientIds: [ownerId],
+      });
+      await expect(dispatcher.dispatchToStaff(approvedEvent())).resolves.toEqual([]);
+      expect(staffRecipientReader.findRecipientUserIds).not.toHaveBeenCalled();
+    });
   });
 });

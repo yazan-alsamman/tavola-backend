@@ -398,6 +398,18 @@ Explicit, not inferred from event names — no event outside this list produces 
 | `ReservationExpired` | D — no Phase 9 notification | Low-salience event; no requirement supports notifying about it (owner-confirmed) |
 | `MessageSent` | A — Push + In-App (Customer-only) | Phase 15.6 (Messaging) Owner Decision D6, added after this table's initial Phase 9 freeze — see `TASKS.md`'s Phase 15.6 Implementation & Verification Report. A Customer-sent or System-sent message never notifies anyone; only a Restaurant-side (`OrganizationMember`/`Employee`) sender's message notifies the conversation's Customer participant, resolved via `ConversationParticipantRepository.findCustomerParticipant`. |
 
+### Restaurant-side In-App notifications (ADR-041)
+
+A second, separate allow-list for the restaurant's own people (`NotificationDispatcher.dispatchToStaff`). Recipients are the active Owner/Admin members of the restaurant's organization plus active, signed-in Employees whose branch scope covers the event's branch. **In-App only — never Push.** Only customer-originated activity qualifies; an action staff took themselves never notifies staff.
+
+| Source event | Condition | Notification `type` |
+|---|---|---|
+| `ReservationCreated` | `source = Online` and `userId` set | `StaffReservationCreated` |
+| `ReservationCancelled` | `cancelledBy` is the reservation's own customer | `StaffReservationCancelled` |
+| `WaitlistEntryCreated` | `userId` set and `createdBy = userId` | `StaffWaitlistEntryCreated` |
+
+Each row publishes its own `NotificationCreated` (audit + the usual per-user realtime hint). `data` carries `reservationId` or `entryId`, plus `restaurantId` and `branchId`.
+
 `WaitlistEntryNotified` is not separately listed — it fires as a consequence of the `WaitlistEntryPromoted`-triggered notification's push outcome (only on `Accepted`), never a second independent trigger.
 
 * **Read track:** `read: false → true` (one-way; `readAt` set atomically). Not published as a domain event in v1 — a read receipt has no broadcast value (see "Explicitly excluded from Phase 8 broadcast" above).

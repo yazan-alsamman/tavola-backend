@@ -39,6 +39,8 @@ const NOTIFICATION_TEMPLATES: Array<{
   channel: NotificationChannel;
   title: string;
   body: string;
+  /** Defaults to 'en', which is also the default (fallback) row. */
+  language?: 'en' | 'ar';
 }> = [
   {
     eventType: 'ReservationApproved',
@@ -133,6 +135,48 @@ const NOTIFICATION_TEMPLATES: Array<{
     channel: NotificationChannel.Push,
     title: 'New message',
     body: 'You have a new message from the restaurant. Tap to view.',
+  },
+  // Restaurant-side, In-App only (Restaurant Dashboard notifications page):
+  // a customer's own booking, cancellation, or waitlist join. Seeded in
+  // English (default) and Arabic, the dashboard's two languages.
+  {
+    eventType: 'StaffReservationCreated',
+    channel: NotificationChannel.InApp,
+    title: 'New reservation',
+    body: 'A customer booked a table from the app.',
+  },
+  {
+    eventType: 'StaffReservationCreated',
+    channel: NotificationChannel.InApp,
+    language: 'ar',
+    title: 'حجز جديد',
+    body: 'حجز زبون طاولة من التطبيق.',
+  },
+  {
+    eventType: 'StaffReservationCancelled',
+    channel: NotificationChannel.InApp,
+    title: 'Reservation cancelled',
+    body: 'A customer cancelled their reservation.',
+  },
+  {
+    eventType: 'StaffReservationCancelled',
+    channel: NotificationChannel.InApp,
+    language: 'ar',
+    title: 'إلغاء حجز',
+    body: 'ألغى زبون حجزه.',
+  },
+  {
+    eventType: 'StaffWaitlistEntryCreated',
+    channel: NotificationChannel.InApp,
+    title: 'New on the waitlist',
+    body: 'A customer joined the waitlist from the app.',
+  },
+  {
+    eventType: 'StaffWaitlistEntryCreated',
+    channel: NotificationChannel.InApp,
+    language: 'ar',
+    title: 'انضمام لقائمة الانتظار',
+    body: 'انضم زبون لقائمة الانتظار من التطبيق.',
   },
 ];
 
@@ -445,26 +489,28 @@ async function seedRoles(permissionIds: Map<string, string>): Promise<void> {
 
 async function seedNotificationTemplates(): Promise<void> {
   for (const template of NOTIFICATION_TEMPLATES) {
+    const language = template.language ?? 'en';
+    const isDefault = language === 'en';
     await prisma.notificationTemplate.upsert({
       where: {
         eventType_language_channel: {
           eventType: template.eventType,
-          language: 'en',
+          language,
           channel: template.channel,
         },
       },
       create: {
         eventType: template.eventType,
-        language: 'en',
+        language,
         channel: template.channel,
         title: template.title,
         body: template.body,
-        isDefault: true,
+        isDefault,
       },
       update: {
         title: template.title,
         body: template.body,
-        isDefault: true,
+        isDefault,
       },
     });
   }

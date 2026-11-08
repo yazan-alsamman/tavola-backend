@@ -19,6 +19,8 @@ import { PrismaPlatformAdminNotificationStatsReader } from './infrastructure/per
 import { PrismaCustomerAudienceReader } from './infrastructure/persistence/prisma-customer-audience.reader';
 import { PLATFORM_ADMIN_NOTIFICATION_STATS_READER } from './application/ports/platform-admin-notification-stats-reader.port';
 import { CUSTOMER_AUDIENCE_READER } from './application/ports/customer-audience-reader.port';
+import { STAFF_NOTIFICATION_RECIPIENT_READER } from './application/ports/staff-notification-recipient-reader.port';
+import { PrismaStaffNotificationRecipientReader } from './infrastructure/persistence/prisma-staff-notification-recipient.reader';
 import { NOTIFICATION_PROVIDER } from './application/ports/notification-provider.port';
 import { NOTIFICATION_DELIVERY_SCHEDULER } from './application/ports/notification-delivery-scheduler.port';
 import { NOTIFICATION_BROADCAST_FANOUT_SCHEDULER } from './application/ports/notification-broadcast-fanout-scheduler.port';
@@ -154,6 +156,11 @@ import { RestaurantNotificationsController } from './presentation/controllers/re
     },
     PrismaCustomerAudienceReader,
     { provide: CUSTOMER_AUDIENCE_READER, useExisting: PrismaCustomerAudienceReader },
+    PrismaStaffNotificationRecipientReader,
+    {
+      provide: STAFF_NOTIFICATION_RECIPIENT_READER,
+      useExisting: PrismaStaffNotificationRecipientReader,
+    },
   ],
   // PLATFORM_ADMIN_NOTIFICATION_STATS_READER is exported for PlatformAdminModule
   // (Phase 19.6 — Platform Dashboard Messaging section, ADR-035 Pattern 2).
