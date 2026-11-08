@@ -77,6 +77,14 @@ export class InMemoryEmployeeRepository implements EmployeeRepository {
     return count;
   }
 
+  async findAllByRestaurantId(restaurantId: RestaurantId): Promise<Employee[]> {
+    return [...this.employees.values()]
+      .filter(
+        (employee) => employee.restaurantId.value === restaurantId.value && !employee.deletedAt,
+      )
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  }
+
   async save(employee: Employee): Promise<void> {
     this.employees.set(employee.employeeId.value, employee);
   }

@@ -101,6 +101,21 @@ export class PrismaEmployeeRepository implements EmployeeRepository {
     });
   }
 
+  async findAllByRestaurantId(restaurantId: RestaurantId): Promise<Employee[]> {
+    const rows = await this.prismaContext.client.employee.findMany({
+      where: { restaurantId: restaurantId.value, deletedAt: null },
+      include: { branchAssignments: { select: { branchId: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return rows.map((row) =>
+      EmployeePrismaMapper.toDomain(
+        row,
+        row.branchAssignments.map((assignment) => assignment.branchId),
+      ),
+    );
+  }
+
   async addBranchAssignment(employeeId: EmployeeId, branchId: BranchId, at: Date): Promise<void> {
     await this.prismaContext.client.employeeBranchAssignment.upsert({
       where: {

@@ -6908,6 +6908,90 @@
               "response": []
             },
             {
+              "name": "List the restaurant's employees",
+              "id": "6c890398-f467-49e4-82b5-115873e000ad",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/employees",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "employees"
+                  ]
+                },
+                "description": "## Purpose\nStaff page: every non-removed employee (Invited, Active, Deactivated), oldest first.\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nOrganization Owner | Admin\n## Error Responses\n- **403**: FORBIDDEN\n- **404**: NOT_FOUND\n## Success Response\n`{ items: Employee[] }` (same shape as Invite's response)\n## Notes\n- Full path: `/api/v1/restaurants/:restaurantId/employees`",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Employees retrieved (200)', function () { pm.response.to.have.status(200); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "List roles for this restaurant's employees",
+              "id": "1186a972-d90e-4a8c-b6a7-41e31d096259",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/roles",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "roles"
+                  ]
+                },
+                "description": "## Purpose\nRole picker for Invite / Assign Role: seeded restaurant-scoped roles, ordered by name.\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nOrganization Owner | Admin\n## Error Responses\n- **403**: FORBIDDEN\n- **404**: NOT_FOUND\n## Success Response\n`{ items: [{ roleId, name, slug, description }] }`\n## Notes\n- Full path: `/api/v1/restaurants/:restaurantId/roles`",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Roles retrieved (200)', function () { pm.response.to.have.status(200); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
               "name": "Invite a new employee (Domain Action)",
               "id": "6aade812-b698-4593-a164-459b6a627f04",
               "request": {

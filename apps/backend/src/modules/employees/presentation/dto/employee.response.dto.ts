@@ -48,3 +48,8 @@ export class EmployeeResponseDto {
   @ApiProperty({ format: 'date-time' })
   updatedAt!: string;
 }
+
+export class EmployeeListResponseDto {
+  @ApiProperty({ type: [EmployeeResponseDto] })
+  items!: EmployeeResponseDto[];
+}

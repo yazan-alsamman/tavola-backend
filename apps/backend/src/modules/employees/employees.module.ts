@@ -10,6 +10,9 @@ import { AssignEmployeeToBranchUseCase } from './application/use-cases/assign-em
 import { RemoveEmployeeFromBranchUseCase } from './application/use-cases/remove-employee-branch.use-case';
 import { RemoveEmployeeUseCase } from './application/use-cases/remove-employee.use-case';
 import { EmployeesController } from './presentation/controllers/employees.controller';
+import { RestaurantRolesController } from './presentation/controllers/restaurant-roles.controller';
+import { ListRestaurantEmployeesUseCase } from './application/use-cases/list-restaurant-employees.use-case';
+import { ListRestaurantRolesUseCase } from './application/use-cases/list-restaurant-roles.use-case';
 
 /**
  * Phase 7.0 (Employee Management) - `Employee`/`Role`/`RolePermission` domain
@@ -45,13 +48,15 @@ import { EmployeesController } from './presentation/controllers/employees.contro
     BranchesModule,
     SubscriptionsModule,
   ],
-  controllers: [EmployeesController],
+  controllers: [EmployeesController, RestaurantRolesController],
   providers: [
     InviteEmployeeUseCase,
     AssignEmployeeRoleUseCase,
     AssignEmployeeToBranchUseCase,
     RemoveEmployeeFromBranchUseCase,
     RemoveEmployeeUseCase,
+    ListRestaurantEmployeesUseCase,
+    ListRestaurantRolesUseCase,
   ],
 })
 export class EmployeesModule {}
