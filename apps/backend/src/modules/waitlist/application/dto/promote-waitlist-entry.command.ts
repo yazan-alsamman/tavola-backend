@@ -1,4 +1,4 @@
-import { AuthenticatedEmployeeActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
+import { AuthenticatedActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
 
 /**
  * No start/end time in the request body (Phase 7.5 API surface freeze item
@@ -7,7 +7,8 @@ import { AuthenticatedEmployeeActor } from '@modules/authentication/application/
  * drives promotion identically to automatic promotion.
  */
 export interface PromoteWaitlistEntryCommand {
-  actor: AuthenticatedEmployeeActor;
+  /** Employee with reservations:waitlist, or the organization Owner/Admin. */
+  actor: AuthenticatedActor;
   entryId: string;
   correlationId?: string;
 }

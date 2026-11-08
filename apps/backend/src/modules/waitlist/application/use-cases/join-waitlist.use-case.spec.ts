@@ -18,6 +18,12 @@ import { InMemoryReservationGuestRepository } from '../../../../../test/reservat
 import { InMemoryReservationWaitlistEntryRepository } from '../../../../../test/waitlist/support/in-memory-reservation-waitlist-entry.repository';
 import { InMemoryWaitlistExpirationScheduler } from '../../../../../test/waitlist/support/in-memory-waitlist-expiration-scheduler';
 
+import {
+  organizationMemberActor,
+  restaurantRepositoryWith,
+  WAITLIST_OWNER_USER_ID,
+} from '../../../../../test/waitlist/support/waitlist-staff-fixtures';
+
 describe('JoinWaitlistUseCase', () => {
   const now = new Date('2026-08-01T10:00:00.000Z');
   const restaurantId = '33333333-3333-4333-8333-333333333333';
@@ -90,6 +96,7 @@ describe('JoinWaitlistUseCase', () => {
       eventPublisher,
       new ImmediateUnitOfWork(),
       expirationScheduler,
+      await restaurantRepositoryWith(restaurantId, now),
     );
 
     return { useCase, branchRepository, waitlistRepository, eventPublisher, expirationScheduler };
@@ -156,6 +163,37 @@ describe('JoinWaitlistUseCase', () => {
     expect(result.reservationGuestId).not.toBeNull();
     const stored = await waitlistRepository.findById(result.entryId);
     expect(stored?.createdBy).toBe('employee-1');
+  });
+
+  it('lets the restaurant Owner join a guest on their behalf', async () => {
+    const { useCase, waitlistRepository } = await build();
+    const result = await useCase.execute({
+      actor: organizationMemberActor('Owner'),
+      branchId,
+      partySize: 4,
+      preferredDate: '2026-08-01',
+      preferredTimeFrom: '19:00',
+      reservationGuest: { fullName: 'Jane Doe', countryCode: 'SY', phoneNumber: '0912345678' },
+    });
+
+    expect(result.userId).toBeNull();
+    expect(result.reservationGuestId).not.toBeNull();
+    const stored = await waitlistRepository.findById(result.entryId);
+    expect(stored?.createdBy).toBe(WAITLIST_OWNER_USER_ID);
+  });
+
+  it('rejects an organization member who is neither Owner nor Admin from joining a guest', async () => {
+    const { useCase } = await build();
+    await expect(
+      useCase.execute({
+        actor: organizationMemberActor('Staff'),
+        branchId,
+        partySize: 2,
+        preferredDate: '2026-08-01',
+        preferredTimeFrom: '19:00',
+        reservationGuest: { fullName: 'Jane Doe', countryCode: 'SY', phoneNumber: '0912345678' },
+      }),
+    ).rejects.toThrow(PermissionDeniedException);
   });
 
   it('rejects an Employee outside branch scope from joining on behalf of a guest', async () => {

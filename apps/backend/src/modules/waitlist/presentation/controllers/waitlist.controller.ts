@@ -23,13 +23,10 @@ import { ApiErrorResponse } from '@common/decorators/api-error-response.decorato
 import { ErrorResponseDto } from '@common/dto/error-response.dto';
 import {
   AuthenticatedActor,
-  AuthenticatedEmployeeActor,
 } from '@modules/authentication/application/dto/authenticated-actor.dto';
 import { CurrentActor } from '@modules/authentication/presentation/decorators/current-actor.decorator';
 import { JwtAuthGuard } from '@modules/authentication/presentation/guards/jwt-auth.guard';
 import { SessionVersionGuard } from '@modules/authentication/presentation/guards/session-version.guard';
-import { PermissionsGuard } from '@modules/authorization/presentation/guards/permissions.guard';
-import { RequirePermission } from '@modules/authorization/presentation/decorators/require-permission.decorator';
 import { JoinWaitlistUseCase } from '../../application/use-cases/join-waitlist.use-case';
 import { CancelWaitlistEntryUseCase } from '../../application/use-cases/cancel-waitlist-entry.use-case';
 import { PromoteWaitlistEntryUseCase } from '../../application/use-cases/promote-waitlist-entry.use-case';
@@ -117,7 +114,7 @@ export class WaitlistController {
     operationId: 'waitlistCancel',
     summary: 'Cancel a Waiting or Notified waitlist entry',
     description:
-      "Reachable from Waiting or Notified, by either the entry's own Customer (ownership-enforced) or a branch-scoped Employee holding reservations:waitlist - one route, no PermissionsGuard, mirroring POST /reservations/:id/cancel exactly.",
+      "Reachable from Waiting or Notified, by the entry's own Customer (ownership-enforced), a branch-scoped Employee holding reservations:waitlist, or the Owner/Admin of the organization that owns the restaurant - one route, no PermissionsGuard, mirroring POST /reservations/:id/cancel exactly.",
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({
@@ -151,8 +148,7 @@ export class WaitlistController {
   }
 
   @Post(':id/promote')
-  @UseGuards(JwtAuthGuard, SessionVersionGuard, PermissionsGuard)
-  @RequirePermission('reservations:waitlist')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ResponseMessage('Waitlist entry promoted successfully.')
@@ -160,7 +156,7 @@ export class WaitlistController {
     operationId: 'waitlistPromote',
     summary: 'Manually promote a Waiting or Notified waitlist entry (Domain Action)',
     description:
-      "Staff-only (reservations:waitlist, branch-scoped) - a Customer cannot promote their own entry. Uses the entry's own preferredDate/preferredTimeFrom to derive the requested Reservation window and searches for a currently available Table (never the request body) - the same slot-derivation and table-search as automatic promotion. Reuses the low-level Reservation creation/concurrency infrastructure (ADR-013), never CreateReservationUseCase.",
+      "Staff-only: an Employee holding reservations:waitlist (branch-scoped), or the Owner/Admin of the organization that owns the restaurant. A Customer cannot promote their own entry. Authorization is resolved in the use case (PermissionsGuard would deny every OrganizationMember). Uses the entry's own preferredDate/preferredTimeFrom to derive the requested Reservation window and searches for a currently available Table (never the request body) - the same slot-derivation and table-search as automatic promotion. Reuses the low-level Reservation creation/concurrency infrastructure (ADR-013), never CreateReservationUseCase.",
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({
@@ -185,7 +181,7 @@ export class WaitlistController {
   )
   async promote(
     @Param('id', ParseUUIDPipe) id: string,
-    @CurrentActor() actor: AuthenticatedEmployeeActor,
+    @CurrentActor() actor: AuthenticatedActor,
     @Req() request: Request,
   ): Promise<WaitlistEntryResponseDto> {
     const result = await this.promoteWaitlistEntryUseCase.execute({

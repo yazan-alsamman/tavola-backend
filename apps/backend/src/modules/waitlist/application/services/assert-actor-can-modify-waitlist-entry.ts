@@ -1,5 +1,7 @@
 import { AuthenticatedActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
 import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
+import { OrganizationMemberRole } from '@modules/organizations/domain/enums/organization.enums';
+import { RestaurantRepository } from '@modules/restaurants/domain/repositories/restaurant.repository';
 import { AuthenticatedEmployeeActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
 import { EmployeeBranchNotAssignedException } from '@modules/authorization/domain/exceptions/employee-branch-not-assigned.exception';
 import { PermissionDeniedException } from '@modules/authorization/domain/exceptions/permission-denied.exception';
@@ -94,6 +96,67 @@ export function assertEmployeeCanJoinWaitlist(
  * ever called after `assertActorCanModifyWaitlistEntry` has already
  * confirmed the actor is one of these two types.
  */
+/**
+ * Staff actions on a waitlist entry (promote, staff-side cancel). The
+ * Owner/Admin of the organization that owns the restaurant may act without an
+ * Employee permission slug - exactly like `assertActorCanOperateReservation`
+ * for reservations. `PermissionsGuard` cannot express this: it denies every
+ * OrganizationMember because they carry no permission list. An Employee still
+ * needs branch scope and the slug. The restaurant lookup is tenant-scoped, so
+ * a caller from another organization gets the same 404 as a missing entry.
+ */
+export async function assertStaffCanOperateWaitlistEntry(
+  actor: AuthenticatedActor,
+  entry: ReservationWaitlistEntry,
+  employeePermission: string,
+  restaurantRepository: RestaurantRepository,
+): Promise<void> {
+  if (actor.actorType === AccessTokenActorType.OrganizationMember) {
+    await assertOrganizationAdminOwnsRestaurant(
+      actor,
+      entry.restaurantId,
+      employeePermission,
+      restaurantRepository,
+      () => new WaitlistEntryNotFoundException(),
+    );
+    return;
+  }
+
+  if (actor.actorType !== AccessTokenActorType.Employee) {
+    throw new PermissionDeniedException(employeePermission);
+  }
+
+  assertEmployeeCanActOnWaitlistEntry(actor, entry);
+  if (!actor.permissions.includes(employeePermission)) {
+    throw new PermissionDeniedException(employeePermission);
+  }
+}
+
+/**
+ * The actor is the Owner/Admin of the organization that owns `restaurantId`.
+ * `RestaurantRepository.findById` is tenant-scoped, so a restaurant of another
+ * organization is invisible and collapses to `notFound()` (IDOR-safe).
+ */
+export async function assertOrganizationAdminOwnsRestaurant(
+  actor: AuthenticatedActor,
+  restaurantId: RestaurantId,
+  permissionForDenial: string,
+  restaurantRepository: RestaurantRepository,
+  notFound: () => Error,
+): Promise<void> {
+  if (
+    actor.actorType !== AccessTokenActorType.OrganizationMember ||
+    (actor.orgRole !== OrganizationMemberRole.Owner &&
+      actor.orgRole !== OrganizationMemberRole.Admin)
+  ) {
+    throw new PermissionDeniedException(permissionForDenial);
+  }
+  const restaurant = await restaurantRepository.findById(restaurantId);
+  if (restaurant === null) {
+    throw notFound();
+  }
+}
+
 export function resolveWaitlistActingId(actor: AuthenticatedActor): string {
   return actor.actorType === AccessTokenActorType.Employee ? actor.employeeId : actor.userId;
 }

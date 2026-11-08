@@ -5,6 +5,7 @@ import { WaitlistStatus } from '../../domain/enums/waitlist.enums';
 import { WaitlistEntryNotFoundException } from '../../domain/exceptions/waitlist-entry-not-found.exception';
 import { InvalidWaitlistStatusTransitionException } from '../../domain/exceptions/invalid-waitlist-status-transition.exception';
 import { NoTableAvailableForPromotionException } from '../../domain/exceptions/no-table-available-for-promotion.exception';
+import { PermissionDeniedException } from '@modules/authorization/domain/exceptions/permission-denied.exception';
 import { EmployeeBranchNotAssignedException } from '@modules/authorization/domain/exceptions/employee-branch-not-assigned.exception';
 import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
 import { Branch } from '@modules/branches/domain/entities/branch.entity';
@@ -27,6 +28,11 @@ import { InMemoryApprovedReservationOperationalScheduler } from '../../../../../
 import { InMemoryAcquisitionRecordingService } from '../../../../../test/reservations/support/in-memory-acquisition-recording.service';
 import type { RecordCustomerAcquisitionOnApprovalService } from '@modules/customer-acquisition/application/services/record-customer-acquisition-on-approval.service';
 import { ScheduleApprovedReservationSignalsService } from '@modules/reservations/application/services/schedule-approved-reservation-signals.service';
+
+import {
+  organizationMemberActor,
+  restaurantRepositoryWith,
+} from '../../../../../test/waitlist/support/waitlist-staff-fixtures';
 
 describe('PromoteWaitlistEntryUseCase', () => {
   const now = new Date('2026-08-01T10:00:00.000Z');
@@ -68,6 +74,35 @@ describe('PromoteWaitlistEntryUseCase', () => {
       createdBy: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
       now,
       ...overrides,
+    });
+  }
+
+  function availableTable() {
+    return Table.create({
+      id: tableId,
+      branchId,
+      floorPlanId: '88888888-8888-4888-8888-888888888888',
+      floorPlanAreaId: null,
+      tableNumber: 'T1',
+      capacity: 4,
+      floor: null,
+      positionX: null,
+      positionY: null,
+      width: null,
+      height: null,
+      rotation: null,
+      shape: TableShape.Rectangle,
+      color: null,
+      layer: null,
+      indoor: true,
+      vip: false,
+      smoking: false,
+      status: TableStatus.Available,
+      mergeGroupId: null,
+      isMergePrimary: false,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
     });
   }
 
@@ -131,9 +166,10 @@ describe('PromoteWaitlistEntryUseCase', () => {
       restaurantSettingsRepository,
       new FixedClock(now),
       promotionService,
+      await restaurantRepositoryWith(restaurantId, now),
     );
 
-    return { useCase, waitlistRepository, tableRepository };
+    return { useCase, waitlistRepository, tableRepository, reservationRepository };
   }
 
   it('promotes a Waiting entry when a table is available', async () => {
@@ -170,6 +206,42 @@ describe('PromoteWaitlistEntryUseCase', () => {
 
     const result = await useCase.execute({ actor: employeeActor(), entryId });
     expect(result.status).toBe(WaitlistStatus.Converted);
+  });
+
+  it('lets the restaurant Owner promote without an Employee permission slug', async () => {
+    const { useCase, waitlistRepository, tableRepository } = await build();
+    await tableRepository.save(availableTable());
+    await waitlistRepository.seed(entry());
+
+    const result = await useCase.execute({ actor: organizationMemberActor('Owner'), entryId });
+    expect(result.status).toBe(WaitlistStatus.Converted);
+  });
+
+  it('lets an organization Admin promote', async () => {
+    const { useCase, waitlistRepository, tableRepository } = await build();
+    await tableRepository.save(availableTable());
+    await waitlistRepository.seed(entry());
+
+    const result = await useCase.execute({ actor: organizationMemberActor('Admin'), entryId });
+    expect(result.status).toBe(WaitlistStatus.Converted);
+  });
+
+  it('rejects an organization member who is neither Owner nor Admin', async () => {
+    const { useCase, waitlistRepository } = await build();
+    await waitlistRepository.seed(entry());
+
+    await expect(
+      useCase.execute({ actor: organizationMemberActor('Staff'), entryId }),
+    ).rejects.toThrow(PermissionDeniedException);
+  });
+
+  it('collapses to 404 when the Owner cannot see the restaurant (another organization)', async () => {
+    const { useCase, waitlistRepository } = await build();
+    await waitlistRepository.seed(entry({ restaurantId: '99999999-9999-4999-8999-999999999999' }));
+
+    await expect(
+      useCase.execute({ actor: organizationMemberActor('Owner'), entryId }),
+    ).rejects.toThrow(WaitlistEntryNotFoundException);
   });
 
   it('throws 409 when no table is currently available', async () => {
