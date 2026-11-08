@@ -394,7 +394,7 @@ export class UsersController {
     const result = await this.listCurrentUserFavoritesUseCase.execute({
       actor,
       page: query.page ?? 1,
-      limit: query.limit ?? 20,
+      limit: query.pageSize ?? query.limit ?? 20,
     });
     return this.toFavoriteListResponse(result);
   }
