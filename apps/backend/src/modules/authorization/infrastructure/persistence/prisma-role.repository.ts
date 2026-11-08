@@ -5,6 +5,7 @@ import { RoleSlug } from '@shared/domain/value-objects/role-slug.vo';
 import { Role } from '../../domain/entities/role.entity';
 import { RoleRepository } from '../../domain/repositories/authorization.repositories';
 import { RolePrismaMapper } from './role.prisma-mapper';
+import { RoleScope } from '../../domain/enums/authorization.enums';
 
 /**
  * `Role`/`Permission` are fixed, seeded reference data (like `Country`/
@@ -28,6 +29,14 @@ export class PrismaRoleRepository implements RoleRepository {
       where: { slug: slug.value },
     });
     return row ? RolePrismaMapper.toDomain(row) : null;
+  }
+
+  async findAllByScope(scope: RoleScope): Promise<Role[]> {
+    const rows = await this.prismaContext.client.role.findMany({
+      where: { scope },
+      orderBy: { name: 'asc' },
+    });
+    return rows.map((row) => RolePrismaMapper.toDomain(row));
   }
 
   async save(role: Role): Promise<void> {

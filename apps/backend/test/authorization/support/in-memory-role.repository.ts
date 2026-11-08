@@ -2,6 +2,7 @@ import { Role } from '@modules/authorization/domain/entities/role.entity';
 import { RoleRepository } from '@modules/authorization/domain/repositories/authorization.repositories';
 import { RoleId } from '@shared/domain/value-objects/identifiers.vo';
 import { RoleSlug } from '@shared/domain/value-objects/role-slug.vo';
+import { RoleScope } from '@modules/authorization/domain/enums/authorization.enums';
 
 export class InMemoryRoleRepository implements RoleRepository {
   private readonly roles = new Map<string, Role>();
@@ -17,6 +18,12 @@ export class InMemoryRoleRepository implements RoleRepository {
       }
     }
     return null;
+  }
+
+  async findAllByScope(scope: RoleScope): Promise<Role[]> {
+    return [...this.roles.values()]
+      .filter((role) => role.scope === scope)
+      .sort((a, b) => a.toProps().name.localeCompare(b.toProps().name));
   }
 
   async save(role: Role): Promise<void> {

@@ -13,10 +13,13 @@ import {
 import { PermissionSlug } from '@shared/domain/value-objects/permission-slug.vo';
 import { RoleSlug } from '@shared/domain/value-objects/role-slug.vo';
 import { PermissionGrantRecord } from '../services/permission-resolver';
+import { RoleScope } from '../enums/authorization.enums';
 
 export interface RoleRepository {
   findById(id: RoleId): Promise<Role | null>;
   findBySlug(slug: RoleSlug): Promise<Role | null>;
+  /** Every seeded role of the given scope, ordered by name - the dashboard's role picker. */
+  findAllByScope(scope: RoleScope): Promise<Role[]>;
   save(role: Role): Promise<void>;
 }
 
@@ -79,6 +82,8 @@ export interface EmployeeRepository {
    * Employees holding the given role at the given restaurant.
    */
   countActiveByRestaurantIdAndRoleId(restaurantId: RestaurantId, roleId: RoleId): Promise<number>;
+  /** Every non-deleted Employee of the restaurant, oldest first, with branch assignments. */
+  findAllByRestaurantId(restaurantId: RestaurantId): Promise<Employee[]>;
   save(employee: Employee): Promise<void>;
   /**
    * Phase 7.0 - `EmployeeBranchAssignment` is a join row, not a column on

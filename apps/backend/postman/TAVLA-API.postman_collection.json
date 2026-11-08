@@ -3509,6 +3509,61 @@
               ]
             },
             {
+              "name": "List a branch waitlist for one day",
+              "id": "1b786aa9-62c1-49b3-802a-d325a8460954",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/branches/{{branchId}}/waitlist?date=2026-11-08",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "branches",
+                    "{{branchId}}",
+                    "waitlist"
+                  ],
+                  "query": [
+                    {
+                      "key": "date",
+                      "value": "2026-11-08"
+                    },
+                    {
+                      "key": "status",
+                      "value": "Waiting",
+                      "disabled": true
+                    }
+                  ]
+                },
+                "description": "## Purpose\nRestaurant Dashboard waitlist board: one branch's queue for one day, ordered by position.\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nOrganization Owner/Admin | Employee with `reservations:waitlist` (branch-scoped)\n## Query Params\n| Name | Required | Notes |\n|------|----------|-------|\n| `date` | yes | `YYYY-MM-DD`, the queue day (preferredDate) |\n| `status` | no | Waiting, Notified, Converted, Cancelled, Expired |\n## Success Response\n`{ items: [ WaitlistEntry + customer { type: 'User'|'Guest', name, phone } ] }` (max 500)\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **403**: FORBIDDEN, EMPLOYEE_BRANCH_NOT_ASSIGNED\n- **404**: NOT_FOUND\n## Notes\n- Controller: `BranchWaitlistController`.`list`\n- Full path: `/api/v1/restaurants/:restaurantId/branches/:branchId/waitlist`",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Branch waitlist retrieved (200)', function () { pm.response.to.have.status(200); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
               "name": "cancel Waitlist Entry",
               "id": "fbce6966-7853-4d9b-ab72-47472f2ce39c",
               "request": {
@@ -6851,6 +6906,90 @@
                 "description": "## Purpose\nRemove an employee from a branch (Domain Action)\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `employeeId` | `{{employeeId}}` | UUID path parameter |\n| `branchId` | `{{branchId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Employee removed from branch successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `EmployeesController`.`unknown`\n- Full path: `/api/v1/restaurants/:restaurantId/employees/:employeeId/branches/:branchId`\n- Callers (from source): Owner/Admin (Owner, Admin)"
               },
               "response": []
+            },
+            {
+              "name": "List the restaurant's employees",
+              "id": "6c890398-f467-49e4-82b5-115873e000ad",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/employees",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "employees"
+                  ]
+                },
+                "description": "## Purpose\nStaff page: every non-removed employee (Invited, Active, Deactivated), oldest first.\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nOrganization Owner | Admin\n## Error Responses\n- **403**: FORBIDDEN\n- **404**: NOT_FOUND\n## Success Response\n`{ items: Employee[] }` (same shape as Invite's response)\n## Notes\n- Full path: `/api/v1/restaurants/:restaurantId/employees`",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Employees retrieved (200)', function () { pm.response.to.have.status(200); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "List roles for this restaurant's employees",
+              "id": "1186a972-d90e-4a8c-b6a7-41e31d096259",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/roles",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "roles"
+                  ]
+                },
+                "description": "## Purpose\nRole picker for Invite / Assign Role: seeded restaurant-scoped roles, ordered by name.\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nOrganization Owner | Admin\n## Error Responses\n- **403**: FORBIDDEN\n- **404**: NOT_FOUND\n## Success Response\n`{ items: [{ roleId, name, slug, description }] }`\n## Notes\n- Full path: `/api/v1/restaurants/:restaurantId/roles`",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Roles retrieved (200)', function () { pm.response.to.have.status(200); });"
+                    ]
+                  }
+                }
+              ]
             },
             {
               "name": "Invite a new employee (Domain Action)",

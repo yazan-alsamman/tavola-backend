@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
@@ -34,10 +35,11 @@ import { AssignEmployeeRoleUseCase } from '../../application/use-cases/assign-em
 import { AssignEmployeeToBranchUseCase } from '../../application/use-cases/assign-employee-branch.use-case';
 import { RemoveEmployeeFromBranchUseCase } from '../../application/use-cases/remove-employee-branch.use-case';
 import { RemoveEmployeeUseCase } from '../../application/use-cases/remove-employee.use-case';
+import { ListRestaurantEmployeesUseCase } from '../../application/use-cases/list-restaurant-employees.use-case';
 import { InviteEmployeeRequestDto } from '../dto/invite-employee.request.dto';
 import { AssignEmployeeRoleRequestDto } from '../dto/assign-employee-role.request.dto';
 import { AssignEmployeeBranchRequestDto } from '../dto/assign-employee-branch.request.dto';
-import { EmployeeResponseDto } from '../dto/employee.response.dto';
+import { EmployeeListResponseDto, EmployeeResponseDto } from '../dto/employee.response.dto';
 import { toEmployeeResponse } from './employee-response.mapper';
 
 /**
@@ -60,7 +62,35 @@ export class EmployeesController {
     private readonly assignEmployeeToBranchUseCase: AssignEmployeeToBranchUseCase,
     private readonly removeEmployeeFromBranchUseCase: RemoveEmployeeFromBranchUseCase,
     private readonly removeEmployeeUseCase: RemoveEmployeeUseCase,
+    private readonly listRestaurantEmployeesUseCase: ListRestaurantEmployeesUseCase,
   ) {}
+
+  @Get()
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
+  @RequireOrgRole(OrganizationMemberRole.Owner, OrganizationMemberRole.Admin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Employees retrieved successfully.')
+  @ApiOperation({
+    operationId: 'employeesList',
+    summary: "List the restaurant's employees",
+    description:
+      'Every non-removed employee of the restaurant (Invited, Active or Deactivated), oldest first, with roleId and assigned branches.',
+  })
+  @ApiParam({ name: 'restaurantId', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Employees retrieved', type: EmployeeListResponseDto })
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller is not an Owner/Admin organization member', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Restaurant not found', ['NOT_FOUND'])
+  async list(
+    @Param('restaurantId', ParseUUIDPipe) restaurantId: string,
+  ): Promise<EmployeeListResponseDto> {
+    const results = await this.listRestaurantEmployeesUseCase.execute({ restaurantId });
+    return { items: results.map(toEmployeeResponse) };
+  }
 
   @Post()
   @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)

@@ -14,7 +14,13 @@ import {
   RESERVATION_WAITLIST_ENTRY_REPOSITORY,
 } from '../../domain/repositories/reservation-waitlist-entry.repository';
 import {
+  RestaurantRepository,
+  RESTAURANT_REPOSITORY,
+} from '@modules/restaurants/domain/repositories/restaurant.repository';
+import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
+import {
   assertActorCanModifyWaitlistEntry,
+  assertStaffCanOperateWaitlistEntry,
   resolveWaitlistActingActorType,
   resolveWaitlistActingId,
 } from '../services/assert-actor-can-modify-waitlist-entry';
@@ -44,6 +50,7 @@ export class CancelWaitlistEntryUseCase {
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
     @Inject(WAITLIST_EXPIRATION_SCHEDULER)
     private readonly expirationScheduler: WaitlistExpirationSchedulerPort,
+    @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
   ) {}
 
   async execute(command: CancelWaitlistEntryCommand): Promise<WaitlistEntryResult> {
@@ -51,7 +58,16 @@ export class CancelWaitlistEntryUseCase {
     if (existing === null) {
       throw new WaitlistEntryNotFoundException();
     }
-    assertActorCanModifyWaitlistEntry(command.actor, existing, 'reservations:waitlist');
+    if (command.actor.actorType === AccessTokenActorType.OrganizationMember) {
+      await assertStaffCanOperateWaitlistEntry(
+        command.actor,
+        existing,
+        'reservations:waitlist',
+        this.restaurantRepository,
+      );
+    } else {
+      assertActorCanModifyWaitlistEntry(command.actor, existing, 'reservations:waitlist');
+    }
 
     const now = this.clock.now();
     const sourceStatus = existing.status;

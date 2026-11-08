@@ -16,6 +16,12 @@ import {
 import { InMemoryReservationWaitlistEntryRepository } from '../../../../../test/waitlist/support/in-memory-reservation-waitlist-entry.repository';
 import { InMemoryWaitlistExpirationScheduler } from '../../../../../test/waitlist/support/in-memory-waitlist-expiration-scheduler';
 
+import {
+  organizationMemberActor,
+  restaurantRepositoryWith,
+  WAITLIST_OWNER_USER_ID,
+} from '../../../../../test/waitlist/support/waitlist-staff-fixtures';
+
 describe('CancelWaitlistEntryUseCase', () => {
   const now = new Date('2026-08-01T10:00:00.000Z');
   const restaurantId = '33333333-3333-4333-8333-333333333333';
@@ -81,6 +87,7 @@ describe('CancelWaitlistEntryUseCase', () => {
       eventPublisher,
       new ImmediateUnitOfWork(),
       expirationScheduler,
+      await restaurantRepositoryWith(restaurantId, now),
     );
 
     return { useCase, waitlistRepository, eventPublisher, expirationScheduler };
@@ -119,6 +126,27 @@ describe('CancelWaitlistEntryUseCase', () => {
       WaitlistEntryCancelledEvent | undefined;
     expect(event?.payload.cancelledBy).toBe('employee-1');
     expect(event?.payload.cancelledByActorType).toBe('Employee');
+  });
+
+  it('lets the restaurant Owner cancel without an Employee permission slug', async () => {
+    const { useCase, waitlistRepository, eventPublisher } = await build();
+    await waitlistRepository.seed(entry());
+
+    const result = await useCase.execute({ actor: organizationMemberActor('Owner'), entryId });
+    expect(result.status).toBe(WaitlistStatus.Cancelled);
+    const event = eventPublisher.events.find((e) => e instanceof WaitlistEntryCancelledEvent) as
+      WaitlistEntryCancelledEvent | undefined;
+    expect(event?.payload.cancelledBy).toBe(WAITLIST_OWNER_USER_ID);
+    expect(event?.payload.cancelledByActorType).toBe('User');
+  });
+
+  it('rejects an organization member who is neither Owner nor Admin', async () => {
+    const { useCase, waitlistRepository } = await build();
+    await waitlistRepository.seed(entry());
+
+    await expect(
+      useCase.execute({ actor: organizationMemberActor('Billing'), entryId }),
+    ).rejects.toThrow(PermissionDeniedException);
   });
 
   it('rejects an Employee outside branch scope', async () => {

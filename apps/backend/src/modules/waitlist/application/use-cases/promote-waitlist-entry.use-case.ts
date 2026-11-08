@@ -16,7 +16,14 @@ import {
   ReservationWaitlistEntryRepository,
   RESERVATION_WAITLIST_ENTRY_REPOSITORY,
 } from '../../domain/repositories/reservation-waitlist-entry.repository';
-import { assertEmployeeCanActOnWaitlistEntry } from '../services/assert-actor-can-modify-waitlist-entry';
+import {
+  RestaurantRepository,
+  RESTAURANT_REPOSITORY,
+} from '@modules/restaurants/domain/repositories/restaurant.repository';
+import {
+  assertStaffCanOperateWaitlistEntry,
+  resolveWaitlistActingId,
+} from '../services/assert-actor-can-modify-waitlist-entry';
 import { WaitlistPromotionService } from '../services/waitlist-promotion.service';
 import { toWaitlistEntryResult } from '../mappers/waitlist-entry-result.mapper';
 import { PromoteWaitlistEntryCommand } from '../dto/promote-waitlist-entry.command';
@@ -40,6 +47,7 @@ export class PromoteWaitlistEntryUseCase {
     private readonly restaurantSettingsRepository: RestaurantSettingsRepository,
     @Inject(CLOCK) private readonly clock: ClockPort,
     private readonly waitlistPromotionService: WaitlistPromotionService,
+    @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
   ) {}
 
   async execute(command: PromoteWaitlistEntryCommand): Promise<WaitlistEntryResult> {
@@ -47,7 +55,12 @@ export class PromoteWaitlistEntryUseCase {
     if (existing === null) {
       throw new WaitlistEntryNotFoundException();
     }
-    assertEmployeeCanActOnWaitlistEntry(command.actor, existing);
+    await assertStaffCanOperateWaitlistEntry(
+      command.actor,
+      existing,
+      'reservations:waitlist',
+      this.restaurantRepository,
+    );
 
     const branch = await this.branchRepository.findById(existing.branchId);
     if (branch === null) {
@@ -64,7 +77,7 @@ export class PromoteWaitlistEntryUseCase {
       reservationIntervalMinutes: settings?.reservationIntervalMinutes ?? 30,
       defaultReservationDurationMinutes: settings?.defaultReservationDurationMinutes ?? 90,
       autoApproval: settings?.autoApproval === true,
-      promotedBy: command.actor.employeeId,
+      promotedBy: resolveWaitlistActingId(command.actor),
       now,
       correlationId: command.correlationId,
     });

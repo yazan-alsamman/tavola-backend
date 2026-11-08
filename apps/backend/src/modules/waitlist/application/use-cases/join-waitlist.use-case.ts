@@ -28,7 +28,15 @@ import {
   ReservationWaitlistEntryRepository,
   RESERVATION_WAITLIST_ENTRY_REPOSITORY,
 } from '../../domain/repositories/reservation-waitlist-entry.repository';
-import { assertEmployeeCanJoinWaitlist } from '../services/assert-actor-can-modify-waitlist-entry';
+import {
+  RestaurantRepository,
+  RESTAURANT_REPOSITORY,
+} from '@modules/restaurants/domain/repositories/restaurant.repository';
+import {
+  assertEmployeeCanJoinWaitlist,
+  assertOrganizationAdminOwnsRestaurant,
+  resolveWaitlistActingId,
+} from '../services/assert-actor-can-modify-waitlist-entry';
 import {
   WaitlistExpirationSchedulerPort,
   WAITLIST_EXPIRATION_SCHEDULER,
@@ -46,7 +54,8 @@ const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
  * `CreateReservationUseCase`'s Online-vs-Phone/WalkIn split exactly (Phase
  * 7.4 precedent): a Customer (any actor type) joins for themselves using
  * their own `userId`; supplying `reservationGuest` is reachable only by an
- * Employee actor holding `reservations:waitlist` for the target Branch.
+ * Employee actor holding `reservations:waitlist` for the target Branch, or by
+ * the Owner/Admin of the organization that owns the Branch's restaurant.
  * `preferredDate`+`preferredTimeFrom` are required and validated against
  * `Branch.timezone` (freeze item 1/final decision) - a request whose derived
  * start time is already in the past is rejected immediately rather than
@@ -66,6 +75,7 @@ export class JoinWaitlistUseCase {
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
     @Inject(WAITLIST_EXPIRATION_SCHEDULER)
     private readonly expirationScheduler: WaitlistExpirationSchedulerPort,
+    @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
   ) {}
 
   async execute(command: JoinWaitlistCommand): Promise<WaitlistEntryResult> {
@@ -75,16 +85,26 @@ export class JoinWaitlistUseCase {
       throw new BranchNotFoundException();
     }
 
-    if (
-      command.reservationGuest !== undefined &&
-      command.actor.actorType === AccessTokenActorType.Employee
-    ) {
-      assertEmployeeCanJoinWaitlist(
-        command.actor,
-        branch.restaurantId,
-        branchId,
-        'reservations:waitlist',
-      );
+    if (command.reservationGuest !== undefined) {
+      if (command.actor.actorType === AccessTokenActorType.Employee) {
+        assertEmployeeCanJoinWaitlist(
+          command.actor,
+          branch.restaurantId,
+          branchId,
+          'reservations:waitlist',
+        );
+      } else if (command.actor.actorType === AccessTokenActorType.OrganizationMember) {
+        // The restaurant's Owner/Admin adds walk-up guests from the dashboard
+        // too; without this they were refused (or, with no guest, queued as
+        // if they were the customer themselves).
+        await assertOrganizationAdminOwnsRestaurant(
+          command.actor,
+          branch.restaurantId,
+          'reservations:waitlist',
+          this.restaurantRepository,
+          () => new BranchNotFoundException(),
+        );
+      }
     }
 
     const preferredDate = parseDateOnly(command.preferredDate);
@@ -194,12 +214,12 @@ export class JoinWaitlistUseCase {
       };
     }
 
-    if (command.actor.actorType !== AccessTokenActorType.Employee) {
-      // Unreachable in practice: no client can supply reservationGuest
-      // without also passing the Employee-only branch/permission check
-      // above, since a non-Employee actor never satisfies that check's own
-      // actorType guard. Kept as a defensive guard so this method never
-      // silently mis-attributes an entry.
+    if (
+      command.actor.actorType !== AccessTokenActorType.Employee &&
+      command.actor.actorType !== AccessTokenActorType.OrganizationMember
+    ) {
+      // A Customer can never queue a guest on someone else's behalf; staff
+      // (Employee or Owner/Admin) were already authorized above.
       throw new PermissionDeniedException();
     }
 
@@ -215,7 +235,7 @@ export class JoinWaitlistUseCase {
     return {
       userId: null,
       reservationGuestId: guest.guestId,
-      createdBy: command.actor.employeeId,
+      createdBy: resolveWaitlistActingId(command.actor),
       guest,
     };
   }

@@ -59,6 +59,11 @@ class InMemoryEmployeeRepository implements EmployeeRepository {
     return 0;
   }
 
+  async findAllByRestaurantId(): Promise<Employee[]> {
+    // not exercised by this resolver
+    return [];
+  }
+
   async save(): Promise<void> {
     // not exercised by this resolver
   }

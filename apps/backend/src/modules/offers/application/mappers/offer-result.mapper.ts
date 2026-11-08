@@ -1,7 +1,8 @@
 import { Offer } from '../../domain/entities/offer.entity';
 import { OfferResult } from '../dto/offer.result';
 
-export function toOfferResult(offer: Offer): OfferResult {
+/** `at` given: report the status as of that instant (see `Offer.statusAt`). */
+export function toOfferResult(offer: Offer, at?: Date): OfferResult {
   return {
     offerId: offer.offerId.value,
     restaurantId: offer.restaurantId.value,
@@ -12,7 +13,7 @@ export function toOfferResult(offer: Offer): OfferResult {
     discountValue: offer.discountValue,
     startsAt: offer.startsAt,
     endsAt: offer.endsAt,
-    status: offer.status,
+    status: at ? offer.statusAt(at) : offer.status,
     createdAt: offer.createdAt,
     updatedAt: offer.updatedAt,
   };
