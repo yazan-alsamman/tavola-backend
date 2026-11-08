@@ -22,6 +22,10 @@ import { BullMqWaitlistExpirationScheduler } from './infrastructure/bullmq/waitl
 import { ExpireWaitlistEntryProcessor } from './infrastructure/bullmq/expire-waitlist-entry.processor';
 import { WaitlistRecheckProcessor } from './infrastructure/bullmq/waitlist-recheck.processor';
 import { WaitlistController } from './presentation/controllers/waitlist.controller';
+import { BranchWaitlistController } from './presentation/controllers/branch-waitlist.controller';
+import { ListBranchWaitlistUseCase } from './application/use-cases/list-branch-waitlist.use-case';
+import { STAFF_WAITLIST_READER } from './application/ports/staff-waitlist-reader.port';
+import { PrismaStaffWaitlistReader } from './infrastructure/persistence/prisma-staff-waitlist.reader';
 
 /**
  * Phase 7.5 (Reservation Waitlist, ADR-019, architecture frozen 2026-07-24).
@@ -68,13 +72,16 @@ import { WaitlistController } from './presentation/controllers/waitlist.controll
     BullModule.registerQueue({ name: WAITLIST_QUEUE_NAME }),
     BullModule.registerQueue({ name: WAITLIST_RECHECK_QUEUE_NAME }),
   ],
-  controllers: [WaitlistController],
+  controllers: [WaitlistController, BranchWaitlistController],
   providers: [
     JoinWaitlistUseCase,
     CancelWaitlistEntryUseCase,
     PromoteWaitlistEntryUseCase,
     ExpireWaitlistEntryUseCase,
     RecheckWaitlistUseCase,
+    ListBranchWaitlistUseCase,
+    PrismaStaffWaitlistReader,
+    { provide: STAFF_WAITLIST_READER, useExisting: PrismaStaffWaitlistReader },
     WaitlistPromotionService,
     ExpireWaitlistEntryProcessor,
     WaitlistRecheckProcessor,

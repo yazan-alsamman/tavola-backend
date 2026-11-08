@@ -3509,6 +3509,61 @@
               ]
             },
             {
+              "name": "List a branch waitlist for one day",
+              "id": "1b786aa9-62c1-49b3-802a-d325a8460954",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/branches/{{branchId}}/waitlist?date=2026-11-08",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "branches",
+                    "{{branchId}}",
+                    "waitlist"
+                  ],
+                  "query": [
+                    {
+                      "key": "date",
+                      "value": "2026-11-08"
+                    },
+                    {
+                      "key": "status",
+                      "value": "Waiting",
+                      "disabled": true
+                    }
+                  ]
+                },
+                "description": "## Purpose\nRestaurant Dashboard waitlist board: one branch's queue for one day, ordered by position.\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nOrganization Owner/Admin | Employee with `reservations:waitlist` (branch-scoped)\n## Query Params\n| Name | Required | Notes |\n|------|----------|-------|\n| `date` | yes | `YYYY-MM-DD`, the queue day (preferredDate) |\n| `status` | no | Waiting, Notified, Converted, Cancelled, Expired |\n## Success Response\n`{ items: [ WaitlistEntry + customer { type: 'User'|'Guest', name, phone } ] }` (max 500)\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **403**: FORBIDDEN, EMPLOYEE_BRANCH_NOT_ASSIGNED\n- **404**: NOT_FOUND\n## Notes\n- Controller: `BranchWaitlistController`.`list`\n- Full path: `/api/v1/restaurants/:restaurantId/branches/:branchId/waitlist`",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Branch waitlist retrieved (200)', function () { pm.response.to.have.status(200); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
               "name": "cancel Waitlist Entry",
               "id": "fbce6966-7853-4d9b-ab72-47472f2ce39c",
               "request": {

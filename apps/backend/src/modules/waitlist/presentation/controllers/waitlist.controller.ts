@@ -21,9 +21,7 @@ import type { Request } from 'express';
 import { ResponseMessage } from '@common/decorators/response-message.decorator';
 import { ApiErrorResponse } from '@common/decorators/api-error-response.decorator';
 import { ErrorResponseDto } from '@common/dto/error-response.dto';
-import {
-  AuthenticatedActor,
-} from '@modules/authentication/application/dto/authenticated-actor.dto';
+import { AuthenticatedActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
 import { CurrentActor } from '@modules/authentication/presentation/decorators/current-actor.decorator';
 import { JwtAuthGuard } from '@modules/authentication/presentation/guards/jwt-auth.guard';
 import { SessionVersionGuard } from '@modules/authentication/presentation/guards/session-version.guard';
