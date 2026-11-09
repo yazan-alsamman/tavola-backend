@@ -41,6 +41,13 @@ export interface ReservationProps {
    * sites that never knew about offers keep reconstituting unchanged.
    */
   offerId?: string | null;
+  /**
+   * CR WJ-R-2026-002 round 2: staff-only note (special request, allergy).
+   * Never shown to the customer and not part of any lifecycle invariant -
+   * written on its own through `ReservationRepository.updateInternalNote`,
+   * so a status transition never overwrites a note saved concurrently.
+   */
+  internalNote?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -287,6 +294,10 @@ export class Reservation extends Entity<ReservationProps> {
 
   get offerId(): string | null {
     return this.props.offerId ?? null;
+  }
+
+  get internalNote(): string | null {
+    return this.props.internalNote ?? null;
   }
 
   get approvedBy(): string | null {

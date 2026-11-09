@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -41,6 +42,11 @@ import { RescheduleReservationUseCase } from '../../application/use-cases/resche
 import { CompleteReservationUseCase } from '../../application/use-cases/complete-reservation.use-case';
 import { MarkNoShowReservationUseCase } from '../../application/use-cases/mark-no-show-reservation.use-case';
 import { MarkTableReadyReservationUseCase } from '../../application/use-cases/mark-table-ready-reservation.use-case';
+import { UpdateReservationInternalNoteUseCase } from '../../application/use-cases/update-reservation-internal-note.use-case';
+import {
+  ReservationInternalNoteResponseDto,
+  UpdateReservationInternalNoteRequestDto,
+} from '../dto/update-reservation-internal-note.request.dto';
 import { SearchAvailabilityQueryDto } from '../dto/search-availability.query.dto';
 import { ListReservationTimeSlotsQueryDto } from '../dto/list-reservation-time-slots.query.dto';
 import { ReservationTimeSlotsResponseDto } from '../dto/reservation-time-slots.response.dto';
@@ -90,6 +96,7 @@ export class ReservationsController {
     private readonly completeReservationUseCase: CompleteReservationUseCase,
     private readonly markNoShowReservationUseCase: MarkNoShowReservationUseCase,
     private readonly markTableReadyReservationUseCase: MarkTableReadyReservationUseCase,
+    private readonly updateReservationInternalNoteUseCase: UpdateReservationInternalNoteUseCase,
   ) {}
 
   @Get()
@@ -733,5 +740,41 @@ export class ReservationsController {
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
     return toReservationResponse(result);
+  }
+
+  @Patch(':id/internal-note')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Reservation internal note saved successfully.')
+  @ApiOperation({
+    operationId: 'reservationsUpdateInternalNote',
+    summary: 'Set or clear the staff-only internal note on a reservation',
+    description:
+      'Owner/Admin of the owning organization, or an Employee holding reservations:create and branch scope. Allowed in any status. Not a status transition; the note is never shown to the customer. Blank or null clears it.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Note saved', type: ReservationInternalNoteResponseDto })
+  @ApiErrorResponse(400, 'Note longer than 1000 characters', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(
+    403,
+    'Caller lacks reservations:create, is not Owner/Admin, or is outside branch scope',
+    ['FORBIDDEN', 'EMPLOYEE_BRANCH_NOT_ASSIGNED'],
+  )
+  @ApiErrorResponse(404, 'Reservation not found', ['NOT_FOUND'])
+  async updateInternalNote(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: UpdateReservationInternalNoteRequestDto,
+    @CurrentActor() actor: AuthenticatedActor,
+  ): Promise<ReservationInternalNoteResponseDto> {
+    return this.updateReservationInternalNoteUseCase.execute({
+      actor,
+      reservationId: id,
+      internalNote: body.internalNote ?? null,
+    });
   }
 }

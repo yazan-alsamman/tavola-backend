@@ -1,4 +1,7 @@
 import { CompleteReservationUseCase } from './complete-reservation.use-case';
+import { AutoCloseOverdueReservationsUseCase } from './auto-close-overdue-reservations.use-case';
+import { TenantContextService } from '@infrastructure/tenancy/tenant-context.service';
+import { ReservationId } from '@shared/domain/value-objects/identifiers.vo';
 import { Reservation } from '../../domain/entities/reservation.entity';
 import { ReservationSource, ReservationStatus } from '../../domain/enums/reservation.enums';
 import { ReservationNotFoundException } from '../../domain/exceptions/reservation-not-found.exception';
@@ -204,5 +207,59 @@ describe('CompleteReservationUseCase', () => {
     await expect(useCase.execute({ actor: employeeActor(), reservationId })).rejects.toBeInstanceOf(
       InvalidReservationStatusTransitionException,
     );
+  });
+
+  describe('auto-close sweep (CR WJ-R-2026-002 round 2)', () => {
+    async function buildSweep(clockAt: Date) {
+      const built = await build(clockAt);
+      const sweep = new AutoCloseOverdueReservationsUseCase(
+        built.reservationRepository,
+        new FixedClock(clockAt),
+        built.useCase,
+        new TenantContextService(),
+      );
+      return { ...built, sweep };
+    }
+
+    it('closes an Approved booking 30+ minutes past its end as the System and frees the table', async () => {
+      const {
+        sweep,
+        reservationRepository,
+        reservationHistoryRepository,
+        tableRepository,
+        eventPublisher,
+      } = await buildSweep(new Date('2026-08-01T20:01:00.000Z'));
+      await reservationRepository.seed(approvedReservation());
+
+      await expect(sweep.execute()).resolves.toEqual({ closed: 1 });
+
+      const stored = await reservationRepository.findById(ReservationId.create(reservationId));
+      expect(stored?.status).toBe(ReservationStatus.Completed);
+      const table = await tableRepository.findById(TableId.create(tableId));
+      expect(table?.status).toBe(TableStatus.Available);
+      expect(reservationHistoryRepository.rows[0]?.changedBy).toBeNull();
+      const event = eventPublisher.events[0] as ReservationCompletedEvent;
+      expect(event.payload.completedBy).toBeNull();
+    });
+
+    it('leaves a booking alone while it is still inside the grace window', async () => {
+      const { sweep, reservationRepository } = await buildSweep(
+        new Date('2026-08-01T19:45:00.000Z'),
+      );
+      await reservationRepository.seed(approvedReservation());
+
+      await expect(sweep.execute()).resolves.toEqual({ closed: 0 });
+      const stored = await reservationRepository.findById(ReservationId.create(reservationId));
+      expect(stored?.status).toBe(ReservationStatus.Approved);
+    });
+
+    it('skips a booking that is no longer Approved', async () => {
+      const { useCase, reservationRepository } = await build(new Date('2026-08-01T20:01:00.000Z'));
+      await reservationRepository.seed(
+        approvedReservation({ status: ReservationStatus.Completed }),
+      );
+
+      await expect(useCase.executeAsSystem(reservationId)).resolves.toBe(false);
+    });
   });
 });

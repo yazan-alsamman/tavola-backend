@@ -18,7 +18,19 @@ export interface StaffReservationsFilters {
   status?: ReservationStatus;
   dateFrom: Date;
   dateTo: Date;
+  /**
+   * CR WJ-R-2026-002 round 2 (customer page): narrows the list to one
+   * customer, by the same `customer.key` every list item carries.
+   */
+  customerKey?: StaffReservationCustomerKey;
 }
+
+/**
+ * A stable handle for "the same customer" across bookings at a restaurant:
+ * the registered User, or a guest identified by the phone staff typed in.
+ */
+export type StaffReservationCustomerKey =
+  { type: 'User'; userId: string } | { type: 'Guest'; phone: string };
 
 export interface StaffReservationTableInfo {
   tableId: string;
@@ -44,6 +56,25 @@ export interface StaffReservationCustomerInfo {
   type: StaffReservationCustomerType;
   name: string | null;
   phone: string | null;
+  /** `user:<uuid>` or `guest:<phone>`; null for an anonymized guest with no phone. */
+  key: string | null;
+  /** Completed visits at this restaurant (all branches), this booking included. */
+  visitCount: number;
+  /** No-shows at this restaurant (all branches). */
+  noShowCount: number;
+}
+
+export type StaffReservationActorKind = 'Customer' | 'Restaurant' | 'System';
+
+/**
+ * CR WJ-R-2026-002 round 2: how the reservation reached its current final
+ * status - who moved it there and why. Null while Pending/Approved.
+ */
+export interface StaffReservationStatusChange {
+  status: ReservationStatus;
+  changedBy: StaffReservationActorKind;
+  reason: string | null;
+  changedAt: Date;
 }
 
 /** CR WJ-R-2026-002 round 2: the offer that brought this booking in. */
@@ -68,6 +99,11 @@ export interface StaffReservationItem {
   table: StaffReservationTableInfo;
   customer: StaffReservationCustomerInfo;
   offer: StaffReservationOfferInfo | null;
+  /** Staff-only note; never shown to the customer. */
+  internalNote: string | null;
+  /** When a Pending booking expires unanswered; null in every other status. */
+  approvalDeadlineAt: Date | null;
+  statusChange: StaffReservationStatusChange | null;
 }
 
 export interface StaffReservationsPage {

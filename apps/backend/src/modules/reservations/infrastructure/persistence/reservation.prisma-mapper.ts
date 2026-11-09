@@ -37,6 +37,7 @@ export class ReservationPrismaMapper {
       tableReadyNotifiedAt: row.tableReadyNotifiedAt,
       rescheduledFromReservationId: row.rescheduledFromReservationId,
       offerId: row.offerId,
+      internalNote: row.internalNote,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
@@ -70,6 +71,7 @@ export class ReservationPrismaMapper {
       tableReadyNotifiedAt: props.tableReadyNotifiedAt,
       rescheduledFromReservationId: props.rescheduledFromReservationId,
       offerId: props.offerId ?? null,
+      internalNote: props.internalNote ?? null,
       createdAt: props.createdAt,
       updatedAt: props.updatedAt,
     };

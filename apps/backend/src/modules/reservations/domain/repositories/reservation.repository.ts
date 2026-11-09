@@ -187,6 +187,22 @@ export interface ReservationRepository {
   markTableReadyNotifiedIfEligible(reservationId: ReservationId, at: Date): Promise<boolean>;
 
   /**
+   * CR WJ-R-2026-002 round 2 - the staff internal note's sole write, a
+   * single-column `UPDATE reservations SET internal_note = ?, updated_at = ?
+   * WHERE id = ?`. Kept out of `updateTransitioningFrom` so a lifecycle
+   * transition and a note edit never overwrite each other.
+   */
+  updateInternalNote(reservationId: ReservationId, note: string | null, at: Date): Promise<void>;
+
+  /**
+   * CR WJ-R-2026-002 round 2 - the auto-close sweep's work list: ids of
+   * `Approved` reservations whose `reservationEndTime` is before
+   * `endedBefore`, oldest first, at most `limit`. Served by the
+   * `(status)` index; the sweep loads and re-checks each one before acting.
+   */
+  findOverdueApprovedIds(endedBefore: Date, limit: number): Promise<ReservationId[]>;
+
+  /**
    * Phase 6 (Merge/Split Tables, ADR-026 decision #6) - Merge/Split's own
    * reservation-blocking check: is there any `Pending`/`Approved`
    * reservation for `tableId` whose `reservationEndTime` has not yet passed

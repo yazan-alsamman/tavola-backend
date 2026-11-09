@@ -6487,6 +6487,12 @@
                       "key": "limit",
                       "value": "20",
                       "description": "Defaults to 20, max 100."
+                    },
+                    {
+                      "key": "customerKey",
+                      "value": "guest:+963991234567",
+                      "description": "Optional (ADR-043): only this customer's bookings, using customer.key from a list item.",
+                      "disabled": true
                     }
                   ]
                 },
@@ -6735,6 +6741,52 @@
                     "type": "text/javascript",
                     "exec": [
                       "pm.test('Reservation marked table-ready (200)', function () { pm.response.to.have.status(200); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Update reservation internal note",
+              "id": "f0a22e71-8957-4774-bdc2-613830071967",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"internalNote\": \"Nut allergy. Prefers a window table.\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/reservations/{{reservationId}}/internal-note",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "reservations",
+                    "{{reservationId}}",
+                    "internal-note"
+                  ]
+                },
+                "description": "## Purpose\nSet or clear the staff-only internal note on a reservation (ADR-043)\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nRestaurant Owner/Admin, or Employee\nPermission (Employee only): `reservations:create`\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `id` | `{{reservationId}}` | UUID path parameter |\n## Body\n`internalNote` (string, max 1000, nullable). Blank or null clears it.\n## Success Response\n`{ reservationId, internalNote }`. Envelope message: \"Reservation internal note saved successfully.\"\n## Notes\n- Never shown to the customer. Allowed in any status.\n- Full path: `/api/v1/reservations/:id/internal-note`"
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Internal note saved (200)', function () { pm.response.to.have.status(200); });"
                     ]
                   }
                 }

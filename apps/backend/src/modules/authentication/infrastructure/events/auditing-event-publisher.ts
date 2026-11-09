@@ -878,7 +878,7 @@ export class AuditingEventPublisher implements EventPublisherPort {
       return {
         ...base,
         actorId: event.payload.completedBy,
-        actorType: 'Employee',
+        actorType: event.payload.completedBy === null ? 'System' : 'Employee',
         action: 'reservation.completed',
         targetType: 'Reservation',
         targetId: event.payload.reservationId,

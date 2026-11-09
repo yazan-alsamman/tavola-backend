@@ -159,6 +159,27 @@ export class InMemoryReservationRepository implements ReservationRepository {
     return true;
   }
 
+  async findOverdueApprovedIds(endedBefore: Date, limit: number): Promise<ReservationId[]> {
+    return [...this.rows.values()]
+      .filter(
+        (row) =>
+          row.status === ReservationStatus.Approved &&
+          row.reservationEndTime.getTime() < endedBefore.getTime(),
+      )
+      .sort((a, b) => a.reservationEndTime.getTime() - b.reservationEndTime.getTime())
+      .slice(0, limit)
+      .map((row) => row.reservationId);
+  }
+
+  async updateInternalNote(id: ReservationId, note: string | null, at: Date): Promise<void> {
+    const current = this.rows.get(id.value);
+    if (!current) return;
+    this.rows.set(
+      id.value,
+      Reservation.reconstitute({ ...current.toProps(), internalNote: note, updatedAt: at }),
+    );
+  }
+
   async markTableReadyNotifiedIfEligible(id: ReservationId, at: Date): Promise<boolean> {
     const current = this.rows.get(id.value);
     if (

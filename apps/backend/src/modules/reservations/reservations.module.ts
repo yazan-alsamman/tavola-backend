@@ -21,6 +21,7 @@ import { RescheduleReservationUseCase } from './application/use-cases/reschedule
 import { CompleteReservationUseCase } from './application/use-cases/complete-reservation.use-case';
 import { MarkNoShowReservationUseCase } from './application/use-cases/mark-no-show-reservation.use-case';
 import { MarkTableReadyReservationUseCase } from './application/use-cases/mark-table-ready-reservation.use-case';
+import { UpdateReservationInternalNoteUseCase } from './application/use-cases/update-reservation-internal-note.use-case';
 import { ListBranchReservationsUseCase } from './application/use-cases/list-branch-reservations.use-case';
 import { ExpirePendingReservationUseCase } from './application/use-cases/expire-pending-reservation.use-case';
 import { PublishReservationReminderUseCase } from './application/use-cases/publish-reservation-reminder.use-case';
@@ -51,6 +52,10 @@ import { BullMqWaitlistRecheckScheduler } from './infrastructure/bullmq/waitlist
 import { BullMqApprovedReservationOperationalScheduler } from './infrastructure/bullmq/approved-reservation-operational.scheduler';
 import { ReservationReminderProcessor } from './infrastructure/bullmq/reservation-reminder.processor';
 import { LateArrivalProcessor } from './infrastructure/bullmq/late-arrival.processor';
+import { AutoCloseProcessor } from './infrastructure/bullmq/auto-close.processor';
+import { AutoCloseScheduler } from './infrastructure/bullmq/auto-close.scheduler';
+import { AUTO_CLOSE_QUEUE_NAME } from './infrastructure/bullmq/auto-close-queue.constants';
+import { AutoCloseOverdueReservationsUseCase } from './application/use-cases/auto-close-overdue-reservations.use-case';
 import { ReservationsController } from './presentation/controllers/reservations.controller';
 import { BranchReservationsController } from './presentation/controllers/branch-reservations.controller';
 
@@ -167,6 +172,7 @@ import { BranchReservationsController } from './presentation/controllers/branch-
     BullModule.registerQueue({ name: WAITLIST_RECHECK_QUEUE_NAME }),
     BullModule.registerQueue({ name: REMINDER_QUEUE_NAME }),
     BullModule.registerQueue({ name: LATE_ARRIVAL_QUEUE_NAME }),
+    BullModule.registerQueue({ name: AUTO_CLOSE_QUEUE_NAME }),
   ],
   controllers: [ReservationsController, BranchReservationsController],
   providers: [
@@ -184,6 +190,7 @@ import { BranchReservationsController } from './presentation/controllers/branch-
     CompleteReservationUseCase,
     MarkNoShowReservationUseCase,
     MarkTableReadyReservationUseCase,
+    UpdateReservationInternalNoteUseCase,
     ListBranchReservationsUseCase,
     ExpirePendingReservationUseCase,
     PublishReservationReminderUseCase,
@@ -193,6 +200,9 @@ import { BranchReservationsController } from './presentation/controllers/branch-
     ExpireReservationProcessor,
     ReservationReminderProcessor,
     LateArrivalProcessor,
+    AutoCloseProcessor,
+    AutoCloseScheduler,
+    AutoCloseOverdueReservationsUseCase,
     PrismaReservationRepository,
     { provide: RESERVATION_REPOSITORY, useExisting: PrismaReservationRepository },
     PrismaMyReservationsReader,

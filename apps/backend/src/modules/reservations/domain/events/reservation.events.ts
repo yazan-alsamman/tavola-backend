@@ -155,8 +155,9 @@ export class ReservationRescheduledEvent extends DomainEvent {
 }
 
 /**
- * Phase 7.3 - staff-only action; `completedBy` always carries the acting
- * Employee's id.
+ * Phase 7.3 - `completedBy` carries the acting staff id. CR WJ-R-2026-002
+ * round 2: null when the auto-close sweep closed an overdue Approved
+ * reservation (a System actor, like `ReservationExpiredEvent`).
  */
 export class ReservationCompletedEvent extends DomainEvent {
   public readonly eventName = 'ReservationCompleted';
@@ -168,7 +169,7 @@ export class ReservationCompletedEvent extends DomainEvent {
       restaurantId: string;
       branchId: string;
       tableId: string;
-      completedBy: string;
+      completedBy: string | null;
     },
     occurredAt: Date = new Date(),
     correlationId?: string,

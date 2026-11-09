@@ -1,3 +1,4 @@
+import { StaffReservationCustomerKey } from '../../application/ports/staff-reservations-reader.port';
 import {
   Controller,
   Get,
@@ -66,7 +67,7 @@ export class BranchReservationsController {
     operationId: 'branchReservationsList',
     summary: "List a branch's reservations within a date range (Restaurant Dashboard Calendar)",
     description:
-      "Owner/Admin of the owning organization, or a branch-scoped Employee (empty branchIds on the Employee JWT = restaurant-wide scope). dateFrom/dateTo are both required (inclusive, against reservationDate) and serve Day/Week/Month calendar views from this single endpoint. Ordered reservationStartTime ascending. Each item includes guest name, phone, time, and table.",
+      'Owner/Admin of the owning organization, or a branch-scoped Employee (empty branchIds on the Employee JWT = restaurant-wide scope). dateFrom/dateTo are both required (inclusive, against reservationDate) and serve Day/Week/Month calendar views from this single endpoint. Ordered reservationStartTime ascending. Each item includes guest name, phone, time, and table.',
   })
   @ApiParam({ name: 'restaurantId', format: 'uuid' })
   @ApiParam({ name: 'branchId', format: 'uuid' })
@@ -84,10 +85,11 @@ export class BranchReservationsController {
     'AUTH_INVALID_TOKEN',
     'AUTH_EXPIRED_TOKEN',
   ])
-  @ApiErrorResponse(403, 'Caller is not Owner/Admin or an Employee, or the Employee is outside branch scope', [
-    'FORBIDDEN',
-    'EMPLOYEE_BRANCH_NOT_ASSIGNED',
-  ])
+  @ApiErrorResponse(
+    403,
+    'Caller is not Owner/Admin or an Employee, or the Employee is outside branch scope',
+    ['FORBIDDEN', 'EMPLOYEE_BRANCH_NOT_ASSIGNED'],
+  )
   @ApiErrorResponse(
     404,
     'Restaurant not found, or branch not found (or belongs to another restaurant)',
@@ -106,6 +108,7 @@ export class BranchReservationsController {
       dateFrom: new Date(query.dateFrom),
       dateTo: new Date(query.dateTo),
       status: query.status,
+      customerKey: parseCustomerKey(query.customerKey),
       page: query.page ?? 1,
       limit: query.limit ?? 20,
     });
@@ -120,4 +123,14 @@ export class BranchReservationsController {
       total: result.total,
     };
   }
+}
+
+/** Splits a validated `customerKey` query value into the reader's typed filter. */
+function parseCustomerKey(raw: string | undefined): StaffReservationCustomerKey | undefined {
+  if (raw === undefined) return undefined;
+  const separator = raw.indexOf(':');
+  const value = raw.slice(separator + 1);
+  return raw.startsWith('user:')
+    ? { type: 'User', userId: value }
+    : { type: 'Guest', phone: value };
 }
