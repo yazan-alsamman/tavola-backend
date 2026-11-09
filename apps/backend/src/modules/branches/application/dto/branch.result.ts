@@ -8,6 +8,8 @@ export interface BranchResult {
   longitude: number | null;
   countryCode: string;
   currency: string | null;
+  referencePrice: number | null;
+  priceLevel: number | null;
   timezone: string;
   phone: string | null;
   createdAt: Date;

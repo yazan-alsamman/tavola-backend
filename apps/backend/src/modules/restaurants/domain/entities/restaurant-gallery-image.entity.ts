@@ -14,11 +14,9 @@ export interface RestaurantGalleryImageProps {
 
 /**
  * One image in a Restaurant's gallery. Restaurant-owned only (approved
- * architecture decision, Phase 4.4) - no Branch ownership. No `updateXxx()`
- * method: images are add/remove only (no caption edit, no reorder endpoint
- * per this phase's approved scope), so this entity is immutable after
- * creation, matching `FavoriteRestaurant`'s own precedent for the same
- * reason.
+ * architecture decision, Phase 4.4) - no Branch ownership. Images are
+ * added and removed; the only change after creation is the position
+ * (`moveTo`, drag ordering - ADR-046).
  */
 export class RestaurantGalleryImage extends Entity<RestaurantGalleryImageProps> {
   private constructor(props: RestaurantGalleryImageProps) {
@@ -60,6 +58,10 @@ export class RestaurantGalleryImage extends Entity<RestaurantGalleryImageProps> 
 
   get updatedAt(): Date {
     return new Date(this.props.updatedAt.getTime());
+  }
+
+  moveTo(sortOrder: number, at: Date): RestaurantGalleryImage {
+    return RestaurantGalleryImage.create({ ...this.props, sortOrder, updatedAt: at });
   }
 
   toProps(): Readonly<RestaurantGalleryImageProps> {

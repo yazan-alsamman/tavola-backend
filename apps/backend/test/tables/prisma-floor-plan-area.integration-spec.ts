@@ -1,7 +1,10 @@
 import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaFloorPlanAreaRepository } from '@modules/tables/infrastructure/persistence/prisma-floor-plan-area.repository';
-import { FloorPlanArea } from '@modules/tables/domain/entities/floor-plan-area.entity';
+import {
+  EMPTY_AREA_LAYOUT,
+  FloorPlanArea,
+} from '@modules/tables/domain/entities/floor-plan-area.entity';
 import { FloorPlanAreaId, FloorPlanId } from '@shared/domain/value-objects/identifiers.vo';
 import { isDatabaseReachable, skipUnlessDatabaseAvailable } from '../support/live-database';
 import { createPrismaIntegrationModule } from '../support/prisma-integration-testing';
@@ -110,6 +113,8 @@ describe('FloorPlanArea round-trip via PrismaFloorPlanAreaRepository (integratio
       name: overrides.name ?? 'Main Hall',
       color: overrides.color ?? '#14B8A6',
       sortOrder: overrides.sortOrder ?? 0,
+      features: [],
+      layout: EMPTY_AREA_LAYOUT,
       createdAt: now,
       updatedAt: now,
       deletedAt: null,

@@ -393,6 +393,8 @@ export class BranchesController {
       longitude: result.longitude,
       countryCode: result.countryCode,
       currency: result.currency,
+      referencePrice: result.referencePrice,
+      priceLevel: result.priceLevel,
       timezone: result.timezone,
       phone: result.phone,
       createdAt: result.createdAt.toISOString(),

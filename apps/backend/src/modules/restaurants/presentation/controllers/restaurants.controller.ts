@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   UploadedFile,
@@ -50,6 +51,8 @@ import { UpdateWorkingHoursUseCase } from '../../application/use-cases/update-wo
 import { AddRestaurantGalleryImageUseCase } from '../../application/use-cases/add-restaurant-gallery-image.use-case';
 import { ListRestaurantGalleryUseCase } from '../../application/use-cases/list-restaurant-gallery.use-case';
 import { RemoveRestaurantGalleryImageUseCase } from '../../application/use-cases/remove-restaurant-gallery-image.use-case';
+import { ReorderRestaurantGalleryUseCase } from '../../application/use-cases/reorder-restaurant-gallery.use-case';
+import { ReorderRestaurantGalleryRequestDto } from '../dto/reorder-restaurant-gallery.request.dto';
 import { GetRestaurantCuisineCategoriesUseCase } from '../../application/use-cases/get-restaurant-cuisine-categories.use-case';
 import { SetRestaurantCuisineCategoriesUseCase } from '../../application/use-cases/set-restaurant-cuisine-categories.use-case';
 import { GetRestaurantOccasionCategoriesUseCase } from '../../application/use-cases/get-restaurant-occasion-categories.use-case';
@@ -117,6 +120,7 @@ export class RestaurantsController {
     private readonly addRestaurantGalleryImageUseCase: AddRestaurantGalleryImageUseCase,
     private readonly listRestaurantGalleryUseCase: ListRestaurantGalleryUseCase,
     private readonly removeRestaurantGalleryImageUseCase: RemoveRestaurantGalleryImageUseCase,
+    private readonly reorderRestaurantGalleryUseCase: ReorderRestaurantGalleryUseCase,
     private readonly getRestaurantCuisineCategoriesUseCase: GetRestaurantCuisineCategoriesUseCase,
     private readonly setRestaurantCuisineCategoriesUseCase: SetRestaurantCuisineCategoriesUseCase,
     private readonly getRestaurantOccasionCategoriesUseCase: GetRestaurantOccasionCategoriesUseCase,
@@ -259,7 +263,6 @@ export class RestaurantsController {
       name: body.name,
       description: body.description ?? null,
       cuisineType: body.cuisineType ?? null,
-      priceLevel: body.priceLevel ?? null,
       status: body.status,
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
@@ -663,6 +666,41 @@ export class RestaurantsController {
       restaurantId: id,
     });
     return this.toGalleryListResponse(result);
+  }
+
+  @Put(':id/gallery/order')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
+  @RequireOrgRole(OrganizationMemberRole.Owner, OrganizationMemberRole.Admin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @SkipResponseEnvelope()
+  @ApiOperation({
+    operationId: 'restaurantsReorderGallery',
+    summary: 'Reorder a restaurant gallery',
+    description:
+      'Drag ordering (ADR-046). The body lists every gallery image of the restaurant exactly once, in the new order; a partial or stale list returns 400.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Gallery reordered' })
+  @ApiErrorResponse(400, 'The list is not every gallery image exactly once', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller is not an Owner/Admin organization member', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Restaurant not found', ['NOT_FOUND'])
+  async reorderGallery(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: ReorderRestaurantGalleryRequestDto,
+    @CurrentActor() actor: AuthenticatedOrganizationMemberActor,
+    @Req() request: Request,
+  ): Promise<void> {
+    await this.reorderRestaurantGalleryUseCase.execute({
+      actor,
+      restaurantId: id,
+      galleryItemIds: body.galleryItemIds,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
   }
 
   @Delete(':id/gallery/:galleryItemId')

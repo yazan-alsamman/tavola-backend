@@ -5,6 +5,7 @@ export function toMenuResult(menu: Menu): MenuResult {
   return {
     id: menu.menuId.value,
     restaurantId: menu.restaurantId.value,
+    branchId: menu.branchId?.value ?? null,
     name: menu.name,
     active: menu.active,
     isDefault: menu.isDefault,

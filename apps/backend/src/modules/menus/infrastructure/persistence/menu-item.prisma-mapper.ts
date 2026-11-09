@@ -9,6 +9,8 @@ export class MenuItemPrismaMapper {
       categoryId: row.categoryId,
       restaurantId: row.restaurantId,
       name: row.name,
+      nameAr: row.nameAr,
+      nameEn: row.nameEn,
       description: row.description,
       price: row.price.toNumber(),
       currency: row.currency,
@@ -32,6 +34,8 @@ export class MenuItemPrismaMapper {
     categoryId: string;
     restaurantId: string;
     name: string;
+    nameAr: string | null;
+    nameEn: string | null;
     description: string | null;
     price: number;
     currency: string | null;

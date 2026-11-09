@@ -106,7 +106,9 @@ export class MenuItemsController {
       menuId,
       categoryId,
       content: {
-        name: body.name,
+        name: body.name ?? null,
+        nameAr: body.nameAr ?? null,
+        nameEn: body.nameEn ?? null,
         description: body.description ?? null,
         price: body.price,
         currency: body.currency ?? null,
@@ -217,7 +219,9 @@ export class MenuItemsController {
       categoryId,
       itemId,
       content: {
-        name: body.name,
+        name: body.name ?? null,
+        nameAr: body.nameAr ?? null,
+        nameEn: body.nameEn ?? null,
         description: body.description ?? null,
         price: body.price,
         currency: body.currency ?? null,

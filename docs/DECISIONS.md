@@ -2626,3 +2626,50 @@ Restaurants with fewer than 5 reviews in 6 months show no stars in app
 `ratingCount` for the "new on Tavola" label. The three-axis form and
 re-rating screen need an app release; the backend accepts both shapes
 meanwhile. Migration `20261110150000_review_axes_and_rating_window`.
+
+## ADR-046
+
+**Menu in two languages, per-branch menus, computed price level, gallery order (CR WJ-R-2026-002 round 2, batch 4)**
+
+Date: 2026-11-10. Status: Accepted.
+
+### Context
+
+The CR's menu page: item names in Arabic and English with the branch
+currency; a menu either per branch or shared; the price level computed
+from the menu instead of chosen by the restaurant, per branch, shown as
+stars; gallery photos ordered by drag. The owner kept the Gallery tab and
+restaurant-level photos (round-2 exclusion).
+
+### Decision
+
+1. `MenuItem.nameAr`/`nameEn`; at least one. `name` stays for app 1.0.2 and
+   is the Arabic name, else the English one. A client sending only the old
+   `name` keeps working (sorted into its language by script).
+2. `Menu.branchId`: null = shared, set = that branch's own menu. One default
+   per scope (the partial unique index now keys on
+   `(restaurant_id, COALESCE(branch_id, nil))`). `GET .../menus/default`
+   takes an optional `branchId` and falls back to the shared default.
+3. Price level (`menus/domain/policies/price-level.policy.ts`): rank the
+   branch's effective menu items by price, skip the most expensive, average
+   ranks 2 to 11 (`Branch.referencePrice`), then
+   `Branch.priceLevel = ceil(cume_dist × 4)` among branches with the same
+   currency (branch currency, else the restaurant default). Restaurants
+   and cafes are ranked together. `Restaurant.priceLevel` becomes the
+   rounded average of its branches (unchanged while none has a level) and
+   is no longer written by `PATCH /restaurants/:id` (field still accepted,
+   ignored). Recomputed by `MenuPriceLevelQueue`: a debounced job (30 s,
+   one pending job id) after item create/update/delete, category delete,
+   and menu activate/deactivate/set-default/delete, plus a daily sweep at
+   03:30 UTC. The public branch response carries `priceLevel`.
+4. `PUT /restaurants/:id/gallery/order` (Owner/Admin) takes every gallery
+   image once in the new order; a partial or stale list is a 400.
+
+### Consequences
+
+Price levels change when anyone's menu changes, since the quartiles are
+shared; that is the CR's intent ("ranked across all establishments"). In
+a currency with very few branches the quartiles are coarse. The app shows
+stars per branch once it reads `priceLevel` from the branch (app release);
+app 1.0.2 keeps reading the restaurant's level. Migration
+`20261110180000_menu_names_branch_menus_price_level`.

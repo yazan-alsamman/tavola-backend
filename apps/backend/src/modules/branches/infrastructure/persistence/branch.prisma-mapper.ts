@@ -13,6 +13,8 @@ export class BranchPrismaMapper {
       longitude: row.longitude === null ? null : row.longitude.toNumber(),
       countryCode: row.countryCode,
       currency: row.currency,
+      referencePrice: row.referencePrice === null ? null : row.referencePrice.toNumber(),
+      priceLevel: row.priceLevel,
       timezone: row.timezone,
       phone: row.phone,
       createdAt: row.createdAt,

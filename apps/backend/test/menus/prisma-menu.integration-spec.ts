@@ -167,6 +167,8 @@ describe('Menu round-trip via Prisma repositories (integration)', () => {
       restaurantId,
       content: {
         name: 'Repo Test Item',
+        nameAr: null,
+        nameEn: 'Repo Test Item',
         description: null,
         price: 10,
         currency: 'USD',
@@ -500,6 +502,8 @@ describe('Menu round-trip via Prisma repositories (integration)', () => {
             restaurantId,
             content: {
               name,
+              nameAr: null,
+              nameEn: name,
               description: null,
               price: 5,
               currency: null,

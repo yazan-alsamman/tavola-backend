@@ -26,4 +26,10 @@ export class InMemoryRestaurantGalleryRepository implements RestaurantGalleryRep
   async remove(id: string): Promise<void> {
     this.rows.delete(id);
   }
+
+  async updateSortOrders(images: RestaurantGalleryImage[]): Promise<void> {
+    for (const image of images) {
+      this.rows.set(image.galleryImageId, image);
+    }
+  }
 }

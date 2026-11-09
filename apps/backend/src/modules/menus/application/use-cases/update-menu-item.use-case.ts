@@ -1,3 +1,8 @@
+import {
+  MenuPriceLevelSchedulerPort,
+  MENU_PRICE_LEVEL_SCHEDULER,
+} from '../ports/menu-price-level-scheduler.port';
+import { resolveMenuItemNames } from '../../domain/entities/menu-item.entity';
 import { Injectable, Inject } from '@nestjs/common';
 import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
@@ -41,6 +46,8 @@ export class UpdateMenuItemUseCase {
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
+    @Inject(MENU_PRICE_LEVEL_SCHEDULER)
+    private readonly priceLevelScheduler: MenuPriceLevelSchedulerPort,
   ) {}
 
   async execute(command: UpdateMenuItemCommand): Promise<MenuItemResult> {
@@ -68,11 +75,14 @@ export class UpdateMenuItemUseCase {
     const now = this.clock.now();
     const previousMode = item.availabilityMode;
     const nextMode = command.availabilityMode as MenuItemAvailabilityMode;
-    const updated = item.update(command.content, now).changeAvailabilityMode(nextMode, now);
+    const updated = item
+      .update({ ...command.content, ...resolveMenuItemNames(command.content) }, now)
+      .changeAvailabilityMode(nextMode, now);
 
     await this.unitOfWork.execute(async () => {
       await this.itemRepository.update(updated);
     });
+    await this.priceLevelScheduler.requestRecompute();
 
     const actorId = resolveMenuManagementActorId(command.actor);
     await this.eventPublisher.publish(

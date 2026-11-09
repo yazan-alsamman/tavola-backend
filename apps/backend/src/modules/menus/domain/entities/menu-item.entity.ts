@@ -13,6 +13,8 @@ export interface MenuItemProps {
   categoryId: string;
   restaurantId: string;
   name: string;
+  nameAr: string | null;
+  nameEn: string | null;
   description: string | null;
   price: number;
   currency: string | null;
@@ -31,7 +33,10 @@ export interface MenuItemProps {
 }
 
 export interface MenuItemContent {
+  /** Derived by `resolveMenuItemNames`: the Arabic name, else the English one. */
   name: string;
+  nameAr: string | null;
+  nameEn: string | null;
   description: string | null;
   price: number;
   currency: string | null;
@@ -102,6 +107,14 @@ export class MenuItem extends Entity<MenuItemProps> {
 
   get name(): string {
     return this.props.name;
+  }
+
+  get nameAr(): string | null {
+    return this.props.nameAr;
+  }
+
+  get nameEn(): string | null {
+    return this.props.nameEn;
   }
 
   get description(): string | null {
@@ -206,12 +219,48 @@ export class MenuItem extends Entity<MenuItemProps> {
   }
 }
 
+/**
+ * ADR-046: an item is named in Arabic, English or both. `name` (read by app
+ * 1.0.2) is the Arabic name, else the English one. A caller that sends only
+ * the old single `name` keeps working: it becomes that language's name.
+ */
+export function resolveMenuItemNames(input: {
+  name?: string | null;
+  nameAr?: string | null;
+  nameEn?: string | null;
+}): Pick<MenuItemContent, 'name' | 'nameAr' | 'nameEn'> {
+  let nameAr = blankToNull(input.nameAr);
+  let nameEn = blankToNull(input.nameEn);
+  const legacy = blankToNull(input.name);
+  if (nameAr === null && nameEn === null && legacy !== null) {
+    if (ARABIC_SCRIPT.test(legacy)) {
+      nameAr = legacy;
+    } else {
+      nameEn = legacy;
+    }
+  }
+  const name = nameAr ?? nameEn;
+  if (name === null) {
+    throw new InvalidMenuItemException('An Arabic or English name is required.');
+  }
+  return { name, nameAr, nameEn };
+}
+
+const ARABIC_SCRIPT = /[\u0600-\u06FF]/;
+
+function blankToNull(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function validateContent(content: MenuItemContent): void {
   if (content.name.trim().length === 0) {
     throw new InvalidMenuItemException('name must not be empty.');
   }
-  if (content.name.length > MAX_NAME_LENGTH) {
-    throw new InvalidMenuItemException(`name must not exceed ${MAX_NAME_LENGTH} characters.`);
+  for (const value of [content.name, content.nameAr, content.nameEn]) {
+    if (value !== null && value.length > MAX_NAME_LENGTH) {
+      throw new InvalidMenuItemException(`name must not exceed ${MAX_NAME_LENGTH} characters.`);
+    }
   }
   if (content.description !== null && content.description.length > MAX_DESCRIPTION_LENGTH) {
     throw new InvalidMenuItemException(

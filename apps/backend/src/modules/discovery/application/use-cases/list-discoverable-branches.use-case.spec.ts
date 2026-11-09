@@ -41,6 +41,8 @@ function branch(id: string, ownerRestaurantId: string): BranchResult {
     countryCode: 'SY',
     currency: null,
     timezone: 'Asia/Damascus',
+    referencePrice: null,
+    priceLevel: null,
     phone: null,
     createdAt: new Date('2026-08-01T00:00:00.000Z'),
     updatedAt: new Date('2026-08-01T00:00:00.000Z'),

@@ -132,13 +132,13 @@ describe('Restaurant round-trip via PrismaRestaurantRepository (integration)', (
 
     const at = new Date();
     const updated = restaurant
-      .updateProfile({ name: 'New Name', description: null, cuisineType: null, priceLevel: 4 }, at)
+      .updateProfile({ name: 'New Name', description: null, cuisineType: null }, at)
       .suspend(at);
     await asOrgA(() => repository.save(updated));
 
     const found = await asOrgA(() => repository.findById(restaurant.restaurantId));
     expect(found?.name).toBe('New Name');
-    expect(found?.priceLevel).toBe(4);
+    expect(found?.priceLevel).toBe(restaurant.priceLevel);
     expect(found?.status).toBe(RestaurantStatus.Suspended);
   });
 

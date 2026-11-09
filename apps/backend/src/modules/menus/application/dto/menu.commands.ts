@@ -8,6 +8,8 @@ interface BaseMenuCommand {
 
 export interface CreateMenuCommand extends BaseMenuCommand {
   name: string;
+  /** Omitted: shared by every branch (ADR-046). */
+  branchId?: string | null;
 }
 
 export interface UpdateMenuCommand extends BaseMenuCommand {
@@ -36,4 +38,6 @@ export interface ListRestaurantMenusCommand {
 export interface GetMenuCommand {
   restaurantId: string;
   menuId?: string;
+  /** With no `menuId`: the branch's own default Menu, else the shared one (ADR-046). */
+  branchId?: string;
 }

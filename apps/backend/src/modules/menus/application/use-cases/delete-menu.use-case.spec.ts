@@ -11,6 +11,7 @@ import {
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryMenuRepository } from '../../../../../test/menus/support/in-memory-menu.repository';
+import { CountingPriceLevelScheduler } from '../../../../../test/menus/support/counting-price-level-scheduler';
 import {
   FIXED_NOW,
   RESTAURANT_ID,
@@ -23,6 +24,7 @@ describe('DeleteMenuUseCase (soft delete, ADR-010)', () => {
     const restaurantRepository = new InMemoryRestaurantRepository();
     const menuRepository = new InMemoryMenuRepository();
     const eventPublisher = new CollectingEventPublisher();
+    const priceLevelScheduler = new CountingPriceLevelScheduler();
     const useCase = new DeleteMenuUseCase(
       restaurantRepository,
       menuRepository,
@@ -30,8 +32,9 @@ describe('DeleteMenuUseCase (soft delete, ADR-010)', () => {
       new SequentialIdGenerator(['aaaaaaaa-0001-4000-8000-000000000001']),
       eventPublisher,
       new ImmediateUnitOfWork(),
+      priceLevelScheduler,
     );
-    return { useCase, restaurantRepository, menuRepository, eventPublisher };
+    return { useCase, restaurantRepository, menuRepository, eventPublisher, priceLevelScheduler };
   }
 
   it('soft-deletes the Menu (deletedAt set, row never removed) and publishes MenuDeleted', async () => {

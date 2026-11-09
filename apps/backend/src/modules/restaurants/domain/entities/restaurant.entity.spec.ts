@@ -39,19 +39,19 @@ describe('Restaurant entity', () => {
   });
 
   describe('updateProfile', () => {
-    it('replaces name/description/cuisineType/priceLevel', () => {
+    it('replaces name/description/cuisineType and keeps the computed priceLevel', () => {
       const restaurant = createRestaurant();
       const at = new Date('2026-02-01T00:00:00.000Z');
 
       const updated = restaurant.updateProfile(
-        { name: 'New Name', description: 'A cozy place', cuisineType: 'Italian', priceLevel: 3 },
+        { name: 'New Name', description: 'A cozy place', cuisineType: 'Italian' },
         at,
       );
 
       expect(updated.name).toBe('New Name');
       expect(updated.description).toBe('A cozy place');
       expect(updated.cuisineType).toBe('Italian');
-      expect(updated.priceLevel).toBe(3);
+      expect(updated.priceLevel).toBe(restaurant.priceLevel);
       expect(updated.updatedAt).toEqual(at);
     });
 
@@ -59,7 +59,7 @@ describe('Restaurant entity', () => {
       const restaurant = createRestaurant();
 
       restaurant.updateProfile(
-        { name: 'Changed', description: null, cuisineType: null, priceLevel: null },
+        { name: 'Changed', description: null, cuisineType: null },
         new Date('2026-02-01T00:00:00.000Z'),
       );
 
@@ -70,7 +70,7 @@ describe('Restaurant entity', () => {
       const restaurant = createRestaurant();
 
       const updated = restaurant.updateProfile(
-        { name: 'Changed', description: null, cuisineType: null, priceLevel: null },
+        { name: 'Changed', description: null, cuisineType: null },
         new Date('2026-02-01T00:00:00.000Z'),
       );
 
@@ -99,7 +99,11 @@ describe('Restaurant entity', () => {
       const restaurant = createRestaurant();
       const fileId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
-      const updated = restaurant.assignBrandImage('logo', fileId, new Date('2026-02-01T00:00:00.000Z'));
+      const updated = restaurant.assignBrandImage(
+        'logo',
+        fileId,
+        new Date('2026-02-01T00:00:00.000Z'),
+      );
 
       expect(updated.logoId).toBe(fileId);
       expect(updated.coverImageId).toBe(restaurant.coverImageId);

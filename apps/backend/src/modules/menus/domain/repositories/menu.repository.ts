@@ -1,5 +1,5 @@
 import { Menu } from '../entities/menu.entity';
-import { MenuId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
+import { BranchId, MenuId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 
 /**
  * `Menu` carries no `organizationId` column and is not in
@@ -17,24 +17,36 @@ export interface MenuRepository {
   /** All non-deleted Menus for a Restaurant, ordered by `displayOrder` then `createdAt` - both the management list and the Customer public list. */
   findManyByRestaurantId(restaurantId: RestaurantId): Promise<Menu[]>;
 
-  /** The single active, non-deleted, `isDefault` Menu - backs `Restaurant.hasMenu` and the Customer "the menu" default read (ADR-032). */
-  findDefaultByRestaurantId(restaurantId: RestaurantId): Promise<Menu | null>;
+  /**
+   * The active, non-deleted, `isDefault` Menu a guest sees (ADR-032). With a
+   * branch: that branch's own default Menu, else the shared default (ADR-046).
+   */
+  findDefaultByRestaurantId(restaurantId: RestaurantId, branchId?: BranchId): Promise<Menu | null>;
 
-  /** True iff the Restaurant already owns at least one non-deleted Menu - used to decide whether a newly-created Menu is auto-marked `isDefault`. */
-  existsAnyForRestaurant(restaurantId: RestaurantId): Promise<boolean>;
+  /**
+   * True iff the scope (shared when `branchId` is null, else that branch)
+   * already holds a non-deleted Menu - decides whether a new Menu is
+   * auto-marked `isDefault`.
+   */
+  existsAnyForRestaurant(restaurantId: RestaurantId, branchId?: BranchId | null): Promise<boolean>;
 
   /** Persists active/isDefault/displayOrder/updatedAt - full-row update of the mutable fields. */
   update(menu: Menu): Promise<void>;
 
   /**
    * ADR-032 decision #1: atomically unmarks whichever Menu previously held
-   * `isDefault = true` for this Restaurant (if any) and marks `menuId` as
+   * `isDefault = true` in the same scope (shared, or `branchId` - ADR-046) and marks `menuId` as
    * the new default, in a single transaction - the partial unique index
    * `menus_restaurant_one_default_key` is the ultimate guard, but this
    * method's own transaction is what keeps the "unset old, set new" pair
    * atomic against a concurrent second Set-Default call.
    */
-  setAsDefault(menuId: MenuId, restaurantId: RestaurantId, at: Date): Promise<void>;
+  setAsDefault(
+    menuId: MenuId,
+    restaurantId: RestaurantId,
+    at: Date,
+    branchId?: BranchId | null,
+  ): Promise<void>;
 
   /** Soft delete (ADR-010) - a no-op (silently 0 rows affected) if already deleted. */
   softDelete(id: MenuId, at: Date): Promise<void>;

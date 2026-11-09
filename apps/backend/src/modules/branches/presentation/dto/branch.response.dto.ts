@@ -28,6 +28,23 @@ export class BranchResponseDto {
   @ApiPropertyOptional({ example: 'SYP', nullable: true })
   currency!: string | null;
 
+  @ApiPropertyOptional({
+    example: 40.6,
+    nullable: true,
+    description:
+      'Average price of the menu items ranked 2 to 11 by price, in the branch currency. Recomputed when the menu changes (ADR-046).',
+  })
+  referencePrice!: number | null;
+
+  @ApiPropertyOptional({
+    example: 3,
+    minimum: 1,
+    maximum: 4,
+    nullable: true,
+    description: 'Quartile of referencePrice among all branches with the same currency (ADR-046).',
+  })
+  priceLevel!: number | null;
+
   @ApiProperty({ example: 'Asia/Damascus' })
   timezone!: string;
 

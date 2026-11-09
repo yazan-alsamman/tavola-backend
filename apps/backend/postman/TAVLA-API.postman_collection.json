@@ -1596,9 +1596,17 @@
                     "{{restaurantId}}",
                     "menus",
                     "default"
+                  ],
+                  "query": [
+                    {
+                      "key": "branchId",
+                      "value": "{{branchId}}",
+                      "description": "Optional. That branch's own default menu, else the shared default (ADR-046).",
+                      "disabled": true
+                    }
                   ]
                 },
-                "description": "## Purpose\nGet the Restaurant\n## Authorization\nNone (public — auth disabled on this request).\nGuards: (none)\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Menu retrieved successfully.\"\n## Error Responses\n- **404**: NOT_FOUND\n## Notes\n- Controller: `MenusController`.`unknown`\n- Full path: `/api/v1/restaurants/:restaurantId/menus/default`\n- Callers (from source): Public",
+                "description": "## Purpose\nGet the Restaurant\n## Authorization\nNone (public — auth disabled on this request).\nGuards: (none)\n## Required Role\nPublic\n## Headers\n- (no Authorization header)\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n## Query Params\n| Name | Notes |\n|------|-------|\n| `branchId` | Optional UUID. That branch's own default menu, else the shared default (ADR-046). |\n## Body\n_None_\n## Success Response\nEnvelope message: \"Menu retrieved successfully.\"\n## Error Responses\n- **404**: NOT_FOUND\n## Notes\n- Controller: `MenusController`.`unknown`\n- Full path: `/api/v1/restaurants/:restaurantId/menus/default`\n- Callers (from source): Public",
                 "auth": {
                   "type": "noauth"
                 }
@@ -5485,6 +5493,42 @@
               "response": []
             },
             {
+              "name": "Reorder Gallery",
+              "id": "4842c79c-6165-4835-bae0-84f67c2772c4",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/gallery/order",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "gallery",
+                    "order"
+                  ]
+                },
+                "description": "## Purpose\nReorder a restaurant gallery (drag ordering, ADR-046)\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json`\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `id` | `{{restaurantId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\nJSON body — DTO: `ReorderRestaurantGalleryRequestDto`. `galleryItemIds` lists every gallery image of the restaurant exactly once, in the new order.\n## Success Response\n204 No Content\n## Error Responses\n- **400**: VALIDATION_ERROR (partial, repeated or unknown ids)\n- **401**: AUTH_INVALID_TOKEN, AUTH_EXPIRED_TOKEN\n- **403**: FORBIDDEN\n- **404**: NOT_FOUND\n## Notes\n- Controller: `RestaurantsController`.`reorderGallery`\n- Full path: `/api/v1/restaurants/:id/gallery/order`",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"galleryItemIds\": [\n    \"{{galleryItemId}}\"\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
               "name": "Upload Gallery Image",
               "id": "121e804d-fb04-41e7-a27a-696ad151b13c",
               "request": {
@@ -7325,10 +7369,10 @@
                     "menus"
                   ]
                 },
-                "description": "## Purpose\nCreate a Menu under a Restaurant\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nRestaurant Owner/Admin | Employee\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\nJSON body — DTO: `CreateMenuRequestDto`\n## Success Response\nEnvelope message: \"Menu created successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **401**: AUTH_INVALID_TOKEN, AUTH_EXPIRED_TOKEN\n## Notes\n- Controller: `MenusController`.`unknown`\n- Full path: `/api/v1/restaurants/:restaurantId/menus`\n- Callers (from source): Owner/Admin or Employee (use-case resolved)",
+                "description": "## Purpose\nCreate a Menu under a Restaurant\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nRestaurant Owner/Admin | Employee\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\nJSON body — DTO: `CreateMenuRequestDto`\n## Success Response\nEnvelope message: \"Menu created successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **401**: AUTH_INVALID_TOKEN, AUTH_EXPIRED_TOKEN\n## Notes\n- Controller: `MenusController`.`unknown`\n- Full path: `/api/v1/restaurants/:restaurantId/menus`\n- Callers (from source): Owner/Admin or Employee (use-case resolved)\n- ADR-046: `branchId` (optional) makes this that branch's own menu; omit it for a menu shared by every branch. The first menu of each scope becomes its default.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"name\": \"Breakfast Menu\"\n}",
+                  "raw": "{\n  \"name\": \"Breakfast Menu\",\n  \"branchId\": \"{{branchId}}\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -7405,10 +7449,10 @@
                     "items"
                   ]
                 },
-                "description": "## Purpose\nCreate an Item under a Category\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nAuthenticated (see Notes)\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `menuId` | `{{menuId}}` | UUID path parameter |\n| `categoryId` | `{{categoryId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\nJSON body — DTO: `CreateMenuItemRequestDto`\n## Success Response\nEnvelope message: \"Item created successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **401**: AUTH_INVALID_TOKEN, AUTH_EXPIRED_TOKEN\n- **403**: FORBIDDEN\n## Notes\n- Controller: `MenuItemsController`.`unknown`\n- Full path: `/api/v1/restaurants/:restaurantId/menus/:menuId/categories/:categoryId/items`\n- Callers (from source): Authenticated (actor resolved in use-case)",
+                "description": "## Purpose\nCreate an Item under a Category\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nAuthenticated (see Notes)\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `menuId` | `{{menuId}}` | UUID path parameter |\n| `categoryId` | `{{categoryId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\nJSON body — DTO: `CreateMenuItemRequestDto`\n## Success Response\nEnvelope message: \"Item created successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **401**: AUTH_INVALID_TOKEN, AUTH_EXPIRED_TOKEN\n- **403**: FORBIDDEN\n## Notes\n- Controller: `MenuItemsController`.`unknown`\n- Full path: `/api/v1/restaurants/:restaurantId/menus/:menuId/categories/:categoryId/items`\n- Callers (from source): Authenticated (actor resolved in use-case)\n- ADR-046: send `nameAr` and/or `nameEn` (at least one). The legacy single `name` is still accepted when neither is sent. Responses carry `name` (the Arabic name, else the English one), `nameAr` and `nameEn`.",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"name\": \"Margherita Pizza\",\n  \"description\": \"Tomato, mozzarella, basil.\",\n  \"price\": 12.5,\n  \"currency\": \"USD\",\n  \"preparationTimeMinutes\": 15,\n  \"spicyLevel\": 1,\n  \"calories\": 800,\n  \"allergens\": [\n    \"gluten\",\n    \"dairy\"\n  ]\n}",
+                  "raw": "{\n  \"nameAr\": \"بيتزا مارغريتا\",\n  \"nameEn\": \"Margherita Pizza\",\n  \"description\": \"Tomato, mozzarella, basil.\",\n  \"price\": 12.5,\n  \"currency\": \"USD\",\n  \"preparationTimeMinutes\": 15,\n  \"spicyLevel\": 1,\n  \"calories\": 800,\n  \"allergens\": [\n    \"gluten\",\n    \"dairy\"\n  ]\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -7795,7 +7839,7 @@
                     "{{itemId}}"
                   ]
                 },
-                "description": "## Purpose\nUpdate an Item (includes availabilityMode - no separate endpoint)\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nAuthenticated (see Notes)\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `menuId` | `{{menuId}}` | UUID path parameter |\n| `categoryId` | `{{categoryId}}` | UUID path parameter |\n| `itemId` | `{{itemId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\nJSON body — DTO: `UpdateMenuItemRequestDto`\n## Success Response\nEnvelope message: \"Item updated successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **401**: AUTH_INVALID_TOKEN, AUTH_EXPIRED_TOKEN\n## Notes\n- Controller: `MenuItemsController`.`unknown`\n- Full path: `/api/v1/restaurants/:restaurantId/menus/:menuId/categories/:categoryId/items/:itemId`\n- Callers (from source): Authenticated (actor resolved in use-case)",
+                "description": "## Purpose\nUpdate an Item (includes availabilityMode - no separate endpoint)\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nAuthenticated (see Notes)\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `menuId` | `{{menuId}}` | UUID path parameter |\n| `categoryId` | `{{categoryId}}` | UUID path parameter |\n| `itemId` | `{{itemId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\nJSON body — DTO: `UpdateMenuItemRequestDto`\n## Success Response\nEnvelope message: \"Item updated successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n- **401**: AUTH_INVALID_TOKEN, AUTH_EXPIRED_TOKEN\n## Notes\n- Controller: `MenuItemsController`.`unknown`\n- Full path: `/api/v1/restaurants/:restaurantId/menus/:menuId/categories/:categoryId/items/:itemId`\n- Callers (from source): Authenticated (actor resolved in use-case)\n- ADR-046: send `nameAr` and/or `nameEn` (at least one). The legacy single `name` is still accepted when neither is sent. Responses carry `name` (the Arabic name, else the English one), `nameAr` and `nameEn`.",
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"availabilityMode\": \"always\"\n}",

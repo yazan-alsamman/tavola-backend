@@ -28,6 +28,7 @@ import { ListWorkingHoursByRestaurantIdsUseCase } from './application/use-cases/
 import { AddRestaurantGalleryImageUseCase } from './application/use-cases/add-restaurant-gallery-image.use-case';
 import { ListRestaurantGalleryUseCase } from './application/use-cases/list-restaurant-gallery.use-case';
 import { RemoveRestaurantGalleryImageUseCase } from './application/use-cases/remove-restaurant-gallery-image.use-case';
+import { ReorderRestaurantGalleryUseCase } from './application/use-cases/reorder-restaurant-gallery.use-case';
 import { ListCuisineCategoriesUseCase } from './application/use-cases/list-cuisine-categories.use-case';
 import { ListOccasionCategoriesUseCase } from './application/use-cases/list-occasion-categories.use-case';
 import { GetRestaurantCuisineCategoriesUseCase } from './application/use-cases/get-restaurant-cuisine-categories.use-case';
@@ -160,6 +161,7 @@ import { PlatformAdminRestaurantsController } from './presentation/controllers/p
     AddRestaurantGalleryImageUseCase,
     ListRestaurantGalleryUseCase,
     RemoveRestaurantGalleryImageUseCase,
+    ReorderRestaurantGalleryUseCase,
     ListCuisineCategoriesUseCase,
     ListOccasionCategoriesUseCase,
     GetRestaurantCuisineCategoriesUseCase,

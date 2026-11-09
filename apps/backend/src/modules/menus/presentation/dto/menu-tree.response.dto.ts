@@ -36,7 +36,9 @@ export class MenuItemAddOnTreeResponseDto {
 export class MenuItemTreeResponseDto {
   @ApiProperty() id!: string;
   @ApiProperty() categoryId!: string;
-  @ApiProperty() name!: string;
+  @ApiProperty({ description: 'The Arabic name, else the English one.' }) name!: string;
+  @ApiPropertyOptional({ nullable: true }) nameAr!: string | null;
+  @ApiPropertyOptional({ nullable: true }) nameEn!: string | null;
   @ApiPropertyOptional({ nullable: true }) description!: string | null;
   @ApiProperty() price!: number;
   @ApiPropertyOptional({ nullable: true }) currency!: string | null;

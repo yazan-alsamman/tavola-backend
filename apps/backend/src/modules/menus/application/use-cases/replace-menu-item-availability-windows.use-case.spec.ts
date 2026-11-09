@@ -56,6 +56,8 @@ describe('ReplaceMenuItemAvailabilityWindowsUseCase (ADR-032)', () => {
       restaurantId: RESTAURANT_ID,
       content: {
         name: 'Pizza',
+        nameAr: null,
+        nameEn: 'Pizza',
         description: null,
         price: 10,
         currency: null,

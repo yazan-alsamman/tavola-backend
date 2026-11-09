@@ -1,10 +1,19 @@
 import { Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import type { StorageConfig } from '@config/storage.config';
 import { AuthenticationModule } from '@modules/authentication/authentication.module';
+import { BranchesModule } from '@modules/branches/branches.module';
 import { RestaurantsModule } from '@modules/restaurants/restaurants.module';
 import { FilesModule } from '@modules/files/files.module';
 import { MENU_REPOSITORY } from './domain/repositories/menu.repository';
+import { MENU_PRICE_LEVEL_REPOSITORY } from './domain/repositories/menu-price-level.repository';
+import { MENU_PRICE_LEVEL_SCHEDULER } from './application/ports/menu-price-level-scheduler.port';
+import { RecomputeMenuPriceLevelsUseCase } from './application/use-cases/recompute-menu-price-levels.use-case';
+import { PrismaMenuPriceLevelRepository } from './infrastructure/persistence/prisma-menu-price-level.repository';
+import { MENU_PRICE_LEVEL_QUEUE_NAME } from './infrastructure/bullmq/menu-price-level-queue.constants';
+import { MenuPriceLevelProcessor } from './infrastructure/bullmq/menu-price-level.processor';
+import { MenuPriceLevelScheduler } from './infrastructure/bullmq/menu-price-level.scheduler';
 import { MENU_CATEGORY_REPOSITORY } from './domain/repositories/menu-category.repository';
 import { MENU_ITEM_REPOSITORY } from './domain/repositories/menu-item.repository';
 import { MENU_ITEM_OPTION_GROUP_REPOSITORY } from './domain/repositories/menu-item-option-group.repository';
@@ -75,7 +84,14 @@ import { MenuItemAddOnsController } from './presentation/controllers/menu-item-a
  * import.
  */
 @Module({
-  imports: [ConfigModule, AuthenticationModule, RestaurantsModule, FilesModule],
+  imports: [
+    ConfigModule,
+    AuthenticationModule,
+    RestaurantsModule,
+    BranchesModule,
+    FilesModule,
+    BullModule.registerQueue({ name: MENU_PRICE_LEVEL_QUEUE_NAME }),
+  ],
   controllers: [
     MenusController,
     MenuCategoriesController,
@@ -104,6 +120,12 @@ import { MenuItemAddOnsController } from './presentation/controllers/menu-item-a
       provide: MENU_ITEM_AVAILABILITY_REPOSITORY,
       useExisting: PrismaMenuItemAvailabilityRepository,
     },
+    PrismaMenuPriceLevelRepository,
+    { provide: MENU_PRICE_LEVEL_REPOSITORY, useExisting: PrismaMenuPriceLevelRepository },
+    MenuPriceLevelScheduler,
+    { provide: MENU_PRICE_LEVEL_SCHEDULER, useExisting: MenuPriceLevelScheduler },
+    MenuPriceLevelProcessor,
+    RecomputeMenuPriceLevelsUseCase,
     {
       provide: MENU_IMAGE_BUCKET,
       inject: [ConfigService],

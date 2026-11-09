@@ -6,6 +6,7 @@ export class MenuPrismaMapper {
     return Menu.reconstitute({
       id: row.id,
       restaurantId: row.restaurantId,
+      branchId: row.branchId,
       name: row.name,
       active: row.active,
       isDefault: row.isDefault,
@@ -19,6 +20,7 @@ export class MenuPrismaMapper {
   static toPersistence(menu: Menu): {
     id: string;
     restaurantId: string;
+    branchId: string | null;
     name: string;
     active: boolean;
     isDefault: boolean;

@@ -816,21 +816,25 @@ model Favorite {
 }
 
 model Branch {
-  id           String    @id @default(uuid()) @db.Uuid
-  restaurantId String    @map("restaurant_id") @db.Uuid
-  city         String
-  district     String?
-  address      String
-  latitude     Decimal?  @db.Decimal(10, 7)
-  longitude    Decimal?  @db.Decimal(10, 7)
-  countryCode  String    @map("country_code")
-  currency     String?
-  openingHours Json?     @map("opening_hours")
-  timezone     String
-  phone        String?
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
-  deletedAt    DateTime? @map("deleted_at")
+  id             String    @id @default(uuid()) @db.Uuid
+  restaurantId   String    @map("restaurant_id") @db.Uuid
+  city           String
+  district       String?
+  address        String
+  latitude       Decimal?  @db.Decimal(10, 7)
+  longitude      Decimal?  @db.Decimal(10, 7)
+  countryCode    String    @map("country_code")
+  currency       String?
+  /// Average price of the menu's items ranked 2 to 11 by price (ADR-046). Recomputed, never written by the restaurant.
+  referencePrice Decimal?  @map("reference_price") @db.Decimal(10, 2)
+  /// 1-4: the branch's quartile of reference prices among branches with the same currency (ADR-046).
+  priceLevel     Int?      @map("price_level")
+  openingHours   Json?     @map("opening_hours")
+  timezone       String
+  phone          String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
 
   restaurant                Restaurant                 @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   employeeBranchAssignments EmployeeBranchAssignment[]
@@ -840,6 +844,7 @@ model Branch {
   reservations              Reservation[]
   waitlistEntries           ReservationWaitlistEntry[]
   conversations             Conversation[]
+  menus                     Menu[]
 
   @@index([restaurantId])
   @@index([city])
@@ -1484,6 +1489,8 @@ enum MenuItemDietaryLabel {
 model Menu {
   id           String    @id @default(uuid()) @db.Uuid
   restaurantId String    @map("restaurant_id") @db.Uuid
+  /// Null: shared by every branch. Set: this branch's own menu (ADR-046).
+  branchId     String?   @map("branch_id") @db.Uuid
   name         String    @default("Main Menu")
   active       Boolean   @default(true)
   isDefault    Boolean   @default(false) @map("is_default")
@@ -1493,9 +1500,11 @@ model Menu {
   deletedAt    DateTime? @map("deleted_at")
 
   restaurant Restaurant     @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  branch     Branch?        @relation(fields: [branchId], references: [id], onDelete: Cascade)
   categories MenuCategory[]
 
   @@index([restaurantId])
+  @@index([branchId])
   @@map("menus")
 }
 
@@ -1524,7 +1533,10 @@ model MenuItem {
   id                     String                   @id @default(uuid()) @db.Uuid
   categoryId             String                   @map("category_id") @db.Uuid
   restaurantId           String                   @map("restaurant_id") @db.Uuid
+  /// The Arabic name, or else the English one - kept for app 1.0.2 (ADR-046).
   name                   String
+  nameAr                 String?                  @map("name_ar")
+  nameEn                 String?                  @map("name_en")
   description            String?
   price                  Decimal                  @db.Decimal(10, 2)
   currency               String?

@@ -385,6 +385,8 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
     longitude: DecimalLike;
     countryCode: string;
     currency: string | null;
+    referencePrice: DecimalLike;
+    priceLevel: number | null;
     timezone: string;
     phone: string | null;
     createdAt: Date;
@@ -400,6 +402,8 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
       longitude: toNumberOrNull(row.longitude),
       countryCode: row.countryCode,
       currency: row.currency,
+      referencePrice: toNumberOrNull(row.referencePrice),
+      priceLevel: row.priceLevel,
       timezone: row.timezone,
       phone: row.phone,
       createdAt: row.createdAt,

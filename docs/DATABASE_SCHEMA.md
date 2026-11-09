@@ -549,7 +549,7 @@ Notes
 
 * `ownerId` is removed from this table (see ADR-011). Restaurant ownership/administration is expressed through `OrganizationMember` on the parent Organization.
 * `cuisineType` is a **legacy display field** retained for backward-compatible API responses. Canonical cuisine classification uses `RestaurantCuisineCategory` (many-to-many). New features must read/write taxonomy tables, not this string alone.
-* `priceLevel` is the **price category** (1 = budget … 4 = fine dining). See `PRODUCT_REQUIREMENTS.md` FR-07.5.
+* `priceLevel` is the **price category** (1 = budget … 4 = fine dining). See `PRODUCT_REQUIREMENTS.md` FR-07.5. **ADR-046**: computed, never written by the restaurant: the rounded average of its branches' `priceLevel`, left unchanged while no branch has one.
 
 ---
 
@@ -753,6 +753,8 @@ Fields
 * longitude
 * countryCode
 * currency
+* referencePrice (nullable Decimal(10,2) — **ADR-046**: average price of the branch menu's items ranked 2 to 11 by price; recomputed, never written by the restaurant)
+* priceLevel (nullable Int 1–4, CHECK `branches_price_level_range` — **ADR-046**: quartile of `referencePrice` among branches with the same currency, `ceil(cume_dist × 4)`)
 * openingHours
 * timezone
 * phone
@@ -1445,6 +1447,7 @@ Fields
 
 * id (UUID)
 * restaurantId
+* branchId (nullable UUID → Branch, cascade — **ADR-046**: null = shared by every branch; set = that branch's own menu. A branch reads its own default menu, else the shared default)
 * name (String, default `"Main Menu"` — **added at implementation time, 2026-08-03**: distinguishing multiple Menus, e.g. Breakfast/Lunch/Dinner/QR, is the entire motivation for ADR-032's 1:N ownership change and was missing from that ADR's own field list; a pure gap-fill, no behavior change)
 * active (Boolean, default `true` — enabled/visible; independent of `isDefault`)
 * isDefault (Boolean, default `false` — **ADR-032**: exactly one non-deleted Menu per Restaurant may be `true`; `Restaurant.hasMenu` and the Customer public "the menu" read derive from the active, non-deleted, default Menu)
@@ -1456,7 +1459,8 @@ Fields
 Indexes
 
 * restaurantId (non-unique — a Restaurant may own multiple Menus, **ADR-032** dropped the singleton `@@unique([restaurantId])`)
-* partial unique `(restaurantId) WHERE isDefault = true AND deletedAt IS NULL` (`menus_restaurant_one_default_key`, hand-written in migration SQL — same mechanism as `Table`'s `tables_merge_group_one_primary_key`, ADR-026) — enforces exactly one Default Menu per Restaurant; resolves ADR-031's originally-open uniqueness/soft-delete interaction, since the constraint no longer applies to soft-deleted or non-default rows
+* branchId
+* partial unique `(restaurantId, COALESCE(branchId, nil uuid)) WHERE isDefault = true AND deletedAt IS NULL` (`menus_restaurant_one_default_key`, widened by **ADR-046** to one default per scope: shared, and each branch; hand-written in migration SQL — same mechanism as `Table`'s `tables_merge_group_one_primary_key`, ADR-026) — enforces exactly one Default Menu per Restaurant; resolves ADR-031's originally-open uniqueness/soft-delete interaction, since the constraint no longer applies to soft-deleted or non-default rows
 
 ### Menu Categories
 
@@ -1486,7 +1490,9 @@ Fields
 * id (UUID)
 * categoryId
 * restaurantId (denormalized)
-* name
+* name (the Arabic name, else the English one — kept for app 1.0.2, **ADR-046**)
+* nameAr (nullable — **ADR-046**)
+* nameEn (nullable — **ADR-046**; at least one of nameAr/nameEn)
 * description (nullable)
 * price (Decimal(10,2))
 * currency (String, ISO 4217 — see currency caveat above)

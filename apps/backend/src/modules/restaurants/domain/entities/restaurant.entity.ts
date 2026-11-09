@@ -131,16 +131,15 @@ export class Restaurant extends Entity<RestaurantProps> {
       name: string;
       description: string | null;
       cuisineType: string | null;
-      priceLevel: number | null;
     },
     at: Date,
   ): Restaurant {
+    // priceLevel is computed from the menu (ADR-046), never set here.
     return Restaurant.reconstitute({
       ...this.props,
       name: props.name,
       description: props.description,
       cuisineType: props.cuisineType,
-      priceLevel: props.priceLevel,
       updatedAt: at,
     });
   }

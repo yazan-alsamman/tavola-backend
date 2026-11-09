@@ -16,7 +16,6 @@ export interface UpdateRestaurantCommand {
   name: string;
   description: string | null;
   cuisineType: string | null;
-  priceLevel: number | null;
   status: RestaurantStatus;
   correlationId?: string;
 }

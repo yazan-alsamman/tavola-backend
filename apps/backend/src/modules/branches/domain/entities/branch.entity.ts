@@ -14,6 +14,10 @@ export interface BranchProps {
   currency: string | null;
   timezone: string;
   phone: string | null;
+  /** Read-only, recomputed from the menu (ADR-046): never set by create/update. */
+  referencePrice?: number | null;
+  /** Read-only 1-4 price level (ADR-046). */
+  priceLevel?: number | null;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
@@ -73,6 +77,14 @@ export class Branch extends Entity<BranchProps> {
 
   get currency(): string | null {
     return this.props.currency;
+  }
+
+  get referencePrice(): number | null {
+    return this.props.referencePrice ?? null;
+  }
+
+  get priceLevel(): number | null {
+    return this.props.priceLevel ?? null;
   }
 
   get timezone(): string {

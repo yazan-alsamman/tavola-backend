@@ -42,4 +42,13 @@ export class PrismaRestaurantGalleryRepository implements RestaurantGalleryRepos
   async remove(id: string): Promise<void> {
     await this.prismaContext.client.restaurantGallery.deleteMany({ where: { id } });
   }
+
+  async updateSortOrders(images: RestaurantGalleryImage[]): Promise<void> {
+    for (const image of images) {
+      await this.prismaContext.client.restaurantGallery.updateMany({
+        where: { id: image.galleryImageId, restaurantId: image.restaurantId.value },
+        data: { sortOrder: image.sortOrder, updatedAt: image.updatedAt },
+      });
+    }
+  }
 }

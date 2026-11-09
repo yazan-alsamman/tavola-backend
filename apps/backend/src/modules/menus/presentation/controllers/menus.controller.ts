@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -17,6 +18,7 @@ import {
   ApiExtraModels,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -97,6 +99,7 @@ export class MenusController {
       actor,
       restaurantId,
       name: body.name,
+      branchId: body.branchId ?? null,
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
     return toMenuResponse(result);
@@ -125,16 +128,20 @@ export class MenusController {
   @ApiOperation({
     operationId: 'menusGetDefault',
     summary: "Get the Restaurant's default Menu (Customer, public, full nested tree)",
+    description:
+      "With branchId: that branch's own default Menu, else the shared default (ADR-046).",
   })
   @ApiParam({ name: 'restaurantId', format: 'uuid' })
+  @ApiQuery({ name: 'branchId', required: false, format: 'uuid' })
   @ApiResponse({ status: 200, description: 'Menu retrieved', type: MenuTreeResponseDto })
   @ApiErrorResponse(404, 'Restaurant not found, or no active default Menu exists', ['NOT_FOUND'])
   @HttpCode(HttpStatus.OK)
   @ResponseMessage('Menu retrieved successfully.')
   async getDefault(
     @Param('restaurantId', ParseUUIDPipe) restaurantId: string,
+    @Query('branchId', new ParseUUIDPipe({ optional: true })) branchId?: string,
   ): Promise<MenuTreeResponseDto> {
-    const result = await this.getMenuUseCase.execute({ restaurantId });
+    const result = await this.getMenuUseCase.execute({ restaurantId, branchId });
     return toMenuTreeResponse(result);
   }
 

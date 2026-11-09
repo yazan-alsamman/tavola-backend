@@ -85,6 +85,7 @@ export function toDiscoveryBranchResponse(
     longitude: result.longitude,
     countryCode: result.countryCode,
     currency: result.currency,
+    priceLevel: result.priceLevel,
     timezone: result.timezone,
     createdAt: result.createdAt.toISOString(),
     updatedAt: result.updatedAt.toISOString(),

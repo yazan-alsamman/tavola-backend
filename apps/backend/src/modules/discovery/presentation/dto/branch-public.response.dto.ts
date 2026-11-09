@@ -40,6 +40,15 @@ export class BranchPublicResponseDto {
   @ApiPropertyOptional({ example: 'SYP', nullable: true })
   currency!: string | null;
 
+  @ApiPropertyOptional({
+    example: 3,
+    minimum: 1,
+    maximum: 4,
+    nullable: true,
+    description: "The branch's price level from its menu, shown as stars (ADR-046).",
+  })
+  priceLevel!: number | null;
+
   @ApiProperty({ example: 'Asia/Damascus' })
   timezone!: string;
 
