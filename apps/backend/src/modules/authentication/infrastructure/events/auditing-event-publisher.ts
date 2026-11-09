@@ -98,6 +98,8 @@ import {
 import {
   ReviewCreatedEvent,
   ReviewDeletedEvent,
+  ReviewReopenedEvent,
+  ReviewReratedEvent,
   RestaurantRepliedToReviewEvent,
 } from '@modules/reviews/domain/events/review.events';
 import {
@@ -1103,14 +1105,34 @@ export class AuditingEventPublisher implements EventPublisherPort {
     if (event instanceof ReviewDeletedEvent) {
       return {
         ...base,
-        // Phase 10: `deletedBy` is always a User.id - either the owning
-        // Customer or an Organization Owner/Admin (both attribute as
-        // 'User', since `AuditActorType` has no `OrganizationMember`
-        // variant and Owner/Admin actions have always logged as 'User'
-        // platform-wide). Employees never delete Reviews in Phase 10.
+        // ADR-045: only the review's own Customer deletes a review.
         actorId: event.payload.deletedBy,
         actorType: 'User',
         action: 'review.deleted',
+        targetType: 'Review',
+        targetId: event.payload.reviewId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof ReviewReopenedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.reopenedBy,
+        actorType: 'User',
+        action: 'review.reopened',
+        targetType: 'Review',
+        targetId: event.payload.reviewId,
+        ipAddress: null,
+      };
+    }
+
+    if (event instanceof ReviewReratedEvent) {
+      return {
+        ...base,
+        actorId: event.payload.userId,
+        actorType: 'User',
+        action: 'review.rerated',
         targetType: 'Review',
         targetId: event.payload.reviewId,
         ipAddress: null,

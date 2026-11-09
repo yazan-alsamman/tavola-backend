@@ -38,6 +38,7 @@ const CREATED: RestaurantResult = {
   description: null,
   cuisineType: null,
   averageRating: null,
+  ratingCount: 0,
   priceLevel: null,
   status: 'Active',
   createdAt: new Date('2026-09-15T10:00:00.000Z'),

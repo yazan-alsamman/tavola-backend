@@ -2574,3 +2574,55 @@ seat. ADR-040 areas had only a name, colour and tab order.
 Additive columns with defaults, so existing rows and app 1.0.2 are
 unaffected. Migration `20261110120000_floor_plan_area_layout_and_features`.
 
+
+## ADR-045
+
+**Status:** Accepted (CR WJ-R-2026-002 round 2, 2026-11-10)
+
+### Context
+
+The owner's round-2 review rules (CR page "التقييمات"): after the visit the
+guest rates three axes (service, place, food), each with stars and a
+comment; the restaurant replies but never deletes; a private note reaches
+the restaurant only; the restaurant may open a review for the guest to rate
+again after talking to them. The restaurant rating is the average of the
+last 6 months, "new on Tavola" below 5 reviews, nothing with none, and the
+strongest axis is highlighted. A restaurant with no reviews showed a seeded
+4.6.
+
+### Decision
+
+1. `Review` gains `score` (average of the three axes, two decimals),
+   nullable axis ratings/comments (all three or none, DB `CHECK`),
+   `privateNote`, `reopenedAt`, `reratedAt`. `rating` stays the whole-star
+   value (rounded score) so app 1.0.2 keeps working; a single-rating submit
+   (no `axes`) is still accepted and scores as its rating.
+2. Only the review's own guest deletes it. Owner/Admin/Employee get 403.
+   Images stay guest-only (unchanged).
+3. Re-rating: `POST /reviews/:id/reopen` (Owner/Admin, idempotent) then
+   `PUT /reviews/:id` by the guest while open; the new content replaces the
+   old and closes the window. Events `ReviewReopened`, `ReviewRerated`.
+4. `Restaurant.ratingCount` = active reviews of the last 6 months;
+   `Restaurant.averageRating` = their average score, `null` below 5.
+   Recomputed on submit/delete/re-rate (same lock-then-update transaction)
+   and by a daily BullMQ sweep (`RestaurantRatingWindowQueue`, 03:15 UTC)
+   that slides the window. The migration recomputes every restaurant from
+   its real reviews, which removes the seeded averages.
+5. `GET /restaurants/:id/analytics/reviews-summary` computes from the
+   reviews themselves: real 6-month average (shown to the owner even below
+   5), window count, `isNew`, per-axis averages, strongest and weakest axis.
+6. Review lists accept `axis` and `stars` filters. Owner/Admin get
+   `GET /restaurants/:id/reviews/manage` with each guest's `privateNote`;
+   the public list never carries it.
+7. Notifications: staff get `StaffReviewCreated` for a new or re-rated
+   review, `StaffLowReviewCreated` (high priority) when the score is below
+   3; the guest gets `ReservationCompleted` ("Rate your visit", In-App +
+   Push) when the visit ends.
+
+### Consequences
+
+Restaurants with fewer than 5 reviews in 6 months show no stars in app
+1.0.2 (it already treats a null rating as unrated); a newer app can read
+`ratingCount` for the "new on Tavola" label. The three-axis form and
+re-rating screen need an app release; the backend accepts both shapes
+meanwhile. Migration `20261110150000_review_axes_and_rating_window`.

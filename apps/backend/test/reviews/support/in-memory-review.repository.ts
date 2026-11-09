@@ -1,5 +1,6 @@
 import { Review } from '@modules/reviews/domain/entities/review.entity';
 import {
+  ReviewListFilter,
   ReviewListPage,
   ReviewRepository,
 } from '@modules/reviews/domain/repositories/review.repository';
@@ -47,9 +48,11 @@ export class InMemoryReviewRepository implements ReviewRepository {
     restaurantId: RestaurantId,
     page: number,
     limit: number,
+    filter: ReviewListFilter = {},
   ): Promise<ReviewListPage> {
     const active = [...this.rows.values()]
       .filter((review) => review.restaurantId.value === restaurantId.value && !review.isDeleted())
+      .filter((review) => matchesFilter(review, filter))
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     const start = (page - 1) * limit;
     return { items: active.slice(start, start + limit), total: active.length };
@@ -63,6 +66,13 @@ export class InMemoryReviewRepository implements ReviewRepository {
     return { items: active.slice(start, start + limit), total: active.length };
   }
 
+  async update(review: Review): Promise<void> {
+    const existing = this.rows.get(review.reviewId.value);
+    if (existing && !existing.isDeleted()) {
+      this.rows.set(review.reviewId.value, review);
+    }
+  }
+
   async softDelete(id: ReviewId, at: Date): Promise<void> {
     const existing = this.rows.get(id.value);
     if (existing && !existing.isDeleted()) {
@@ -73,10 +83,16 @@ export class InMemoryReviewRepository implements ReviewRepository {
   /** Test-only wiring: feeds `InMemoryRestaurantRepository.recomputeAverageRating`
    *  the same active-review data the real Prisma implementation computes
    *  from the `reviews` table directly. */
-  listAllForAverageRating(): { restaurantId: string; rating: number; deletedAt: Date | null }[] {
+  listAllForAverageRating(): {
+    restaurantId: string;
+    score: number;
+    createdAt: Date;
+    deletedAt: Date | null;
+  }[] {
     return [...this.rows.values()].map((review) => ({
       restaurantId: review.restaurantId.value,
-      rating: review.rating,
+      score: review.score,
+      createdAt: review.createdAt,
       deletedAt: review.deletedAt,
     }));
   }
@@ -84,4 +100,15 @@ export class InMemoryReviewRepository implements ReviewRepository {
   seed(review: Review): void {
     this.rows.set(review.reviewId.value, review);
   }
+}
+
+function matchesFilter(review: Review, filter: ReviewListFilter): boolean {
+  if (filter.axis !== undefined) {
+    const axes = review.axes;
+    if (axes === null) {
+      return false;
+    }
+    return filter.stars === undefined || axes[filter.axis].rating === filter.stars;
+  }
+  return filter.stars === undefined || review.rating === filter.stars;
 }

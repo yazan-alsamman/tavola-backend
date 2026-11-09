@@ -12,7 +12,10 @@ export interface RestaurantProps {
   coverImageId: string | null;
   description: string | null;
   cuisineType: string | null;
+  /** Public rating: average review score over the last 6 months, null below 5 reviews (ADR-045). */
   averageRating: number | null;
+  /** Active reviews in that 6-month window. Computed; never written by profile CRUD. */
+  ratingCount?: number;
   priceLevel: number | null;
   status: RestaurantStatus;
   createdAt: Date;
@@ -68,6 +71,10 @@ export class Restaurant extends Entity<RestaurantProps> {
 
   get averageRating(): number | null {
     return this.props.averageRating;
+  }
+
+  get ratingCount(): number {
+    return this.props.ratingCount ?? 0;
   }
 
   get priceLevel(): number | null {

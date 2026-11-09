@@ -120,6 +120,33 @@ const NOTIFICATION_TEMPLATES: Array<{
     title: 'Marked as no-show',
     body: 'Your reservation was marked as a no-show.',
   },
+  // ADR-045: the visit ended - ask the guest to rate it.
+  {
+    eventType: 'ReservationCompleted',
+    channel: NotificationChannel.InApp,
+    title: 'Rate your visit',
+    body: 'How was the service, the place and the food?',
+  },
+  {
+    eventType: 'ReservationCompleted',
+    channel: NotificationChannel.Push,
+    title: 'Rate your visit',
+    body: 'How was the service, the place and the food? Tap to rate.',
+  },
+  {
+    eventType: 'ReservationCompleted',
+    channel: NotificationChannel.InApp,
+    language: 'ar',
+    title: 'قيّم زيارتك',
+    body: 'كيف كانت الخدمة والمكان والأصناف؟',
+  },
+  {
+    eventType: 'ReservationCompleted',
+    channel: NotificationChannel.Push,
+    language: 'ar',
+    title: 'قيّم زيارتك',
+    body: 'كيف كانت الخدمة والمكان والأصناف؟ اضغط للتقييم.',
+  },
   {
     // Phase 15.6 (Messaging, DECISIONS.md D6) - customer-only: only a staff
     // reply (Employee/OrganizationMember sender) ever reaches
@@ -177,6 +204,34 @@ const NOTIFICATION_TEMPLATES: Array<{
     language: 'ar',
     title: 'انضمام لقائمة الانتظار',
     body: 'انضم زبون لقائمة الانتظار من التطبيق.',
+  },
+  // ADR-045: a new (or re-rated) review. A low one is its own type so the
+  // dashboard can raise it as high priority.
+  {
+    eventType: 'StaffReviewCreated',
+    channel: NotificationChannel.InApp,
+    title: 'New review',
+    body: 'A guest reviewed their visit.',
+  },
+  {
+    eventType: 'StaffReviewCreated',
+    channel: NotificationChannel.InApp,
+    language: 'ar',
+    title: 'تقييم جديد',
+    body: 'قيّم زبون زيارته.',
+  },
+  {
+    eventType: 'StaffLowReviewCreated',
+    channel: NotificationChannel.InApp,
+    title: 'Low review',
+    body: 'A guest gave their visit a low rating. Worth a reply.',
+  },
+  {
+    eventType: 'StaffLowReviewCreated',
+    channel: NotificationChannel.InApp,
+    language: 'ar',
+    title: 'تقييم منخفض',
+    body: 'أعطى زبون زيارته تقييماً منخفضاً. يستحق الرد.',
   },
 ];
 
@@ -277,7 +332,7 @@ const PERMISSIONS: Array<{ slug: string; description: string }> = [
   },
   {
     slug: 'reservations:tableready',
-    description: 'Mark an approved reservation\'s table as ready for the guest',
+    description: "Mark an approved reservation's table as ready for the guest",
   },
   {
     slug: 'reservations:waitlist',

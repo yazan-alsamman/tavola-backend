@@ -531,7 +531,8 @@ Fields
 * coverImageId
 * description
 * cuisineType
-* averageRating
+* averageRating (ADR-045: average review `score` over the last 6 months; NULL with fewer than 5 such reviews)
+* ratingCount (Int, default 0 — ADR-045: active reviews in that 6-month window)
 * priceLevel
 * status
 * createdAt
@@ -1236,15 +1237,24 @@ Fields
 * userId (FK -> `users.id`, NOT NULL — reviews are authenticated-User-owned only; guest-only/ReservationGuest reservations are never review-eligible in Phase 10)
 * restaurantId (FK -> `restaurants.id`, NOT NULL)
 * reservationId (FK -> `reservations.id`, NOT NULL, UNIQUE — plain, not partial; deleting a Review does **not** free its reservation for resubmission, by design)
-* rating (Int, NOT NULL — `CHECK (rating BETWEEN 1 AND 5)`)
+* rating (Int, NOT NULL — `CHECK (rating BETWEEN 1 AND 5)`; for a three-axis review, the rounded `score`, kept for app 1.0.2)
 * comment (String, NULLABLE — optional)
+* score (Decimal(3,2), NOT NULL — ADR-045: the average of the three axes, or `rating` for a single-rating review; existing rows were backfilled with `rating`)
+* serviceRating / placeRating / foodRating (Int, NULLABLE — ADR-045 axes; `CHECK` all three set or none, each 1–5)
+* serviceComment / placeComment / foodComment (String, NULLABLE)
+* privateNote (String, NULLABLE — reaches the restaurant only, never published)
+* reopenedAt (NULLABLE — the restaurant opened the review for its guest to rate again)
+* reratedAt (NULLABLE — when the guest last rated again)
 * createdAt
-* updatedAt (retained for bookkeeping/`deletedAt`-adjacent writes only — Reviews are immutable content after creation; no endpoint ever changes `rating`/`comment`)
-* deletedAt (NULLABLE — soft delete only, ADR-010)
+* updatedAt
+* deletedAt (NULLABLE — soft delete only, ADR-010; only the review's own guest may delete, ADR-045)
+
+Content changes after creation only through reopen → re-rate (ADR-045).
 
 Indexes
 
 * restaurantId
+* (restaurantId, createdAt) — the 6-month rating window
 * userId
 * unique (reservationId) — enforces "one reservation may produce only one review," permanently (not partial/conditional on `deletedAt`)
 

@@ -21,6 +21,7 @@ function restaurant(id: string): RestaurantResult {
     description: null,
     cuisineType: null,
     averageRating: null,
+    ratingCount: 0,
     priceLevel: null,
     status: 'Active',
     createdAt: new Date('2026-08-01T00:00:00.000Z'),

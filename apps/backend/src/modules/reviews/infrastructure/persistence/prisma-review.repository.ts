@@ -8,9 +8,27 @@ import {
   UserId,
 } from '@shared/domain/value-objects/identifiers.vo';
 import { Review } from '../../domain/entities/review.entity';
-import { ReviewListPage, ReviewRepository } from '../../domain/repositories/review.repository';
+import {
+  ReviewListFilter,
+  ReviewListPage,
+  ReviewRepository,
+} from '../../domain/repositories/review.repository';
 import { ReviewAlreadyExistsException } from '../../domain/exceptions/review-already-exists.exception';
 import { ReviewPrismaMapper } from './review.prisma-mapper';
+
+const AXIS_COLUMN = {
+  service: 'serviceRating',
+  place: 'placeRating',
+  food: 'foodRating',
+} as const;
+
+function starsWhere(filter: ReviewListFilter): Prisma.ReviewWhereInput {
+  if (filter.axis !== undefined) {
+    const column = AXIS_COLUMN[filter.axis];
+    return filter.stars !== undefined ? { [column]: filter.stars } : { [column]: { not: null } };
+  }
+  return filter.stars !== undefined ? { rating: filter.stars } : {};
+}
 
 function violatesUniqueColumn(error: unknown, column: string): boolean {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
@@ -65,17 +83,21 @@ export class PrismaReviewRepository implements ReviewRepository {
     restaurantId: RestaurantId,
     page: number,
     limit: number,
+    filter: ReviewListFilter = {},
   ): Promise<ReviewListPage> {
+    const where: Prisma.ReviewWhereInput = {
+      restaurantId: restaurantId.value,
+      deletedAt: null,
+      ...starsWhere(filter),
+    };
     const [rows, total] = await Promise.all([
       this.prismaContext.client.review.findMany({
-        where: { restaurantId: restaurantId.value, deletedAt: null },
+        where,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
-      this.prismaContext.client.review.count({
-        where: { restaurantId: restaurantId.value, deletedAt: null },
-      }),
+      this.prismaContext.client.review.count({ where }),
     ]);
     return { items: rows.map(ReviewPrismaMapper.toDomain), total };
   }
@@ -91,6 +113,28 @@ export class PrismaReviewRepository implements ReviewRepository {
       this.prismaContext.client.review.count({ where: { userId: userId.value, deletedAt: null } }),
     ]);
     return { items: rows.map(ReviewPrismaMapper.toDomain), total };
+  }
+
+  async update(review: Review): Promise<void> {
+    const row = ReviewPrismaMapper.toPersistence(review);
+    await this.prismaContext.client.review.updateMany({
+      where: { id: row.id, deletedAt: null },
+      data: {
+        rating: row.rating,
+        comment: row.comment,
+        score: row.score,
+        serviceRating: row.serviceRating,
+        placeRating: row.placeRating,
+        foodRating: row.foodRating,
+        serviceComment: row.serviceComment,
+        placeComment: row.placeComment,
+        foodComment: row.foodComment,
+        privateNote: row.privateNote,
+        reopenedAt: row.reopenedAt,
+        reratedAt: row.reratedAt,
+        updatedAt: row.updatedAt,
+      },
+    });
   }
 
   async softDelete(id: ReviewId, at: Date): Promise<void> {

@@ -3869,7 +3869,7 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/reviews?page=1&pageSize=20",
+                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/reviews?page=1&pageSize=20&axis=service&stars=2",
                   "host": [
                     "{{baseUrl}}"
                   ],
@@ -3881,27 +3881,21 @@
                   "query": [
                     {
                       "key": "page",
-                      "value": "1",
-                      "description": "Page number (1-based)",
-                      "disabled": false
+                      "value": "1"
                     },
                     {
                       "key": "pageSize",
-                      "value": "20",
-                      "description": "Page size",
-                      "disabled": false
+                      "value": "20"
                     },
                     {
-                      "key": "limit",
-                      "value": "20",
-                      "description": "Cursor page size",
-                      "disabled": true
+                      "key": "axis",
+                      "value": "service",
+                      "description": "Optional: service | place | food (ADR-045)"
                     },
                     {
-                      "key": "cursor",
-                      "value": "",
-                      "description": "Opaque cursor",
-                      "disabled": true
+                      "key": "stars",
+                      "value": "2",
+                      "description": "Optional 1-5: whole-star rating, or the axis's stars with `axis`"
                     }
                   ]
                 },
@@ -4020,10 +4014,10 @@
                     "reviews"
                   ]
                 },
-                "description": "## Purpose\nSubmit a review for a completed reservation\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nCustomer | Employee\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n_None_\n## Query Params\n_None_\n## Body\nJSON body — DTO: `SubmitReviewRequestDto`\n## Success Response\nEnvelope message: \"Review submitted successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `ReviewsController`.`unknown`\n- Full path: `/api/v1/reviews`\n- Callers (from source): Customer or Employee (use-case resolved)",
+                "description": "## Purpose\nSubmit a review for a completed reservation\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nCustomer | Employee\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n_None_\n## Query Params\n_None_\n## Body\nJSON body — DTO: `SubmitReviewRequestDto`\n## Success Response\nEnvelope message: \"Review submitted successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- ADR-045: send `axes` (service, place, food; stars + comment each — the score is their average) or `rating` alone (app 1.0.2). `privateNote` reaches the restaurant only.\n- Controller: `ReviewsController`.`unknown`\n- Full path: `/api/v1/reviews`\n- Callers (from source): Customer or Employee (use-case resolved)",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"reservationId\": \"{{reservationId}}\",\n  \"rating\": 5,\n  \"comment\": \"Wonderful evening, great service.\"\n}",
+                  "raw": "{\n  \"reservationId\": \"{{reservationId}}\",\n  \"comment\": \"Wonderful evening.\",\n  \"axes\": {\n    \"service\": {\n      \"rating\": 5,\n      \"comment\": \"Quick and friendly.\"\n    },\n    \"place\": {\n      \"rating\": 5,\n      \"comment\": null\n    },\n    \"food\": {\n      \"rating\": 4,\n      \"comment\": \"Great mains.\"\n    }\n  },\n  \"privateNote\": \"The music was a bit loud near the door.\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -4116,6 +4110,61 @@
               ]
             },
             {
+              "name": "Rate a reopened review again",
+              "id": "7e850a74-d707-4f9e-b9b5-a48516cc3703",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/reviews/{{reviewId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "reviews",
+                    "{{reviewId}}"
+                  ]
+                },
+                "description": "## Purpose\nRate again a review the restaurant reopened (ADR-045).\n## Authorization\nBearer `{{customerAccessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nThe review's own Customer\n## Body\nJSON body — DTO: `ReviewContentRequestDto` (submit's body without `reservationId`)\n## Error Responses\n- 404 not the caller's review\n- 409 `CONFLICT` the restaurant has not opened it\n## Notes\n- Controller: `ReviewsController`.`rerate`\n- Full path: `/api/v1/reviews/:id`",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"comment\": \"Thanks for sorting it out.\",\n  \"axes\": {\n    \"service\": {\n      \"rating\": 5,\n      \"comment\": null\n    },\n    \"place\": {\n      \"rating\": 5,\n      \"comment\": null\n    },\n    \"food\": {\n      \"rating\": 5,\n      \"comment\": null\n    }\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{customerAccessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('OK (200)', function () { pm.response.to.have.status(200); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
               "name": "Soft-delete a review (Domain Action)",
               "id": "c20d5c22-d4a2-4d94-a06a-f6f0a4750494",
               "request": {
@@ -4131,7 +4180,7 @@
                     "{{reviewId}}"
                   ]
                 },
-                "description": "## Purpose\nSoft-delete a review (Domain Action)\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nCustomer | Employee\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `id` | `{{reviewId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nStandard success envelope `{ success, message, data, meta }` (or 204 No Content / raw health/metrics).\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `ReviewsController`.`unknown`\n- Full path: `/api/v1/reviews/:id`\n- Callers (from source): Customer or Employee (use-case resolved)",
+                "description": "## Purpose\nSoft-delete a review (Domain Action)\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard\n## Required Role\nCustomer | Employee\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `id` | `{{reviewId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nStandard success envelope `{ success, message, data, meta }` (or 204 No Content / raw health/metrics).\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- ADR-045: only the review's own Customer. The restaurant never deletes reviews (403).\n- Controller: `ReviewsController`.`unknown`\n- Full path: `/api/v1/reviews/:id`\n- Callers (from source): Customer or Employee (use-case resolved)",
                 "auth": {
                   "type": "bearer",
                   "bearer": [
@@ -4933,6 +4982,91 @@
               ]
             },
             {
+              "name": "Reopen Review For Re-rating",
+              "id": "4141f587-21d1-4a87-bd01-43608b418a68",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/reviews/{{reviewId}}/reopen",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "reviews",
+                    "{{reviewId}}",
+                    "reopen"
+                  ]
+                },
+                "description": "## Purpose\nOpen a review for its guest to rate again, after talking to them (ADR-045). Idempotent while open.\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Notes\n- Controller: `ReviewsController`.`reopen`\n- Full path: `/api/v1/reviews/:id/reopen`"
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('OK (200)', function () { pm.response.to.have.status(200); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "List Restaurant Reviews (Staff)",
+              "id": "31822c7c-4295-4cbc-9755-31c151b245ca",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/reviews/manage?page=1&limit=20",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "reviews",
+                    "manage"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "20"
+                    }
+                  ]
+                },
+                "description": "## Purpose\nThe restaurant's own review list: public filters (`axis`, `stars`) plus each guest's `privateNote` (ADR-045).\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Notes\n- Controller: `ReviewsController`.`listForRestaurantStaff`\n- Full path: `/api/v1/restaurants/:restaurantId/reviews/manage`"
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('OK (200)', function () { pm.response.to.have.status(200); });"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
               "name": "Create a restaurant within the caller organization",
               "id": "0ba6b25a-37f2-4700-a4ef-3aa88b2d84d2",
               "request": {
@@ -5414,8 +5548,14 @@
                 "header": [],
                 "url": {
                   "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/cover",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["restaurants", "{{restaurantId}}", "cover"]
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "cover"
+                  ]
                 },
                 "description": "## Purpose\nUpload the image the customer app shows as the restaurant cover.\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\n## Body\nMultipart field `file` (JPEG/PNG/WebP).\n## Behavior\nStores the object in the public bucket and sets `Restaurant.coverImageId`. Replaces any previous cover and deletes the previous object. Gallery upload does not set this field. Discovery signs `coverImageUrl` from the stored id.\n## Success Response\n201 `{ coverImageId, coverImageUrl }` where `coverImageUrl` is a short-lived signed URL.\n## Notes\n- Full path: `/api/v1/restaurants/:id/cover`",
                 "body": {
@@ -5439,8 +5579,14 @@
                 "header": [],
                 "url": {
                   "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/logo",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["restaurants", "{{restaurantId}}", "logo"]
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "logo"
+                  ]
                 },
                 "description": "## Purpose\nUpload the restaurant logo.\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\n## Body\nMultipart field `file` (JPEG/PNG/WebP).\n## Behavior\nSets `Restaurant.logoId`. This is not the customer cover. The mobile app displays `coverImageUrl` only.\n## Success Response\n201 `{ logoId, logoUrl }`.\n## Notes\n- Full path: `/api/v1/restaurants/:id/logo`",
                 "body": {
@@ -11438,8 +11584,15 @@
                 "header": [],
                 "url": {
                   "raw": "{{baseUrl}}/platform-admin/restaurants/{{restaurantId}}/cover",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["platform-admin", "restaurants", "{{restaurantId}}", "cover"]
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "platform-admin",
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "cover"
+                  ]
                 },
                 "description": "## Purpose\nPlatform Owner upload of the cover the customer app displays.\n## Authorization\nBearer `{{platformAdminAccessToken}}`. Guards: PlatformAdminGuard, PlatformAdminRoleGuard\n## Required Role\nPlatformAdmin (PlatformSupport is read-only)\n## Body\nMultipart field `file` (JPEG/PNG/WebP).\n## Behavior\nRebinds to the restaurant's organization, stores the object, and sets `coverImageId`. Gallery upload does not do this. A soft-deleted restaurant is rejected.\n## Success Response\n201 `{ coverImageId, coverImageUrl }` — `coverImageUrl` is a short-lived signed URL.\n## Notes\n- Full path: `/api/v1/platform-admin/restaurants/:id/cover`",
                 "body": {
@@ -11463,8 +11616,15 @@
                 "header": [],
                 "url": {
                   "raw": "{{baseUrl}}/platform-admin/restaurants/{{restaurantId}}/logo",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["platform-admin", "restaurants", "{{restaurantId}}", "logo"]
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "platform-admin",
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "logo"
+                  ]
                 },
                 "description": "## Purpose\nPlatform Owner upload of the restaurant logo.\n## Authorization\nBearer `{{platformAdminAccessToken}}`.\n## Required Role\nPlatformAdmin\n## Body\nMultipart field `file`.\n## Behavior\nSets `logoId` only. The customer app does not use the logo as the cover.\n## Success Response\n201 `{ logoId, logoUrl }`.\n## Notes\n- Full path: `/api/v1/platform-admin/restaurants/:id/logo`",
                 "body": {

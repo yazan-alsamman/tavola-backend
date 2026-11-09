@@ -1,4 +1,5 @@
 import { forwardRef, Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import type { StorageConfig } from '@config/storage.config';
 import { PrismaModule } from '@infrastructure/prisma/prisma.module';
@@ -15,6 +16,13 @@ import { DeleteReviewImageUseCase } from './application/use-cases/delete-review-
 import { ListRestaurantReviewsUseCase } from './application/use-cases/list-restaurant-reviews.use-case';
 import { ListMyReviewsUseCase } from './application/use-cases/list-my-reviews.use-case';
 import { GetReviewUseCase } from './application/use-cases/get-review.use-case';
+import { ListRestaurantReviewsForStaffUseCase } from './application/use-cases/list-restaurant-reviews-for-staff.use-case';
+import { ReopenReviewUseCase } from './application/use-cases/reopen-review.use-case';
+import { RerateReviewUseCase } from './application/use-cases/rerate-review.use-case';
+import { RecomputeRestaurantRatingsUseCase } from './application/use-cases/recompute-restaurant-ratings.use-case';
+import { RatingWindowProcessor } from './infrastructure/bullmq/rating-window.processor';
+import { RatingWindowScheduler } from './infrastructure/bullmq/rating-window.scheduler';
+import { RATING_WINDOW_QUEUE_NAME } from './infrastructure/bullmq/rating-window-queue.constants';
 import { ReviewResultAssembler } from './application/services/review-result-assembler.service';
 import { REVIEW_REPOSITORY } from './domain/repositories/review.repository';
 import { REVIEW_IMAGE_REPOSITORY } from './domain/repositories/review-image.repository';
@@ -58,6 +66,7 @@ import { ReviewsController } from './presentation/controllers/reviews.controller
     FilesModule,
     PrismaModule,
     ConfigModule,
+    BullModule.registerQueue({ name: RATING_WINDOW_QUEUE_NAME }),
   ],
   controllers: [ReviewsController],
   providers: [
@@ -69,6 +78,12 @@ import { ReviewsController } from './presentation/controllers/reviews.controller
     ListRestaurantReviewsUseCase,
     ListMyReviewsUseCase,
     GetReviewUseCase,
+    ListRestaurantReviewsForStaffUseCase,
+    ReopenReviewUseCase,
+    RerateReviewUseCase,
+    RecomputeRestaurantRatingsUseCase,
+    RatingWindowProcessor,
+    RatingWindowScheduler,
     ReviewResultAssembler,
     PrismaReviewRepository,
     PrismaReviewImageRepository,

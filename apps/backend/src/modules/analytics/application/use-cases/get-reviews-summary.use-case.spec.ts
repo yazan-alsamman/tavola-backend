@@ -1,5 +1,5 @@
 import { GetReviewsSummaryUseCase } from './get-reviews-summary.use-case';
-import { AnalyticsQueryPort } from '../ports/analytics-query.port';
+import { AnalyticsQueryPort, ReviewsSummaryRawData } from '../ports/analytics-query.port';
 import { RestaurantRepository } from '@modules/restaurants/domain/repositories/restaurant.repository';
 import { Restaurant } from '@modules/restaurants/domain/entities/restaurant.entity';
 import { RestaurantStatus } from '@modules/restaurants/domain/enums/restaurant.enums';
@@ -51,14 +51,21 @@ function buildRestaurant(averageRating: number | null = 4.5): Restaurant {
 }
 
 describe('GetReviewsSummaryUseCase', () => {
-  function build(restaurant: Restaurant | null, activeReviewCount = 17) {
+  const RAW: ReviewsSummaryRawData = {
+    activeReviewCount: 17,
+    windowReviewCount: 6,
+    windowAverage: 4.17,
+    axisAverages: { service: 4.5, place: 4.8, food: 3.2 },
+  };
+
+  function build(restaurant: Restaurant | null, raw: ReviewsSummaryRawData = RAW) {
     const analyticsQueryPort: jest.Mocked<AnalyticsQueryPort> = {
       getReservationSummary: jest.fn(),
       getReservationTrends: jest.fn(),
       getPeakHours: jest.fn(),
       getCustomerInsights: jest.fn(),
       getWaitlistCounts: jest.fn(),
-      getReviewsSummary: jest.fn().mockResolvedValue({ activeReviewCount }),
+      getReviewsSummary: jest.fn().mockResolvedValue(raw),
     };
     const restaurantRepository = {
       findById: jest.fn().mockResolvedValue(restaurant),
@@ -69,25 +76,47 @@ describe('GetReviewsSummaryUseCase', () => {
     return { useCase, analyticsQueryPort, restaurantRepository };
   }
 
-  it('delegates to AnalyticsQueryPort with the resolved restaurantId and shapes the result from Restaurant.averageRating', async () => {
-    const { useCase, analyticsQueryPort } = build(buildRestaurant(4.5));
+  it('computes the summary from the real reviews of the last 6 months, not Restaurant.averageRating', async () => {
+    const { useCase, analyticsQueryPort } = build(buildRestaurant(4.6));
 
     const result = await useCase.execute({ actor: OWNER_ACTOR, restaurantId: RESTAURANT_ID });
 
-    expect(analyticsQueryPort.getReviewsSummary).toHaveBeenCalledWith(RESTAURANT_ID);
+    expect(analyticsQueryPort.getReviewsSummary).toHaveBeenCalledWith(
+      RESTAURANT_ID,
+      new Date('2026-01-28T12:00:00.000Z'),
+    );
     expect(result).toEqual({
       activeReviewCount: 17,
-      averageRating: 4.5,
+      averageRating: 4.17,
+      windowReviewCount: 6,
+      isNew: false,
+      axisAverages: { service: 4.5, place: 4.8, food: 3.2 },
+      strongestAxis: 'place',
+      weakestAxis: 'food',
       generatedAt: NOW.toISOString(),
     });
   });
 
-  it('returns a null averageRating when the restaurant has none yet', async () => {
-    const { useCase } = build(buildRestaurant(null));
+  it('shows no average and "new" for a restaurant with no reviews, whatever its stored rating', async () => {
+    const { useCase } = build(buildRestaurant(4.6), {
+      activeReviewCount: 0,
+      windowReviewCount: 0,
+      windowAverage: null,
+      axisAverages: { service: null, place: null, food: null },
+    });
 
     const result = await useCase.execute({ actor: OWNER_ACTOR, restaurantId: RESTAURANT_ID });
 
     expect(result.averageRating).toBeNull();
+    expect(result.isNew).toBe(true);
+    expect(result.strongestAxis).toBeNull();
+    expect(result.weakestAxis).toBeNull();
+  });
+
+  it('is "new" below 5 reviews in the window', async () => {
+    const { useCase } = build(buildRestaurant(), { ...RAW, windowReviewCount: 4 });
+    const result = await useCase.execute({ actor: OWNER_ACTOR, restaurantId: RESTAURANT_ID });
+    expect(result.isNew).toBe(true);
   });
 
   it('throws RestaurantNotFoundException for a cross-organization restaurantId (IDOR-safe 404)', async () => {

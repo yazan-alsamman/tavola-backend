@@ -1,3 +1,5 @@
+import { ReviewAxes } from '../../domain/entities/review.entity';
+
 export interface ReviewImageResult {
   reviewImageId: string;
   imageUrl: string;
@@ -24,6 +26,14 @@ export interface ReviewResult {
   reviewerUsername: string | null;
   rating: number;
   comment: string | null;
+  /** Average of the three axes, or `rating` for a single-rating review. */
+  score: number;
+  axes: ReviewAxes | null;
+  /** For the restaurant only - the public projection drops it. */
+  privateNote: string | null;
+  /** The restaurant opened the review; the guest may rate again. */
+  openForRerating: boolean;
+  reratedAt: Date | null;
   images: ReviewImageResult[];
   reply: RestaurantReplyResult | null;
   createdAt: Date;

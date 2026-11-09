@@ -17,6 +17,7 @@ function restaurant(overrides: Partial<RestaurantResult> = {}): RestaurantResult
     description: null,
     cuisineType: 'Italian',
     averageRating: null,
+    ratingCount: 0,
     priceLevel: 2,
     status: 'Active',
     createdAt: new Date('2026-08-01T00:00:00.000Z'),

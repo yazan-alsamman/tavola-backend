@@ -193,11 +193,30 @@ export class PrismaAnalyticsQueryRepository implements AnalyticsQueryPort {
     return counts;
   }
 
-  async getReviewsSummary(restaurantId: string): Promise<ReviewsSummaryRawData> {
-    const activeReviewCount = await this.prismaContext.client.review.count({
-      where: { restaurantId, deletedAt: null },
-    });
-    return { activeReviewCount };
+  async getReviewsSummary(restaurantId: string, windowStart: Date): Promise<ReviewsSummaryRawData> {
+    const windowWhere = { restaurantId, deletedAt: null, createdAt: { gte: windowStart } };
+    const [activeReviewCount, window, axes] = await Promise.all([
+      this.prismaContext.client.review.count({ where: { restaurantId, deletedAt: null } }),
+      this.prismaContext.client.review.aggregate({
+        where: windowWhere,
+        _count: { _all: true },
+        _avg: { score: true },
+      }),
+      this.prismaContext.client.review.aggregate({
+        where: { ...windowWhere, serviceRating: { not: null } },
+        _avg: { serviceRating: true, placeRating: true, foodRating: true },
+      }),
+    ]);
+    return {
+      activeReviewCount,
+      windowReviewCount: window._count._all,
+      windowAverage: window._avg.score === null ? null : round2(window._avg.score.toNumber()),
+      axisAverages: {
+        service: roundOrNull(axes._avg.serviceRating),
+        place: roundOrNull(axes._avg.placeRating),
+        food: roundOrNull(axes._avg.foodRating),
+      },
+    };
   }
 
   private buildReservationWhere(scope: AnalyticsRestaurantScope): Prisma.ReservationWhereInput {
@@ -217,4 +236,12 @@ function toDateKeyCountMap(rows: Array<{ bucket: Date; count: bigint }>): Map<st
     map.set(key, Number(row.count));
   }
   return map;
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function roundOrNull(value: number | null): number | null {
+  return value === null ? null : round2(value);
 }

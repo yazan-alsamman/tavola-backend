@@ -11,7 +11,6 @@ import {
   AUDIT_LOG_WRITER,
 } from '@shared/application/ports/audit-log-writer.port';
 import { ReviewId } from '@shared/domain/value-objects/identifiers.vo';
-import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
 import {
   RestaurantRepository,
   RESTAURANT_REPOSITORY,
@@ -23,12 +22,10 @@ import { assertActorCanDeleteReview } from '../services/assert-actor-can-delete-
 import { DeleteReviewCommand } from '../dto/delete-review.command';
 
 /**
- * Phase 10 (Reviews, architecture frozen 2026-07-26, owner decisions
- * #7/#8/#9). Soft delete only. Reachable by the owning Customer or a
- * Restaurant Organization Owner/Admin - dual-actor authorization resolved
- * inside this use case (`assertActorCanDeleteReview`), route guarded only by
- * `JwtAuthGuard`/`SessionVersionGuard` (no `OrganizationMemberGuard`, which
- * would otherwise structurally deny the Customer path).
+ * Soft delete only, by the guest who wrote the review (ADR-045; the
+ * restaurant never deletes reviews). Route guarded by `JwtAuthGuard`/
+ * `SessionVersionGuard`; `assertActorCanDeleteReview` refuses every other
+ * actor.
  */
 @Injectable()
 export class DeleteReviewUseCase {
@@ -49,20 +46,7 @@ export class DeleteReviewUseCase {
       throw new ReviewNotFoundException();
     }
 
-    // Only resolved for an OrganizationMember actor - the Customer-ownership
-    // path never needs the Restaurant/organization at all. `findById` here
-    // is tenant-scoped (`Restaurant` is a `DIRECT_TENANT_OWNED_MODEL`), so a
-    // cross-organization Review's restaurant resolves to `null`, collapsing
-    // to the same 404 a genuinely unknown Review produces (IDOR-safe).
-    let restaurantOrganizationId = '';
-    if (command.actor.actorType === AccessTokenActorType.OrganizationMember) {
-      const restaurant = await this.restaurantRepository.findById(review.restaurantId);
-      if (restaurant === null) {
-        throw new ReviewNotFoundException();
-      }
-      restaurantOrganizationId = restaurant.organizationId.value;
-    }
-    assertActorCanDeleteReview(command.actor, review, restaurantOrganizationId);
+    assertActorCanDeleteReview(command.actor, review);
 
     const now = this.clock.now();
     await this.unitOfWork.execute(async () => {
@@ -95,10 +79,7 @@ export class DeleteReviewUseCase {
       action: 'review.deleted',
       targetType: 'Review',
       targetId: review.reviewId.value,
-      organizationId:
-        command.actor.actorType === AccessTokenActorType.OrganizationMember
-          ? command.actor.organizationId
-          : null,
+      organizationId: null,
       correlationId: command.correlationId ?? null,
       ipAddress: null,
       occurredAt: now,

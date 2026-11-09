@@ -871,6 +871,7 @@ export class RestaurantsController {
       description: result.description,
       cuisineType: result.cuisineType,
       averageRating: result.averageRating,
+      ratingCount: result.ratingCount,
       priceLevel: result.priceLevel,
       status: result.status,
       createdAt: result.createdAt.toISOString(),

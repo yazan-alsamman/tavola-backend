@@ -23,8 +23,16 @@ export class RestaurantResponseDto {
   @ApiPropertyOptional({ example: 'Italian', nullable: true })
   cuisineType!: string | null;
 
-  @ApiPropertyOptional({ example: null, nullable: true, description: 'Computed by Reviews.' })
+  @ApiPropertyOptional({
+    example: 4.4,
+    nullable: true,
+    description:
+      'Average review score over the last 6 months. Null with no reviews, and with fewer than 5 (shown as "new on Tavola"; see ratingCount).',
+  })
   averageRating!: number | null;
+
+  @ApiProperty({ example: 12, description: 'Active reviews in the last 6 months.' })
+  ratingCount!: number;
 
   @ApiPropertyOptional({ example: 2, nullable: true, minimum: 1, maximum: 4 })
   priceLevel!: number | null;
