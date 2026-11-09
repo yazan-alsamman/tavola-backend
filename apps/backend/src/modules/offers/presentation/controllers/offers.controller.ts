@@ -38,6 +38,10 @@ import { UpdateOfferUseCase } from '../../application/use-cases/update-offer.use
 import { PublishOfferUseCase } from '../../application/use-cases/publish-offer.use-case';
 import { DeleteOfferUseCase } from '../../application/use-cases/delete-offer.use-case';
 import { ListRestaurantOffersUseCase } from '../../application/use-cases/list-restaurant-offers.use-case';
+import { OfferContentRequestDto } from '../dto/offer-content.request.dto';
+import { OfferImpactResponseDto } from '../dto/offer-impact.response.dto';
+import { GetOfferImpactUseCase } from '../../application/use-cases/get-offer-impact.use-case';
+import { OfferConditionsInput } from '../../application/dto/offer-conditions.input';
 import { CreateOfferRequestDto } from '../dto/create-offer.request.dto';
 import { UpdateOfferRequestDto } from '../dto/update-offer.request.dto';
 import { ListOffersQueryDto } from '../dto/list-offers.query.dto';
@@ -67,6 +71,7 @@ export class OffersController {
     private readonly publishOfferUseCase: PublishOfferUseCase,
     private readonly deleteOfferUseCase: DeleteOfferUseCase,
     private readonly listRestaurantOffersUseCase: ListRestaurantOffersUseCase,
+    private readonly getOfferImpactUseCase: GetOfferImpactUseCase,
   ) {}
 
   @Post()
@@ -108,6 +113,7 @@ export class OffersController {
       discountValue: body.discountValue,
       startsAt: new Date(body.startsAt),
       endsAt: new Date(body.endsAt),
+      conditions: toOfferConditions(body),
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
     return toOfferResponse(result);
@@ -156,16 +162,16 @@ export class OffersController {
   @ResponseMessage('Offer updated successfully.')
   @ApiOperation({
     operationId: 'offersUpdate',
-    summary: 'Update an offer (full-replace, Draft only)',
+    summary: 'Update an offer (full-replace, Draft or Published)',
     description:
-      'Full-replace update of type/title/description/discountType/discountValue/startsAt/endsAt. Reachable only while status = Draft - Published/Expired offers are immutable (400 if the offer is no longer Draft, including a race against a concurrent Publish).',
+      "Full-replace update of the content and conditions (ADR-047). A Draft or Published offer may be edited; an Expired one returns 400, as does moving a Published offer's end into the past. Changing a Published offer's end re-schedules its expiration.",
   })
   @ApiParam({ name: 'restaurantId', format: 'uuid' })
   @ApiParam({ name: 'offerId', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'Offer updated', type: OfferResponseDto })
   @ApiErrorResponse(
     400,
-    'Validation failure, startsAt >= endsAt, or the offer is no longer Draft',
+    'Validation failure, startsAt >= endsAt, a branch outside the restaurant, or the offer has expired',
     ['VALIDATION_ERROR'],
   )
   @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
@@ -196,6 +202,7 @@ export class OffersController {
       discountValue: body.discountValue,
       startsAt: new Date(body.startsAt),
       endsAt: new Date(body.endsAt),
+      conditions: toOfferConditions(body),
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
     return toOfferResponse(result);
@@ -244,6 +251,58 @@ export class OffersController {
     return toOfferResponse(result);
   }
 
+  @Get(':offerId/impact')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
+  @RequireOrgRole(OrganizationMemberRole.Owner, OrganizationMemberRole.Admin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Offer impact retrieved successfully.')
+  @ApiOperation({
+    operationId: 'offersImpact',
+    summary: "An offer's impact card",
+    description:
+      "ADR-047: views, bookings, persons, new-guest share and visits; bookings in the offer's days/hours/branches against the usual for the same slots over the 4 weeks before it; and the estimated discount cost (attended persons x branch reference price x discount %, or attended bookings x amount).",
+  })
+  @ApiParam({ name: 'restaurantId', format: 'uuid' })
+  @ApiParam({ name: 'offerId', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Impact retrieved', type: OfferImpactResponseDto })
+  @ApiErrorResponse(400, 'restaurantId or offerId is not a valid UUID', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller is not an Owner/Admin organization member', ['FORBIDDEN'])
+  @ApiErrorResponse(
+    404,
+    'Restaurant not found, or offer not found (or belongs to another restaurant)',
+    ['NOT_FOUND'],
+  )
+  async impact(
+    @Param('restaurantId', ParseUUIDPipe) restaurantId: string,
+    @Param('offerId', ParseUUIDPipe) offerId: string,
+    @CurrentActor() actor: AuthenticatedOrganizationMemberActor,
+  ): Promise<OfferImpactResponseDto> {
+    const result = await this.getOfferImpactUseCase.execute({ actor, restaurantId, offerId });
+    return {
+      offerId: result.offerId,
+      views: result.views,
+      bookings: result.bookings,
+      persons: result.persons,
+      attended: result.attended,
+      newCustomerPercent: result.newCustomerPercent,
+      comparison: {
+        from: result.comparison.from?.toISOString() ?? null,
+        to: result.comparison.to?.toISOString() ?? null,
+        bookingsInOfferSlots: result.comparison.bookingsInOfferSlots,
+        usualBookings: result.comparison.usualBookings,
+        liftPercent: result.comparison.liftPercent,
+        baselineWeeks: result.comparison.baselineWeeks,
+      },
+      estimatedCost: result.estimatedCost,
+      generatedAt: result.generatedAt.toISOString(),
+    };
+  }
+
   @Delete(':offerId')
   @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
   @RequireOrgRole(OrganizationMemberRole.Owner, OrganizationMemberRole.Admin)
@@ -283,4 +342,16 @@ export class OffersController {
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
   }
+}
+
+function toOfferConditions(body: OfferContentRequestDto): OfferConditionsInput {
+  return {
+    daysOfWeek: body.daysOfWeek ?? [],
+    startTime: body.startTime ?? null,
+    endTime: body.endTime ?? null,
+    minPartySize: body.minPartySize ?? null,
+    branchIds: body.branchIds ?? [],
+    oncePerCustomer: body.oncePerCustomer ?? false,
+    bookingCap: body.bookingCap ?? null,
+  };
 }

@@ -8341,10 +8341,10 @@
                     "offers"
                   ]
                 },
-                "description": "## Purpose\nCreate an offer under a restaurant\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\nJSON body — DTO: `CreateOfferRequestDto`\n## Success Response\nEnvelope message: \"Offer created successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `OffersController`.`unknown`\n- Full path: `/api/v1/restaurants/:restaurantId/offers`\n- Callers (from source): Owner/Admin (Owner, Admin)",
+                "description": "## Purpose\nCreate an offer under a restaurant\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\nJSON body — DTO: `CreateOfferRequestDto`\n## Conditions (ADR-047, all optional)\n- `type`: Promotion, Coupon, Event (older) or the current kinds BillDiscount, FreeItem, GroupPrice, QuietDays.\n- `daysOfWeek`: 0 = Sunday ... 6 = Saturday; empty = every day.\n- `startTime`/`endTime`: \"HH:mm\" branch-local, both or neither; the window is [start, end).\n- `minPartySize`, `bookingCap`: positive integers or null.\n- `branchIds`: branches of this restaurant (400 otherwise); empty = every branch.\n- `oncePerCustomer`: one booking with the offer per app user or guest phone.\nA booking that does not meet them is still made; the offer is just not recorded on it.\n## Success Response\nEnvelope message: \"Offer created successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `OffersController`.`unknown`\n- Full path: `/api/v1/restaurants/:restaurantId/offers`\n- Callers (from source): Owner/Admin (Owner, Admin)",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"type\": \"Promotion\",\n  \"title\": \"20% Off Weekday Lunch\",\n  \"description\": \"Enjoy 20% off any lunch entree, Monday through Friday.\",\n  \"discountType\": \"Percentage\",\n  \"discountValue\": 20,\n  \"startsAt\": \"{{offerStartsAt}}\",\n  \"endsAt\": \"{{offerEndsAt}}\"\n}",
+                  "raw": "{\n  \"type\": \"QuietDays\",\n  \"title\": \"15% Off Quiet Tuesday Lunch\",\n  \"description\": \"15% off for tables of 2 or more on Tuesday lunch.\",\n  \"discountType\": \"Percentage\",\n  \"discountValue\": 15,\n  \"startsAt\": \"{{offerStartsAt}}\",\n  \"endsAt\": \"{{offerEndsAt}}\",\n  \"daysOfWeek\": [\n    2\n  ],\n  \"startTime\": \"12:00\",\n  \"endTime\": \"16:00\",\n  \"minPartySize\": 2,\n  \"branchIds\": [],\n  \"oncePerCustomer\": false,\n  \"bookingCap\": 50\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -8440,7 +8440,7 @@
               ]
             },
             {
-              "name": "Update an offer (full-replace, Draft only)",
+              "name": "Update an offer (full-replace, Draft or running Published)",
               "id": "96ea8ff8-a8e1-4a21-a4ef-b1016df483c6",
               "request": {
                 "method": "PATCH",
@@ -8462,10 +8462,10 @@
                     "{{offerId}}"
                   ]
                 },
-                "description": "## Purpose\nUpdate an offer (full-replace, Draft only)\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `offerId` | `{{offerId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\nJSON body — DTO: `UpdateOfferRequest`\n## Success Response\nEnvelope message: \"Offer updated successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `OffersController`.`unknown`\n- Full path: `/api/v1/restaurants/:restaurantId/offers/:offerId`\n- Callers (from source): Owner/Admin (Owner, Admin)",
+                "description": "## Purpose\nUpdate an offer (full-replace). ADR-047: a Draft or a still-running Published offer is editable; an Expired one is 400. Moving a Published offer's `endsAt` re-schedules its expiration; it must stay in the future.\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `offerId` | `{{offerId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\nJSON body — DTO: `UpdateOfferRequest`\n## Conditions (ADR-047, all optional)\n- `type`: Promotion, Coupon, Event (older) or the current kinds BillDiscount, FreeItem, GroupPrice, QuietDays.\n- `daysOfWeek`: 0 = Sunday ... 6 = Saturday; empty = every day.\n- `startTime`/`endTime`: \"HH:mm\" branch-local, both or neither; the window is [start, end).\n- `minPartySize`, `bookingCap`: positive integers or null.\n- `branchIds`: branches of this restaurant (400 otherwise); empty = every branch.\n- `oncePerCustomer`: one booking with the offer per app user or guest phone.\nA booking that does not meet them is still made; the offer is just not recorded on it.\n## Success Response\nEnvelope message: \"Offer updated successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `OffersController`.`unknown`\n- Full path: `/api/v1/restaurants/:restaurantId/offers/:offerId`\n- Callers (from source): Owner/Admin (Owner, Admin)",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"type\": \"Promotion\",\n  \"title\": \"25% Off Weekday Lunch (Updated)\",\n  \"description\": \"Enjoy 25% off any lunch entree, Monday through Friday.\",\n  \"discountType\": \"Percentage\",\n  \"discountValue\": 25,\n  \"startsAt\": \"{{offerStartsAt}}\",\n  \"endsAt\": \"{{offerEndsAt}}\"\n}",
+                  "raw": "{\n  \"type\": \"QuietDays\",\n  \"title\": \"20% Off Quiet Tuesday Lunch\",\n  \"description\": \"15% off for tables of 2 or more on Tuesday lunch.\",\n  \"discountType\": \"Percentage\",\n  \"discountValue\": 20,\n  \"startsAt\": \"{{offerStartsAt}}\",\n  \"endsAt\": \"{{offerEndsAt}}\",\n  \"daysOfWeek\": [\n    2\n  ],\n  \"startTime\": \"12:00\",\n  \"endTime\": \"16:00\",\n  \"minPartySize\": 2,\n  \"branchIds\": [],\n  \"oncePerCustomer\": false,\n  \"bookingCap\": 50\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -8530,6 +8530,40 @@
                       "if (jsonData && jsonData.data) {",
                       "    pm.test('Offer status is Published', function () { pm.expect(jsonData.data.status).to.eql('Published'); });",
                       "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Offer impact card",
+              "id": "fbed9c4d-0c0c-418f-97e0-d963632f86b7",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/restaurants/{{restaurantId}}/offers/{{offerId}}/impact",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "restaurants",
+                    "{{restaurantId}}",
+                    "offers",
+                    "{{offerId}}",
+                    "impact"
+                  ]
+                },
+                "description": "## Purpose\nOffer impact card (ADR-047): views, bookings, persons, attended visits, the share of first-time guests, bookings in the offer's days/hours/branches against the usual for those slots (the 4 weeks before it started, scaled to the time it has run), and the estimated discount cost per currency (percentage: attended persons x branch reference price x %; fixed: attended bookings x amount; `partial` when some branch has no reference price yet).\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `restaurantId` | `{{restaurantId}}` | UUID path parameter |\n| `offerId` | `{{offerId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\n_None_\n## Success Response\nEnvelope message: \"Offer impact retrieved successfully.\"\n## Error Responses\n- 404 `OFFER_NOT_FOUND` / `RESTAURANT_NOT_FOUND`.\n## Notes\n- Controller: `OffersController`.`impact`\n- Full path: `/api/v1/restaurants/:restaurantId/offers/:offerId/impact`\n- Callers (from source): Owner/Admin (Owner, Admin)"
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Offer impact retrieved (200)', function () { pm.response.to.have.status(200); });"
                     ]
                   }
                 }

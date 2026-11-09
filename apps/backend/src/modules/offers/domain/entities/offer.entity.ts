@@ -3,6 +3,12 @@ import { OfferId, RestaurantId } from '@shared/domain/value-objects/identifiers.
 import { OfferDiscountType, OfferStatus, OfferType } from '../enums/offer.enums';
 import { InvalidOfferException } from '../exceptions/invalid-offer.exception';
 import { InvalidOfferStatusTransitionException } from '../exceptions/invalid-offer-status-transition.exception';
+import {
+  OFFER_TIME_PATTERN,
+  OfferBooking,
+  minutesOf,
+  offerAcceptsBooking,
+} from '../policies/offer-conditions.policy';
 
 export interface OfferProps {
   id: string;
@@ -15,12 +21,21 @@ export interface OfferProps {
   startsAt: Date;
   endsAt: Date;
   status: OfferStatus;
+  daysOfWeek: number[];
+  startTime: string | null;
+  endTime: string | null;
+  minPartySize: number | null;
+  branchIds: string[];
+  oncePerCustomer: boolean;
+  bookingCap: number | null;
+  /** Times the offer appeared in a public list (ADR-047). Never set by an edit. */
+  viewCount: number;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
 }
 
-/** The mutable content fields - identical shape for Create and Draft-only Update. */
+/** The editable fields - identical shape for Create and Update (ADR-047). */
 export interface OfferContent {
   type: OfferType;
   title: string;
@@ -29,7 +44,37 @@ export interface OfferContent {
   discountValue: number;
   startsAt: Date;
   endsAt: Date;
+  /** 0 = Sunday ... 6 = Saturday, branch-local. Empty = every day. */
+  daysOfWeek: number[];
+  /** "HH:mm" branch-local window [startTime, endTime); both null = all day. */
+  startTime: string | null;
+  endTime: string | null;
+  minPartySize: number | null;
+  /** Empty = every branch. Membership in the restaurant is checked by the use case. */
+  branchIds: string[];
+  oncePerCustomer: boolean;
+  bookingCap: number | null;
 }
+
+/** Content defaults for callers that predate ADR-047's conditions. */
+export const NO_OFFER_CONDITIONS: Pick<
+  OfferContent,
+  | 'daysOfWeek'
+  | 'startTime'
+  | 'endTime'
+  | 'minPartySize'
+  | 'branchIds'
+  | 'oncePerCustomer'
+  | 'bookingCap'
+> = {
+  daysOfWeek: [],
+  startTime: null,
+  endTime: null,
+  minPartySize: null,
+  branchIds: [],
+  oncePerCustomer: false,
+  bookingCap: null,
+};
 
 const MIN_PERCENTAGE = 0;
 const MAX_PERCENTAGE = 100;
@@ -39,10 +84,9 @@ const MAX_DESCRIPTION_LENGTH = 2000;
 /**
  * Offer Aggregate root (Phase 11, architecture frozen 2026-07-28,
  * TASKS.md's "Phase 11 — Offers: Pre-implementation architecture
- * decisions"). Single generic aggregate for Promotions/Coupons/Events (`type`
- * is display/filtering metadata only, no behavioral branching). Content is
- * mutable only while `status = Draft` (owner decision D3); `Published`/
- * `Expired` are immutable. `discountType`/`discountValue` apply uniformly
+ * decisions"). Single generic aggregate for every offer kind (`type` is
+ * display/filtering metadata only, no behavioral branching). Draft and
+ * Published offers are editable, Expired ones are not (ADR-047). `discountType`/`discountValue` apply uniformly
  * regardless of `type` - Coupons are display-only in v1, no redemption
  * semantics exist to special-case.
  */
@@ -61,8 +105,9 @@ export class Offer extends Entity<OfferProps> {
     return new Offer({
       id: props.id,
       restaurantId: props.restaurantId,
-      ...props.content,
+      ...normalizeContent(props.content),
       status: OfferStatus.Draft,
+      viewCount: 0,
       createdAt: props.now,
       updatedAt: props.now,
       deletedAt: null,
@@ -113,6 +158,43 @@ export class Offer extends Entity<OfferProps> {
     return this.props.status;
   }
 
+  get daysOfWeek(): number[] {
+    return [...this.props.daysOfWeek];
+  }
+
+  get startTime(): string | null {
+    return this.props.startTime;
+  }
+
+  get endTime(): string | null {
+    return this.props.endTime;
+  }
+
+  get minPartySize(): number | null {
+    return this.props.minPartySize;
+  }
+
+  get branchIds(): string[] {
+    return [...this.props.branchIds];
+  }
+
+  get oncePerCustomer(): boolean {
+    return this.props.oncePerCustomer;
+  }
+
+  get bookingCap(): number | null {
+    return this.props.bookingCap;
+  }
+
+  get viewCount(): number {
+    return this.props.viewCount;
+  }
+
+  /** ADR-047: whether a booking meets the offer's period, branch, party and hours. */
+  acceptsBooking(booking: OfferBooking): boolean {
+    return offerAcceptsBooking(this.props, booking);
+  }
+
   get createdAt(): Date {
     return new Date(this.props.createdAt.getTime());
   }
@@ -130,22 +212,30 @@ export class Offer extends Entity<OfferProps> {
   }
 
   /**
-   * Owner decision D3: content is editable only while Draft - re-asserted
-   * here defensively (the domain layer never trusts the application layer
-   * alone), even though `UpdateOfferUseCase` has already checked it.
+   * ADR-047 (supersedes owner decision D3's Draft-only rule): a Draft or a
+   * Published offer may be edited; an Expired one may not. A Published
+   * offer cannot be edited into an already-ended period, which would leave
+   * it Published but over.
    */
   update(content: OfferContent, at: Date): Offer {
-    if (this.props.status !== OfferStatus.Draft) {
+    if (this.statusAt(at) === OfferStatus.Expired) {
       throw new InvalidOfferStatusTransitionException(
-        `Cannot update offer "${this.props.id}" - only a Draft offer may be edited.`,
+        `Cannot update offer "${this.props.id}" - it has expired.`,
       );
     }
     validateContent(content);
+    if (this.props.status === OfferStatus.Published && content.endsAt.getTime() <= at.getTime()) {
+      throw new InvalidOfferException('A published offer must end in the future.');
+    }
     return Offer.reconstitute({
       ...this.props,
-      ...content,
+      ...normalizeContent(content),
       updatedAt: at,
     });
+  }
+
+  isEditable(at: Date): boolean {
+    return this.statusAt(at) !== OfferStatus.Expired;
   }
 
   /**
@@ -231,8 +321,20 @@ export class Offer extends Entity<OfferProps> {
   }
 
   toProps(): Readonly<OfferProps> {
-    return { ...this.props };
+    return {
+      ...this.props,
+      daysOfWeek: [...this.props.daysOfWeek],
+      branchIds: [...this.props.branchIds],
+    };
   }
+}
+
+function normalizeContent(content: OfferContent): OfferContent {
+  return {
+    ...content,
+    daysOfWeek: [...new Set(content.daysOfWeek)].sort((a, b) => a - b),
+    branchIds: [...new Set(content.branchIds)],
+  };
 }
 
 function validateContent(content: OfferContent): void {
@@ -264,5 +366,35 @@ function validateContent(content: OfferContent): void {
   }
   if (content.startsAt.getTime() >= content.endsAt.getTime()) {
     throw new InvalidOfferException('startsAt must be strictly before endsAt.');
+  }
+  validateConditions(content);
+}
+
+function validateConditions(content: OfferContent): void {
+  if (content.daysOfWeek.some((day) => !Number.isInteger(day) || day < 0 || day > 6)) {
+    throw new InvalidOfferException('daysOfWeek must hold integers from 0 (Sunday) to 6.');
+  }
+  if ((content.startTime === null) !== (content.endTime === null)) {
+    throw new InvalidOfferException('startTime and endTime are given together or not at all.');
+  }
+  if (content.startTime !== null && content.endTime !== null) {
+    if (!OFFER_TIME_PATTERN.test(content.startTime) || !OFFER_TIME_PATTERN.test(content.endTime)) {
+      throw new InvalidOfferException('startTime and endTime must match "HH:mm".');
+    }
+    if (minutesOf(content.startTime) >= minutesOf(content.endTime)) {
+      throw new InvalidOfferException('startTime must be before endTime.');
+    }
+  }
+  if (
+    content.minPartySize !== null &&
+    (!Number.isInteger(content.minPartySize) || content.minPartySize < 1)
+  ) {
+    throw new InvalidOfferException('minPartySize must be a positive integer.');
+  }
+  if (
+    content.bookingCap !== null &&
+    (!Number.isInteger(content.bookingCap) || content.bookingCap < 1)
+  ) {
+    throw new InvalidOfferException('bookingCap must be a positive integer.');
   }
 }

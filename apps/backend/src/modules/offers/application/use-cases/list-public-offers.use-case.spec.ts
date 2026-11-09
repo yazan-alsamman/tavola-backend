@@ -106,4 +106,21 @@ describe('ListPublicOffersUseCase', () => {
     const result = await useCase.execute({ restaurantId, page: 1, limit: 20 });
     expect(result.total).toBe(0);
   });
+
+  it('counts a view for each offer it returns (ADR-047) and still answers if counting fails', async () => {
+    const { useCase, offerRepository } = await build();
+    const active = testOffer({ id: '22222222-2222-4222-8222-222222222231', restaurantId }).publish(
+      publishAt,
+    );
+    await offerRepository.seed(active);
+
+    await useCase.execute({ restaurantId, page: 1, limit: 20 });
+    expect(offerRepository.views.get(active.offerId.value)).toBe(1);
+
+    offerRepository.recordViews = async () => {
+      throw new Error('database unavailable');
+    };
+    const result = await useCase.execute({ restaurantId, page: 1, limit: 20 });
+    expect(result.total).toBe(1);
+  });
 });

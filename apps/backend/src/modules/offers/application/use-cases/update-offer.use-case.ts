@@ -12,7 +12,17 @@ import {
   RESTAURANT_REPOSITORY,
 } from '@modules/restaurants/domain/repositories/restaurant.repository';
 import { RestaurantNotFoundException } from '@modules/restaurants/domain/exceptions/restaurant-not-found.exception';
+import {
+  BranchRepository,
+  BRANCH_REPOSITORY,
+} from '@modules/branches/domain/repositories/branch.repository';
 import { OfferRepository, OFFER_REPOSITORY } from '../../domain/repositories/offer.repository';
+import { OfferStatus } from '../../domain/enums/offer.enums';
+import {
+  OfferExpirationSchedulerPort,
+  OFFER_EXPIRATION_SCHEDULER,
+} from '../ports/offer-expiration-scheduler.port';
+import { assertBranchesBelongToRestaurant } from '../services/assert-branches-belong-to-restaurant';
 import { OfferNotFoundException } from '../../domain/exceptions/offer-not-found.exception';
 import { InvalidOfferStatusTransitionException } from '../../domain/exceptions/invalid-offer-status-transition.exception';
 import { OfferUpdatedEvent } from '../../domain/events/offer.events';
@@ -21,19 +31,20 @@ import { UpdateOfferCommand } from '../dto/update-offer.command';
 import { OfferResult } from '../dto/offer.result';
 
 /**
- * Phase 11 (Offers, architecture frozen 2026-07-28), owner decision D3:
- * full-replace update, reachable only while `status = Draft` - `Published`/
- * `Expired` are immutable. The repository's own conditional `UPDATE ...
- * WHERE status = 'Draft'` (`updateIfDraft`) is the actual concurrency
- * authority against a race with a concurrent Publish, mirroring
- * `CancelReservationUseCase`'s "if (!applied) throw" shape - the in-memory
- * `Offer.update()` check is a defensive first pass, not the final guarantee.
+ * Full-replace update (ADR-047): a Draft or Published offer may be edited,
+ * an Expired one may not. The repository's conditional `UPDATE ... WHERE
+ * status IN ('Draft','Published')` (`updateIfEditable`) is the concurrency
+ * authority against a race with the expiration job. Editing a Published
+ * offer's end re-schedules its expiration job after the commit.
  */
 @Injectable()
 export class UpdateOfferUseCase {
   constructor(
     @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
     @Inject(OFFER_REPOSITORY) private readonly offerRepository: OfferRepository,
+    @Inject(BRANCH_REPOSITORY) private readonly branchRepository: BranchRepository,
+    @Inject(OFFER_EXPIRATION_SCHEDULER)
+    private readonly expirationScheduler: OfferExpirationSchedulerPort,
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
@@ -53,6 +64,12 @@ export class UpdateOfferUseCase {
       throw new OfferNotFoundException();
     }
 
+    await assertBranchesBelongToRestaurant(
+      this.branchRepository,
+      command.conditions.branchIds,
+      restaurantId,
+    );
+
     const now = this.clock.now();
     const updated = existing.update(
       {
@@ -63,19 +80,31 @@ export class UpdateOfferUseCase {
         discountValue: command.discountValue,
         startsAt: command.startsAt,
         endsAt: command.endsAt,
+        ...command.conditions,
       },
       now,
     );
 
-    let applied = false;
     await this.unitOfWork.execute(async () => {
-      applied = await this.offerRepository.updateIfDraft(updated);
+      const applied = await this.offerRepository.updateIfEditable(updated);
       if (!applied) {
         throw new InvalidOfferStatusTransitionException(
-          `Cannot update offer "${offerId.value}" - it is no longer Draft.`,
+          `Cannot update offer "${offerId.value}" - it has expired or was deleted.`,
         );
       }
     });
+
+    if (
+      updated.status === OfferStatus.Published &&
+      updated.endsAt.getTime() !== existing.endsAt.getTime()
+    ) {
+      await this.expirationScheduler.scheduleExpiration(
+        offerId.value,
+        restaurant.organizationId.value,
+        updated.endsAt,
+        command.correlationId,
+      );
+    }
 
     await this.eventPublisher.publish(
       new OfferUpdatedEvent(
@@ -90,6 +119,6 @@ export class UpdateOfferUseCase {
       ),
     );
 
-    return toOfferResult(updated);
+    return toOfferResult(updated, now);
   }
 }

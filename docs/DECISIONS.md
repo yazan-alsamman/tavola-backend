@@ -2673,3 +2673,64 @@ a currency with very few branches the quartiles are coarse. The app shows
 stars per branch once it reads `priceLevel` from the branch (app release);
 app 1.0.2 keeps reading the restaurant's level. Migration
 `20261110180000_menu_names_branch_menus_price_level`.
+
+## ADR-047
+
+**Offer kinds, days and hours, booking conditions, live editing, impact card (CR WJ-R-2026-002 round 2, batch 4)**
+
+Date: 2026-11-10. Status: Accepted. Supersedes owner decisions D1 (no recurring schedules) and D3 (content editable only while Draft) of Phase 11.
+
+### Context
+
+The CR's offers page (PDF p08) asks for four offer kinds, a percentage or
+an amount in the branch currency, a status that follows the dates, days of
+the week and hours, conditions (minimum party, branches, once per guest,
+a cap), editing a running offer, and an impact card. The owner removed
+restaurant broadcast messaging from round 2 entirely, so no part of this
+sends anything.
+
+### Decision
+
+1. `OfferType` gains `BillDiscount`, `FreeItem`, `GroupPrice`, `QuietDays`
+   (the dashboard offers only these for new offers). `Promotion`, `Coupon`
+   and `Event` stay valid for existing rows and older clients; app 1.0.2
+   reads `type` as a plain string.
+2. Conditions on `Offer`: `daysOfWeek` (0 = Sunday, empty = every day),
+   `startTime`/`endTime` ("HH:mm", branch-local, both or neither, window
+   `[start, end)`), `minPartySize`, `branchIds` (empty = every branch;
+   each must be a branch of the restaurant, else 400), `oncePerCustomer`,
+   `bookingCap`. All optional on create/update; omitted = no restriction.
+3. One pure policy, `offers/domain/policies/offer-conditions.policy.ts`,
+   decides whether a booking meets the period/day/hour/branch/party
+   conditions; the Offer aggregate and the Reservations attribution reader
+   both use it (no module cycle). The counted conditions (cap, once per
+   customer) are checked by `PrismaOfferAttributionReader`; rejected,
+   cancelled and expired bookings never use a place. A booking that misses
+   a condition is still made; the offer is just not recorded on it. The cap
+   is a business limit, not a lock: two simultaneous bookings may both take
+   the last place.
+4. A Draft or a still-running Published offer is editable; an Expired one
+   (or a Published one past `endsAt`) is not. The repository CAS
+   (`updateIfEditable`: Draft, or Published with `ends_at > updated_at`) is
+   the authority. Moving a Published offer's end re-schedules its
+   expiration job, and the end must stay in the future.
+5. Status follows the dates: listings already read a Published offer past
+   its end as Expired; the migration settles such rows once.
+6. `viewCount`, incremented best-effort for each offer the public listing
+   returns (a failure is logged, never fails the read).
+7. `GET /restaurants/:id/offers/:offerId/impact` (Owner/Admin): views,
+   bookings, persons, attended visits, first-time-guest share; bookings in
+   the offer's slots against the usual for those slots (the 4 weeks before
+   it started, scaled to the time it has run); estimated cost per currency
+   (percentage: attended persons x branch reference price (ADR-046) x %,
+   `partial` when a branch has no reference price; fixed amount: attended
+   bookings x amount). Policy in `offers/domain/policies/offer-impact.policy.ts`.
+
+### Consequences
+
+The impact card's "usual" is a simple baseline, not a forecast; a new
+restaurant with no history shows no comparison. The estimated cost of a
+percentage offer depends on the branch reference price, so it is an
+estimate, labelled as such. The app does not yet show days/hours; it keeps
+listing offers as before (app release later). Migration
+`20261110210000_offer_kinds_schedule_conditions`.

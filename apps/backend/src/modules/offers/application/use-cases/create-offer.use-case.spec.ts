@@ -11,8 +11,11 @@ import {
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryOfferRepository } from '../../../../../test/offers/support/in-memory-offer.repository';
+import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
+import { InvalidOfferException } from '../../domain/exceptions/invalid-offer.exception';
 import {
   FIXED_NOW,
+  noConditions,
   orgMemberActor,
   testRestaurant,
 } from '../../../../../test/offers/support/offer-test-fixtures';
@@ -27,6 +30,7 @@ describe('CreateOfferUseCase', () => {
     const useCase = new CreateOfferUseCase(
       restaurantRepository,
       offerRepository,
+      new InMemoryBranchRepository(),
       new FixedClock(FIXED_NOW),
       new SequentialIdGenerator([
         'aaaaaaaa-0001-4000-8000-000000000001',
@@ -52,10 +56,13 @@ describe('CreateOfferUseCase', () => {
       discountValue: 20,
       startsAt: new Date('2026-08-01T00:00:00.000Z'),
       endsAt: new Date('2026-08-31T23:59:59.000Z'),
+      conditions: { ...noConditions(), daysOfWeek: [5, 4], startTime: '12:00', endTime: '16:00' },
     });
 
     expect(result.status).toBe(OfferStatus.Draft);
     expect(result.restaurantId).toBe(restaurantId);
+    expect(result.daysOfWeek).toEqual([4, 5]);
+    expect(result.startTime).toBe('12:00');
 
     const stored = await offerRepository.findByIdAndRestaurantId(
       OfferId.create(result.offerId),
@@ -83,7 +90,27 @@ describe('CreateOfferUseCase', () => {
         discountValue: 20,
         startsAt: new Date('2026-08-01T00:00:00.000Z'),
         endsAt: new Date('2026-08-31T23:59:59.000Z'),
+        conditions: noConditions(),
       }),
     ).rejects.toBeInstanceOf(RestaurantNotFoundException);
+  });
+
+  it('rejects (400) a branch that is not one of the restaurant', async () => {
+    const { useCase, restaurantRepository } = await build();
+    await restaurantRepository.save(testRestaurant({ id: restaurantId }));
+    await expect(
+      useCase.execute({
+        actor: orgMemberActor(),
+        restaurantId,
+        type: OfferType.QuietDays,
+        title: 'Quiet Tuesday',
+        description: 'Midweek discount.',
+        discountType: OfferDiscountType.Percentage,
+        discountValue: 15,
+        startsAt: new Date('2026-08-01T00:00:00.000Z'),
+        endsAt: new Date('2026-08-31T23:59:59.000Z'),
+        conditions: { ...noConditions(), branchIds: ['bbbbbbbb-0001-4000-8000-000000000009'] },
+      }),
+    ).rejects.toBeInstanceOf(InvalidOfferException);
   });
 });

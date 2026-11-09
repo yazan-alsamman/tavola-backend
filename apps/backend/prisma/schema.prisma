@@ -1407,6 +1407,11 @@ enum OfferType {
   Promotion
   Coupon
   Event
+  /// ADR-047 (CR round 2): the four kinds a restaurant creates from now on.
+  BillDiscount
+  FreeItem
+  GroupPrice
+  QuietDays
 }
 
 enum OfferDiscountType {
@@ -1421,19 +1426,32 @@ enum OfferStatus {
 }
 
 model Offer {
-  id            String            @id @default(uuid()) @db.Uuid
-  restaurantId  String            @map("restaurant_id") @db.Uuid
-  type          OfferType
-  title         String
-  description   String
-  discountType  OfferDiscountType @map("discount_type")
-  discountValue Decimal           @map("discount_value") @db.Decimal(10, 2)
-  startsAt      DateTime          @map("starts_at")
-  endsAt        DateTime          @map("ends_at")
-  status        OfferStatus       @default(Draft)
-  createdAt     DateTime          @default(now()) @map("created_at")
-  updatedAt     DateTime          @updatedAt @map("updated_at")
-  deletedAt     DateTime?         @map("deleted_at")
+  id              String            @id @default(uuid()) @db.Uuid
+  restaurantId    String            @map("restaurant_id") @db.Uuid
+  type            OfferType
+  title           String
+  description     String
+  discountType    OfferDiscountType @map("discount_type")
+  discountValue   Decimal           @map("discount_value") @db.Decimal(10, 2)
+  startsAt        DateTime          @map("starts_at")
+  endsAt          DateTime          @map("ends_at")
+  status          OfferStatus       @default(Draft)
+  /// ADR-047: 0 = Sunday ... 6 = Saturday, in the branch's local time. Empty = every day.
+  daysOfWeek      Int[]             @default([]) @map("days_of_week")
+  /// ADR-047: "HH:mm" local window; both null = all day.
+  startTime       String?           @map("start_time")
+  endTime         String?           @map("end_time")
+  minPartySize    Int?              @map("min_party_size")
+  /// ADR-047: branches the offer applies to. Empty = every branch.
+  branchIds       String[]          @default([]) @map("branch_ids") @db.Uuid
+  oncePerCustomer Boolean           @default(false) @map("once_per_customer")
+  /// ADR-047: most bookings the offer may bring.
+  bookingCap      Int?              @map("booking_cap")
+  /// ADR-047: times the offer appeared in a public list.
+  viewCount       Int               @default(0) @map("view_count")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  deletedAt       DateTime?         @map("deleted_at")
 
   restaurant   Restaurant    @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   reservations Reservation[]

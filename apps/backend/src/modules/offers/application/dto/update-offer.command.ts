@@ -1,5 +1,6 @@
 import { AuthenticatedOrganizationMemberActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
 import { OfferDiscountType, OfferType } from '../../domain/enums/offer.enums';
+import { OfferConditionsInput } from './offer-conditions.input';
 
 export interface UpdateOfferCommand {
   actor: AuthenticatedOrganizationMemberActor;
@@ -12,5 +13,6 @@ export interface UpdateOfferCommand {
   discountValue: number;
   startsAt: Date;
   endsAt: Date;
+  conditions: OfferConditionsInput;
   correlationId?: string;
 }

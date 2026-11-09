@@ -15,6 +15,14 @@ export class OfferPrismaMapper {
       startsAt: row.startsAt,
       endsAt: row.endsAt,
       status: row.status as OfferStatus,
+      daysOfWeek: row.daysOfWeek,
+      startTime: row.startTime,
+      endTime: row.endTime,
+      minPartySize: row.minPartySize,
+      branchIds: row.branchIds,
+      oncePerCustomer: row.oncePerCustomer,
+      bookingCap: row.bookingCap,
+      viewCount: row.viewCount,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       deletedAt: row.deletedAt,
@@ -38,6 +46,13 @@ export class OfferPrismaMapper {
     startsAt: Date;
     endsAt: Date;
     status: OfferStatus;
+    daysOfWeek: number[];
+    startTime: string | null;
+    endTime: string | null;
+    minPartySize: number | null;
+    branchIds: string[];
+    oncePerCustomer: boolean;
+    bookingCap: number | null;
     createdAt: Date;
     updatedAt: Date;
     deletedAt: Date | null;
@@ -54,6 +69,13 @@ export class OfferPrismaMapper {
       startsAt: props.startsAt,
       endsAt: props.endsAt,
       status: props.status,
+      daysOfWeek: props.daysOfWeek,
+      startTime: props.startTime,
+      endTime: props.endTime,
+      minPartySize: props.minPartySize,
+      branchIds: props.branchIds,
+      oncePerCustomer: props.oncePerCustomer,
+      bookingCap: props.bookingCap,
       createdAt: props.createdAt,
       updatedAt: props.updatedAt,
       deletedAt: props.deletedAt,

@@ -175,6 +175,9 @@ describe('PrismaStaffReservationsReader (integration)', () => {
       type: 'User',
       name: `Jane ${user.lastName}`,
       phone: user.phone,
+      key: `user:${user.id}`,
+      visitCount: 0,
+      noShowCount: 0,
     });
   });
 
@@ -192,6 +195,9 @@ describe('PrismaStaffReservationsReader (integration)', () => {
       type: 'Guest',
       name: 'Walk-in Guest',
       phone: guest.phone,
+      key: `guest:${guest.phone}`,
+      visitCount: 0,
+      noShowCount: 0,
     });
   });
 

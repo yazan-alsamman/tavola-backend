@@ -1,6 +1,10 @@
 import { Restaurant } from '@modules/restaurants/domain/entities/restaurant.entity';
 import { RestaurantStatus } from '@modules/restaurants/domain/enums/restaurant.enums';
-import { Offer } from '@modules/offers/domain/entities/offer.entity';
+import {
+  NO_OFFER_CONDITIONS,
+  OfferContent,
+  Offer,
+} from '@modules/offers/domain/entities/offer.entity';
 import { OfferDiscountType, OfferType } from '@modules/offers/domain/enums/offer.enums';
 import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
 
@@ -25,16 +29,9 @@ export function testRestaurant(overrides?: { id?: string; organizationId?: strin
   });
 }
 
-export function testOfferContent(overrides?: {
-  type?: OfferType;
-  title?: string;
-  description?: string;
-  discountType?: OfferDiscountType;
-  discountValue?: number;
-  startsAt?: Date;
-  endsAt?: Date;
-}) {
+export function testOfferContent(overrides?: Partial<OfferContent>): OfferContent {
   return {
+    ...NO_OFFER_CONDITIONS,
     type: overrides?.type ?? OfferType.Promotion,
     title: overrides?.title ?? '20% Off Weekday Lunch',
     description: overrides?.description ?? 'Enjoy 20% off any lunch entree.',
@@ -42,7 +39,21 @@ export function testOfferContent(overrides?: {
     discountValue: overrides?.discountValue ?? 20,
     startsAt: overrides?.startsAt ?? new Date('2026-08-01T00:00:00.000Z'),
     endsAt: overrides?.endsAt ?? new Date('2026-08-31T23:59:59.000Z'),
+    ...(overrides?.daysOfWeek !== undefined ? { daysOfWeek: overrides.daysOfWeek } : {}),
+    ...(overrides?.startTime !== undefined ? { startTime: overrides.startTime } : {}),
+    ...(overrides?.endTime !== undefined ? { endTime: overrides.endTime } : {}),
+    ...(overrides?.minPartySize !== undefined ? { minPartySize: overrides.minPartySize } : {}),
+    ...(overrides?.branchIds !== undefined ? { branchIds: overrides.branchIds } : {}),
+    ...(overrides?.oncePerCustomer !== undefined
+      ? { oncePerCustomer: overrides.oncePerCustomer }
+      : {}),
+    ...(overrides?.bookingCap !== undefined ? { bookingCap: overrides.bookingCap } : {}),
   };
+}
+
+/** The ADR-047 conditions as a command carries them (no restriction). */
+export function noConditions() {
+  return { ...NO_OFFER_CONDITIONS };
 }
 
 export function testOffer(overrides?: {

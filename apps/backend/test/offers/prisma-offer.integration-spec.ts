@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaOfferRepository } from '@modules/offers/infrastructure/persistence/prisma-offer.repository';
-import { Offer } from '@modules/offers/domain/entities/offer.entity';
+import { NO_OFFER_CONDITIONS, Offer } from '@modules/offers/domain/entities/offer.entity';
 import {
   OfferDiscountType,
   OfferStatus,
@@ -18,7 +18,7 @@ const TEST_PREFIX = 'offer-repo-';
  * Phase 11 (Offers, architecture frozen 2026-07-28, implemented 2026-07-28)
  * - proves `PrismaOfferRepository` against real PostgreSQL: persistence
  * round-trip, the FK/index shape the migration created, the CAS authority
- * behind `updateIfDraft`/`publishIfDraft`/`expireIfPublished` under real
+ * behind `updateIfEditable`/`publishIfDraft`/`expireIfPublished` under real
  * concurrent writers (not just in-memory simulation), soft-delete exclusion,
  * and the public-listing temporal-window boundaries at the SQL level.
  */
@@ -69,6 +69,7 @@ describe('Offer round-trip via PrismaOfferRepository (integration)', () => {
       id: overrides?.id ?? randomUUID(),
       restaurantId,
       content: {
+        ...NO_OFFER_CONDITIONS,
         type: OfferType.Promotion,
         title: 'Repo Test Offer',
         description: 'Integration test offer.',
@@ -108,16 +109,25 @@ describe('Offer round-trip via PrismaOfferRepository (integration)', () => {
     expect(found).toBeNull();
   });
 
-  it('updateIfDraft persists content while Draft', async () => {
+  it('updateIfEditable persists content and conditions while Draft', async () => {
     if (!dbAvailable) return;
     const offer = makeOffer();
     await repository.create(offer);
 
     const updated = offer.update(
-      { ...offer.toProps(), title: 'Updated Title' },
+      {
+        ...offer.toProps(),
+        title: 'Updated Title',
+        daysOfWeek: [5, 6],
+        startTime: '12:00',
+        endTime: '16:00',
+        minPartySize: 4,
+        oncePerCustomer: true,
+        bookingCap: 30,
+      },
       new Date('2026-07-26T00:00:00.000Z'),
     );
-    const applied = await repository.updateIfDraft(updated);
+    const applied = await repository.updateIfEditable(updated);
     expect(applied).toBe(true);
 
     const stored = await repository.findByIdAndRestaurantId(
@@ -125,29 +135,64 @@ describe('Offer round-trip via PrismaOfferRepository (integration)', () => {
       RestaurantId.create(restaurantId),
     );
     expect(stored?.title).toBe('Updated Title');
+    expect(stored?.daysOfWeek).toEqual([5, 6]);
+    expect(stored?.startTime).toBe('12:00');
+    expect(stored?.endTime).toBe('16:00');
+    expect(stored?.minPartySize).toBe(4);
+    expect(stored?.oncePerCustomer).toBe(true);
+    expect(stored?.bookingCap).toBe(30);
   });
 
-  it("updateIfDraft's own CAS rejects a write once the stored row is no longer Draft, independent of the domain guard", async () => {
+  it('updateIfEditable applies to a Published offer still running (ADR-047)', async () => {
+    if (!dbAvailable) return;
+    const offer = makeOffer();
+    await repository.create(offer);
+    const published = offer.publish(new Date('2026-07-27T00:00:00.000Z'));
+    await repository.publishIfDraft(published);
+
+    const updated = published.update(
+      { ...published.toProps(), title: 'Edited While Live' },
+      new Date('2026-08-05T00:00:00.000Z'),
+    );
+    expect(await repository.updateIfEditable(updated)).toBe(true);
+    const stored = await repository.findById(offer.offerId);
+    expect(stored?.title).toBe('Edited While Live');
+    expect(stored?.status).toBe(OfferStatus.Published);
+  });
+
+  it("updateIfEditable's own CAS rejects a write once the stored row has ended, independent of the domain guard", async () => {
     if (!dbAvailable) return;
     const offer = makeOffer();
     await repository.create(offer);
     await repository.publishIfDraft(offer.publish(new Date('2026-07-27T00:00:00.000Z')));
 
     // Bypass `Offer.update()`'s own guard entirely (`Offer.reconstitute` does
-    // no status validation) to prove the REPOSITORY's `WHERE status =
-    // 'Draft'` clause is itself the authority, not merely the domain-layer
-    // check that already ran in `UpdateOfferUseCase`.
+    // no status validation) to prove the REPOSITORY's `WHERE` clause (a
+    // Published row only while `ends_at > updated_at`) is itself the
+    // authority, not merely the domain-layer check in `UpdateOfferUseCase`.
     const attemptedRewrite = Offer.reconstitute({
       ...offer.toProps(),
       title: 'Should Never Apply',
-      status: OfferStatus.Draft,
+      updatedAt: new Date('2026-09-01T00:00:00.000Z'),
     });
-    const applied = await repository.updateIfDraft(attemptedRewrite);
+    const applied = await repository.updateIfEditable(attemptedRewrite);
     expect(applied).toBe(false);
 
     const stored = await repository.findById(offer.offerId);
     expect(stored?.title).not.toBe('Should Never Apply');
     expect(stored?.status).toBe(OfferStatus.Published);
+  });
+
+  it('recordViews increments the view counter of each offer', async () => {
+    if (!dbAvailable) return;
+    const offer = makeOffer();
+    await repository.create(offer);
+
+    await repository.recordViews([offer.offerId]);
+    await repository.recordViews([offer.offerId]);
+
+    const stored = await repository.findById(offer.offerId);
+    expect(stored?.viewCount).toBe(2);
   });
 
   it('publishIfDraft is CAS-guarded: only one of two concurrent publish attempts applies', async () => {

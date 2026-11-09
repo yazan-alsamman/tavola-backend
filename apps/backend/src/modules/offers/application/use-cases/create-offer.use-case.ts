@@ -12,7 +12,12 @@ import {
   RESTAURANT_REPOSITORY,
 } from '@modules/restaurants/domain/repositories/restaurant.repository';
 import { RestaurantNotFoundException } from '@modules/restaurants/domain/exceptions/restaurant-not-found.exception';
+import {
+  BranchRepository,
+  BRANCH_REPOSITORY,
+} from '@modules/branches/domain/repositories/branch.repository';
 import { Offer } from '../../domain/entities/offer.entity';
+import { assertBranchesBelongToRestaurant } from '../services/assert-branches-belong-to-restaurant';
 import { OfferRepository, OFFER_REPOSITORY } from '../../domain/repositories/offer.repository';
 import { OfferCreatedEvent } from '../../domain/events/offer.events';
 import { toOfferResult } from '../mappers/offer-result.mapper';
@@ -30,6 +35,7 @@ export class CreateOfferUseCase {
   constructor(
     @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
     @Inject(OFFER_REPOSITORY) private readonly offerRepository: OfferRepository,
+    @Inject(BRANCH_REPOSITORY) private readonly branchRepository: BranchRepository,
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
@@ -48,6 +54,12 @@ export class CreateOfferUseCase {
       throw new RestaurantNotFoundException();
     }
 
+    await assertBranchesBelongToRestaurant(
+      this.branchRepository,
+      command.conditions.branchIds,
+      restaurantId,
+    );
+
     const now = this.clock.now();
     const offer = Offer.create({
       id: this.idGenerator.generate(),
@@ -60,6 +72,7 @@ export class CreateOfferUseCase {
         discountValue: command.discountValue,
         startsAt: command.startsAt,
         endsAt: command.endsAt,
+        ...command.conditions,
       },
       now,
     });

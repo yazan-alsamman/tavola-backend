@@ -1,4 +1,4 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import { OfferRepository, OFFER_REPOSITORY } from '../../domain/repositories/offer.repository';
@@ -19,9 +19,14 @@ import { OfferListResult } from '../dto/offer-list.result';
  * The restaurant-scoped Owner/Admin management surface
  * (`OffersController`) does not call this use case at all - it always sees
  * every status via `ListRestaurantOffersUseCase`.
+ *
+ * ADR-047: each listed offer counts one view for its impact card. Best
+ * effort: a failed count never fails the guest's list.
  */
 @Injectable()
 export class ListPublicOffersUseCase {
+  private readonly logger = new Logger(ListPublicOffersUseCase.name);
+
   constructor(
     @Inject(OFFER_REPOSITORY) private readonly offerRepository: OfferRepository,
     @Inject(CLOCK) private readonly clock: ClockPort,
@@ -36,6 +41,11 @@ export class ListPublicOffersUseCase {
       command.page,
       command.limit,
     );
+    try {
+      await this.offerRepository.recordViews(page.items.map((offer) => offer.offerId));
+    } catch (error) {
+      this.logger.warn(`Could not record offer views: ${(error as Error).message}`);
+    }
     return {
       items: page.items.map((offer) => toOfferResult(offer)),
       page: command.page,

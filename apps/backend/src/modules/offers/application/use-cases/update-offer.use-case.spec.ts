@@ -10,8 +10,11 @@ import {
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryOfferRepository } from '../../../../../test/offers/support/in-memory-offer.repository';
+import { InMemoryOfferExpirationScheduler } from '../../../../../test/offers/support/in-memory-offer-expiration-scheduler';
+import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
 import {
   FIXED_NOW,
+  noConditions,
   orgMemberActor,
   testOffer,
   testOfferContent,
@@ -26,16 +29,19 @@ describe('UpdateOfferUseCase', () => {
     const restaurantRepository = new InMemoryRestaurantRepository();
     const offerRepository = new InMemoryOfferRepository();
     const eventPublisher = new CollectingEventPublisher();
+    const expirationScheduler = new InMemoryOfferExpirationScheduler();
     await restaurantRepository.save(testRestaurant({ id: restaurantId }));
     const useCase = new UpdateOfferUseCase(
       restaurantRepository,
       offerRepository,
+      new InMemoryBranchRepository(),
+      expirationScheduler,
       new FixedClock(new Date('2026-08-02T00:00:00.000Z')),
       new SequentialIdGenerator(['aaaaaaaa-0002-4000-8000-000000000001']),
       eventPublisher,
       new ImmediateUnitOfWork(),
     );
-    return { useCase, offerRepository, eventPublisher };
+    return { useCase, offerRepository, eventPublisher, expirationScheduler };
   }
 
   it('updates content while Draft and publishes OfferUpdated', async () => {
@@ -47,6 +53,7 @@ describe('UpdateOfferUseCase', () => {
       restaurantId,
       offerId,
       ...testOfferContent({ title: 'New Title' }),
+      conditions: noConditions(),
     });
 
     expect(result.title).toBe('New Title');
@@ -62,14 +69,49 @@ describe('UpdateOfferUseCase', () => {
         restaurantId,
         offerId,
         ...testOfferContent(),
+        conditions: noConditions(),
       }),
     ).rejects.toBeInstanceOf(OfferNotFoundException);
   });
 
-  it('rejects updating a Published offer (400)', async () => {
+  it('edits a Published offer and re-schedules its expiration when the end moves (ADR-047)', async () => {
+    const { useCase, offerRepository, expirationScheduler } = await build();
+    await offerRepository.seed(testOffer({ id: offerId, restaurantId }).publish(FIXED_NOW));
+    const newEnd = new Date('2026-09-15T00:00:00.000Z');
+
+    const result = await useCase.execute({
+      actor: orgMemberActor(),
+      restaurantId,
+      offerId,
+      ...testOfferContent({ endsAt: newEnd }),
+      conditions: noConditions(),
+    });
+
+    expect(result.endsAt).toEqual(newEnd);
+    expect(expirationScheduler.scheduled.get(offerId)?.expireAt).toEqual(newEnd);
+  });
+
+  it('does not re-schedule when a Published offer keeps its end', async () => {
+    const { useCase, offerRepository, expirationScheduler } = await build();
+    await offerRepository.seed(testOffer({ id: offerId, restaurantId }).publish(FIXED_NOW));
+
+    await useCase.execute({
+      actor: orgMemberActor(),
+      restaurantId,
+      offerId,
+      ...testOfferContent({ title: 'Same End' }),
+      conditions: noConditions(),
+    });
+
+    expect(expirationScheduler.scheduled.size).toBe(0);
+  });
+
+  it('rejects updating an Expired offer (400)', async () => {
     const { useCase, offerRepository } = await build();
-    const offer = testOffer({ id: offerId, restaurantId }).publish(FIXED_NOW);
-    await offerRepository.seed(offer);
+    const expired = testOffer({ id: offerId, restaurantId })
+      .publish(FIXED_NOW)
+      .expire(new Date('2026-08-02T00:00:00.000Z'));
+    await offerRepository.seed(expired);
 
     await expect(
       useCase.execute({
@@ -77,21 +119,22 @@ describe('UpdateOfferUseCase', () => {
         restaurantId,
         offerId,
         ...testOfferContent(),
+        conditions: noConditions(),
       }),
     ).rejects.toBeInstanceOf(InvalidOfferStatusTransitionException);
   });
 
-  it('rejects a concurrent Update after the Offer was published between read and write (CAS race)', async () => {
+  it('rejects a concurrent Update after the Offer expired between read and write (CAS race)', async () => {
     const { useCase, offerRepository } = await build();
-    const draft = testOffer({ id: offerId, restaurantId });
-    await offerRepository.seed(draft);
+    const published = testOffer({ id: offerId, restaurantId }).publish(FIXED_NOW);
+    await offerRepository.seed(published);
 
-    // Simulate a race: another request publishes the offer right after this
+    // Simulate a race: the expiration job expires the offer right after this
     // use case's own `findByIdAndRestaurantId` read but before its write.
-    const originalUpdateIfDraft = offerRepository.updateIfDraft.bind(offerRepository);
-    offerRepository.updateIfDraft = async (offer) => {
-      await offerRepository.publishIfDraft(draft.publish(FIXED_NOW));
-      return originalUpdateIfDraft(offer);
+    const originalUpdateIfEditable = offerRepository.updateIfEditable.bind(offerRepository);
+    offerRepository.updateIfEditable = async (offer) => {
+      await offerRepository.expireIfPublished(published.offerId, FIXED_NOW);
+      return originalUpdateIfEditable(offer);
     };
 
     await expect(
@@ -100,6 +143,7 @@ describe('UpdateOfferUseCase', () => {
         restaurantId,
         offerId,
         ...testOfferContent({ title: 'Racing Update' }),
+        conditions: noConditions(),
       }),
     ).rejects.toBeInstanceOf(InvalidOfferStatusTransitionException);
   });

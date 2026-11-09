@@ -1412,13 +1412,15 @@ Indexes
 
 Restaurant promotions.
 
+**ADR-047 (CR round 2):** four new kinds, days/hours and booking conditions, live editing of a running Published offer (supersedes the Draft-only rule below), and a view counter. Migration `20261110210000_offer_kinds_schedule_conditions`.
+
 **Phase 11 freeze (2026-07-28), implemented via migration `20260728113109_phase_11_offers`:** a single generic `Offer` aggregate covers Promotions, Coupons, and Events — not three separate tables — distinguished only by the additive `type` field below. Coupons are display-only in v1 (no redemption code, usage tracking, or reservation/payment integration — TAVLA does not process payments; Phase 13 — Payments removed from product scope, 2026-07-28). Content is editable only while `status = Draft`; `Published`/`Expired` are immutable. Soft-delete is available to Owner/Admin from any state. `Published -> Expired` is a BullMQ-scheduled, CAS-guarded transition (`WHERE status = 'Published'`), not a lazy/computed status. Transitively tenant-owned via `restaurantId -> Restaurant.organizationId` (same pattern as `RestaurantGallery`/`RestaurantSettings`/`Review`) — not added to `DIRECT_TENANT_OWNED_MODELS`, no `organizationId` column.
 
 Fields
 
 * id (UUID)
 * restaurantId
-* type (`Promotion`, `Coupon`, `Event`)
+* type (`Promotion`, `Coupon`, `Event`; **ADR-047** adds `BillDiscount`, `FreeItem`, `GroupPrice`, `QuietDays`)
 * title
 * description
 * discountType (`Percentage`, `FixedAmount`)
@@ -1426,6 +1428,13 @@ Fields
 * startsAt
 * endsAt
 * status (`Draft`, `Published`, `Expired`)
+* daysOfWeek (Int[], default `{}` = every day; 0 = Sunday; CHECK `offers_days_of_week_range` — **ADR-047**)
+* startTime, endTime (nullable "HH:mm" text, branch-local, both or neither — CHECK `offers_hours_both_or_none`, **ADR-047**)
+* minPartySize (nullable Int >= 1 — **ADR-047**)
+* branchIds (UUID[], default `{}` = every branch of the restaurant — **ADR-047**)
+* oncePerCustomer (Boolean, default false — **ADR-047**)
+* bookingCap (nullable Int >= 1 — **ADR-047**)
+* viewCount (Int, default 0; incremented by the public listing — **ADR-047**)
 * createdAt
 * updatedAt
 * deletedAt
