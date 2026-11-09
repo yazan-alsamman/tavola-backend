@@ -2471,3 +2471,33 @@ Phase 9 notified customers only. Restaurant owners and staff got no notification
 
 An owner who also uses the customer app with the same account sees these rows in that app's list too. Push for staff can be added later by marking the intent push-eligible once OneSignal is configured.
 
+
+## ADR-042
+
+**Status:** Accepted (CR WJ-R-2026-002 round 2, 2026-11-09)
+
+### Context
+
+The restaurant owner asked for two changes to how offers reach customers:
+restaurants should no longer send broadcast messages to customers, and a
+reservation booked from an offer should show that it came from that offer.
+
+### Decision
+
+1. `POST /restaurants/:restaurantId/notifications/broadcast` is withdrawn,
+   together with `SendRestaurantOwnerNotificationBroadcastUseCase`. Platform
+   Admin broadcasts are unchanged. Existing `NotificationBroadcast` rows with
+   `senderType = RestaurantOwner` stay readable in the Platform Admin history.
+2. `Reservation.offerId` (nullable FK to `Offer`, `ON DELETE SET NULL`). The
+   create-reservation body accepts an optional `offerId`. It is stored only
+   when the offer belongs to the booked restaurant, is Published, not deleted,
+   and the booking time falls inside `[startsAt, endsAt)`. Anything else is
+   ignored, never rejected, so a stale offer link in the app never blocks a
+   booking. The staff branch reservation list returns `offer { offerId, title }`
+   or null.
+
+### Consequences
+
+Older app builds that never send `offerId` keep working unchanged. Showing the
+offer in the customer app needs an app release that sends `offerId` from the
+offer card.

@@ -31,6 +31,8 @@ import { RESERVATION_REPOSITORY } from './domain/repositories/reservation.reposi
 import { RESERVATION_HISTORY_REPOSITORY } from './domain/repositories/reservation-history.repository';
 import { MY_RESERVATIONS_READER } from './application/ports/my-reservations-reader.port';
 import { STAFF_RESERVATIONS_READER } from './application/ports/staff-reservations-reader.port';
+import { OFFER_ATTRIBUTION_READER } from './application/ports/offer-attribution-reader.port';
+import { PrismaOfferAttributionReader } from './infrastructure/persistence/prisma-offer-attribution.reader';
 import { RESERVATION_GUEST_REPOSITORY } from './domain/repositories/reservation-guest.repository';
 import { RESERVATION_EXPIRATION_SCHEDULER } from './application/ports/reservation-expiration-scheduler.port';
 import { WAITLIST_RECHECK_SCHEDULER } from './application/ports/waitlist-recheck-scheduler.port';
@@ -197,6 +199,8 @@ import { BranchReservationsController } from './presentation/controllers/branch-
     { provide: MY_RESERVATIONS_READER, useExisting: PrismaMyReservationsReader },
     PrismaStaffReservationsReader,
     { provide: STAFF_RESERVATIONS_READER, useExisting: PrismaStaffReservationsReader },
+    PrismaOfferAttributionReader,
+    { provide: OFFER_ATTRIBUTION_READER, useExisting: PrismaOfferAttributionReader },
     PrismaReservationHistoryRepository,
     { provide: RESERVATION_HISTORY_REPOSITORY, useExisting: PrismaReservationHistoryRepository },
     PrismaReservationGuestRepository,

@@ -79,6 +79,16 @@ export class CreateReservationRequestDto {
   source?: ReservationSource;
 
   @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The offer the customer booked from (offer card or offer notification in the app). Recorded on the reservation only when it is a live, Published offer of the same restaurant; anything else is ignored and never fails the booking.',
+  })
+  @IsOptional()
+  @IsUUID()
+  offerId?: string | null;
+
+  @ApiPropertyOptional({
     type: ReservationGuestRequestDto,
     description:
       'Required when source is Phone or WalkIn (the party the reservation is for, when no registered User account exists); ignored otherwise.',

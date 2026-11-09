@@ -54,6 +54,10 @@ import { ReservationResult } from '../dto/reservation.result';
 import { RecordCustomerAcquisitionOnApprovalService } from '@modules/customer-acquisition/application/services/record-customer-acquisition-on-approval.service';
 import { RecordAcquisitionOnApprovalResult } from '@modules/customer-acquisition/application/dto/record-acquisition-on-approval.command';
 import { CustomerAcquisitionRecordedEvent } from '@modules/customer-acquisition/domain/events/customer-acquisition.events';
+import {
+  OFFER_ATTRIBUTION_READER,
+  OfferAttributionReaderPort,
+} from '../ports/offer-attribution-reader.port';
 
 /**
  * Phase 7.4 decision #3's authorization matrix, resolved once up front
@@ -119,6 +123,8 @@ export class CreateReservationUseCase {
     private readonly expirationScheduler: ReservationExpirationSchedulerPort,
     private readonly scheduleApprovedReservationSignals: ScheduleApprovedReservationSignalsService,
     private readonly recordCustomerAcquisitionOnApproval: RecordCustomerAcquisitionOnApprovalService,
+    @Inject(OFFER_ATTRIBUTION_READER)
+    private readonly offerAttributionReader: OfferAttributionReaderPort,
   ) {}
 
   async execute(command: CreateReservationCommand): Promise<ReservationResult> {
@@ -188,6 +194,13 @@ export class CreateReservationUseCase {
     );
 
     const party = this.resolveParty(command, source, now);
+    const offerId = command.offerId
+      ? await this.offerAttributionReader.findAttributableOfferId(
+          command.offerId,
+          branch.restaurantId.value,
+          now,
+        )
+      : null;
 
     const reservationProps = {
       id: this.idGenerator.generate(),
@@ -204,6 +217,7 @@ export class CreateReservationUseCase {
       tableCapacity,
       notes: command.notes ?? null,
       createdBy: party.createdBy,
+      offerId,
       now,
     };
 

@@ -35,6 +35,12 @@ export interface ReservationProps {
   lateArrivalNotifiedAt: Date | null;
   tableReadyNotifiedAt: Date | null;
   rescheduledFromReservationId: string | null;
+  /**
+   * CR WJ-R-2026-002 round 2: the Offer the customer booked from, when the
+   * app sent one that is live for this restaurant. Optional so older call
+   * sites that never knew about offers keep reconstituting unchanged.
+   */
+  offerId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -122,6 +128,7 @@ export class Reservation extends Entity<ReservationProps> {
     tableCapacity: number;
     notes: string | null;
     createdBy: string | null;
+    offerId?: string | null;
     now: Date;
   }): Reservation {
     validate(props);
@@ -150,6 +157,7 @@ export class Reservation extends Entity<ReservationProps> {
       lateArrivalNotifiedAt: null,
       tableReadyNotifiedAt: null,
       rescheduledFromReservationId: null,
+      offerId: props.offerId ?? null,
       createdAt: props.now,
       updatedAt: props.now,
     });
@@ -182,6 +190,7 @@ export class Reservation extends Entity<ReservationProps> {
     tableCapacity: number;
     notes: string | null;
     createdBy: string | null;
+    offerId?: string | null;
     now: Date;
   }): Reservation {
     validate(props);
@@ -210,6 +219,7 @@ export class Reservation extends Entity<ReservationProps> {
       lateArrivalNotifiedAt: null,
       tableReadyNotifiedAt: null,
       rescheduledFromReservationId: null,
+      offerId: props.offerId ?? null,
       createdAt: props.now,
       updatedAt: props.now,
     });
@@ -273,6 +283,10 @@ export class Reservation extends Entity<ReservationProps> {
 
   get createdBy(): string | null {
     return this.props.createdBy;
+  }
+
+  get offerId(): string | null {
+    return this.props.offerId ?? null;
   }
 
   get approvedBy(): string | null {

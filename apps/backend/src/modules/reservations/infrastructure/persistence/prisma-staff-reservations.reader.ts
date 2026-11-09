@@ -14,6 +14,7 @@ const INCLUDE = {
   table: { select: { id: true, tableNumber: true, capacity: true } },
   user: { select: { firstName: true, lastName: true, phone: true } },
   reservationGuest: { select: { fullName: true, phone: true } },
+  offer: { select: { id: true, title: true } },
 } as const;
 
 type ReservationRow = Prisma.ReservationGetPayload<{ include: typeof INCLUDE }>;
@@ -84,6 +85,7 @@ export class PrismaStaffReservationsReader implements StaffReservationsReaderPor
         capacity: row.table.capacity,
       },
       customer: this.toCustomer(row),
+      offer: row.offer ? { offerId: row.offer.id, title: row.offer.title } : null,
     };
   }
 

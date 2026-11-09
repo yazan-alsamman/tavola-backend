@@ -32,5 +32,7 @@ export interface CreateReservationCommand {
     phoneNumber: string;
     email?: string | null;
   };
+  /** Offer the customer booked from; recorded only when live for this restaurant. */
+  offerId?: string | null;
   correlationId?: string;
 }

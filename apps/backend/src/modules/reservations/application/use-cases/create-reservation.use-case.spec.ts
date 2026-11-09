@@ -1,4 +1,5 @@
 import { CreateReservationUseCase } from './create-reservation.use-case';
+import { OfferAttributionReaderPort } from '../ports/offer-attribution-reader.port';
 import { BranchNotFoundException } from '@modules/branches/domain/exceptions/branch-not-found.exception';
 import { TableNotFoundException } from '@modules/tables/domain/exceptions/table-not-found.exception';
 import { TableUnavailableException } from '@modules/reservations/domain/exceptions/table-unavailable.exception';
@@ -12,7 +13,7 @@ import { Table } from '@modules/tables/domain/entities/table.entity';
 import { TableShape, TableStatus } from '@modules/tables/domain/enums/table.enums';
 import { RestaurantSettings } from '@modules/restaurants/domain/entities/restaurant-settings.entity';
 import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
-import { BranchId, TableId } from '@shared/domain/value-objects/identifiers.vo';
+import { BranchId, ReservationId, TableId } from '@shared/domain/value-objects/identifiers.vo';
 import {
   CollectingEventPublisher,
   FixedClock,
@@ -38,6 +39,8 @@ describe('CreateReservationUseCase', () => {
   const fixedNow = new Date('2026-08-01T10:00:00.000Z');
   const restaurantId = '33333333-3333-4333-8333-333333333333';
   const branchId = '44444444-4444-4444-8444-444444444444';
+  const liveOfferId = '77777777-7777-4777-8777-777777777777';
+  const liveOfferRestaurantId = '33333333-3333-4333-8333-333333333333';
   const tableId = '55555555-5555-4555-8555-555555555555';
   const reservationId = '66666666-6666-4666-8666-666666666666';
 
@@ -151,6 +154,12 @@ describe('CreateReservationUseCase', () => {
     );
 
     const eventPublisher = new CollectingEventPublisher();
+    const offerAttributionReader: OfferAttributionReaderPort = {
+      findAttributableOfferId: (offerId, restaurantId) =>
+        Promise.resolve(
+          offerId === liveOfferId && restaurantId === liveOfferRestaurantId ? offerId : null,
+        ),
+    };
     const operationalScheduler = new InMemoryApprovedReservationOperationalScheduler();
     const scheduleApprovedReservationSignals = new ScheduleApprovedReservationSignalsService(
       operationalScheduler,
@@ -174,6 +183,7 @@ describe('CreateReservationUseCase', () => {
       expirationScheduler,
       scheduleApprovedReservationSignals,
       new InMemoryAcquisitionRecordingService() as unknown as RecordCustomerAcquisitionOnApprovalService,
+      offerAttributionReader,
     );
 
     return {
@@ -186,6 +196,38 @@ describe('CreateReservationUseCase', () => {
       operationalScheduler,
     };
   }
+
+  it('records the offer the customer booked from when it is live for the restaurant', async () => {
+    const { useCase, reservationRepository } = await build();
+
+    const result = await useCase.execute({
+      actor: baseActor(),
+      branchId,
+      tableId,
+      reservationStartTime: '2026-08-01T18:00:00.000Z',
+      guests: 2,
+      offerId: liveOfferId,
+    });
+
+    const saved = await reservationRepository.findById(ReservationId.create(result.reservationId));
+    expect(saved?.offerId).toBe(liveOfferId);
+  });
+
+  it('ignores an offer that is not live for the restaurant instead of failing the booking', async () => {
+    const { useCase, reservationRepository } = await build();
+
+    const result = await useCase.execute({
+      actor: baseActor(),
+      branchId,
+      tableId,
+      reservationStartTime: '2026-08-01T18:00:00.000Z',
+      guests: 2,
+      offerId: '88888888-8888-4888-8888-888888888888',
+    });
+
+    const saved = await reservationRepository.findById(ReservationId.create(result.reservationId));
+    expect(saved?.offerId).toBeNull();
+  });
 
   it('creates a Pending reservation with a client-supplied reservationEndTime', async () => {
     const { useCase } = await build();
