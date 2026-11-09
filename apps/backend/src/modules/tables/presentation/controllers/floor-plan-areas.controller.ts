@@ -1,3 +1,4 @@
+import { FloorPlanAreaLayout } from '../../domain/entities/floor-plan-area.entity';
 import {
   Body,
   Controller,
@@ -128,6 +129,8 @@ export class FloorPlanAreasController {
       name: body.name,
       color: body.color,
       sortOrder: body.sortOrder ?? DEFAULT_SORT_ORDER,
+      features: body.features,
+      layout: layoutFromBody(body),
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
     return this.toResponse(result);
@@ -267,6 +270,8 @@ export class FloorPlanAreasController {
       name: body.name,
       color: body.color,
       sortOrder: body.sortOrder ?? DEFAULT_SORT_ORDER,
+      features: body.features,
+      layout: layoutFromBody(body),
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
     return this.toResponse(result);
@@ -326,6 +331,8 @@ export class FloorPlanAreasController {
       name: result.name,
       color: result.color,
       sortOrder: result.sortOrder,
+      features: result.features,
+      ...result.layout,
       createdAt: result.createdAt.toISOString(),
       updatedAt: result.updatedAt.toISOString(),
     };
@@ -334,4 +341,29 @@ export class FloorPlanAreasController {
   private toListResponse(result: FloorPlanAreaListResult): FloorPlanAreaListResponseDto {
     return { items: result.items.map((item) => this.toResponse(item)) };
   }
+}
+
+/**
+ * ADR-044: the area's floor and grid rectangle from a create/update body.
+ * Undefined when the body carries none of the five fields, so an older
+ * client's update keeps the stored layout; otherwise missing fields are null.
+ */
+function layoutFromBody(body: {
+  floor?: number | null;
+  positionX?: number | null;
+  positionY?: number | null;
+  width?: number | null;
+  height?: number | null;
+}): FloorPlanAreaLayout | undefined {
+  const { floor, positionX, positionY, width, height } = body;
+  if ([floor, positionX, positionY, width, height].every((value) => value === undefined)) {
+    return undefined;
+  }
+  return {
+    floor: floor ?? null,
+    positionX: positionX ?? null,
+    positionY: positionY ?? null,
+    width: width ?? null,
+    height: height ?? null,
+  };
 }

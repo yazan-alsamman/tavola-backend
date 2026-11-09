@@ -46,6 +46,8 @@ describe('ListFloorPlanAreasUseCase (ADR-040)', () => {
         name: 'Terrace',
         color: '#F97316',
         sortOrder: 1,
+        features: [],
+        layout: { floor: null, positionX: null, positionY: null, width: null, height: null },
         createdAt: new Date(AREA_WORLD_NOW.getTime() + 1000),
         updatedAt: AREA_WORLD_NOW,
         deletedAt: null,

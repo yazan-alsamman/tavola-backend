@@ -147,6 +147,8 @@ export function seedArea(
       name: overrides.name ?? 'Main Hall',
       color: overrides.color ?? '#14B8A6',
       sortOrder: overrides.sortOrder ?? 0,
+      features: [],
+      layout: { floor: null, positionX: null, positionY: null, width: null, height: null },
       createdAt: AREA_WORLD_NOW,
       updatedAt: AREA_WORLD_NOW,
       deletedAt: overrides.deletedAt ?? null,

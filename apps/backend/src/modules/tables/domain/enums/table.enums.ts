@@ -43,3 +43,19 @@ export enum TableShape {
   Rectangle = 'Rectangle',
   Round = 'Round',
 }
+
+/**
+ * CR WJ-R-2026-002 round 2 (ADR-044): what guests get in a dining area
+ * ("families", "outdoor", ...). Every table in the area takes these on, and
+ * the app lets a guest pick an area by them.
+ */
+export enum FloorPlanAreaFeature {
+  Indoor = 'Indoor',
+  Outdoor = 'Outdoor',
+  Family = 'Family',
+  Smoking = 'Smoking',
+  NonSmoking = 'NonSmoking',
+  Hookah = 'Hookah',
+  Quiet = 'Quiet',
+  Vip = 'Vip',
+}

@@ -1,3 +1,4 @@
+import { FloorPlanAreaFeature } from '../enums/table.enums';
 import { FloorPlanArea, FloorPlanAreaProps } from './floor-plan-area.entity';
 import { InvalidFloorPlanAreaException } from '../exceptions/invalid-floor-plan-area.exception';
 import { InvalidHexColorException } from '../exceptions/invalid-hex-color.exception';
@@ -15,6 +16,8 @@ describe('FloorPlanArea (ADR-040)', () => {
       name: 'Main Hall',
       color: '#14B8A6',
       sortOrder: 0,
+      features: [],
+      layout: { floor: null, positionX: null, positionY: null, width: null, height: null },
       createdAt,
       updatedAt: createdAt,
       deletedAt: null,
@@ -127,6 +130,46 @@ describe('FloorPlanArea (ADR-040)', () => {
     it('does not re-validate, so an already-persisted row always loads', () => {
       const area = FloorPlanArea.reconstitute(baseProps({ color: '#14b8a6' }));
       expect(area.color).toBe('#14b8a6');
+    });
+  });
+
+  describe('features and layout (ADR-044)', () => {
+    const rect = { floor: 1, positionX: 0, positionY: 0, width: 480, height: 320 };
+
+    it('stores features once each and keeps a full rectangle', () => {
+      const area = FloorPlanArea.create(
+        baseProps({
+          features: [
+            FloorPlanAreaFeature.Family,
+            FloorPlanAreaFeature.Family,
+            FloorPlanAreaFeature.Outdoor,
+          ],
+          layout: rect,
+        }),
+      );
+      expect(area.features).toEqual([FloorPlanAreaFeature.Family, FloorPlanAreaFeature.Outdoor]);
+      expect(area.layout).toEqual(rect);
+    });
+
+    it('rejects a partial rectangle and a zero size', () => {
+      expect(() => FloorPlanArea.create(baseProps({ layout: { ...rect, width: null } }))).toThrow(
+        InvalidFloorPlanAreaException,
+      );
+      expect(() => FloorPlanArea.create(baseProps({ layout: { ...rect, height: 0 } }))).toThrow(
+        InvalidFloorPlanAreaException,
+      );
+    });
+
+    it('keeps features and layout when an update leaves them out', () => {
+      const area = FloorPlanArea.create(
+        baseProps({ features: [FloorPlanAreaFeature.Quiet], layout: rect }),
+      );
+      const updated = area.updateProfile(
+        { name: 'Terrace', color: '#F97316', sortOrder: 1 },
+        createdAt,
+      );
+      expect(updated.features).toEqual([FloorPlanAreaFeature.Quiet]);
+      expect(updated.layout).toEqual(rect);
     });
   });
 });

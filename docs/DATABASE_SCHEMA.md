@@ -851,6 +851,9 @@ Fields
 * name
 * color (required, exactly `#RRGGBB`, stored uppercase — see Notes)
 * sortOrder (int, default 0 — editor tab order)
+* features (enum array `FloorPlanAreaFeature`: Indoor, Outdoor, Family, Smoking, NonSmoking, Hookah, Quiet, Vip; default empty — guest-facing traits inherited by every table in the area, exposed to the app through discovery; **ADR-044**)
+* floor (int, nullable — which floor of the venue the area is on; **ADR-044**)
+* positionX, positionY, width, height (int, nullable — the area's rectangle on the editor grid; all four set together or all null, width/height positive; **ADR-044**)
 * createdAt
 * updatedAt
 * deletedAt

@@ -8,6 +8,8 @@ export function toFloorPlanAreaResult(area: FloorPlanArea): FloorPlanAreaResult 
     name: area.name,
     color: area.color,
     sortOrder: area.sortOrder,
+    features: area.features,
+    layout: area.layout,
     createdAt: area.createdAt,
     updatedAt: area.updatedAt,
   };
