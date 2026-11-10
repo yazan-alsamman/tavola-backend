@@ -13,6 +13,8 @@ export interface MenuItemRepository {
 
   /** Non-deleted Items of one Category, ordered by `displayOrder`. */
   findManyByCategoryId(categoryId: MenuCategoryId): Promise<MenuItem[]>;
+  /** Batched form of the method above for many parents in one query; same order within each parent. */
+  findManyByCategoryIds(categoryIds: MenuCategoryId[]): Promise<MenuItem[]>;
 
   update(item: MenuItem): Promise<void>;
 

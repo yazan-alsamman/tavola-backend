@@ -7,6 +7,8 @@ import { MenuItemId } from '@shared/domain/value-objects/identifiers.vo';
  */
 export interface MenuItemAvailabilityRepository {
   findManyByMenuItemId(menuItemId: MenuItemId): Promise<MenuItemAvailability[]>;
+  /** Batched form of the method above for many parents in one query; same order within each parent. */
+  findManyByMenuItemIds(menuItemIds: MenuItemId[]): Promise<MenuItemAvailability[]>;
 
   /**
    * Deletes every existing row for `menuItemId` and inserts `windows` as a

@@ -17,6 +17,17 @@ export class PrismaMenuItemAvailabilityRepository implements MenuItemAvailabilit
     return rows.map(MenuItemAvailabilityPrismaMapper.toDomain);
   }
 
+  async findManyByMenuItemIds(menuItemIds: MenuItemId[]): Promise<MenuItemAvailability[]> {
+    if (menuItemIds.length === 0) {
+      return [];
+    }
+    const rows = await this.prismaContext.client.menuItemAvailability.findMany({
+      where: { menuItemId: { in: menuItemIds.map((id) => id.value) } },
+      orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
+    });
+    return rows.map(MenuItemAvailabilityPrismaMapper.toDomain);
+  }
+
   async replaceForMenuItem(menuItemId: MenuItemId, windows: MenuItemAvailability[]): Promise<void> {
     // Both statements run inside the caller's UnitOfWorkPort transaction
     // (same AsyncLocalStorage-bound client as PrismaMenuRepository.setAsDefault).

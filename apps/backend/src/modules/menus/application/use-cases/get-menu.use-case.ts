@@ -95,30 +95,46 @@ export class GetMenuUseCase {
       throw new MenuNotFoundException();
     }
 
+    // One query per level of the tree (categories, items, then option
+    // groups / add-ons / availability, then options) instead of one query per
+    // category, item and option group: a 100-item menu used to cost 300+
+    // queries on this unauthenticated endpoint.
     const categories = await this.categoryRepository.findManyByMenuId(menu.menuId);
-    const itemsByCategory = await Promise.all(
-      categories.map((category) =>
-        this.itemRepository.findManyByCategoryId(category.menuCategoryId),
-      ),
+    const itemsByCategoryId = groupBy(
+      await this.itemRepository.findManyByCategoryIds(categories.map((c) => c.menuCategoryId)),
+      (item) => item.categoryId.value,
+    );
+    const itemsByCategory = categories.map(
+      (category) => itemsByCategoryId.get(category.menuCategoryId.value) ?? [],
     );
     const allItems = itemsByCategory.flat();
+    const allItemIds = allItems.map((item) => item.menuItemId);
 
-    const [optionGroupsByItem, addOnsByItem, availabilityByItem] = await Promise.all([
-      Promise.all(
-        allItems.map((item) => this.optionGroupRepository.findManyByMenuItemId(item.menuItemId)),
-      ),
-      Promise.all(
-        allItems.map((item) => this.addOnRepository.findManyByMenuItemId(item.menuItemId)),
-      ),
-      Promise.all(
-        allItems.map((item) => this.availabilityRepository.findManyByMenuItemId(item.menuItemId)),
-      ),
+    const [optionGroupRows, addOnRows, availabilityRows] = await Promise.all([
+      this.optionGroupRepository.findManyByMenuItemIds(allItemIds),
+      this.addOnRepository.findManyByMenuItemIds(allItemIds),
+      this.availabilityRepository.findManyByMenuItemIds(allItemIds),
     ]);
+    const optionGroupsByItemId = groupBy(optionGroupRows, (group) => group.menuItemId.value);
+    const addOnsByItemId = groupBy(addOnRows, (addOn) => addOn.menuItemId.value);
+    const availabilityByItemId = groupBy(availabilityRows, (window) => window.menuItemId.value);
+    const optionGroupsByItem = allItems.map(
+      (item) => optionGroupsByItemId.get(item.menuItemId.value) ?? [],
+    );
+    const addOnsByItem = allItems.map((item) => addOnsByItemId.get(item.menuItemId.value) ?? []);
+    const availabilityByItem = allItems.map(
+      (item) => availabilityByItemId.get(item.menuItemId.value) ?? [],
+    );
+
     const allOptionGroups = optionGroupsByItem.flat();
-    const optionsByGroup = await Promise.all(
-      allOptionGroups.map((group) =>
-        this.optionRepository.findManyByOptionGroupId(group.optionGroupId),
+    const optionsByGroupId = groupBy(
+      await this.optionRepository.findManyByOptionGroupIds(
+        allOptionGroups.map((group) => group.optionGroupId),
       ),
+      (option) => option.optionGroupId.value,
+    );
+    const optionsByGroup = allOptionGroups.map(
+      (group) => optionsByGroupId.get(group.optionGroupId.value) ?? [],
     );
 
     const itemIndexById = new Map(allItems.map((item, index) => [item.menuItemId.value, index]));
@@ -234,4 +250,19 @@ function toItemTreeResult(
       endTime: w.endTime,
     })),
   };
+}
+
+/** Groups rows by key, keeping each group in the order the rows arrived. */
+function groupBy<T>(rows: T[], keyOf: (row: T) => string): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const row of rows) {
+    const key = keyOf(row);
+    const group = groups.get(key);
+    if (group) {
+      group.push(row);
+    } else {
+      groups.set(key, [row]);
+    }
+  }
+  return groups;
 }

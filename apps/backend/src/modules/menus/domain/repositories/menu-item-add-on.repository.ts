@@ -15,6 +15,8 @@ export interface MenuItemAddOnRepository {
 
   /** Non-deleted Add-ons of one Item, ordered by `displayOrder`. */
   findManyByMenuItemId(menuItemId: MenuItemId): Promise<MenuItemAddOn[]>;
+  /** Batched form of the method above for many parents in one query; same order within each parent. */
+  findManyByMenuItemIds(menuItemIds: MenuItemId[]): Promise<MenuItemAddOn[]>;
 
   update(addOn: MenuItemAddOn): Promise<void>;
 

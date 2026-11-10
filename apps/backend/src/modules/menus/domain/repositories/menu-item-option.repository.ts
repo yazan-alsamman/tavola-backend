@@ -15,6 +15,8 @@ export interface MenuItemOptionRepository {
 
   /** Non-deleted Options of one Option Group, ordered by `displayOrder`. */
   findManyByOptionGroupId(optionGroupId: MenuItemOptionGroupId): Promise<MenuItemOption[]>;
+  /** Batched form of the method above for many parents in one query; same order within each parent. */
+  findManyByOptionGroupIds(optionGroupIds: MenuItemOptionGroupId[]): Promise<MenuItemOption[]>;
 
   update(option: MenuItemOption): Promise<void>;
 

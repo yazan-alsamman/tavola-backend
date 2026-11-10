@@ -9,6 +9,10 @@ export class InMemoryMenuItemAvailabilityRepository implements MenuItemAvailabil
     return this.rows.get(menuItemId.value) ?? [];
   }
 
+  async findManyByMenuItemIds(menuItemIds: MenuItemId[]): Promise<MenuItemAvailability[]> {
+    return menuItemIds.flatMap((id) => this.rows.get(id.value) ?? []);
+  }
+
   async replaceForMenuItem(menuItemId: MenuItemId, windows: MenuItemAvailability[]): Promise<void> {
     this.rows.set(menuItemId.value, windows);
   }

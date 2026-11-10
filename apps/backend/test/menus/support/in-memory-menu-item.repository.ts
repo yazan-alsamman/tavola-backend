@@ -32,6 +32,11 @@ export class InMemoryMenuItemRepository implements MenuItemRepository {
       );
   }
 
+  async findManyByCategoryIds(categoryIds: MenuCategoryId[]): Promise<MenuItem[]> {
+    const lists = await Promise.all(categoryIds.map((id) => this.findManyByCategoryId(id)));
+    return lists.flat();
+  }
+
   async update(item: MenuItem): Promise<void> {
     this.rows.set(item.menuItemId.value, item);
   }
