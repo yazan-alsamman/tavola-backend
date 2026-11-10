@@ -51,6 +51,22 @@ import { ScheduleApprovedReservationSignalsService } from '../services/schedule-
 import { toReservationResult } from '../mappers/reservation-result.mapper';
 import { CreateReservationCommand } from '../dto/create-reservation.command';
 import { ReservationResult } from '../dto/reservation.result';
+import {
+  BookingEligibilityReaderPort,
+  BOOKING_ELIGIBILITY_READER,
+} from '../ports/booking-eligibility-reader.port';
+import { BranchOpeningHoursService } from '../services/branch-opening-hours.service';
+import {
+  durationMinutes,
+  fitsOpeningHours,
+  isWithinBookingHorizon,
+  MAX_ONLINE_BOOKING_ADVANCE_DAYS,
+  MAX_RESERVATION_DURATION_MINUTES,
+  MAX_UPCOMING_ONLINE_RESERVATIONS_PER_CUSTOMER,
+  MIN_RESERVATION_DURATION_MINUTES,
+} from '../../domain/services/reservation-booking-policy';
+import { ActiveReservationLimitReachedException } from '../../domain/exceptions/active-reservation-limit-reached.exception';
+import { RestaurantNotAcceptingReservationsException } from '../../domain/exceptions/restaurant-not-accepting-reservations.exception';
 import { RecordCustomerAcquisitionOnApprovalService } from '@modules/customer-acquisition/application/services/record-customer-acquisition-on-approval.service';
 import { RecordAcquisitionOnApprovalResult } from '@modules/customer-acquisition/application/dto/record-acquisition-on-approval.command';
 import { CustomerAcquisitionRecordedEvent } from '@modules/customer-acquisition/domain/events/customer-acquisition.events';
@@ -125,6 +141,9 @@ export class CreateReservationUseCase {
     private readonly recordCustomerAcquisitionOnApproval: RecordCustomerAcquisitionOnApprovalService,
     @Inject(OFFER_ATTRIBUTION_READER)
     private readonly offerAttributionReader: OfferAttributionReaderPort,
+    @Inject(BOOKING_ELIGIBILITY_READER)
+    private readonly bookingEligibility: BookingEligibilityReaderPort,
+    private readonly openingHours: BranchOpeningHoursService,
   ) {}
 
   async execute(command: CreateReservationCommand): Promise<ReservationResult> {
@@ -189,6 +208,19 @@ export class CreateReservationUseCase {
     const endTime = this.resolveEndTime(startTime, command.reservationEndTime, settings);
 
     const now = this.clock.now();
+    await this.assertBookable({
+      restaurantId: branch.restaurantId.value,
+      branchId: branchId.value,
+      timeZone: branch.timezone,
+      source,
+      userId: command.actor.userId,
+      startTime,
+      endTime,
+      guests: command.guests,
+      maxGuests: settings?.maxGuestsPerReservation ?? null,
+      now,
+    });
+
     const reservationDate = new Date(
       Date.UTC(startTime.getUTCFullYear(), startTime.getUTCMonth(), startTime.getUTCDate()),
     );
@@ -441,6 +473,72 @@ export class CreateReservationUseCase {
       createdBy: command.actor.employeeId,
       guest,
     };
+  }
+
+  /**
+   * Booking rules every reservation must satisfy before it can hold a table:
+   * the restaurant is Active, and the duration is between 15 minutes and 8
+   * hours. A customer's own Online booking must also fit the branch opening
+   * hours, start within the next 90 days, respect the restaurant's party-size
+   * maximum, and keep the customer under 5 upcoming reservations. Staff
+   * Phone/WalkIn bookings may sit outside opening hours on purpose (a late
+   * private event, for example), so those rules apply to Online only.
+   */
+  private async assertBookable(input: {
+    restaurantId: string;
+    branchId: string;
+    timeZone: string;
+    source: ReservationSource;
+    userId: string;
+    startTime: Date;
+    endTime: Date;
+    guests: number;
+    maxGuests: number | null;
+    now: Date;
+  }): Promise<void> {
+    if (!(await this.bookingEligibility.isRestaurantAcceptingReservations(input.restaurantId))) {
+      throw new RestaurantNotAcceptingReservationsException();
+    }
+
+    const minutes = durationMinutes(input.startTime, input.endTime);
+    if (minutes < MIN_RESERVATION_DURATION_MINUTES || minutes > MAX_RESERVATION_DURATION_MINUTES) {
+      throw new InvalidReservationTimeException(
+        `A reservation must last between ${MIN_RESERVATION_DURATION_MINUTES} and ${MAX_RESERVATION_DURATION_MINUTES} minutes.`,
+      );
+    }
+
+    if (input.source !== ReservationSource.Online) {
+      return;
+    }
+
+    if (!isWithinBookingHorizon(input.startTime, input.now)) {
+      throw new InvalidReservationTimeException(
+        `Reservations can be made at most ${MAX_ONLINE_BOOKING_ADVANCE_DAYS} days ahead.`,
+      );
+    }
+
+    if (input.maxGuests !== null && input.guests > input.maxGuests) {
+      throw new InvalidReservationException(
+        `guests must not exceed the restaurant maximum of ${input.maxGuests}.`,
+      );
+    }
+
+    const schedule = await this.openingHours.load(input.branchId, input.restaurantId);
+    if (!fitsOpeningHours(input.startTime, input.endTime, input.timeZone, schedule)) {
+      throw new InvalidReservationTimeException(
+        'The reservation must start and end within the branch opening hours.',
+      );
+    }
+
+    const upcoming = await this.bookingEligibility.countUpcomingActiveForUser(
+      input.userId,
+      input.now,
+    );
+    if (upcoming >= MAX_UPCOMING_ONLINE_RESERVATIONS_PER_CUSTOMER) {
+      throw new ActiveReservationLimitReachedException(
+        MAX_UPCOMING_ONLINE_RESERVATIONS_PER_CUSTOMER,
+      );
+    }
   }
 
   private resolveEndTime(

@@ -34,6 +34,17 @@ import { ReservationSource } from '@modules/reservations/domain/enums/reservatio
 import { PermissionDeniedException } from '@modules/authorization/domain/exceptions/permission-denied.exception';
 import { EmployeeBranchNotAssignedException } from '@modules/authorization/domain/exceptions/employee-branch-not-assigned.exception';
 import { InvalidReservationException } from '@modules/reservations/domain/exceptions/invalid-reservation.exception';
+import { InvalidReservationTimeException } from '@modules/reservations/domain/exceptions/invalid-reservation-time.exception';
+import { ActiveReservationLimitReachedException } from '@modules/reservations/domain/exceptions/active-reservation-limit-reached.exception';
+import { RestaurantNotAcceptingReservationsException } from '@modules/reservations/domain/exceptions/restaurant-not-accepting-reservations.exception';
+import { BranchOpeningHoursService } from '@modules/reservations/application/services/branch-opening-hours.service';
+import { ListBranchWorkingHoursByBranchIdsUseCase } from '@modules/branches/application/use-cases/list-branch-working-hours-by-branch-ids.use-case';
+import { ListWorkingHoursByRestaurantIdsUseCase } from '@modules/restaurants/application/use-cases/list-working-hours-by-restaurant-ids.use-case';
+import { WorkingHours } from '@modules/restaurants/domain/entities/working-hours.entity';
+import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
+import { InMemoryBranchWorkingHoursRepository } from '../../../../../test/branches/support/in-memory-branch-working-hours.repository';
+import { InMemoryWorkingHoursRepository } from '../../../../../test/restaurants/support/in-memory-working-hours.repository';
+import { InMemoryBookingEligibilityReader } from '../../../../../test/reservations/support/in-memory-booking-eligibility.reader';
 
 describe('CreateReservationUseCase', () => {
   const fixedNow = new Date('2026-08-01T10:00:00.000Z');
@@ -90,6 +101,9 @@ describe('CreateReservationUseCase', () => {
     const reservationGuestRepository = new InMemoryReservationGuestRepository();
     const restaurantSettingsRepository = new InMemoryRestaurantSettingsRepository();
     const expirationScheduler = new InMemoryReservationExpirationScheduler();
+    const branchHoursRepository = new InMemoryBranchWorkingHoursRepository();
+    const restaurantHoursRepository = new InMemoryWorkingHoursRepository();
+    const bookingEligibility = new InMemoryBookingEligibilityReader();
 
     await branchRepository.save(
       Branch.create({
@@ -184,10 +198,17 @@ describe('CreateReservationUseCase', () => {
       scheduleApprovedReservationSignals,
       new InMemoryAcquisitionRecordingService() as unknown as RecordCustomerAcquisitionOnApprovalService,
       offerAttributionReader,
+      bookingEligibility,
+      new BranchOpeningHoursService(
+        new ListBranchWorkingHoursByBranchIdsUseCase(branchHoursRepository),
+        new ListWorkingHoursByRestaurantIdsUseCase(restaurantHoursRepository),
+      ),
     );
 
     return {
       useCase,
+      bookingEligibility,
+      restaurantHoursRepository,
       reservationRepository,
       reservationGuestRepository,
       tableRepository,
@@ -780,6 +801,164 @@ describe('CreateReservationUseCase', () => {
       expect(result.status).toBe('Approved');
       const table = await tableRepository.findById(TableId.create(tableId));
       expect(table?.status).toBe(TableStatus.Reserved);
+    });
+  });
+
+  describe('booking rules (report finding #2)', () => {
+    // 2026-08-01 is a Saturday (dayOfWeek 6); Asia/Damascus is UTC+3.
+    function openSaturdayEvenings(repository: InMemoryWorkingHoursRepository) {
+      return repository.replaceAllForRestaurant(RestaurantId.create(restaurantId), [
+        WorkingHours.create({
+          id: 'abababab-abab-4bab-8bab-abababababab',
+          restaurantId,
+          dayOfWeek: 6,
+          openingTime: '18:00',
+          closingTime: '23:00',
+          breakStartTime: null,
+          breakEndTime: null,
+          createdAt: fixedNow,
+          updatedAt: fixedNow,
+        }),
+      ]);
+    }
+
+    it('rejects any booking at a restaurant that is not accepting reservations', async () => {
+      const { useCase, bookingEligibility } = await build();
+      bookingEligibility.acceptingReservations = false;
+
+      await expect(
+        useCase.execute({
+          actor: baseActor(),
+          branchId,
+          tableId,
+          reservationStartTime: '2026-08-01T18:00:00.000Z',
+          guests: 2,
+        }),
+      ).rejects.toBeInstanceOf(RestaurantNotAcceptingReservationsException);
+    });
+
+    it('rejects a client-supplied end time that holds the table for more than 8 hours', async () => {
+      const { useCase } = await build();
+
+      await expect(
+        useCase.execute({
+          actor: baseActor(),
+          branchId,
+          tableId,
+          reservationStartTime: '2026-08-01T18:00:00.000Z',
+          reservationEndTime: '2027-08-01T18:00:00.000Z',
+          guests: 2,
+        }),
+      ).rejects.toBeInstanceOf(InvalidReservationTimeException);
+    });
+
+    it('rejects an online booking more than 90 days ahead', async () => {
+      const { useCase } = await build();
+
+      await expect(
+        useCase.execute({
+          actor: baseActor(),
+          branchId,
+          tableId,
+          reservationStartTime: '2026-11-15T18:00:00.000Z',
+          guests: 2,
+        }),
+      ).rejects.toBeInstanceOf(InvalidReservationTimeException);
+    });
+
+    it('rejects an online booking outside the opening hours once hours are configured', async () => {
+      const { useCase, restaurantHoursRepository } = await build();
+      await openSaturdayEvenings(restaurantHoursRepository);
+
+      await expect(
+        useCase.execute({
+          actor: baseActor(),
+          branchId,
+          tableId,
+          // 03:00 local time.
+          reservationStartTime: '2026-08-02T00:00:00.000Z',
+          guests: 2,
+        }),
+      ).rejects.toBeInstanceOf(InvalidReservationTimeException);
+    });
+
+    it('rejects an online booking that runs past closing time', async () => {
+      const { useCase, restaurantHoursRepository } = await build();
+      await openSaturdayEvenings(restaurantHoursRepository);
+
+      await expect(
+        useCase.execute({
+          actor: baseActor(),
+          branchId,
+          tableId,
+          // 22:00-23:30 local, closing is 23:00.
+          reservationStartTime: '2026-08-01T19:00:00.000Z',
+          reservationEndTime: '2026-08-01T20:30:00.000Z',
+          guests: 2,
+        }),
+      ).rejects.toBeInstanceOf(InvalidReservationTimeException);
+    });
+
+    it('accepts an online booking inside the opening hours', async () => {
+      const { useCase, restaurantHoursRepository } = await build();
+      await openSaturdayEvenings(restaurantHoursRepository);
+
+      const result = await useCase.execute({
+        actor: baseActor(),
+        branchId,
+        tableId,
+        // 19:00-20:30 local.
+        reservationStartTime: '2026-08-01T16:00:00.000Z',
+        guests: 2,
+      });
+
+      expect(result.reservationId).toBe(reservationId);
+    });
+
+    it('lets staff book a phone reservation outside the opening hours', async () => {
+      const { useCase, restaurantHoursRepository } = await build();
+      await openSaturdayEvenings(restaurantHoursRepository);
+
+      const result = await useCase.execute({
+        actor: employeeActor(),
+        branchId,
+        tableId,
+        reservationStartTime: '2026-08-02T00:00:00.000Z',
+        guests: 2,
+        source: ReservationSource.Phone,
+        reservationGuest: guestPayload(),
+      });
+
+      expect(result.source).toBe(ReservationSource.Phone);
+    });
+
+    it('rejects a sixth upcoming online reservation for the same customer', async () => {
+      const { useCase, bookingEligibility } = await build();
+      bookingEligibility.upcomingActiveCount = 5;
+
+      await expect(
+        useCase.execute({
+          actor: baseActor(),
+          branchId,
+          tableId,
+          reservationStartTime: '2026-08-01T18:00:00.000Z',
+          guests: 2,
+        }),
+      ).rejects.toBeInstanceOf(ActiveReservationLimitReachedException);
+    });
+
+    it('rejects an online party larger than the restaurant maximum', async () => {
+      const { useCase } = await build({ tableCapacity: 30 });
+
+      await expect(
+        useCase.execute({
+          actor: baseActor(),
+          branchId,
+          tableId,
+          reservationStartTime: '2026-08-01T18:00:00.000Z',
+          guests: 21,
+        }),
+      ).rejects.toBeInstanceOf(InvalidReservationException);
     });
   });
 });

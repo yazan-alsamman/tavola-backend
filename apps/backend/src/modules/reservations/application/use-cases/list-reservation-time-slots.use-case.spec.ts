@@ -12,6 +12,7 @@ import { Reservation } from '../../domain/entities/reservation.entity';
 import { ReservationSource } from '../../domain/enums/reservation.enums';
 import { InvalidReservationTimeException } from '../../domain/exceptions/invalid-reservation-time.exception';
 import { ReservationSlotOutcome } from '../dto/reservation-time-slots.result';
+import { BranchOpeningHoursService } from '../services/branch-opening-hours.service';
 import { BranchId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
 import { InMemoryBranchWorkingHoursRepository } from '../../../../../test/branches/support/in-memory-branch-working-hours.repository';
@@ -84,8 +85,10 @@ describe('ListReservationTimeSlotsUseCase', () => {
     );
     const useCase = new ListReservationTimeSlotsUseCase(
       branchRepository,
-      new ListBranchWorkingHoursByBranchIdsUseCase(branchHoursRepository),
-      new ListWorkingHoursByRestaurantIdsUseCase(restaurantHoursRepository),
+      new BranchOpeningHoursService(
+        new ListBranchWorkingHoursByBranchIdsUseCase(branchHoursRepository),
+        new ListWorkingHoursByRestaurantIdsUseCase(restaurantHoursRepository),
+      ),
       settingsRepository,
       tableRepository,
       reservationRepository,
