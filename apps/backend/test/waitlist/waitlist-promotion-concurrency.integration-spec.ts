@@ -215,7 +215,7 @@ describe('WaitlistPromotionService concurrency (real Postgres, real advisory loc
     if (!dbAvailable) return;
 
     const { restaurantId, branchId, userId } = await seedScenario(4);
-    const preferredDate = new Date('2026-09-10T00:00:00.000Z');
+    const preferredDate = new Date('2037-09-10T00:00:00.000Z');
     const entry = await buildAndSeedEntry(restaurantId, branchId, userId, 1, preferredDate);
 
     const outcome = await service.attemptPromotion(promotionParams(entry, null));
@@ -238,7 +238,7 @@ describe('WaitlistPromotionService concurrency (real Postgres, real advisory loc
     if (!dbAvailable) return;
 
     const { restaurantId, branchId, userId } = await seedScenario(4);
-    const preferredDate = new Date('2026-09-11T00:00:00.000Z');
+    const preferredDate = new Date('2037-09-11T00:00:00.000Z');
     const entry = await buildAndSeedEntry(restaurantId, branchId, userId, 1, preferredDate);
 
     const attempts = 5;
@@ -264,7 +264,7 @@ describe('WaitlistPromotionService concurrency (real Postgres, real advisory loc
     if (!dbAvailable) return;
 
     const { restaurantId, branchId, userId } = await seedScenario(4);
-    const preferredDate = new Date('2026-09-12T00:00:00.000Z');
+    const preferredDate = new Date('2037-09-12T00:00:00.000Z');
     const entry = await buildAndSeedEntry(restaurantId, branchId, userId, 1, preferredDate);
 
     const [manual, automatic] = await Promise.all([
@@ -285,7 +285,7 @@ describe('WaitlistPromotionService concurrency (real Postgres, real advisory loc
     if (!dbAvailable) return;
 
     const { restaurantId, branchId, userId } = await seedScenario(4);
-    const preferredDate = new Date('2026-09-13T00:00:00.000Z');
+    const preferredDate = new Date('2037-09-13T00:00:00.000Z');
     const entryA = await buildAndSeedEntry(restaurantId, branchId, userId, 1, preferredDate, 2);
     const entryB = await buildAndSeedEntry(restaurantId, branchId, userId, 2, preferredDate, 2);
 
@@ -315,7 +315,7 @@ describe('WaitlistPromotionService concurrency (real Postgres, real advisory loc
     if (!dbAvailable) return;
 
     const { restaurantId, branchId, userId } = await seedScenario(2);
-    const preferredDate = new Date('2026-09-14T00:00:00.000Z');
+    const preferredDate = new Date('2037-09-14T00:00:00.000Z');
     const entry = await buildAndSeedEntry(restaurantId, branchId, userId, 1, preferredDate, 8);
 
     const outcome = await service.attemptPromotion(promotionParams(entry, null));
@@ -330,7 +330,7 @@ describe('WaitlistPromotionService concurrency (real Postgres, real advisory loc
     if (!dbAvailable) return;
 
     const { restaurantId, branchId, userId } = await seedScenario(4);
-    const preferredDate = new Date('2026-09-15T00:00:00.000Z');
+    const preferredDate = new Date('2037-09-15T00:00:00.000Z');
     const entry = await buildAndSeedEntry(restaurantId, branchId, userId, 1, preferredDate);
     const branchIdVo = BranchId.create(branchId);
 
