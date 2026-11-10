@@ -1,3 +1,4 @@
+import { UserId } from '@shared/domain/value-objects/identifiers.vo';
 import { ConfigService } from '@nestjs/config';
 import { PlatformAdminLoginUseCase } from './platform-admin-login.use-case';
 import { InvalidPlatformAdminCredentialsException } from '../../domain/exceptions/invalid-platform-admin-credentials.exception';
@@ -119,6 +120,29 @@ describe('PlatformAdminLoginUseCase', () => {
 
     return { useCase, userRepository, auditLogWriter, sessionRepository };
   }
+
+  it('never counts failures against an account that is not a Platform Admin', async () => {
+    const userRepository = new InMemoryUserRepository();
+    await createAdminUser(userRepository);
+    const { useCase } = createUseCase({
+      userRepository,
+      platformAdminRepository: new FakePlatformAdminRepository(new Set()),
+    });
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await expect(
+        useCase.execute({
+          email: 'admin@tavla.internal',
+          password: 'WrongPass123!',
+          ipAddress: '203.0.113.10',
+        }),
+      ).rejects.toBeInstanceOf(InvalidPlatformAdminCredentialsException);
+    }
+
+    const user = await userRepository.findById(UserId.create(userId));
+    expect(user?.failedLoginCount).toBe(0);
+    expect(user?.lockedUntil).toBeNull();
+  });
 
   it('issues a Platform Admin access token for a valid admin', async () => {
     const userRepository = new InMemoryUserRepository();

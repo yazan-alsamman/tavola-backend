@@ -5,6 +5,8 @@ import { PlatformAdminGuard } from './guards/platform-admin.guard';
 import { PlatformAdminRoleGuard } from './guards/platform-admin-role.guard';
 import { REQUIRE_PLATFORM_ADMIN_ROLE_KEY } from './decorators/require-platform-admin-role.decorator';
 import { PlatformAdminRole } from '../domain/enums/platform-admin.enums';
+import { RateLimitGuard } from '@modules/authentication/presentation/guards/rate-limit.guard';
+import { RATE_LIMIT_KEY } from '@modules/authentication/presentation/decorators/rate-limit.decorator';
 
 /**
  * PlatformSupport is a read-only console role. Every Platform Admin route
@@ -43,5 +45,15 @@ describe('Platform Admin mutation routes are PlatformAdmin-only', () => {
   it.each(cases)('%s requires the PlatformAdmin role only', (_route, handler) => {
     const roles = Reflect.getMetadata(REQUIRE_PLATFORM_ADMIN_ROLE_KEY, handler) as string[];
     expect(roles).toEqual([PlatformAdminRole.PlatformAdmin]);
+  });
+});
+
+describe('Platform Admin sign-in routes are rate limited', () => {
+  it.each([
+    ['POST /platform-admin/login', PlatformAdminController.prototype.login, 'login'],
+    ['POST /platform-admin/refresh', PlatformAdminController.prototype.refresh, 'refresh'],
+  ] as const)('%s runs RateLimitGuard with the %s policy', (_route, handler, policy) => {
+    expect(Reflect.getMetadata(GUARDS_METADATA, handler)).toEqual([RateLimitGuard]);
+    expect(Reflect.getMetadata(RATE_LIMIT_KEY, handler)).toBe(policy);
   });
 });

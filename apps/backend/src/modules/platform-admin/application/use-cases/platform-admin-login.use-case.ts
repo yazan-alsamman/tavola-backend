@@ -84,7 +84,10 @@ export class PlatformAdminLoginUseCase {
     );
 
     if (user === null || authContext === null || !passwordMatches) {
-      if (user !== null) {
+      // Only a real Platform Admin's own failures count towards their
+      // lockout. A wrong password sent here for an ordinary owner or
+      // customer email must not lock that person out of their own app.
+      if (user !== null && authContext !== null) {
         const maxFailedLoginAttempts = await this.systemConfiguration.getNumber(
           SYSTEM_CONFIG_KEYS.maxFailedLoginAttempts,
           5,
