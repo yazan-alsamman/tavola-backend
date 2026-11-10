@@ -31,15 +31,13 @@ export interface CreateNotificationBroadcastResult {
 }
 
 /**
- * Phase 19.9 (ADR-037) — the one shared path both
- * `SendPlatformAdminNotificationBroadcastUseCase` and
- * `SendRestaurantOwnerNotificationBroadcastUseCase` delegate into: resolve
+ * Phase 19.9 (ADR-037) — the broadcast path
+ * `SendPlatformAdminNotificationBroadcastUseCase` delegates into: resolve
  * the (global) audience size, persist the `NotificationBroadcast` row
  * (status `Pending`), enqueue the BullMQ kickoff job. Deliberately does NOT
- * publish the actor-attributed audit event itself - the two callers do that,
- * since `PlatformAdminNotificationBroadcastRequestedEvent`/
- * `RestaurantOwnerNotificationBroadcastRequestedEvent` have different payload
- * shapes (ADR-037 Decision #6's "not a single combined use case" choice).
+ * publish the actor-attributed audit event itself - the caller does that.
+ * The Restaurant Owner caller was withdrawn in ADR-042; rows it created
+ * earlier keep `senderType = RestaurantOwner`.
  */
 @Injectable()
 export class CreateNotificationBroadcastService {

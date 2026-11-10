@@ -26,6 +26,14 @@ export class StaffReservationCustomerResponseDto {
   phone!: string | null;
 }
 
+export class StaffReservationOfferResponseDto {
+  @ApiProperty({ format: 'uuid' })
+  offerId!: string;
+
+  @ApiProperty({ example: 'Weekday lunch 20% off' })
+  title!: string;
+}
+
 export class BranchReservationItemResponseDto {
   @ApiProperty({ format: 'uuid' })
   reservationId!: string;
@@ -68,4 +76,11 @@ export class BranchReservationItemResponseDto {
 
   @ApiProperty({ type: StaffReservationCustomerResponseDto })
   customer!: StaffReservationCustomerResponseDto;
+
+  @ApiPropertyOptional({
+    type: StaffReservationOfferResponseDto,
+    nullable: true,
+    description: 'The offer the customer booked from, or null for an ordinary booking.',
+  })
+  offer!: StaffReservationOfferResponseDto | null;
 }

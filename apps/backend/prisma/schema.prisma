@@ -1104,6 +1104,7 @@ model Reservation {
   lateArrivalNotifiedAt        DateTime?         @map("late_arrival_notified_at")
   tableReadyNotifiedAt         DateTime?         @map("table_ready_notified_at")
   rescheduledFromReservationId String?           @map("rescheduled_from_reservation_id") @db.Uuid
+  offerId                      String?           @map("offer_id") @db.Uuid
   createdAt                    DateTime          @default(now()) @map("created_at")
   updatedAt                    DateTime          @updatedAt @map("updated_at")
 
@@ -1117,6 +1118,7 @@ model Reservation {
   review               Review?
   conversations        Conversation[]
   customerAcquisitions CustomerAcquisition[]
+  offer                Offer?                    @relation(fields: [offerId], references: [id], onDelete: SetNull)
 
   @@index([reservationDate])
   @@index([tableId])
@@ -1125,6 +1127,7 @@ model Reservation {
   @@index([branchId, reservationDate, status])
   @@index([tableId, reservationDate, reservationStartTime])
   @@index([userId, createdAt])
+  @@index([offerId])
   @@map("reservations")
 }
 
@@ -1389,7 +1392,8 @@ model Offer {
   updatedAt     DateTime          @updatedAt @map("updated_at")
   deletedAt     DateTime?         @map("deleted_at")
 
-  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  restaurant   Restaurant    @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  reservations Reservation[]
 
   @@index([restaurantId])
   @@index([restaurantId, status])

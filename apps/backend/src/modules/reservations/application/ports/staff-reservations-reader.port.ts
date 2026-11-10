@@ -46,6 +46,12 @@ export interface StaffReservationCustomerInfo {
   phone: string | null;
 }
 
+/** CR WJ-R-2026-002 round 2: the offer that brought this booking in. */
+export interface StaffReservationOfferInfo {
+  offerId: string;
+  title: string;
+}
+
 export interface StaffReservationItem {
   reservationId: string;
   restaurantId: string;
@@ -61,6 +67,7 @@ export interface StaffReservationItem {
   specialRequest: string | null;
   table: StaffReservationTableInfo;
   customer: StaffReservationCustomerInfo;
+  offer: StaffReservationOfferInfo | null;
 }
 
 export interface StaffReservationsPage {

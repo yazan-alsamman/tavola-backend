@@ -425,6 +425,7 @@ export class ReservationsController {
       notes: body.notes ?? null,
       source: body.source,
       reservationGuest: body.reservationGuest,
+      offerId: body.offerId ?? null,
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
     return toReservationResponse(result);

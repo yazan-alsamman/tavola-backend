@@ -85,6 +85,7 @@ export function toBranchReservationItemResponse(
       name: item.customer.name,
       phone: item.customer.phone,
     },
+    offer: item.offer ? { offerId: item.offer.offerId, title: item.offer.title } : null,
   };
 }
 

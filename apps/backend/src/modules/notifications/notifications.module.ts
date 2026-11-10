@@ -40,10 +40,8 @@ import { GetOneSignalIdentityTokenUseCase } from './application/use-cases/get-on
 import { SendNotificationToCustomerUseCase } from './application/use-cases/send-notification-to-customer.use-case';
 import { SendPlatformAdminNotificationBroadcastUseCase } from './application/use-cases/send-platform-admin-notification-broadcast.use-case';
 import { PlatformAdminListNotificationBroadcastsUseCase } from './application/use-cases/platform-admin-list-notification-broadcasts.use-case';
-import { SendRestaurantOwnerNotificationBroadcastUseCase } from './application/use-cases/send-restaurant-owner-notification-broadcast.use-case';
 import { NotificationsController } from './presentation/controllers/notifications.controller';
 import { PlatformAdminNotificationsController } from './presentation/controllers/platform-admin-notifications.controller';
-import { RestaurantNotificationsController } from './presentation/controllers/restaurant-notifications.controller';
 
 /**
  * Phase 9 — Notification System (architecture frozen 2026-07-25, TASKS.md's
@@ -96,11 +94,9 @@ import { RestaurantNotificationsController } from './presentation/controllers/re
     // RestaurantsModule<->PlatformAdminModule<->CustomerAcquisitionModule
     // shape this codebase already uses.
     forwardRef(() => PlatformAdminModule),
-    // AuthorizationModule (OrganizationMemberGuard/@RequireOrgRole for
-    // RestaurantNotificationsController) and RestaurantsModule
-    // (RESTAURANT_REPOSITORY, for validating a Restaurant Owner broadcast's
-    // restaurantId belongs to the caller's own Organization) are both
-    // one-directional - neither imports this module back.
+    // AuthorizationModule and RestaurantsModule are both one-directional -
+    // neither imports this module back. (Restaurant Owner broadcasts were
+    // withdrawn in ADR-042; only Platform Admin broadcasts remain.)
     AuthorizationModule,
     RestaurantsModule,
     ReservationsModule,
@@ -108,11 +104,7 @@ import { RestaurantNotificationsController } from './presentation/controllers/re
     MessagingModule,
     BullModule.registerQueue({ name: NOTIFICATION_QUEUE_NAME }),
   ],
-  controllers: [
-    NotificationsController,
-    PlatformAdminNotificationsController,
-    RestaurantNotificationsController,
-  ],
+  controllers: [NotificationsController, PlatformAdminNotificationsController],
   providers: [
     NotificationDispatcher,
     CreateNotificationBroadcastService,
@@ -126,7 +118,6 @@ import { RestaurantNotificationsController } from './presentation/controllers/re
     SendNotificationToCustomerUseCase,
     SendPlatformAdminNotificationBroadcastUseCase,
     PlatformAdminListNotificationBroadcastsUseCase,
-    SendRestaurantOwnerNotificationBroadcastUseCase,
     NotificationQueueProcessor,
     PrismaNotificationRepository,
     { provide: NOTIFICATION_REPOSITORY, useExisting: PrismaNotificationRepository },

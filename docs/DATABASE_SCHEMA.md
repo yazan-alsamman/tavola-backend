@@ -949,6 +949,7 @@ Fields
 * lateArrivalNotifiedAt (nullable — set when late-arrival notification dispatched per ADR-019)
 * tableReadyNotifiedAt (nullable — set when table-ready notification dispatched per ADR-019)
 * rescheduledFromReservationId (nullable — points to the prior reservation record if this row resulted from a reschedule, if reschedules are modeled as new rows; see Migration Rules note)
+* offerId (nullable FK → Offer, ON DELETE SET NULL — the live offer the customer booked from; ADR-042)
 
 Notes
 
