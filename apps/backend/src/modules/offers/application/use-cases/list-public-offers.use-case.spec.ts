@@ -1,3 +1,4 @@
+import { InMemoryOfferViewDedupe } from '../../../../../test/offers/support/in-memory-offer-view-dedupe';
 import { ListPublicOffersUseCase } from './list-public-offers.use-case';
 import { FixedClock } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryOfferRepository } from '../../../../../test/offers/support/in-memory-offer.repository';
@@ -13,7 +14,11 @@ describe('ListPublicOffersUseCase', () => {
 
   async function build() {
     const offerRepository = new InMemoryOfferRepository();
-    const useCase = new ListPublicOffersUseCase(offerRepository, new FixedClock(now));
+    const useCase = new ListPublicOffersUseCase(
+      offerRepository,
+      new FixedClock(now),
+      new InMemoryOfferViewDedupe(),
+    );
     return { useCase, offerRepository };
   }
 
@@ -67,7 +72,12 @@ describe('ListPublicOffersUseCase', () => {
       .softDelete(new Date('2026-08-10T00:00:00.000Z'));
     await offerRepository.seed(deleted);
 
-    const result = await useCase.execute({ restaurantId, page: 1, limit: 20 });
+    const result = await useCase.execute({
+      restaurantId,
+      page: 1,
+      limit: 20,
+      viewerKey: '203.0.113.1',
+    });
 
     expect(result.total).toBe(1);
     expect(result.items[0].offerId).toBe(active.offerId.value);
@@ -87,7 +97,12 @@ describe('ListPublicOffersUseCase', () => {
     }).publish(publishAt);
     await offerRepository.seed(stale);
 
-    const result = await useCase.execute({ restaurantId, page: 1, limit: 20 });
+    const result = await useCase.execute({
+      restaurantId,
+      page: 1,
+      limit: 20,
+      viewerKey: '203.0.113.1',
+    });
     expect(result.total).toBe(0);
   });
 
@@ -103,8 +118,28 @@ describe('ListPublicOffersUseCase', () => {
     }).publish(publishAt);
     await offerRepository.seed(notYetStarted);
 
-    const result = await useCase.execute({ restaurantId, page: 1, limit: 20 });
+    const result = await useCase.execute({
+      restaurantId,
+      page: 1,
+      limit: 20,
+      viewerKey: '203.0.113.1',
+    });
     expect(result.total).toBe(0);
+  });
+
+  it('counts each offer once per viewer per day, however often the list is loaded (ADR-048)', async () => {
+    const { useCase, offerRepository } = await build();
+    const active = testOffer({ id: '22222222-2222-4222-8222-222222222232', restaurantId }).publish(
+      publishAt,
+    );
+    await offerRepository.seed(active);
+
+    for (let i = 0; i < 3; i += 1) {
+      await useCase.execute({ restaurantId, page: 1, limit: 20, viewerKey: '203.0.113.1' });
+    }
+    await useCase.execute({ restaurantId, page: 1, limit: 20, viewerKey: '198.51.100.2' });
+
+    expect(offerRepository.views.get(active.offerId.value)).toBe(2);
   });
 
   it('counts a view for each offer it returns (ADR-047) and still answers if counting fails', async () => {
@@ -114,13 +149,18 @@ describe('ListPublicOffersUseCase', () => {
     );
     await offerRepository.seed(active);
 
-    await useCase.execute({ restaurantId, page: 1, limit: 20 });
+    await useCase.execute({ restaurantId, page: 1, limit: 20, viewerKey: '203.0.113.1' });
     expect(offerRepository.views.get(active.offerId.value)).toBe(1);
 
     offerRepository.recordViews = async () => {
       throw new Error('database unavailable');
     };
-    const result = await useCase.execute({ restaurantId, page: 1, limit: 20 });
+    const result = await useCase.execute({
+      restaurantId,
+      page: 1,
+      limit: 20,
+      viewerKey: '203.0.113.1',
+    });
     expect(result.total).toBe(1);
   });
 });

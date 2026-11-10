@@ -2764,6 +2764,7 @@ The 2026-11-10 review found that PlatformSupport could call Platform Admin mutat
 5. OTP verification charges an attempt with a conditional update (`incorrectAttemptCount < max`) before comparing the code, and refunds it when the code is right.
 6. `ops/deploy.sh` dumps the database before running migrations and stops if the dump fails.
 7. Submit Review refuses a reservation the auto-close sweep completed (an `Approved -> Completed` history row with no operator), with 400 `VALIDATION_ERROR`, because nobody confirmed the guest came. It stays Completed; a booking staff closed by hand can still be reviewed (owner choice, 2026-11-10).
+8. An offer's `viewCount` counts one view per viewer (client IP) per UTC day, deduplicated in Redis (`OFFER_VIEW_DEDUPE`), instead of one per list request.
 
 ### Alternatives
 

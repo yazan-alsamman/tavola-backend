@@ -8,6 +8,7 @@ export interface ListDiscoverableOffersCommand {
   restaurantId: string;
   page: number;
   limit: number;
+  viewerKey: string;
 }
 
 /**
@@ -35,6 +36,7 @@ export class ListDiscoverableOffersUseCase {
       restaurantId: command.restaurantId,
       page: command.page,
       limit: command.limit,
+      viewerKey: command.viewerKey,
     });
   }
 }
