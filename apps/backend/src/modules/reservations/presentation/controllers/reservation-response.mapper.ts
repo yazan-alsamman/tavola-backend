@@ -27,6 +27,7 @@ export function toReservationResponse(result: ReservationResult): ReservationRes
     cancelledAt: result.cancelledAt ? result.cancelledAt.toISOString() : null,
     completedAt: result.completedAt ? result.completedAt.toISOString() : null,
     noShowAt: result.noShowAt ? result.noShowAt.toISOString() : null,
+    offerId: result.offerId,
     createdAt: result.createdAt.toISOString(),
     updatedAt: result.updatedAt.toISOString(),
   };
@@ -56,6 +57,7 @@ export function toMyReservationItemResponse(item: MyReservationItem): MyReservat
           capacity: item.table.capacity,
         }
       : null,
+    offer: item.offer ? { offerId: item.offer.offerId, title: item.offer.title } : null,
   };
 }
 

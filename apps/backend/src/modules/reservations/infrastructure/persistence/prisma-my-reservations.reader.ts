@@ -16,6 +16,7 @@ const INCLUDE = {
   restaurant: { select: { name: true, coverImageId: true } },
   branch: { select: { address: true } },
   table: { select: { id: true, tableNumber: true, capacity: true } },
+  offer: { select: { id: true, title: true } },
 } as const;
 
 type ReservationRow = Prisma.ReservationGetPayload<{ include: typeof INCLUDE }>;
@@ -148,6 +149,7 @@ export class PrismaMyReservationsReader implements MyReservationsReaderPort {
         tableNumber: row.table.tableNumber,
         capacity: row.table.capacity,
       },
+      offer: row.offer ? { offerId: row.offer.id, title: row.offer.title } : null,
     };
   }
 }

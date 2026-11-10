@@ -107,6 +107,13 @@ export interface MyReservationItem {
   updatedAt: Date;
   specialRequest: string | null;
   table: MyReservationTableInfo | null;
+  /** The offer the booking was attributed to, or null (ADR-047). */
+  offer: MyReservationOfferInfo | null;
+}
+
+export interface MyReservationOfferInfo {
+  offerId: string;
+  title: string;
 }
 
 export interface MyReservationsPage {

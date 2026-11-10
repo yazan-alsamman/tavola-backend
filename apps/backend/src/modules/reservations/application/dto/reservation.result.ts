@@ -19,6 +19,8 @@ export interface ReservationResult {
   cancelledAt: Date | null;
   completedAt: Date | null;
   noShowAt: Date | null;
+  /** The offer this booking was attributed to (ADR-047), or null. */
+  offerId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

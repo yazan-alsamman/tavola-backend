@@ -15,6 +15,14 @@ export class MyReservationTableResponseDto {
   capacity!: number;
 }
 
+export class MyReservationOfferResponseDto {
+  @ApiProperty({ format: 'uuid' })
+  offerId!: string;
+
+  @ApiProperty({ example: 'Weekday lunch 20% off' })
+  title!: string;
+}
+
 export class MyReservationItemResponseDto {
   @ApiProperty({ format: 'uuid' })
   reservationId!: string;
@@ -69,4 +77,11 @@ export class MyReservationItemResponseDto {
 
   @ApiPropertyOptional({ type: MyReservationTableResponseDto, nullable: true })
   table!: MyReservationTableResponseDto | null;
+
+  @ApiPropertyOptional({
+    type: MyReservationOfferResponseDto,
+    nullable: true,
+    description: 'The offer the booking was made under, or null for an ordinary booking.',
+  })
+  offer!: MyReservationOfferResponseDto | null;
 }

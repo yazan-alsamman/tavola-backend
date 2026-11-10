@@ -72,6 +72,14 @@ export class ReservationResponseDto {
   @ApiPropertyOptional({ format: 'date-time', nullable: true })
   noShowAt!: string | null;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The offer this booking counts toward (ADR-047). Null when none was sent, or when the sent offer did not apply (ended, conditions not met, cap reached).',
+  })
+  offerId!: string | null;
+
   @ApiProperty({ format: 'date-time' })
   createdAt!: string;
 

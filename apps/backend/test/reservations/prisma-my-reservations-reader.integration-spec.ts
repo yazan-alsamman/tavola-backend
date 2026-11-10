@@ -59,6 +59,9 @@ describe('PrismaMyReservationsReader (integration)', () => {
     await rawPrisma.reservation.deleteMany({
       where: { restaurant: { slug: { startsWith: TEST_PREFIX } } },
     });
+    await rawPrisma.offer.deleteMany({
+      where: { restaurant: { slug: { startsWith: TEST_PREFIX } } },
+    });
     await rawPrisma.table.deleteMany({
       where: { branch: { restaurant: { slug: { startsWith: TEST_PREFIX } } } },
     });
@@ -126,6 +129,7 @@ describe('PrismaMyReservationsReader (integration)', () => {
     reservationDate?: Date;
     reservationStartTime?: Date;
     notes?: string | null;
+    offerId?: string | null;
   }) {
     const reservationDate = params.reservationDate ?? new Date('2026-09-01T00:00:00.000Z');
     const reservationStartTime =
@@ -144,6 +148,7 @@ describe('PrismaMyReservationsReader (integration)', () => {
         status: params.status ?? ReservationStatus.Completed,
         source: ReservationSource.Online,
         notes: params.notes ?? null,
+        offerId: params.offerId ?? null,
       },
     });
   }
@@ -175,6 +180,48 @@ describe('PrismaMyReservationsReader (integration)', () => {
     expect(item.partySize).toBe(2);
     expect(item.specialRequest).toBe('Window seat please');
     expect(item.table).toEqual({ tableId, tableNumber: 'T1', capacity: 4 });
+    expect(item.offer).toBeNull();
+  });
+
+  it('returns the offer a reservation was booked under (ADR-047)', async () => {
+    if (!dbAvailable) return;
+
+    const { restaurantId, branchId, tableId } = await seedRestaurantBranchTable();
+    const offer = await rawPrisma.offer.create({
+      data: {
+        restaurantId,
+        type: 'BillDiscount',
+        title: 'Weekday lunch 20% off',
+        description: 'Lunch only.',
+        discountType: 'Percentage',
+        discountValue: 20,
+        startsAt: new Date('2026-08-01T00:00:00.000Z'),
+        endsAt: new Date('2026-10-01T00:00:00.000Z'),
+        status: 'Published',
+      },
+    });
+    const otherUser = await seedUser('offer');
+    const booked = await seedReservation({
+      restaurantId,
+      branchId,
+      tableId,
+      userId: otherUser.id,
+      offerId: offer.id,
+    });
+
+    const page = await reader.search(
+      otherUser.id,
+      'all',
+      {},
+      1,
+      20,
+      'reservationDate',
+      'desc',
+      NOW,
+    );
+
+    expect(page.items.map((item) => item.reservationId)).toEqual([booked.id]);
+    expect(page.items[0].offer).toEqual({ offerId: offer.id, title: 'Weekday lunch 20% off' });
   });
 
   it('returns an empty page for a customer with no reservations', async () => {
