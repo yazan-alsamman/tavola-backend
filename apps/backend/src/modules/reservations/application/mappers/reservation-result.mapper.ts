@@ -21,6 +21,7 @@ export function toReservationResult(reservation: Reservation): ReservationResult
     cancelledAt: reservation.cancelledAt,
     completedAt: reservation.completedAt,
     noShowAt: reservation.noShowAt,
+    offerId: reservation.offerId,
     createdAt: reservation.createdAt,
     updatedAt: reservation.updatedAt,
   };

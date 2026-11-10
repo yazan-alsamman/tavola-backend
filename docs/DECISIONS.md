@@ -2495,6 +2495,11 @@ reservation booked from an offer should show that it came from that offer.
    ignored, never rejected, so a stale offer link in the app never blocks a
    booking. The staff branch reservation list returns `offer { offerId, title }`
    or null.
+   The customer's own lists (`GET /reservations/my`, `/my/upcoming`,
+   `/my/history`) return the same `offer` object, and every flat reservation
+   response (create, `GET /reservations/my/:id`, lifecycle actions) carries
+   `offerId`, so the app can show the offer on the booking and tell whether a
+   sent offer was applied. Both are additive fields.
 
 ### Consequences
 

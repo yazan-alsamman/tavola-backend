@@ -57,6 +57,7 @@ describe('SearchMyReservationsUseCase', () => {
       updatedAt: new Date('2026-08-10T20:00:00.000Z'),
       specialRequest: null,
       table: { tableId: '55555555-5555-4555-8555-555555555555', tableNumber: 'T1', capacity: 4 },
+      offer: null,
       ...overrides,
     };
   }
