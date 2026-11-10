@@ -17,6 +17,11 @@ import {
   RESERVATION_REPOSITORY,
 } from '@modules/reservations/domain/repositories/reservation.repository';
 import { ReservationStatus } from '@modules/reservations/domain/enums/reservation.enums';
+import {
+  ReservationHistoryRepository,
+  RESERVATION_HISTORY_REPOSITORY,
+} from '@modules/reservations/domain/repositories/reservation-history.repository';
+import { ReservationAttendanceUnconfirmedException } from '../../domain/exceptions/reservation-attendance-unconfirmed.exception';
 import { ReservationNotFoundException } from '@modules/reservations/domain/exceptions/reservation-not-found.exception';
 import {
   RestaurantRepository,
@@ -49,6 +54,8 @@ export class SubmitReviewUseCase {
     @Inject(RESERVATION_REPOSITORY) private readonly reservationRepository: ReservationRepository,
     @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
     @Inject(REVIEW_REPOSITORY) private readonly reviewRepository: ReviewRepository,
+    @Inject(RESERVATION_HISTORY_REPOSITORY)
+    private readonly reservationHistoryRepository: ReservationHistoryRepository,
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
@@ -73,6 +80,9 @@ export class SubmitReviewUseCase {
     }
     if (reservation.status !== ReservationStatus.Completed) {
       throw new ReservationNotCompletedException();
+    }
+    if (await this.reservationHistoryRepository.wasCompletedBySystem(reservationId.value)) {
+      throw new ReservationAttendanceUnconfirmedException();
     }
 
     const existing = await this.reviewRepository.findByReservationId(reservationId);

@@ -9,6 +9,12 @@ import { ReservationHistory } from '../entities/reservation-history.entity';
  */
 export interface ReservationHistoryRepository {
   save(history: ReservationHistory): Promise<void>;
+  /**
+   * True when the reservation was completed by the auto-close sweep (an
+   * `Approved -> Completed` row with no operator) rather than by staff,
+   * so nobody confirmed the guest actually came.
+   */
+  wasCompletedBySystem(reservationId: string): Promise<boolean>;
 }
 
 export const RESERVATION_HISTORY_REPOSITORY = Symbol('RESERVATION_HISTORY_REPOSITORY');

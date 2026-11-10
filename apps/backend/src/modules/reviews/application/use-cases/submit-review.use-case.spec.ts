@@ -4,7 +4,7 @@ import { ReservationNotCompletedException } from '../../domain/exceptions/reserv
 import { ReservationNotFoundException } from '@modules/reservations/domain/exceptions/reservation-not-found.exception';
 import { ReviewCreatedEvent } from '../../domain/events/review.events';
 import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
-import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
+import { ReservationId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import {
   CollectingEventPublisher,
   CollectingAuditLogWriter,
@@ -12,6 +12,10 @@ import {
   ImmediateUnitOfWork,
   UuidGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
+import { InMemoryReservationHistoryRepository } from '../../../../../test/reservations/support/in-memory-reservation-history.repository';
+import { ReservationHistory } from '@modules/reservations/domain/entities/reservation-history.entity';
+import { ReservationStatus } from '@modules/reservations/domain/enums/reservation.enums';
+import { ReservationAttendanceUnconfirmedException } from '../../domain/exceptions/reservation-attendance-unconfirmed.exception';
 import { InMemoryReservationRepository } from '../../../../../test/reservations/support/in-memory-reservation.repository';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryReviewRepository } from '../../../../../test/reviews/support/in-memory-review.repository';
@@ -52,6 +56,7 @@ describe('SubmitReviewUseCase', () => {
     const reservationRepository = new InMemoryReservationRepository();
     const restaurantRepository = new InMemoryRestaurantRepository();
     const reviewRepository = new InMemoryReviewRepository();
+    const reservationHistoryRepository = new InMemoryReservationHistoryRepository();
     const userRepository = new InMemoryUserRepository();
     const reviewImageRepository = new InMemoryReviewImageRepository();
     const restaurantReplyRepository = new InMemoryRestaurantReplyRepository();
@@ -77,6 +82,7 @@ describe('SubmitReviewUseCase', () => {
       reservationRepository,
       restaurantRepository,
       reviewRepository,
+      reservationHistoryRepository,
       new FixedClock(FIXED_NOW),
       new UuidGenerator(),
       eventPublisher,
@@ -87,6 +93,7 @@ describe('SubmitReviewUseCase', () => {
 
     return {
       useCase,
+      reservationHistoryRepository,
       reservationRepository,
       restaurantRepository,
       reviewRepository,
@@ -167,6 +174,56 @@ describe('SubmitReviewUseCase', () => {
     await expect(
       useCase.execute({ actor: userActor(), reservationId, content: { rating: 5, comment: null } }),
     ).rejects.toBeInstanceOf(ReservationNotCompletedException);
+  });
+
+  function completionRow(changedBy: string | null) {
+    return ReservationHistory.create({
+      id: changedBy === null ? 'history-system' : 'history-staff',
+      reservationId,
+      oldStatus: ReservationStatus.Approved,
+      newStatus: ReservationStatus.Completed,
+      oldReservationDate: null,
+      oldReservationStartTime: null,
+      newReservationDate: null,
+      newReservationStartTime: null,
+      oldTableId: null,
+      newTableId: null,
+      withinCancellationWindow: null,
+      changedBy,
+      changedAt: FIXED_NOW,
+      reason: null,
+    });
+  }
+
+  it('rejects a reservation the auto-close sweep completed, since the visit was never confirmed', async () => {
+    const { useCase, reservationRepository, reservationHistoryRepository, reviewRepository } =
+      await build();
+    reservationRepository.seed(
+      testCompletedReservation({ id: reservationId, userId, restaurantId, branchId, tableId }),
+    );
+    await reservationHistoryRepository.save(completionRow(null));
+
+    await expect(
+      useCase.execute({ actor: userActor(), reservationId, content: { rating: 1, comment: null } }),
+    ).rejects.toBeInstanceOf(ReservationAttendanceUnconfirmedException);
+    expect(
+      await reviewRepository.findByReservationId(ReservationId.create(reservationId)),
+    ).toBeNull();
+  });
+
+  it('accepts a reservation staff completed', async () => {
+    const { useCase, reservationRepository, reservationHistoryRepository } = await build();
+    reservationRepository.seed(
+      testCompletedReservation({ id: reservationId, userId, restaurantId, branchId, tableId }),
+    );
+    await reservationHistoryRepository.save(completionRow('77777777-7777-4777-8777-777777777777'));
+
+    const result = await useCase.execute({
+      actor: userActor(),
+      reservationId,
+      content: { rating: 4, comment: null },
+    });
+    expect(result.rating).toBe(4);
   });
 
   it('rejects a reservation not owned by the caller (IDOR-safe 404)', async () => {

@@ -236,6 +236,8 @@ import { PrismaBookingEligibilityReader } from './infrastructure/persistence/pri
   ],
   exports: [
     RESERVATION_REPOSITORY,
+    // Submit Review refuses reservations the auto-close sweep completed (ADR-048).
+    RESERVATION_HISTORY_REPOSITORY,
     RESERVATION_GUEST_REPOSITORY,
     APPROVED_RESERVATION_OPERATIONAL_SCHEDULER,
     ScheduleApprovedReservationSignalsService,

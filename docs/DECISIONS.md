@@ -2763,6 +2763,7 @@ The 2026-11-10 review found that PlatformSupport could call Platform Admin mutat
 4. A failed Platform Admin login only counts toward lockout when the account is a Platform Admin. Audit rows that unauthenticated requests can trigger (`auth.jwt.invalid`, `auth.jwt.expired`, rate-limit exceeded) are written at most once per action, IP and minute.
 5. OTP verification charges an attempt with a conditional update (`incorrectAttemptCount < max`) before comparing the code, and refunds it when the code is right.
 6. `ops/deploy.sh` dumps the database before running migrations and stops if the dump fails.
+7. Submit Review refuses a reservation the auto-close sweep completed (an `Approved -> Completed` history row with no operator), with 400 `VALIDATION_ERROR`, because nobody confirmed the guest came. It stays Completed; a booking staff closed by hand can still be reviewed (owner choice, 2026-11-10).
 
 ### Alternatives
 
