@@ -13,6 +13,7 @@ export interface RestaurantResult {
   description: string | null;
   cuisineType: string | null;
   averageRating: number | null;
+  ratingCount: number;
   priceLevel: number | null;
   status: string;
   createdAt: Date;

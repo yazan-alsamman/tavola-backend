@@ -43,6 +43,7 @@ export class ListRestaurantReviewsUseCase {
       restaurantId,
       command.page,
       command.limit,
+      command.filter,
     );
 
     return {

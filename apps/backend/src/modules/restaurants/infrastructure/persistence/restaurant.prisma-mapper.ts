@@ -14,6 +14,7 @@ export class RestaurantPrismaMapper {
       description: row.description,
       cuisineType: row.cuisineType,
       averageRating: row.averageRating === null ? null : row.averageRating.toNumber(),
+      ratingCount: row.ratingCount,
       priceLevel: row.priceLevel,
       status: row.status as RestaurantStatus,
       createdAt: row.createdAt,
@@ -27,12 +28,13 @@ export class RestaurantPrismaMapper {
    * `Prisma.Decimal`) - Prisma's write-side input types for a `Decimal`
    * column accept `number | string | Decimal`, so callers pass this straight
    * through to `create`/`update` `data` without constructing a `Decimal`.
-   * Never populated by this module's own CRUD (computed by the future
-   * Reviews module) - always `null` for every row this mapper produces.
+   * Computed by the Reviews module (`recomputeAverageRating`), never by
+   * this module's own CRUD; `ratingCount` is likewise left to the database
+   * (default 0) and the recompute.
    */
   static toPersistence(
     restaurant: RestaurantEntity,
-  ): Omit<PrismaRestaurant, 'averageRating'> & { averageRating: number | null } {
+  ): Omit<PrismaRestaurant, 'averageRating' | 'ratingCount'> & { averageRating: number | null } {
     const props = restaurant.toProps();
     return {
       id: props.id,

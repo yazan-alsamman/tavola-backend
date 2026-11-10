@@ -7,6 +7,8 @@ export function toMenuItemResult(item: MenuItem): MenuItemResult {
     categoryId: item.categoryId.value,
     restaurantId: item.restaurantId.value,
     name: item.name,
+    nameAr: item.nameAr,
+    nameEn: item.nameEn,
     description: item.description,
     price: item.price,
     currency: item.currency,

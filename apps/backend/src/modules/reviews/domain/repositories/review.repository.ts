@@ -1,10 +1,16 @@
-import { Review } from '../entities/review.entity';
+import { Review, ReviewAxis } from '../entities/review.entity';
 import {
   ReviewId,
   RestaurantId,
   ReservationId,
   UserId,
 } from '@shared/domain/value-objects/identifiers.vo';
+
+/** `stars` alone matches whole-star `rating`; with `axis`, that axis's stars. */
+export interface ReviewListFilter {
+  axis?: ReviewAxis;
+  stars?: number;
+}
 
 export interface ReviewListPage {
   items: Review[];
@@ -38,11 +44,15 @@ export interface ReviewRepository {
     restaurantId: RestaurantId,
     page: number,
     limit: number,
+    filter?: ReviewListFilter,
   ): Promise<ReviewListPage>;
 
   findManyByUserId(userId: UserId, page: number, limit: number): Promise<ReviewListPage>;
 
   softDelete(id: ReviewId, at: Date): Promise<void>;
+
+  /** Writes a reopen or a re-rate (rating, axes, notes and re-rating timestamps). */
+  update(review: Review): Promise<void>;
 }
 
 export const REVIEW_REPOSITORY = Symbol('REVIEW_REPOSITORY');

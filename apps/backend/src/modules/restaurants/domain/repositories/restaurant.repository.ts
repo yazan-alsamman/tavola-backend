@@ -49,9 +49,9 @@ export interface RestaurantRepository {
   existsPubliclyById(id: RestaurantId): Promise<boolean>;
 
   /**
-   * Phase 10 (Reviews, architecture frozen 2026-07-26, owner decision #17):
-   * recomputes `averageRating` as `AVG(rating)` over this restaurant's
-   * active (`deletedAt IS NULL`) Reviews, as a single atomic `UPDATE`
+   * Phase 10, reworked by ADR-045: recomputes `ratingCount` (active reviews
+   * created in the last 6 months) and `averageRating` (their average
+   * `score`, or `null` below 5 reviews) as a single atomic `UPDATE`
    * statement. Must be called inside the same `UnitOfWorkPort.execute`
    * transaction as the triggering Review create/delete, and **only after**
    * that transaction has already called `lockForRatingRecompute` below for
@@ -61,10 +61,17 @@ export interface RestaurantRepository {
    * the generic `save()` full-row upsert) so a concurrent, unrelated
    * Restaurant profile edit can never be clobbered by a stale in-memory
    * entity - mirrors `markLateArrivalNotifiedIfEligible`'s own "no
-   * in-memory entity round-trip needed" precedent. Sets `averageRating` to
-   * `null` when the restaurant has zero active reviews - never `0`.
+   * in-memory entity round-trip needed" precedent. `averageRating` is never
+   * `0` - it is `null` with no (or too few) reviews.
    */
   recomputeAverageRating(restaurantId: RestaurantId, at: Date): Promise<void>;
+
+  /**
+   * ADR-045: the daily sweep that slides every restaurant's 6-month rating
+   * window forward. Writes only rows whose count or average changed;
+   * returns how many. Not tenant-scoped (raw SQL; a system job).
+   */
+  recomputeAllRatings(at: Date): Promise<number>;
 
   /**
    * Phase 10 bug fix (found during live concurrency verification, see

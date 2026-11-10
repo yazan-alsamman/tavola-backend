@@ -531,7 +531,8 @@ Fields
 * coverImageId
 * description
 * cuisineType
-* averageRating
+* averageRating (ADR-045: average review `score` over the last 6 months; NULL with fewer than 5 such reviews)
+* ratingCount (Int, default 0 — ADR-045: active reviews in that 6-month window)
 * priceLevel
 * status
 * createdAt
@@ -548,7 +549,7 @@ Notes
 
 * `ownerId` is removed from this table (see ADR-011). Restaurant ownership/administration is expressed through `OrganizationMember` on the parent Organization.
 * `cuisineType` is a **legacy display field** retained for backward-compatible API responses. Canonical cuisine classification uses `RestaurantCuisineCategory` (many-to-many). New features must read/write taxonomy tables, not this string alone.
-* `priceLevel` is the **price category** (1 = budget … 4 = fine dining). See `PRODUCT_REQUIREMENTS.md` FR-07.5.
+* `priceLevel` is the **price category** (1 = budget … 4 = fine dining). See `PRODUCT_REQUIREMENTS.md` FR-07.5. **ADR-046**: computed, never written by the restaurant: the rounded average of its branches' `priceLevel`, left unchanged while no branch has one.
 
 ---
 
@@ -752,6 +753,8 @@ Fields
 * longitude
 * countryCode
 * currency
+* referencePrice (nullable Decimal(10,2) — **ADR-046**: average price of the branch menu's items ranked 2 to 11 by price; recomputed, never written by the restaurant)
+* priceLevel (nullable Int 1–4, CHECK `branches_price_level_range` — **ADR-046**: quartile of `referencePrice` among branches with the same currency, `ceil(cume_dist × 4)`)
 * openingHours
 * timezone
 * phone
@@ -1236,15 +1239,24 @@ Fields
 * userId (FK -> `users.id`, NOT NULL — reviews are authenticated-User-owned only; guest-only/ReservationGuest reservations are never review-eligible in Phase 10)
 * restaurantId (FK -> `restaurants.id`, NOT NULL)
 * reservationId (FK -> `reservations.id`, NOT NULL, UNIQUE — plain, not partial; deleting a Review does **not** free its reservation for resubmission, by design)
-* rating (Int, NOT NULL — `CHECK (rating BETWEEN 1 AND 5)`)
+* rating (Int, NOT NULL — `CHECK (rating BETWEEN 1 AND 5)`; for a three-axis review, the rounded `score`, kept for app 1.0.2)
 * comment (String, NULLABLE — optional)
+* score (Decimal(3,2), NOT NULL — ADR-045: the average of the three axes, or `rating` for a single-rating review; existing rows were backfilled with `rating`)
+* serviceRating / placeRating / foodRating (Int, NULLABLE — ADR-045 axes; `CHECK` all three set or none, each 1–5)
+* serviceComment / placeComment / foodComment (String, NULLABLE)
+* privateNote (String, NULLABLE — reaches the restaurant only, never published)
+* reopenedAt (NULLABLE — the restaurant opened the review for its guest to rate again)
+* reratedAt (NULLABLE — when the guest last rated again)
 * createdAt
-* updatedAt (retained for bookkeeping/`deletedAt`-adjacent writes only — Reviews are immutable content after creation; no endpoint ever changes `rating`/`comment`)
-* deletedAt (NULLABLE — soft delete only, ADR-010)
+* updatedAt
+* deletedAt (NULLABLE — soft delete only, ADR-010; only the review's own guest may delete, ADR-045)
+
+Content changes after creation only through reopen → re-rate (ADR-045).
 
 Indexes
 
 * restaurantId
+* (restaurantId, createdAt) — the 6-month rating window
 * userId
 * unique (reservationId) — enforces "one reservation may produce only one review," permanently (not partial/conditional on `deletedAt`)
 
@@ -1400,13 +1412,15 @@ Indexes
 
 Restaurant promotions.
 
+**ADR-047 (CR round 2):** four new kinds, days/hours and booking conditions, live editing of a running Published offer (supersedes the Draft-only rule below), and a view counter. Migration `20261110210000_offer_kinds_schedule_conditions`.
+
 **Phase 11 freeze (2026-07-28), implemented via migration `20260728113109_phase_11_offers`:** a single generic `Offer` aggregate covers Promotions, Coupons, and Events — not three separate tables — distinguished only by the additive `type` field below. Coupons are display-only in v1 (no redemption code, usage tracking, or reservation/payment integration — TAVLA does not process payments; Phase 13 — Payments removed from product scope, 2026-07-28). Content is editable only while `status = Draft`; `Published`/`Expired` are immutable. Soft-delete is available to Owner/Admin from any state. `Published -> Expired` is a BullMQ-scheduled, CAS-guarded transition (`WHERE status = 'Published'`), not a lazy/computed status. Transitively tenant-owned via `restaurantId -> Restaurant.organizationId` (same pattern as `RestaurantGallery`/`RestaurantSettings`/`Review`) — not added to `DIRECT_TENANT_OWNED_MODELS`, no `organizationId` column.
 
 Fields
 
 * id (UUID)
 * restaurantId
-* type (`Promotion`, `Coupon`, `Event`)
+* type (`Promotion`, `Coupon`, `Event`; **ADR-047** adds `BillDiscount`, `FreeItem`, `GroupPrice`, `QuietDays`)
 * title
 * description
 * discountType (`Percentage`, `FixedAmount`)
@@ -1414,6 +1428,13 @@ Fields
 * startsAt
 * endsAt
 * status (`Draft`, `Published`, `Expired`)
+* daysOfWeek (Int[], default `{}` = every day; 0 = Sunday; CHECK `offers_days_of_week_range` — **ADR-047**)
+* startTime, endTime (nullable "HH:mm" text, branch-local, both or neither — CHECK `offers_hours_both_or_none`, **ADR-047**)
+* minPartySize (nullable Int >= 1 — **ADR-047**)
+* branchIds (UUID[], default `{}` = every branch of the restaurant — **ADR-047**)
+* oncePerCustomer (Boolean, default false — **ADR-047**)
+* bookingCap (nullable Int >= 1 — **ADR-047**)
+* viewCount (Int, default 0; incremented by the public listing — **ADR-047**)
 * createdAt
 * updatedAt
 * deletedAt
@@ -1435,6 +1456,7 @@ Fields
 
 * id (UUID)
 * restaurantId
+* branchId (nullable UUID → Branch, cascade — **ADR-046**: null = shared by every branch; set = that branch's own menu. A branch reads its own default menu, else the shared default)
 * name (String, default `"Main Menu"` — **added at implementation time, 2026-08-03**: distinguishing multiple Menus, e.g. Breakfast/Lunch/Dinner/QR, is the entire motivation for ADR-032's 1:N ownership change and was missing from that ADR's own field list; a pure gap-fill, no behavior change)
 * active (Boolean, default `true` — enabled/visible; independent of `isDefault`)
 * isDefault (Boolean, default `false` — **ADR-032**: exactly one non-deleted Menu per Restaurant may be `true`; `Restaurant.hasMenu` and the Customer public "the menu" read derive from the active, non-deleted, default Menu)
@@ -1446,7 +1468,8 @@ Fields
 Indexes
 
 * restaurantId (non-unique — a Restaurant may own multiple Menus, **ADR-032** dropped the singleton `@@unique([restaurantId])`)
-* partial unique `(restaurantId) WHERE isDefault = true AND deletedAt IS NULL` (`menus_restaurant_one_default_key`, hand-written in migration SQL — same mechanism as `Table`'s `tables_merge_group_one_primary_key`, ADR-026) — enforces exactly one Default Menu per Restaurant; resolves ADR-031's originally-open uniqueness/soft-delete interaction, since the constraint no longer applies to soft-deleted or non-default rows
+* branchId
+* partial unique `(restaurantId, COALESCE(branchId, nil uuid)) WHERE isDefault = true AND deletedAt IS NULL` (`menus_restaurant_one_default_key`, widened by **ADR-046** to one default per scope: shared, and each branch; hand-written in migration SQL — same mechanism as `Table`'s `tables_merge_group_one_primary_key`, ADR-026) — enforces exactly one Default Menu per Restaurant; resolves ADR-031's originally-open uniqueness/soft-delete interaction, since the constraint no longer applies to soft-deleted or non-default rows
 
 ### Menu Categories
 
@@ -1476,7 +1499,9 @@ Fields
 * id (UUID)
 * categoryId
 * restaurantId (denormalized)
-* name
+* name (the Arabic name, else the English one — kept for app 1.0.2, **ADR-046**)
+* nameAr (nullable — **ADR-046**)
+* nameEn (nullable — **ADR-046**; at least one of nameAr/nameEn)
 * description (nullable)
 * price (Decimal(10,2))
 * currency (String, ISO 4217 — see currency caveat above)

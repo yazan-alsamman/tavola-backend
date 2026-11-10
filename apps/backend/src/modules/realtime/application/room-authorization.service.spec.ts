@@ -77,6 +77,10 @@ class TenantScopedFakeRestaurantRepository implements RestaurantRepository {
     // own scope.
   }
 
+  async recomputeAllRatings(): Promise<number> {
+    return 0;
+  }
+
   async lockForRatingRecompute(): Promise<void> {
     // Not exercised by this spec - Reviews are outside room-authorization's
     // own scope.

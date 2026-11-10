@@ -27,17 +27,16 @@ export interface OfferRepository {
   findById(id: OfferId): Promise<Offer | null>;
 
   /**
-   * Conditional `UPDATE ... WHERE id = ? AND status = 'Draft'` - persists
-   * every mutable content field. Returns `false` if a concurrent transition
-   * (a second Update, or a Publish) already moved the Offer away from Draft
-   * between the caller's read and this write.
+   * Conditional `UPDATE ... WHERE id = ? AND status IN ('Draft','Published')
+   * AND deleted_at IS NULL` - persists every editable field (ADR-047).
+   * Returns `false` if the offer expired or was deleted between the
+   * caller's read and this write.
    */
-  updateIfDraft(offer: Offer): Promise<boolean>;
+  updateIfEditable(offer: Offer): Promise<boolean>;
 
   /**
    * Conditional `UPDATE ... WHERE id = ? AND status = 'Draft'`, setting
-   * `status = 'Published'`. Returns `false` on the same race as
-   * `updateIfDraft`.
+   * `status = 'Published'`. Returns `false` if a concurrent Publish won.
    */
   publishIfDraft(offer: Offer): Promise<boolean>;
 
@@ -53,6 +52,9 @@ export interface OfferRepository {
 
   /** Soft delete (ADR-010) - a no-op (silently 0 rows affected) if already deleted. */
   softDelete(id: OfferId, at: Date): Promise<void>;
+
+  /** ADR-047: adds one view to each offer just shown in a public list. */
+  recordViews(ids: OfferId[]): Promise<void>;
 
   /** Management listing - every status, paginated, newest-created first. */
   findManyByRestaurantId(

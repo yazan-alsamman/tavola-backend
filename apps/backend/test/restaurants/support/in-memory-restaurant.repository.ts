@@ -5,11 +5,36 @@ import {
 } from '@modules/restaurants/domain/repositories/restaurant.repository';
 import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import { RestaurantSlug } from '@shared/domain/value-objects/restaurant-slug.vo';
+import {
+  RATING_MIN_REVIEWS,
+  ratingWindowStart,
+} from '@modules/restaurants/domain/policies/restaurant-rating.policy';
 
 interface ReviewSourceRow {
   restaurantId: string;
-  rating: number;
+  score: number;
+  createdAt: Date;
   deletedAt: Date | null;
+}
+
+/** Mirrors the Prisma recompute (ADR-045): last 6 months, shown from 5 reviews. */
+function ratingOf(
+  rows: ReviewSourceRow[],
+  restaurantId: string,
+  at: Date,
+): { averageRating: number | null; ratingCount: number } {
+  const windowStart = ratingWindowStart(at);
+  const active = rows.filter(
+    (row) =>
+      row.restaurantId === restaurantId &&
+      row.deletedAt === null &&
+      row.createdAt.getTime() >= windowStart.getTime(),
+  );
+  const average = active.reduce((sum, row) => sum + row.score, 0) / (active.length || 1);
+  return {
+    ratingCount: active.length,
+    averageRating: active.length >= RATING_MIN_REVIEWS ? Math.round(average * 100) / 100 : null,
+  };
 }
 
 export class InMemoryRestaurantRepository implements RestaurantRepository {
@@ -33,16 +58,33 @@ export class InMemoryRestaurantRepository implements RestaurantRepository {
       return;
     }
     const rows = this.reviewSource ? this.reviewSource() : [];
-    const active = rows.filter((row) => row.restaurantId === id.value && row.deletedAt === null);
-    const averageRating =
-      active.length === 0
-        ? null
-        : Math.round((active.reduce((sum, row) => sum + row.rating, 0) / active.length) * 100) /
-          100;
     this.rows.set(
       id.value,
-      Restaurant.reconstitute({ ...restaurant.toProps(), averageRating, updatedAt: at }),
+      Restaurant.reconstitute({
+        ...restaurant.toProps(),
+        ...ratingOf(rows, id.value, at),
+        updatedAt: at,
+      }),
     );
+  }
+
+  async recomputeAllRatings(at: Date): Promise<number> {
+    const rows = this.reviewSource ? this.reviewSource() : [];
+    let changed = 0;
+    for (const [id, restaurant] of this.rows) {
+      const next = ratingOf(rows, id, at);
+      if (
+        next.ratingCount !== restaurant.ratingCount ||
+        next.averageRating !== restaurant.averageRating
+      ) {
+        this.rows.set(
+          id,
+          Restaurant.reconstitute({ ...restaurant.toProps(), ...next, updatedAt: at }),
+        );
+        changed += 1;
+      }
+    }
+    return changed;
   }
 
   /** No-op: the in-memory fake has no concurrent writers to serialize against. */

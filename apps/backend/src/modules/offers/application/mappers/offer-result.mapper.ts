@@ -14,6 +14,13 @@ export function toOfferResult(offer: Offer, at?: Date): OfferResult {
     startsAt: offer.startsAt,
     endsAt: offer.endsAt,
     status: at ? offer.statusAt(at) : offer.status,
+    daysOfWeek: offer.daysOfWeek,
+    startTime: offer.startTime,
+    endTime: offer.endTime,
+    minPartySize: offer.minPartySize,
+    branchIds: offer.branchIds,
+    oncePerCustomer: offer.oncePerCustomer,
+    bookingCap: offer.bookingCap,
     createdAt: offer.createdAt,
     updatedAt: offer.updatedAt,
   };

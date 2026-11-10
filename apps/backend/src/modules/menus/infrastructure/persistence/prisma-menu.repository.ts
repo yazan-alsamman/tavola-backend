@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaContext } from '@infrastructure/prisma/prisma-context.service';
-import { MenuId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
+import { BranchId, MenuId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import { Menu } from '../../domain/entities/menu.entity';
 import { MenuRepository } from '../../domain/repositories/menu.repository';
 import { MenuPrismaMapper } from './menu.prisma-mapper';
@@ -34,16 +34,39 @@ export class PrismaMenuRepository implements MenuRepository {
     return rows.map(MenuPrismaMapper.toDomain);
   }
 
-  async findDefaultByRestaurantId(restaurantId: RestaurantId): Promise<Menu | null> {
-    const row = await this.prismaContext.client.menu.findFirst({
-      where: { restaurantId: restaurantId.value, isDefault: true, active: true, deletedAt: null },
-    });
-    return row ? MenuPrismaMapper.toDomain(row) : null;
+  async findDefaultByRestaurantId(
+    restaurantId: RestaurantId,
+    branchId?: BranchId,
+  ): Promise<Menu | null> {
+    // The branch's own default wins; the shared default is the fallback.
+    const scopes: (string | null)[] = branchId ? [branchId.value, null] : [null];
+    for (const scope of scopes) {
+      const row = await this.prismaContext.client.menu.findFirst({
+        where: {
+          restaurantId: restaurantId.value,
+          branchId: scope,
+          isDefault: true,
+          active: true,
+          deletedAt: null,
+        },
+      });
+      if (row !== null) {
+        return MenuPrismaMapper.toDomain(row);
+      }
+    }
+    return null;
   }
 
-  async existsAnyForRestaurant(restaurantId: RestaurantId): Promise<boolean> {
+  async existsAnyForRestaurant(
+    restaurantId: RestaurantId,
+    branchId: BranchId | null = null,
+  ): Promise<boolean> {
     const count = await this.prismaContext.client.menu.count({
-      where: { restaurantId: restaurantId.value, deletedAt: null },
+      where: {
+        restaurantId: restaurantId.value,
+        branchId: branchId?.value ?? null,
+        deletedAt: null,
+      },
     });
     return count > 0;
   }
@@ -62,7 +85,12 @@ export class PrismaMenuRepository implements MenuRepository {
     });
   }
 
-  async setAsDefault(menuId: MenuId, restaurantId: RestaurantId, at: Date): Promise<void> {
+  async setAsDefault(
+    menuId: MenuId,
+    restaurantId: RestaurantId,
+    at: Date,
+    branchId: BranchId | null = null,
+  ): Promise<void> {
     // Both writes run inside the same UnitOfWorkPort transaction as the
     // caller (SetDefaultMenuUseCase) - PrismaContext binds the transactional
     // client via AsyncLocalStorage for the whole unitOfWork.execute() call,
@@ -70,7 +98,12 @@ export class PrismaMenuRepository implements MenuRepository {
     // require the unextended TransactionClient type, which loses tenant
     // scoping - see PrismaContext's own doc comment).
     await this.prismaContext.client.menu.updateMany({
-      where: { restaurantId: restaurantId.value, isDefault: true, deletedAt: null },
+      where: {
+        restaurantId: restaurantId.value,
+        branchId: branchId?.value ?? null,
+        isDefault: true,
+        deletedAt: null,
+      },
       data: { isDefault: false, updatedAt: at },
     });
     await this.prismaContext.client.menu.updateMany({

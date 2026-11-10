@@ -12,6 +12,8 @@ export function toBranchResult(branch: Branch): BranchResult {
     longitude: branch.longitude,
     countryCode: branch.countryCode,
     currency: branch.currency,
+    referencePrice: branch.referencePrice,
+    priceLevel: branch.priceLevel,
     timezone: branch.timezone,
     phone: branch.phone,
     createdAt: branch.createdAt,

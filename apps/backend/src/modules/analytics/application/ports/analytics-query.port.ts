@@ -64,6 +64,12 @@ export interface WaitlistStatusCounts {
 
 export interface ReviewsSummaryRawData {
   activeReviewCount: number;
+  /** Active reviews created at or after `windowStart`. */
+  windowReviewCount: number;
+  /** Average review score in the window, or null with none. */
+  windowAverage: number | null;
+  /** Per-axis averages in the window over three-axis reviews only; null with none. */
+  axisAverages: { service: number | null; place: number | null; food: number | null };
 }
 
 /**
@@ -77,7 +83,7 @@ export interface AnalyticsQueryPort {
   getPeakHours(scope: AnalyticsBranchScope): Promise<Map<number, number>>;
   getCustomerInsights(scope: AnalyticsRestaurantScope): Promise<CustomerInsightsRawData>;
   getWaitlistCounts(scope: AnalyticsRestaurantScope): Promise<WaitlistStatusCounts>;
-  getReviewsSummary(restaurantId: string): Promise<ReviewsSummaryRawData>;
+  getReviewsSummary(restaurantId: string, windowStart: Date): Promise<ReviewsSummaryRawData>;
 }
 
 export const ANALYTICS_QUERY_PORT = Symbol('ANALYTICS_QUERY_PORT');

@@ -8,7 +8,7 @@ import { OfferId, RestaurantId } from '@shared/domain/value-objects/identifiers.
 
 /**
  * Faithfully reproduces the real `PrismaOfferRepository`'s CAS semantics
- * (`updateIfDraft`/`publishIfDraft`/`expireIfPublished` only apply if the
+ * (`updateIfEditable`/`publishIfDraft`/`expireIfPublished` only apply if the
  * row is still in the expected state at write time) so unit tests can prove
  * race behavior without a real database.
  */
@@ -35,9 +35,9 @@ export class InMemoryOfferRepository implements OfferRepository {
     return row;
   }
 
-  async updateIfDraft(offer: Offer): Promise<boolean> {
+  async updateIfEditable(offer: Offer): Promise<boolean> {
     const current = this.rows.get(offer.offerId.value);
-    if (!current || current.status !== OfferStatus.Draft) {
+    if (!current || current.isDeleted() || !current.isEditable(offer.updatedAt)) {
       return false;
     }
     this.rows.set(offer.offerId.value, offer);
@@ -60,6 +60,14 @@ export class InMemoryOfferRepository implements OfferRepository {
     }
     this.rows.set(id.value, current.expire(at));
     return true;
+  }
+
+  readonly views = new Map<string, number>();
+
+  async recordViews(ids: OfferId[]): Promise<void> {
+    for (const id of ids) {
+      this.views.set(id.value, (this.views.get(id.value) ?? 0) + 1);
+    }
   }
 
   async softDelete(id: OfferId, at: Date): Promise<void> {

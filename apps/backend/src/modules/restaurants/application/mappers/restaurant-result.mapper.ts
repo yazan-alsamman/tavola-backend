@@ -11,6 +11,7 @@ export function toRestaurantResult(restaurant: Restaurant): RestaurantResult {
     description: restaurant.description,
     cuisineType: restaurant.cuisineType,
     averageRating: restaurant.averageRating,
+    ratingCount: restaurant.ratingCount,
     priceLevel: restaurant.priceLevel,
     status: restaurant.status,
     createdAt: restaurant.createdAt,

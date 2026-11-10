@@ -1,6 +1,6 @@
 import { Menu } from '@modules/menus/domain/entities/menu.entity';
 import { MenuRepository } from '@modules/menus/domain/repositories/menu.repository';
-import { MenuId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
+import { BranchId, MenuId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 
 /** Test double mirroring `PrismaMenuRepository`'s semantics for unit tests that need no real database. */
 export class InMemoryMenuRepository implements MenuRepository {
@@ -26,21 +26,36 @@ export class InMemoryMenuRepository implements MenuRepository {
       );
   }
 
-  async findDefaultByRestaurantId(restaurantId: RestaurantId): Promise<Menu | null> {
-    return (
-      [...this.rows.values()].find(
+  async findDefaultByRestaurantId(
+    restaurantId: RestaurantId,
+    branchId?: BranchId,
+  ): Promise<Menu | null> {
+    const scopes: (string | null)[] = branchId ? [branchId.value, null] : [null];
+    for (const scope of scopes) {
+      const found = [...this.rows.values()].find(
         (row) =>
           row.restaurantId.value === restaurantId.value &&
+          (row.branchId?.value ?? null) === scope &&
           row.isDefault &&
           row.active &&
           !row.isDeleted(),
-      ) ?? null
-    );
+      );
+      if (found) {
+        return found;
+      }
+    }
+    return null;
   }
 
-  async existsAnyForRestaurant(restaurantId: RestaurantId): Promise<boolean> {
+  async existsAnyForRestaurant(
+    restaurantId: RestaurantId,
+    branchId: BranchId | null = null,
+  ): Promise<boolean> {
     return [...this.rows.values()].some(
-      (row) => row.restaurantId.value === restaurantId.value && !row.isDeleted(),
+      (row) =>
+        row.restaurantId.value === restaurantId.value &&
+        (row.branchId?.value ?? null) === (branchId?.value ?? null) &&
+        !row.isDeleted(),
     );
   }
 
@@ -48,9 +63,18 @@ export class InMemoryMenuRepository implements MenuRepository {
     this.rows.set(menu.menuId.value, menu);
   }
 
-  async setAsDefault(menuId: MenuId, restaurantId: RestaurantId, at: Date): Promise<void> {
+  async setAsDefault(
+    menuId: MenuId,
+    restaurantId: RestaurantId,
+    at: Date,
+    branchId: BranchId | null = null,
+  ): Promise<void> {
     for (const [id, row] of this.rows.entries()) {
-      if (row.restaurantId.value === restaurantId.value && row.isDefault) {
+      if (
+        row.restaurantId.value === restaurantId.value &&
+        (row.branchId?.value ?? null) === (branchId?.value ?? null) &&
+        row.isDefault
+      ) {
         this.rows.set(id, Menu.reconstitute({ ...row.toProps(), isDefault: false, updatedAt: at }));
       }
     }

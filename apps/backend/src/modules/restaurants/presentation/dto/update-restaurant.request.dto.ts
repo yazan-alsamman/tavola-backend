@@ -28,7 +28,15 @@ export class UpdateRestaurantRequestDto {
   @MaxLength(100)
   cuisineType?: string | null;
 
-  @ApiPropertyOptional({ example: 2, nullable: true, minimum: 1, maximum: 4 })
+  @ApiPropertyOptional({
+    example: 2,
+    nullable: true,
+    minimum: 1,
+    maximum: 4,
+    deprecated: true,
+    description:
+      'Ignored: the price level is computed from the menu (ADR-046). Still accepted so older clients keep working.',
+  })
   @IsOptional()
   @IsInt()
   @IsIn([1, 2, 3, 4])

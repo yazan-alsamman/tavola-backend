@@ -16,6 +16,7 @@ import { UpdateWorkingHoursUseCase } from '../../application/use-cases/update-wo
 import { AddRestaurantGalleryImageUseCase } from '../../application/use-cases/add-restaurant-gallery-image.use-case';
 import { ListRestaurantGalleryUseCase } from '../../application/use-cases/list-restaurant-gallery.use-case';
 import { RemoveRestaurantGalleryImageUseCase } from '../../application/use-cases/remove-restaurant-gallery-image.use-case';
+import { ReorderRestaurantGalleryUseCase } from '../../application/use-cases/reorder-restaurant-gallery.use-case';
 import { GetRestaurantCuisineCategoriesUseCase } from '../../application/use-cases/get-restaurant-cuisine-categories.use-case';
 import { SetRestaurantCuisineCategoriesUseCase } from '../../application/use-cases/set-restaurant-cuisine-categories.use-case';
 import { GetRestaurantOccasionCategoriesUseCase } from '../../application/use-cases/get-restaurant-occasion-categories.use-case';
@@ -200,6 +201,7 @@ describe('RestaurantsController', () => {
           provide: RemoveRestaurantGalleryImageUseCase,
           useValue: { execute: removeGalleryImageExecute },
         },
+        { provide: ReorderRestaurantGalleryUseCase, useValue: { execute: jest.fn() } },
         {
           provide: GetRestaurantCuisineCategoriesUseCase,
           useValue: { execute: getCuisineCategoriesExecute },
@@ -343,7 +345,6 @@ describe('RestaurantsController', () => {
         name: 'New Name',
         description: 'New description',
         cuisineType: 'French',
-        priceLevel: 4,
         status: RestaurantStatus.Active,
         correlationId: 'corr-2',
       });
@@ -667,9 +668,9 @@ describe('RestaurantsController', () => {
     it('propagates RestaurantNotFoundException from the use case unchanged', async () => {
       listGalleryExecute.mockRejectedValue(new RestaurantNotFoundException());
 
-      await expect(
-        controller.listGallery(galleryListResult.restaurantId),
-      ).rejects.toBeInstanceOf(RestaurantNotFoundException);
+      await expect(controller.listGallery(galleryListResult.restaurantId)).rejects.toBeInstanceOf(
+        RestaurantNotFoundException,
+      );
     });
   });
 

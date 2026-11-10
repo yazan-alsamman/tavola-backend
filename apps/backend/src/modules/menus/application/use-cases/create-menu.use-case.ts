@@ -10,7 +10,12 @@ import {
   AuditLogWriterPort,
   AUDIT_LOG_WRITER,
 } from '@shared/application/ports/audit-log-writer.port';
-import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
+import { BranchId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
+import {
+  BranchRepository,
+  BRANCH_REPOSITORY,
+} from '@modules/branches/domain/repositories/branch.repository';
+import { BranchNotFoundException } from '@modules/branches/domain/exceptions/branch-not-found.exception';
 import {
   RestaurantRepository,
   RESTAURANT_REPOSITORY,
@@ -29,7 +34,7 @@ import { MenuResult } from '../dto/menu.result';
 
 /**
  * Phase 18 (ADR-031/ADR-032). A Restaurant may own multiple Menus - the
- * first Menu created for a Restaurant is auto-marked `isDefault` (no
+ * first Menu created in a scope (shared, or one branch - ADR-046) is auto-marked `isDefault` (no
  * separate `MenuSetAsDefault` event fires for that implicit case, see
  * EVENTS.md).
  */
@@ -38,6 +43,7 @@ export class CreateMenuUseCase {
   constructor(
     @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
     @Inject(MENU_REPOSITORY) private readonly menuRepository: MenuRepository,
+    @Inject(BRANCH_REPOSITORY) private readonly branchRepository: BranchRepository,
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
@@ -54,11 +60,21 @@ export class CreateMenuUseCase {
     }
     assertActorCanManageMenu(command.actor, restaurantId.value);
 
-    const alreadyHasMenu = await this.menuRepository.existsAnyForRestaurant(restaurantId);
+    let branchId: BranchId | null = null;
+    if (command.branchId) {
+      branchId = BranchId.create(command.branchId);
+      const branch = await this.branchRepository.findByIdAndRestaurantId(branchId, restaurantId);
+      if (branch === null) {
+        throw new BranchNotFoundException();
+      }
+    }
+
+    const alreadyHasMenu = await this.menuRepository.existsAnyForRestaurant(restaurantId, branchId);
     const now = this.clock.now();
     const menu = Menu.create({
       id: this.idGenerator.generate(),
       restaurantId: restaurantId.value,
+      branchId: branchId?.value ?? null,
       name: command.name,
       isDefault: !alreadyHasMenu,
       now,

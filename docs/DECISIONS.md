@@ -2574,3 +2574,163 @@ seat. ADR-040 areas had only a name, colour and tab order.
 Additive columns with defaults, so existing rows and app 1.0.2 are
 unaffected. Migration `20261110120000_floor_plan_area_layout_and_features`.
 
+
+## ADR-045
+
+**Status:** Accepted (CR WJ-R-2026-002 round 2, 2026-11-10)
+
+### Context
+
+The owner's round-2 review rules (CR page "التقييمات"): after the visit the
+guest rates three axes (service, place, food), each with stars and a
+comment; the restaurant replies but never deletes; a private note reaches
+the restaurant only; the restaurant may open a review for the guest to rate
+again after talking to them. The restaurant rating is the average of the
+last 6 months, "new on Tavola" below 5 reviews, nothing with none, and the
+strongest axis is highlighted. A restaurant with no reviews showed a seeded
+4.6.
+
+### Decision
+
+1. `Review` gains `score` (average of the three axes, two decimals),
+   nullable axis ratings/comments (all three or none, DB `CHECK`),
+   `privateNote`, `reopenedAt`, `reratedAt`. `rating` stays the whole-star
+   value (rounded score) so app 1.0.2 keeps working; a single-rating submit
+   (no `axes`) is still accepted and scores as its rating.
+2. Only the review's own guest deletes it. Owner/Admin/Employee get 403.
+   Images stay guest-only (unchanged).
+3. Re-rating: `POST /reviews/:id/reopen` (Owner/Admin, idempotent) then
+   `PUT /reviews/:id` by the guest while open; the new content replaces the
+   old and closes the window. Events `ReviewReopened`, `ReviewRerated`.
+4. `Restaurant.ratingCount` = active reviews of the last 6 months;
+   `Restaurant.averageRating` = their average score, `null` below 5.
+   Recomputed on submit/delete/re-rate (same lock-then-update transaction)
+   and by a daily BullMQ sweep (`RestaurantRatingWindowQueue`, 03:15 UTC)
+   that slides the window. The migration recomputes every restaurant from
+   its real reviews, which removes the seeded averages.
+5. `GET /restaurants/:id/analytics/reviews-summary` computes from the
+   reviews themselves: real 6-month average (shown to the owner even below
+   5), window count, `isNew`, per-axis averages, strongest and weakest axis.
+6. Review lists accept `axis` and `stars` filters. Owner/Admin get
+   `GET /restaurants/:id/reviews/manage` with each guest's `privateNote`;
+   the public list never carries it.
+7. Notifications: staff get `StaffReviewCreated` for a new or re-rated
+   review, `StaffLowReviewCreated` (high priority) when the score is below
+   3; the guest gets `ReservationCompleted` ("Rate your visit", In-App +
+   Push) when the visit ends.
+
+### Consequences
+
+Restaurants with fewer than 5 reviews in 6 months show no stars in app
+1.0.2 (it already treats a null rating as unrated); a newer app can read
+`ratingCount` for the "new on Tavola" label. The three-axis form and
+re-rating screen need an app release; the backend accepts both shapes
+meanwhile. Migration `20261110150000_review_axes_and_rating_window`.
+
+## ADR-046
+
+**Menu in two languages, per-branch menus, computed price level, gallery order (CR WJ-R-2026-002 round 2, batch 4)**
+
+Date: 2026-11-10. Status: Accepted.
+
+### Context
+
+The CR's menu page: item names in Arabic and English with the branch
+currency; a menu either per branch or shared; the price level computed
+from the menu instead of chosen by the restaurant, per branch, shown as
+stars; gallery photos ordered by drag. The owner kept the Gallery tab and
+restaurant-level photos (round-2 exclusion).
+
+### Decision
+
+1. `MenuItem.nameAr`/`nameEn`; at least one. `name` stays for app 1.0.2 and
+   is the Arabic name, else the English one. A client sending only the old
+   `name` keeps working (sorted into its language by script).
+2. `Menu.branchId`: null = shared, set = that branch's own menu. One default
+   per scope (the partial unique index now keys on
+   `(restaurant_id, COALESCE(branch_id, nil))`). `GET .../menus/default`
+   takes an optional `branchId` and falls back to the shared default.
+3. Price level (`menus/domain/policies/price-level.policy.ts`): rank the
+   branch's effective menu items by price, skip the most expensive, average
+   ranks 2 to 11 (`Branch.referencePrice`), then
+   `Branch.priceLevel = ceil(cume_dist × 4)` among branches with the same
+   currency (branch currency, else the restaurant default). Restaurants
+   and cafes are ranked together. `Restaurant.priceLevel` becomes the
+   rounded average of its branches (unchanged while none has a level) and
+   is no longer written by `PATCH /restaurants/:id` (field still accepted,
+   ignored). Recomputed by `MenuPriceLevelQueue`: a debounced job (30 s,
+   one pending job id) after item create/update/delete, category delete,
+   and menu activate/deactivate/set-default/delete, plus a daily sweep at
+   03:30 UTC. The public branch response carries `priceLevel`.
+4. `PUT /restaurants/:id/gallery/order` (Owner/Admin) takes every gallery
+   image once in the new order; a partial or stale list is a 400.
+
+### Consequences
+
+Price levels change when anyone's menu changes, since the quartiles are
+shared; that is the CR's intent ("ranked across all establishments"). In
+a currency with very few branches the quartiles are coarse. The app shows
+stars per branch once it reads `priceLevel` from the branch (app release);
+app 1.0.2 keeps reading the restaurant's level. Migration
+`20261110180000_menu_names_branch_menus_price_level`.
+
+## ADR-047
+
+**Offer kinds, days and hours, booking conditions, live editing, impact card (CR WJ-R-2026-002 round 2, batch 4)**
+
+Date: 2026-11-10. Status: Accepted. Supersedes owner decisions D1 (no recurring schedules) and D3 (content editable only while Draft) of Phase 11.
+
+### Context
+
+The CR's offers page (PDF p08) asks for four offer kinds, a percentage or
+an amount in the branch currency, a status that follows the dates, days of
+the week and hours, conditions (minimum party, branches, once per guest,
+a cap), editing a running offer, and an impact card. The owner removed
+restaurant broadcast messaging from round 2 entirely, so no part of this
+sends anything.
+
+### Decision
+
+1. `OfferType` gains `BillDiscount`, `FreeItem`, `GroupPrice`, `QuietDays`
+   (the dashboard offers only these for new offers). `Promotion`, `Coupon`
+   and `Event` stay valid for existing rows and older clients; app 1.0.2
+   reads `type` as a plain string.
+2. Conditions on `Offer`: `daysOfWeek` (0 = Sunday, empty = every day),
+   `startTime`/`endTime` ("HH:mm", branch-local, both or neither, window
+   `[start, end)`), `minPartySize`, `branchIds` (empty = every branch;
+   each must be a branch of the restaurant, else 400), `oncePerCustomer`,
+   `bookingCap`. All optional on create/update; omitted = no restriction.
+3. One pure policy, `offers/domain/policies/offer-conditions.policy.ts`,
+   decides whether a booking meets the period/day/hour/branch/party
+   conditions; the Offer aggregate and the Reservations attribution reader
+   both use it (no module cycle). The counted conditions (cap, once per
+   customer) are checked by `PrismaOfferAttributionReader`; rejected,
+   cancelled and expired bookings never use a place. A booking that misses
+   a condition is still made; the offer is just not recorded on it. The cap
+   is a business limit, not a lock: two simultaneous bookings may both take
+   the last place.
+4. A Draft or a still-running Published offer is editable; an Expired one
+   (or a Published one past `endsAt`) is not. The repository CAS
+   (`updateIfEditable`: Draft, or Published with `ends_at > updated_at`) is
+   the authority. Moving a Published offer's end re-schedules its
+   expiration job, and the end must stay in the future.
+5. Status follows the dates: listings already read a Published offer past
+   its end as Expired; the migration settles such rows once.
+6. `viewCount`, incremented best-effort for each offer the public listing
+   returns (a failure is logged, never fails the read).
+7. `GET /restaurants/:id/offers/:offerId/impact` (Owner/Admin): views,
+   bookings, persons, attended visits, first-time-guest share; bookings in
+   the offer's slots against the usual for those slots (the 4 weeks before
+   it started, scaled to the time it has run); estimated cost per currency
+   (percentage: attended persons x branch reference price (ADR-046) x %,
+   `partial` when a branch has no reference price; fixed amount: attended
+   bookings x amount). Policy in `offers/domain/policies/offer-impact.policy.ts`.
+
+### Consequences
+
+The impact card's "usual" is a simple baseline, not a forecast; a new
+restaurant with no history shows no comparison. The estimated cost of a
+percentage offer depends on the branch reference price, so it is an
+estimate, labelled as such. The app does not yet show days/hours; it keeps
+listing offers as before (app release later). Migration
+`20261110210000_offer_kinds_schedule_conditions`.

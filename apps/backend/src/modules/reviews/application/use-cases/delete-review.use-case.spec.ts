@@ -21,7 +21,6 @@ import {
 
 describe('DeleteReviewUseCase', () => {
   const organizationId = '99999999-9999-4999-8999-999999999999';
-  const otherOrganizationId = '99999999-9999-4999-8999-999999999998';
   const restaurantId = '33333333-3333-4333-8333-333333333333';
   const reviewOwnerUserId = '22222222-2222-4222-8222-222222222222';
   const otherUserId = '22222222-2222-4222-8222-222222222299';
@@ -124,31 +123,16 @@ describe('DeleteReviewUseCase', () => {
     ).rejects.toBeInstanceOf(ReviewNotFoundException);
   });
 
-  it('allows an Organization Owner to administratively delete a review in their restaurant', async () => {
-    const { useCase, reviewRepository } = await build();
-    await useCase.execute({ actor: orgMemberActor({ orgRole: 'Owner' }), reviewId });
-    expect(await reviewRepository.findById(ReviewId.create(reviewId))).toBeNull();
-  });
-
-  it('allows an Organization Admin to administratively delete a review', async () => {
-    const { useCase, reviewRepository } = await build();
-    await useCase.execute({ actor: orgMemberActor({ orgRole: 'Admin' }), reviewId });
-    expect(await reviewRepository.findById(ReviewId.create(reviewId))).toBeNull();
-  });
-
-  it('rejects a non-Owner/Admin organization member with PermissionDeniedException', async () => {
-    const { useCase } = await build();
-    await expect(
-      useCase.execute({ actor: orgMemberActor({ orgRole: 'Member' }), reviewId }),
-    ).rejects.toBeInstanceOf(PermissionDeniedException);
-  });
-
-  it('collapses a cross-organization Owner/Admin to ReviewNotFoundException (IDOR-safe)', async () => {
-    const { useCase } = await build();
-    await expect(
-      useCase.execute({ actor: orgMemberActor({ organizationId: otherOrganizationId }), reviewId }),
-    ).rejects.toBeInstanceOf(ReviewNotFoundException);
-  });
+  it.each(['Owner', 'Admin', 'Member'])(
+    'never lets an Organization %s delete a review (ADR-045)',
+    async (orgRole) => {
+      const { useCase, reviewRepository } = await build();
+      await expect(
+        useCase.execute({ actor: orgMemberActor({ orgRole }), reviewId }),
+      ).rejects.toBeInstanceOf(PermissionDeniedException);
+      expect(await reviewRepository.findById(ReviewId.create(reviewId))).not.toBeNull();
+    },
+  );
 
   it('rejects an Employee actor with PermissionDeniedException - Employees may not delete reviews', async () => {
     const { useCase } = await build();

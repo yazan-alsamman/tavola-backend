@@ -1,3 +1,7 @@
+import {
+  MenuPriceLevelSchedulerPort,
+  MENU_PRICE_LEVEL_SCHEDULER,
+} from '../ports/menu-price-level-scheduler.port';
 import { Injectable, Inject } from '@nestjs/common';
 import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
@@ -21,7 +25,7 @@ import {
   MenuItemRepository,
   MENU_ITEM_REPOSITORY,
 } from '../../domain/repositories/menu-item.repository';
-import { MenuItem } from '../../domain/entities/menu-item.entity';
+import { MenuItem, resolveMenuItemNames } from '../../domain/entities/menu-item.entity';
 import { MenuItemCreatedEvent } from '../../domain/events/menu.events';
 import {
   assertActorCanManageMenu,
@@ -41,6 +45,8 @@ export class CreateMenuItemUseCase {
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
+    @Inject(MENU_PRICE_LEVEL_SCHEDULER)
+    private readonly priceLevelScheduler: MenuPriceLevelSchedulerPort,
   ) {}
 
   async execute(command: CreateMenuItemCommand): Promise<MenuItemResult> {
@@ -68,7 +74,7 @@ export class CreateMenuItemUseCase {
       id: this.idGenerator.generate(),
       categoryId: categoryId.value,
       restaurantId: restaurantId.value,
-      content: command.content,
+      content: { ...command.content, ...resolveMenuItemNames(command.content) },
       displayOrder: nextDisplayOrder,
       now,
     });
@@ -76,6 +82,7 @@ export class CreateMenuItemUseCase {
     await this.unitOfWork.execute(async () => {
       await this.itemRepository.create(item);
     });
+    await this.priceLevelScheduler.requestRecompute();
 
     const actorId = resolveMenuManagementActorId(command.actor);
     await this.eventPublisher.publish(

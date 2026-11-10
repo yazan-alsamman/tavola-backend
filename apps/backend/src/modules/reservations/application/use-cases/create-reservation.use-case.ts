@@ -199,6 +199,14 @@ export class CreateReservationUseCase {
           command.offerId,
           branch.restaurantId.value,
           now,
+          {
+            branchId: branchId.value,
+            partySize: command.guests,
+            startTime,
+            timeZone: branch.timezone,
+            userId: party.userId,
+            guestPhone: party.guest?.phone ?? null,
+          },
         )
       : null;
 

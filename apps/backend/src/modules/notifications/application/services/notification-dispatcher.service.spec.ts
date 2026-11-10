@@ -2,6 +2,7 @@ import {
   GuestLateArrivalNotifiedEvent,
   ReservationApprovedEvent,
   ReservationCancelledEvent,
+  ReservationCompletedEvent,
   ReservationCreatedEvent,
   ReservationExpiredEvent,
   ReservationNoShowEvent,
@@ -15,6 +16,10 @@ import {
   WaitlistEntryPromotedEvent,
 } from '@modules/waitlist/domain/events/waitlist.events';
 import { MessageSentEvent } from '@modules/messaging/domain/events/messaging.events';
+import {
+  ReviewCreatedEvent,
+  ReviewReratedEvent,
+} from '@modules/reviews/domain/events/review.events';
 import { MessageSenderType, MessageType } from '@modules/messaging/domain/enums/messaging.enums';
 import { ConversationParticipant } from '@modules/messaging/domain/entities/conversation-participant.entity';
 import { Reservation } from '@modules/reservations/domain/entities/reservation.entity';
@@ -116,6 +121,21 @@ describe('resolveNotificationIntent (Phase 9 frozen event -> notification allow-
     expect(intent).not.toBeNull();
     expect(intent?.eventType).toBe(eventType);
     expect(intent?.pushEligible).toBe(true);
+  });
+
+  it('ReservationCompleted asks the guest to rate the visit, Push + In-App (ADR-045)', () => {
+    const intent = resolveNotificationIntent(
+      new ReservationCompletedEvent('e1', {
+        reservationId,
+        restaurantId,
+        branchId,
+        tableId,
+        completedBy: null,
+      }),
+    );
+    expect(intent?.eventType).toBe('ReservationCompleted');
+    expect(intent?.pushEligible).toBe(true);
+    expect(intent?.reservationId).toBe(reservationId);
   });
 
   it('ReservationNoShow resolves to an In-App-only intent (pushEligible: false)', () => {
@@ -607,6 +627,44 @@ describe('NotificationDispatcher', () => {
 
       const staff = buildDispatcher({ staffRecipientIds: [ownerId] });
       await expect(staff.dispatcher.dispatchToStaff(joined(ownerId, null))).resolves.toEqual([]);
+    });
+
+    it('tells staff about a review, and raises a low one as its own high-priority type (ADR-045)', async () => {
+      const reviewId = '51515151-5151-4515-8515-515151515151';
+      const review = (score: number) =>
+        new ReviewCreatedEvent('e1', {
+          reviewId,
+          restaurantId,
+          reservationId,
+          userId,
+          rating: Math.round(score),
+          score,
+          branchId,
+        });
+
+      const good = buildDispatcher({ staffRecipientIds: [ownerId] });
+      await expect(good.dispatcher.dispatchToStaff(review(4.33))).resolves.toHaveLength(1);
+      const saved = good.notificationRepository.save.mock.calls[0][0];
+      expect(saved.type).toBe('StaffReviewCreated');
+      expect(saved.data).toMatchObject({ reviewId, reservationId, restaurantId, branchId });
+
+      const low = buildDispatcher({ staffRecipientIds: [ownerId] });
+      await low.dispatcher.dispatchToStaff(review(2.67));
+      expect(low.notificationRepository.save.mock.calls[0][0].type).toBe('StaffLowReviewCreated');
+
+      const rerated = buildDispatcher({ staffRecipientIds: [ownerId] });
+      await rerated.dispatcher.dispatchToStaff(
+        new ReviewReratedEvent('e2', {
+          reviewId,
+          restaurantId,
+          reservationId,
+          userId,
+          previousScore: 2,
+          score: 5,
+          branchId,
+        }),
+      );
+      expect(rerated.notificationRepository.save.mock.calls[0][0].type).toBe('StaffReviewCreated');
     });
 
     it('ignores events outside the staff list', async () => {

@@ -101,9 +101,12 @@ export class CachingAnalyticsQueryRepository implements AnalyticsQueryPort {
     );
   }
 
-  getReviewsSummary(restaurantId: string): Promise<ReviewsSummaryRawData> {
-    return this.cache.getOrSet(`analytics:reviews-summary:${restaurantId}`, TTL_SECONDS, () =>
-      this.inner.getReviewsSummary(restaurantId),
+  getReviewsSummary(restaurantId: string, windowStart: Date): Promise<ReviewsSummaryRawData> {
+    const day = windowStart.toISOString().slice(0, 10);
+    return this.cache.getOrSet(
+      `analytics:reviews-summary:v2:${restaurantId}:${day}`,
+      TTL_SECONDS,
+      () => this.inner.getReviewsSummary(restaurantId, windowStart),
     );
   }
 }

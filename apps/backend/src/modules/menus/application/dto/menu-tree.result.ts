@@ -36,6 +36,8 @@ export interface MenuItemTreeResult {
   id: string;
   categoryId: string;
   name: string;
+  nameAr: string | null;
+  nameEn: string | null;
   description: string | null;
   price: number;
   currency: string | null;

@@ -7,6 +7,7 @@ export function toMenuResponse(result: MenuResult): MenuResponseDto {
   return {
     id: result.id,
     restaurantId: result.restaurantId,
+    branchId: result.branchId,
     name: result.name,
     active: result.active,
     isDefault: result.isDefault,
@@ -35,6 +36,8 @@ export function toMenuTreeResponse(result: MenuTreeResult): MenuTreeResponseDto 
         id: item.id,
         categoryId: item.categoryId,
         name: item.name,
+        nameAr: item.nameAr,
+        nameEn: item.nameEn,
         description: item.description,
         price: item.price,
         currency: item.currency,

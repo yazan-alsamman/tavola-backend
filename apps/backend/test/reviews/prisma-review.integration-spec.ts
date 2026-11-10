@@ -137,9 +137,13 @@ describe('Review/ReviewImage/RestaurantReply round-trip via Prisma repositories 
   let reservationHourOffset = 0;
   function nextReservationWindow(): { start: Date; end: Date; date: Date } {
     reservationHourOffset += 3;
-    const start = new Date(Date.UTC(2026, 6, 20, reservationHourOffset % 20, 0, 0));
+    // Never wraps: each call gets its own slot on the shared table.
+    const start = new Date(Date.UTC(2026, 6, 20) + reservationHourOffset * 60 * 60 * 1000);
     const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
-    return { start, end, date: new Date('2026-07-20T00:00:00.000Z') };
+    const date = new Date(
+      Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()),
+    );
+    return { start, end, date };
   }
 
   async function seedCompletedReservation(userId: string): Promise<{ id: string }> {
@@ -366,6 +370,82 @@ describe('Review/ReviewImage/RestaurantReply round-trip via Prisma repositories 
     expect(found).not.toBeNull();
   });
 
+  it('persists three-axis reviews, filters by axis and stars, and writes a reopen + re-rate (ADR-045)', async () => {
+    if (!dbAvailable) return;
+    const localRestaurant = await rawPrisma.restaurant.create({
+      data: {
+        organizationId: org.id,
+        name: 'Axis Filter Restaurant',
+        slug: `${TEST_PREFIX}axes-${randomUUID()}`,
+        status: 'Active',
+      },
+    });
+    const restaurantId = RestaurantId.create(localRestaurant.id);
+    const userA = await seedUser();
+    const userB = await seedUser();
+    const resA = await seedCompletedReservation(userA.id);
+    const resB = await seedCompletedReservation(userB.id);
+    const axisReview = Review.create({
+      id: randomUUID(),
+      userId: userA.id,
+      restaurantId: localRestaurant.id,
+      reservationId: resA.id,
+      comment: null,
+      axes: {
+        service: { rating: 2, comment: 'Slow' },
+        place: { rating: 5, comment: null },
+        food: { rating: 4, comment: 'Tasty' },
+      },
+      privateNote: 'Call me',
+      now: new Date(),
+    });
+    await reviewRepository.create(axisReview);
+    await reviewRepository.create(
+      Review.create({
+        id: randomUUID(),
+        userId: userB.id,
+        restaurantId: localRestaurant.id,
+        reservationId: resB.id,
+        rating: 2,
+        comment: null,
+        now: new Date(),
+      }),
+    );
+
+    const stored = await reviewRepository.findById(axisReview.reviewId);
+    expect(stored?.score).toBe(3.67);
+    expect(stored?.rating).toBe(4);
+    expect(stored?.axes?.service).toEqual({ rating: 2, comment: 'Slow' });
+    expect(stored?.privateNote).toBe('Call me');
+
+    expect(
+      (await reviewRepository.findManyByRestaurantId(restaurantId, 1, 20, { stars: 2 })).total,
+    ).toBe(1);
+    const service2 = await reviewRepository.findManyByRestaurantId(restaurantId, 1, 20, {
+      axis: 'service',
+      stars: 2,
+    });
+    expect(service2.items.map((review) => review.reviewId.value)).toEqual([
+      axisReview.reviewId.value,
+    ]);
+    expect(
+      (await reviewRepository.findManyByRestaurantId(restaurantId, 1, 20, { axis: 'food' })).total,
+    ).toBe(1);
+
+    const reopened = stored!.reopen(new Date());
+    await reviewRepository.update(reopened);
+    expect((await reviewRepository.findById(axisReview.reviewId))?.isOpenForRerating()).toBe(true);
+
+    const rerated = reopened.rerate({ rating: 5, comment: 'Sorted out' }, new Date());
+    await reviewRepository.update(rerated);
+    const after = await reviewRepository.findById(axisReview.reviewId);
+    expect(after?.isOpenForRerating()).toBe(false);
+    expect(after?.reratedAt).not.toBeNull();
+    expect(after?.axes).toBeNull();
+    expect(after?.score).toBe(5);
+    expect(after?.comment).toBe('Sorted out');
+  });
+
   it('rejects a rating outside 1-5 at the database CHECK constraint level', async () => {
     if (!dbAvailable) return;
     const user = await seedUser();
@@ -378,12 +458,13 @@ describe('Review/ReviewImage/RestaurantReply round-trip via Prisma repositories 
           restaurantId: restaurant.id,
           reservationId: reservation.id,
           rating: 6,
+          score: 6,
         },
       }),
     ).rejects.toThrow();
   });
 
-  it('recomputes Restaurant.averageRating transactionally after Review create/delete', async () => {
+  it('recomputes the 6-month rating: count always, average only from 5 reviews (ADR-045)', async () => {
     if (!dbAvailable) return;
     const localRestaurant = await rawPrisma.restaurant.create({
       data: {
@@ -416,7 +497,7 @@ describe('Review/ReviewImage/RestaurantReply round-trip via Prisma repositories 
     });
 
     let hourOffset = 0;
-    async function seedReview(rating: number): Promise<string> {
+    async function seedReview(rating: number, createdAt = new Date()): Promise<string> {
       hourOffset += 3;
       const user = await seedUser();
       const reservation = await rawPrisma.reservation.create({
@@ -441,58 +522,60 @@ describe('Review/ReviewImage/RestaurantReply round-trip via Prisma repositories 
           restaurantId: localRestaurant.id,
           reservationId: reservation.id,
           rating,
+          score: rating,
+          createdAt,
         },
       });
       return review.id;
     }
 
+    const id = RestaurantId.create(localRestaurant.id);
+    const read = () =>
+      rawPrisma.restaurant.findUniqueOrThrow({ where: { id: localRestaurant.id } });
+
     // Zero reviews -> null, never 0.
-    let restaurantRow = await rawPrisma.restaurant.findUniqueOrThrow({
-      where: { id: localRestaurant.id },
-    });
-    expect(restaurantRow.averageRating).toBeNull();
+    let row = await read();
+    expect(row.averageRating).toBeNull();
+    expect(row.ratingCount).toBe(0);
 
-    const review1Id = await seedReview(5);
-    await restaurantRepository.recomputeAverageRating(
-      RestaurantId.create(localRestaurant.id),
-      new Date(),
-    );
-    restaurantRow = await rawPrisma.restaurant.findUniqueOrThrow({
-      where: { id: localRestaurant.id },
-    });
-    expect(restaurantRow.averageRating?.toNumber()).toBe(5);
+    // Four recent reviews: counted, average still hidden ("new on Tavola").
+    const recentIds: string[] = [];
+    for (const rating of [5, 4, 4, 3]) {
+      recentIds.push(await seedReview(rating));
+    }
+    // One review older than 6 months never counts.
+    const sevenMonthsAgo = new Date();
+    sevenMonthsAgo.setUTCMonth(sevenMonthsAgo.getUTCMonth() - 7);
+    await seedReview(1, sevenMonthsAgo);
+    await restaurantRepository.recomputeAverageRating(id, new Date());
+    row = await read();
+    expect(row.ratingCount).toBe(4);
+    expect(row.averageRating).toBeNull();
 
-    const review2Id = await seedReview(3);
-    await restaurantRepository.recomputeAverageRating(
-      RestaurantId.create(localRestaurant.id),
-      new Date(),
-    );
-    restaurantRow = await rawPrisma.restaurant.findUniqueOrThrow({
-      where: { id: localRestaurant.id },
-    });
-    expect(restaurantRow.averageRating?.toNumber()).toBe(4);
+    // The fifth recent review shows the average of the five.
+    recentIds.push(await seedReview(4));
+    await restaurantRepository.recomputeAverageRating(id, new Date());
+    row = await read();
+    expect(row.ratingCount).toBe(5);
+    expect(row.averageRating?.toNumber()).toBe(4);
 
-    // Soft-delete one review - average must exclude it.
-    await rawPrisma.review.update({ where: { id: review1Id }, data: { deletedAt: new Date() } });
-    await restaurantRepository.recomputeAverageRating(
-      RestaurantId.create(localRestaurant.id),
-      new Date(),
-    );
-    restaurantRow = await rawPrisma.restaurant.findUniqueOrThrow({
-      where: { id: localRestaurant.id },
-    });
-    expect(restaurantRow.averageRating?.toNumber()).toBe(3);
+    // Soft-deleting one drops below 5 again.
+    await rawPrisma.review.update({ where: { id: recentIds[0] }, data: { deletedAt: new Date() } });
+    await restaurantRepository.recomputeAverageRating(id, new Date());
+    row = await read();
+    expect(row.ratingCount).toBe(4);
+    expect(row.averageRating).toBeNull();
 
-    // Delete the last active review - back to null, never 0.
-    await rawPrisma.review.update({ where: { id: review2Id }, data: { deletedAt: new Date() } });
-    await restaurantRepository.recomputeAverageRating(
-      RestaurantId.create(localRestaurant.id),
-      new Date(),
-    );
-    restaurantRow = await rawPrisma.restaurant.findUniqueOrThrow({
+    // The daily sweep agrees, and changes nothing more when run again.
+    await rawPrisma.restaurant.update({
       where: { id: localRestaurant.id },
+      data: { averageRating: 4.6, ratingCount: 0 },
     });
-    expect(restaurantRow.averageRating).toBeNull();
+    await restaurantRepository.recomputeAllRatings(new Date());
+    row = await read();
+    expect(row.ratingCount).toBe(4);
+    expect(row.averageRating).toBeNull();
+    expect(await restaurantRepository.recomputeAllRatings(new Date())).toBe(0);
   });
 
   it('serializes concurrent averageRating recomputes for the same restaurant with no lost update', async () => {
@@ -557,6 +640,7 @@ describe('Review/ReviewImage/RestaurantReply round-trip via Prisma repositories 
             restaurantId: localRestaurant.id,
             reservationId: reservation.id,
             rating,
+            score: rating,
           },
         });
       }),

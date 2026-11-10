@@ -1,4 +1,4 @@
-import { MenuItem } from './menu-item.entity';
+import { MenuItem, resolveMenuItemNames } from './menu-item.entity';
 import { MenuItemAvailabilityMode, MenuItemDietaryLabel } from '../enums/menu-item.enums';
 import { InvalidMenuItemException } from '../exceptions/invalid-menu-item.exception';
 
@@ -7,9 +7,13 @@ describe('MenuItem entity', () => {
   const categoryId = '88888888-8888-4888-8888-888888888888';
   const restaurantId = '33333333-3333-4333-8333-333333333333';
 
-  function content(overrides?: Partial<Parameters<typeof MenuItem.create>[0]['content']>) {
+  function content(
+    overrides?: Partial<Parameters<typeof MenuItem.create>[0]['content']>,
+  ): Parameters<typeof MenuItem.create>[0]['content'] {
     return {
       name: 'Margherita Pizza',
+      nameAr: null,
+      nameEn: 'Margherita Pizza',
       description: 'Tomato, mozzarella, basil.',
       price: 12.5,
       currency: 'USD',
@@ -95,6 +99,43 @@ describe('MenuItem entity', () => {
       const item = makeItem();
       const deleted = item.softDelete(fixedNow);
       expect(deleted.isDeleted()).toBe(true);
+    });
+  });
+
+  describe('resolveMenuItemNames', () => {
+    it('uses the Arabic name as name when both are given', () => {
+      expect(resolveMenuItemNames({ nameAr: 'فلافل', nameEn: 'Falafel' })).toEqual({
+        name: 'فلافل',
+        nameAr: 'فلافل',
+        nameEn: 'Falafel',
+      });
+    });
+
+    it('falls back to the English name', () => {
+      expect(resolveMenuItemNames({ nameAr: '  ', nameEn: 'Falafel' }).name).toBe('Falafel');
+    });
+
+    it('sorts a legacy single name into its language', () => {
+      expect(resolveMenuItemNames({ name: 'حمص' })).toEqual({
+        name: 'حمص',
+        nameAr: 'حمص',
+        nameEn: null,
+      });
+      expect(resolveMenuItemNames({ name: 'Hummus' })).toEqual({
+        name: 'Hummus',
+        nameAr: null,
+        nameEn: 'Hummus',
+      });
+    });
+
+    it('ignores the legacy name when a language name is sent', () => {
+      expect(resolveMenuItemNames({ name: 'Old', nameEn: 'New' }).name).toBe('New');
+    });
+
+    it('requires at least one name', () => {
+      expect(() => resolveMenuItemNames({ name: ' ', nameAr: null })).toThrow(
+        InvalidMenuItemException,
+      );
     });
   });
 });

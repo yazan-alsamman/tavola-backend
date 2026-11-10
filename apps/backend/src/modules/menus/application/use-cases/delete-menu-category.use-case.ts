@@ -1,3 +1,7 @@
+import {
+  MenuPriceLevelSchedulerPort,
+  MENU_PRICE_LEVEL_SCHEDULER,
+} from '../ports/menu-price-level-scheduler.port';
 import { Injectable, Inject } from '@nestjs/common';
 import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
@@ -33,6 +37,8 @@ export class DeleteMenuCategoryUseCase {
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
+    @Inject(MENU_PRICE_LEVEL_SCHEDULER)
+    private readonly priceLevelScheduler: MenuPriceLevelSchedulerPort,
   ) {}
 
   async execute(command: DeleteMenuCategoryCommand): Promise<void> {
@@ -56,6 +62,7 @@ export class DeleteMenuCategoryUseCase {
     await this.unitOfWork.execute(async () => {
       await this.categoryRepository.softDelete(categoryId, now);
     });
+    await this.priceLevelScheduler.requestRecompute();
 
     const actorId = resolveMenuManagementActorId(command.actor);
     await this.eventPublisher.publish(

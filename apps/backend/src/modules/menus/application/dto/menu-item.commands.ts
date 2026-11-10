@@ -11,7 +11,10 @@ interface BaseItemCommand {
 }
 
 export interface MenuItemContentInput {
-  name: string;
+  /** Legacy single name; used only when neither nameAr nor nameEn is sent. */
+  name?: string | null;
+  nameAr?: string | null;
+  nameEn?: string | null;
   description: string | null;
   price: number;
   currency: string | null;

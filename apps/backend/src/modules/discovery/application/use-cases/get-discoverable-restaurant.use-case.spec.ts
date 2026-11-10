@@ -23,6 +23,7 @@ function restaurant(): RestaurantResult {
     description: 'Cozy spot.',
     cuisineType: 'Italian',
     averageRating: 4.5,
+    ratingCount: 0,
     priceLevel: 2,
     status: 'Active',
     createdAt: new Date('2026-08-01T00:00:00.000Z'),

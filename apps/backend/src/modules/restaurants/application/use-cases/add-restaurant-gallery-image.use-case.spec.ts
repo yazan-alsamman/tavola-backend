@@ -398,6 +398,7 @@ describe('AddRestaurantGalleryImageUseCase', () => {
       findById: jest.fn().mockResolvedValue(null),
       add: jest.fn().mockRejectedValue(new Error('gallery insert failed')),
       remove: jest.fn().mockResolvedValue(undefined),
+      updateSortOrders: jest.fn().mockResolvedValue(undefined),
     };
 
     const useCase = new AddRestaurantGalleryImageUseCase(

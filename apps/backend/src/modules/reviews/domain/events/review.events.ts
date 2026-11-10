@@ -1,10 +1,9 @@
 import { DomainEvent } from '@shared/domain/base/domain-event.base';
 
 /**
- * Phase 10 (Reviews, architecture frozen 2026-07-26) - the 3 frozen event
- * classes (EVENTS.md's "Review Events" section). `ReviewUpdated` is
- * deliberately absent - Reviews are immutable after creation (no edit
- * endpoint), so no event class is ever needed for it.
+ * Phase 10 (Reviews) event classes (EVENTS.md's "Review Events" section),
+ * plus ADR-045's re-rating pair: a review changes after creation only when
+ * the restaurant reopens it and its guest rates again.
  */
 export class ReviewCreatedEvent extends DomainEvent {
   public readonly eventName = 'ReviewCreated';
@@ -17,6 +16,10 @@ export class ReviewCreatedEvent extends DomainEvent {
       reservationId: string;
       userId: string;
       rating: number;
+      /** Average of the three axes, or `rating` (ADR-045). */
+      score: number;
+      /** The visit's branch - who on staff hears about the review. */
+      branchId: string;
     },
     occurredAt: Date = new Date(),
     correlationId?: string,
@@ -25,14 +28,48 @@ export class ReviewCreatedEvent extends DomainEvent {
   }
 }
 
-/**
- * `deletedBy` is always a `User.id` - either the owning Customer or an
- * Organization Owner/Admin (both attribute as `actorType: 'User'`, since
- * `AuditActorType` has no `OrganizationMember` variant and Owner/Admin
- * actions have always logged as `'User'` platform-wide). Employees never
- * delete Reviews in Phase 10, so there is no `Employee` attribution path for
- * this event.
- */
+/** The guest rated again after the restaurant reopened the review (ADR-045). */
+export class ReviewReratedEvent extends DomainEvent {
+  public readonly eventName = 'ReviewRerated';
+
+  constructor(
+    eventId: string,
+    public readonly payload: {
+      reviewId: string;
+      restaurantId: string;
+      reservationId: string;
+      userId: string;
+      previousScore: number;
+      score: number;
+      branchId: string;
+    },
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+  }
+}
+
+/** The restaurant opened a review for its guest to rate again (ADR-045). */
+export class ReviewReopenedEvent extends DomainEvent {
+  public readonly eventName = 'ReviewReopened';
+
+  constructor(
+    eventId: string,
+    public readonly payload: {
+      reviewId: string;
+      restaurantId: string;
+      reservationId: string;
+      reopenedBy: string;
+    },
+    occurredAt: Date = new Date(),
+    correlationId?: string,
+  ) {
+    super(eventId, occurredAt, correlationId);
+  }
+}
+
+/** `deletedBy` is the review's own guest - the only actor who may delete it (ADR-045). */
 export class ReviewDeletedEvent extends DomainEvent {
   public readonly eventName = 'ReviewDeleted';
 

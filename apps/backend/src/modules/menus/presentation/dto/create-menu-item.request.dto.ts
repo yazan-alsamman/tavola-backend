@@ -10,16 +10,37 @@ import {
   Max,
   MaxLength,
   Min,
-  MinLength,
 } from 'class-validator';
 import { MenuItemDietaryLabel } from '../../domain/enums/menu-item.enums';
 
 export class CreateMenuItemRequestDto {
-  @ApiProperty({ example: 'Margherita Pizza' })
+  @ApiPropertyOptional({
+    example: 'Margherita Pizza',
+    description:
+      'Legacy single name (app 1.0.2 era). Prefer nameAr/nameEn; ignored when either is sent.',
+  })
+  @IsOptional()
   @IsString()
-  @MinLength(1)
   @MaxLength(200)
-  name!: string;
+  name?: string;
+
+  @ApiPropertyOptional({
+    example: 'بيتزا مارغريتا',
+    description: 'Arabic name. nameAr or nameEn is required.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  nameAr?: string;
+
+  @ApiPropertyOptional({
+    example: 'Margherita Pizza',
+    description: 'English name. nameAr or nameEn is required.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  nameEn?: string;
 
   @ApiPropertyOptional({ example: 'Tomato, mozzarella, basil.' })
   @IsOptional()

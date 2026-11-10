@@ -8,6 +8,10 @@ import {
   RestaurantRepository,
 } from '../../domain/repositories/restaurant.repository';
 import { RestaurantPrismaMapper } from './restaurant.prisma-mapper';
+import {
+  RATING_MIN_REVIEWS,
+  ratingWindowStart,
+} from '../../domain/policies/restaurant-rating.policy';
 
 /**
  * No explicit `organizationId` anywhere in this file: `Restaurant` is
@@ -105,15 +109,45 @@ export class PrismaRestaurantRepository implements RestaurantRepository {
   }
 
   async recomputeAverageRating(restaurantId: RestaurantId, at: Date): Promise<void> {
+    const windowStart = ratingWindowStart(at);
     await this.prismaContext.client.$executeRaw`
-      UPDATE restaurants
-      SET average_rating = (
-        SELECT AVG(rating)::numeric(3,2)
+      UPDATE restaurants r
+      SET rating_count = w.cnt,
+          average_rating = CASE WHEN w.cnt >= ${RATING_MIN_REVIEWS} THEN w.avg_score ELSE NULL END,
+          updated_at = ${at}
+      FROM (
+        SELECT COUNT(*)::int AS cnt, ROUND(AVG(score), 2)::numeric(3,2) AS avg_score
         FROM reviews
-        WHERE restaurant_id = ${restaurantId.value}::uuid AND deleted_at IS NULL
+        WHERE restaurant_id = ${restaurantId.value}::uuid
+          AND deleted_at IS NULL
+          AND created_at >= ${windowStart}
+      ) w
+      WHERE r.id = ${restaurantId.value}::uuid
+    `;
+  }
+
+  async recomputeAllRatings(at: Date): Promise<number> {
+    const windowStart = ratingWindowStart(at);
+    return this.prismaContext.client.$executeRaw`
+      WITH windowed AS (
+        SELECT restaurant_id, COUNT(*)::int AS cnt, ROUND(AVG(score), 2)::numeric(3,2) AS avg_score
+        FROM reviews
+        WHERE deleted_at IS NULL AND created_at >= ${windowStart}
+        GROUP BY restaurant_id
       ),
-      updated_at = ${at}
-      WHERE id = ${restaurantId.value}::uuid
+      next AS (
+        SELECT r.id,
+               COALESCE(w.cnt, 0) AS cnt,
+               CASE WHEN COALESCE(w.cnt, 0) >= ${RATING_MIN_REVIEWS} THEN w.avg_score ELSE NULL END AS avg
+        FROM restaurants r
+        LEFT JOIN windowed w ON w.restaurant_id = r.id
+        WHERE r.deleted_at IS NULL
+      )
+      UPDATE restaurants r
+      SET rating_count = next.cnt, average_rating = next.avg, updated_at = ${at}
+      FROM next
+      WHERE r.id = next.id
+        AND (r.rating_count IS DISTINCT FROM next.cnt OR r.average_rating IS DISTINCT FROM next.avg)
     `;
   }
 

@@ -673,6 +673,10 @@ describe('PrismaAnalyticsQueryRepository (integration)', () => {
           restaurantId: reviewRestaurant.id,
           reservationId: resA,
           rating: 5,
+          score: 5,
+          serviceRating: 5,
+          placeRating: 4,
+          foodRating: 3,
         },
       });
       await rawPrisma.review.create({
@@ -682,12 +686,26 @@ describe('PrismaAnalyticsQueryRepository (integration)', () => {
           restaurantId: reviewRestaurant.id,
           reservationId: resB,
           rating: 2,
+          score: 2,
           deletedAt: new Date(),
         },
       });
 
-      const result = await repository.getReviewsSummary(reviewRestaurant.id);
+      const result = await repository.getReviewsSummary(
+        reviewRestaurant.id,
+        new Date('2020-01-01T00:00:00Z'),
+      );
       expect(result.activeReviewCount).toBe(1);
+      expect(result.windowReviewCount).toBe(1);
+      expect(result.windowAverage).toBe(5);
+      expect(result.axisAverages).toEqual({ service: 5, place: 4, food: 3 });
+
+      const later = await repository.getReviewsSummary(
+        reviewRestaurant.id,
+        new Date('2099-01-01T00:00:00Z'),
+      );
+      expect(later.windowReviewCount).toBe(0);
+      expect(later.windowAverage).toBeNull();
     });
   });
 });

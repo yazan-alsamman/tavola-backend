@@ -104,16 +104,43 @@ describe('SubmitReviewUseCase', () => {
     const result = await useCase.execute({
       actor: userActor(),
       reservationId,
-      rating: 5,
-      comment: 'Wonderful!',
+      content: { rating: 5, comment: 'Wonderful!' },
     });
 
     expect(result.rating).toBe(5);
     expect(result.comment).toBe('Wonderful!');
     expect(result.reviewerUsername).toBe('jane_doe');
 
+    // One review: counted, but the public rating stays hidden below 5 (ADR-045).
     const restaurant = await restaurantRepository.findById(RestaurantId.create(restaurantId));
-    expect(restaurant?.averageRating).toBe(5);
+    expect(restaurant?.ratingCount).toBe(1);
+    expect(restaurant?.averageRating).toBeNull();
+  });
+
+  it('scores a three-axis review as the average of its axes and keeps a whole-star rating', async () => {
+    const { useCase, reservationRepository } = await build();
+    reservationRepository.seed(
+      testCompletedReservation({ id: reservationId, userId, restaurantId, branchId, tableId }),
+    );
+
+    const result = await useCase.execute({
+      actor: userActor(),
+      reservationId,
+      content: {
+        comment: null,
+        axes: {
+          service: { rating: 5, comment: 'Quick' },
+          place: { rating: 4, comment: null },
+          food: { rating: 4, comment: 'Good' },
+        },
+        privateNote: 'Too loud near the door',
+      },
+    });
+
+    expect(result.score).toBe(4.33);
+    expect(result.rating).toBe(4);
+    expect(result.axes?.service).toEqual({ rating: 5, comment: 'Quick' });
+    expect(result.privateNote).toBe('Too loud near the door');
   });
 
   it('allows a rating-only review with no comment', async () => {
@@ -125,8 +152,7 @@ describe('SubmitReviewUseCase', () => {
     const result = await useCase.execute({
       actor: userActor(),
       reservationId,
-      rating: 3,
-      comment: null,
+      content: { rating: 3, comment: null },
     });
 
     expect(result.comment).toBeNull();
@@ -139,7 +165,7 @@ describe('SubmitReviewUseCase', () => {
     );
 
     await expect(
-      useCase.execute({ actor: userActor(), reservationId, rating: 5, comment: null }),
+      useCase.execute({ actor: userActor(), reservationId, content: { rating: 5, comment: null } }),
     ).rejects.toBeInstanceOf(ReservationNotCompletedException);
   });
 
@@ -150,7 +176,11 @@ describe('SubmitReviewUseCase', () => {
     );
 
     await expect(
-      useCase.execute({ actor: userActor(otherUserId), reservationId, rating: 5, comment: null }),
+      useCase.execute({
+        actor: userActor(otherUserId),
+        reservationId,
+        content: { rating: 5, comment: null },
+      }),
     ).rejects.toBeInstanceOf(ReservationNotFoundException);
   });
 
@@ -168,7 +198,7 @@ describe('SubmitReviewUseCase', () => {
     );
 
     await expect(
-      useCase.execute({ actor: userActor(), reservationId, rating: 5, comment: null }),
+      useCase.execute({ actor: userActor(), reservationId, content: { rating: 5, comment: null } }),
     ).rejects.toBeInstanceOf(ReservationNotFoundException);
   });
 
@@ -178,8 +208,7 @@ describe('SubmitReviewUseCase', () => {
       useCase.execute({
         actor: userActor(),
         reservationId: '00000000-0000-4000-8000-000000000000',
-        rating: 5,
-        comment: null,
+        content: { rating: 5, comment: null },
       }),
     ).rejects.toBeInstanceOf(ReservationNotFoundException);
   });
@@ -190,10 +219,14 @@ describe('SubmitReviewUseCase', () => {
       testCompletedReservation({ id: reservationId, userId, restaurantId, branchId, tableId }),
     );
 
-    await useCase.execute({ actor: userActor(), reservationId, rating: 5, comment: null });
+    await useCase.execute({
+      actor: userActor(),
+      reservationId,
+      content: { rating: 5, comment: null },
+    });
 
     await expect(
-      useCase.execute({ actor: userActor(), reservationId, rating: 4, comment: null }),
+      useCase.execute({ actor: userActor(), reservationId, content: { rating: 4, comment: null } }),
     ).rejects.toBeInstanceOf(ReviewAlreadyExistsException);
   });
 
@@ -206,8 +239,7 @@ describe('SubmitReviewUseCase', () => {
     await useCase.execute({
       actor: userActor(),
       reservationId,
-      rating: 5,
-      comment: null,
+      content: { rating: 5, comment: null },
       correlationId: 'corr-1',
     });
 
@@ -216,7 +248,14 @@ describe('SubmitReviewUseCase', () => {
     expect(event).toBeInstanceOf(ReviewCreatedEvent);
     expect(event.eventName).toBe('ReviewCreated');
     expect(event.correlationId).toBe('corr-1');
-    expect(event.payload).toMatchObject({ restaurantId, reservationId, userId, rating: 5 });
+    expect(event.payload).toMatchObject({
+      restaurantId,
+      reservationId,
+      userId,
+      rating: 5,
+      score: 5,
+      branchId,
+    });
 
     expect(auditLogWriter.entries).toHaveLength(1);
     expect(auditLogWriter.entries[0]).toMatchObject({
@@ -242,8 +281,7 @@ describe('SubmitReviewUseCase', () => {
           permissionsVersion: 1,
         },
         reservationId,
-        rating: 5,
-        comment: null,
+        content: { rating: 5, comment: null },
       }),
     ).rejects.toBeInstanceOf(ReservationNotFoundException);
   });

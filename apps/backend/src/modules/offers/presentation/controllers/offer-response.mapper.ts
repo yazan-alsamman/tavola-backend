@@ -15,6 +15,13 @@ export function toOfferResponse(result: OfferResult): OfferResponseDto {
     startsAt: result.startsAt.toISOString(),
     endsAt: result.endsAt.toISOString(),
     status: result.status,
+    daysOfWeek: result.daysOfWeek,
+    startTime: result.startTime,
+    endTime: result.endTime,
+    minPartySize: result.minPartySize,
+    branchIds: result.branchIds,
+    oncePerCustomer: result.oncePerCustomer,
+    bookingCap: result.bookingCap,
     createdAt: result.createdAt.toISOString(),
     updatedAt: result.updatedAt.toISOString(),
   };

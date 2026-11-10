@@ -94,14 +94,14 @@ describe('UpdateRestaurantUseCase', () => {
       name: 'New Name',
       description: 'New description',
       cuisineType: 'French',
-      priceLevel: 4,
       status: RestaurantStatus.Active,
     });
 
     expect(result.name).toBe('New Name');
     expect(result.description).toBe('New description');
     expect(result.cuisineType).toBe('French');
-    expect(result.priceLevel).toBe(4);
+    // ADR-046: the price level is computed from the menu, never set here.
+    expect(result.priceLevel).toBe(2);
 
     expect(eventPublisher.events).toHaveLength(1);
     expect(eventPublisher.events[0]).toBeInstanceOf(RestaurantUpdatedEvent);
@@ -118,7 +118,6 @@ describe('UpdateRestaurantUseCase', () => {
       name: 'Original Name',
       description: 'Original description',
       cuisineType: 'Italian',
-      priceLevel: 2,
       status: RestaurantStatus.Suspended,
     });
 
@@ -137,7 +136,6 @@ describe('UpdateRestaurantUseCase', () => {
       name: 'Original Name',
       description: 'Original description',
       cuisineType: 'Italian',
-      priceLevel: 2,
       status: RestaurantStatus.Suspended,
     });
 
@@ -148,7 +146,6 @@ describe('UpdateRestaurantUseCase', () => {
       name: 'Original Name',
       description: 'Original description',
       cuisineType: 'Italian',
-      priceLevel: 2,
       status: RestaurantStatus.Active,
     });
 
@@ -168,7 +165,6 @@ describe('UpdateRestaurantUseCase', () => {
       name: 'New Name',
       description: null,
       cuisineType: null,
-      priceLevel: null,
       status: RestaurantStatus.Active,
     });
 
@@ -186,7 +182,6 @@ describe('UpdateRestaurantUseCase', () => {
         name: 'New Name',
         description: null,
         cuisineType: null,
-        priceLevel: null,
         status: RestaurantStatus.Active,
       }),
     ).rejects.toBeInstanceOf(RestaurantNotFoundException);

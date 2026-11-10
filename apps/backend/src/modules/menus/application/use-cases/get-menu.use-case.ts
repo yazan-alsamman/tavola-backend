@@ -1,5 +1,5 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { RestaurantId, MenuId } from '@shared/domain/value-objects/identifiers.vo';
+import { BranchId, RestaurantId, MenuId } from '@shared/domain/value-objects/identifiers.vo';
 import {
   RestaurantRepository,
   RESTAURANT_REPOSITORY,
@@ -87,7 +87,10 @@ export class GetMenuUseCase {
           MenuId.create(command.menuId),
           restaurantId,
         )
-      : await this.menuRepository.findDefaultByRestaurantId(restaurantId);
+      : await this.menuRepository.findDefaultByRestaurantId(
+          restaurantId,
+          command.branchId ? BranchId.create(command.branchId) : undefined,
+        );
     if (menu === null || !menu.active) {
       throw new MenuNotFoundException();
     }
@@ -203,6 +206,8 @@ function toItemTreeResult(
     id: item.menuItemId.value,
     categoryId: item.categoryId.value,
     name: item.name,
+    nameAr: item.nameAr,
+    nameEn: item.nameEn,
     description: item.description,
     price: item.price,
     currency: item.currency,

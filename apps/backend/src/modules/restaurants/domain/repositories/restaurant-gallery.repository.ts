@@ -21,6 +21,8 @@ export interface RestaurantGalleryRepository {
   findById(id: string, restaurantId: RestaurantId): Promise<RestaurantGalleryImage | null>;
   add(image: RestaurantGalleryImage): Promise<void>;
   remove(id: string): Promise<void>;
+  /** Persists `sortOrder`/`updatedAt` of each image (ADR-046 drag ordering). */
+  updateSortOrders(images: RestaurantGalleryImage[]): Promise<void>;
 }
 
 export const RESTAURANT_GALLERY_REPOSITORY = Symbol('RESTAURANT_GALLERY_REPOSITORY');

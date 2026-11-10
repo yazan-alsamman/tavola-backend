@@ -56,6 +56,8 @@ describe('UploadMenuItemImageUseCase', () => {
       restaurantId: RESTAURANT_ID,
       content: {
         name: 'Margherita',
+        nameAr: null,
+        nameEn: 'Margherita',
         description: null,
         price: 10,
         currency: null,

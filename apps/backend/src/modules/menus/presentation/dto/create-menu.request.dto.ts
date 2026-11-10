@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, MaxLength, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 export class CreateMenuRequestDto {
   @ApiProperty({ example: 'Breakfast Menu' })
@@ -7,4 +7,12 @@ export class CreateMenuRequestDto {
   @MinLength(1)
   @MaxLength(200)
   name!: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: "Set: this branch's own menu. Omitted: shared by every branch (ADR-046).",
+  })
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
 }

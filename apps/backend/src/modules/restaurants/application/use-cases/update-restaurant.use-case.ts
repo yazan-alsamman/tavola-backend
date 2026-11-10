@@ -45,7 +45,6 @@ export class UpdateRestaurantUseCase {
         name: command.name,
         description: command.description,
         cuisineType: command.cuisineType,
-        priceLevel: command.priceLevel,
       },
       now,
     );

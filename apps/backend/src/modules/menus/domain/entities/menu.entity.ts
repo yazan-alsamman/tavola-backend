@@ -1,10 +1,12 @@
 import { Entity } from '@shared/domain/base/entity.base';
-import { MenuId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
+import { BranchId, MenuId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import { InvalidMenuException } from '../exceptions/invalid-menu.exception';
 
 export interface MenuProps {
   id: string;
   restaurantId: string;
+  /** Null: shared by every branch. Set: that branch's own menu (ADR-046). */
+  branchId: string | null;
   name: string;
   active: boolean;
   isDefault: boolean;
@@ -20,7 +22,7 @@ const DEFAULT_MENU_NAME = 'Main Menu';
 /**
  * Menu Aggregate root (Phase 18, architecture frozen 2026-08-02, ADR-031;
  * ownership corrected 2026-08-03, ADR-032). A Restaurant owns 1:N Menus -
- * exactly one non-deleted Menu may be `isDefault`, enforced at the database
+ * exactly one non-deleted Menu per scope (shared, or one branch - ADR-046) may be `isDefault`, enforced at the database
  * level by the partial unique index `menus_restaurant_one_default_key`
  * (mirrors `Table.isMergePrimary`, ADR-026), never solely by this in-memory
  * check. `active` is independent of `isDefault`: a Menu can be default but
@@ -40,6 +42,7 @@ export class Menu extends Entity<MenuProps> {
   static create(props: {
     id: string;
     restaurantId: string;
+    branchId?: string | null;
     name?: string;
     isDefault: boolean;
     now: Date;
@@ -49,6 +52,7 @@ export class Menu extends Entity<MenuProps> {
     return new Menu({
       id: props.id,
       restaurantId: props.restaurantId,
+      branchId: props.branchId ?? null,
       name,
       active: true,
       isDefault: props.isDefault,
@@ -69,6 +73,10 @@ export class Menu extends Entity<MenuProps> {
 
   get restaurantId(): RestaurantId {
     return RestaurantId.create(this.props.restaurantId);
+  }
+
+  get branchId(): BranchId | null {
+    return this.props.branchId ? BranchId.create(this.props.branchId) : null;
   }
 
   get name(): string {

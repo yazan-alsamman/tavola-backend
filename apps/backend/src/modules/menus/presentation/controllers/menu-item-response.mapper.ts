@@ -9,6 +9,8 @@ export function toMenuItemResponse(result: MenuItemResult): MenuItemResponseDto 
     categoryId: result.categoryId,
     restaurantId: result.restaurantId,
     name: result.name,
+    nameAr: result.nameAr,
+    nameEn: result.nameEn,
     description: result.description,
     price: result.price,
     currency: result.currency,

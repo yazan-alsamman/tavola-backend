@@ -17,6 +17,7 @@ import { UpdateWorkingHoursUseCase } from '../../application/use-cases/update-wo
 import { AddRestaurantGalleryImageUseCase } from '../../application/use-cases/add-restaurant-gallery-image.use-case';
 import { ListRestaurantGalleryUseCase } from '../../application/use-cases/list-restaurant-gallery.use-case';
 import { RemoveRestaurantGalleryImageUseCase } from '../../application/use-cases/remove-restaurant-gallery-image.use-case';
+import { ReorderRestaurantGalleryUseCase } from '../../application/use-cases/reorder-restaurant-gallery.use-case';
 import { GetRestaurantCuisineCategoriesUseCase } from '../../application/use-cases/get-restaurant-cuisine-categories.use-case';
 import { SetRestaurantCuisineCategoriesUseCase } from '../../application/use-cases/set-restaurant-cuisine-categories.use-case';
 import { GetRestaurantOccasionCategoriesUseCase } from '../../application/use-cases/get-restaurant-occasion-categories.use-case';
@@ -64,6 +65,7 @@ describe('RestaurantsController Swagger document', () => {
         { provide: AddRestaurantGalleryImageUseCase, useValue: {} },
         { provide: ListRestaurantGalleryUseCase, useValue: {} },
         { provide: RemoveRestaurantGalleryImageUseCase, useValue: {} },
+        { provide: ReorderRestaurantGalleryUseCase, useValue: {} },
         { provide: GetRestaurantCuisineCategoriesUseCase, useValue: {} },
         { provide: SetRestaurantCuisineCategoriesUseCase, useValue: {} },
         { provide: GetRestaurantOccasionCategoriesUseCase, useValue: {} },

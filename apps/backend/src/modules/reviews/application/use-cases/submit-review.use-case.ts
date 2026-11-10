@@ -86,8 +86,7 @@ export class SubmitReviewUseCase {
       userId: command.actor.userId,
       restaurantId: reservation.restaurantId.value,
       reservationId: reservationId.value,
-      rating: command.rating,
-      comment: command.comment,
+      ...command.content,
       now,
     });
 
@@ -114,6 +113,8 @@ export class SubmitReviewUseCase {
           reservationId: review.reservationId.value,
           userId: review.userId.value,
           rating: review.rating,
+          score: review.score,
+          branchId: reservation.branchId.value,
         },
         now,
         command.correlationId,

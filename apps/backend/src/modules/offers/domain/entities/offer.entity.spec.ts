@@ -1,4 +1,4 @@
-import { Offer } from './offer.entity';
+import { NO_OFFER_CONDITIONS, Offer, OfferContent } from './offer.entity';
 import { OfferDiscountType, OfferStatus, OfferType } from '../enums/offer.enums';
 import { InvalidOfferException } from '../exceptions/invalid-offer.exception';
 import { InvalidOfferStatusTransitionException } from '../exceptions/invalid-offer-status-transition.exception';
@@ -7,8 +7,9 @@ describe('Offer entity', () => {
   const fixedNow = new Date('2026-08-01T10:00:00.000Z');
   const restaurantId = '33333333-3333-4333-8333-333333333333';
 
-  function content(overrides?: Partial<Parameters<typeof Offer.create>[0]['content']>) {
+  function content(overrides?: Partial<OfferContent>): OfferContent {
     return {
+      ...NO_OFFER_CONDITIONS,
       type: OfferType.Promotion,
       title: '20% Off Weekday Lunch',
       description: 'Enjoy 20% off any lunch entree.',
@@ -20,7 +21,7 @@ describe('Offer entity', () => {
     };
   }
 
-  function makeOffer(overrides?: Partial<Parameters<typeof Offer.create>[0]['content']>) {
+  function makeOffer(overrides?: Partial<OfferContent>) {
     return Offer.create({
       id: '22222222-2222-4222-8222-222222222222',
       restaurantId,
@@ -116,12 +117,55 @@ describe('Offer entity', () => {
       expect(updated.updatedAt).toEqual(at);
     });
 
-    it('rejects updating a Published offer', () => {
-      const offer = makeOffer();
-      const published = offer.publish(fixedNow);
-      expect(() => published.update(content(), fixedNow)).toThrow(
+    it('updates a Published offer that is still running (ADR-047)', () => {
+      const published = makeOffer().publish(fixedNow);
+      const at = new Date('2026-08-10T00:00:00.000Z');
+      const updated = published.update(content({ title: 'Live Edit' }), at);
+      expect(updated.title).toBe('Live Edit');
+      expect(updated.status).toBe(OfferStatus.Published);
+    });
+
+    it('rejects moving a Published offer to an end that has already passed', () => {
+      const published = makeOffer().publish(fixedNow);
+      const at = new Date('2026-08-10T00:00:00.000Z');
+      expect(() =>
+        published.update(content({ endsAt: new Date('2026-08-09T00:00:00.000Z') }), at),
+      ).toThrow(InvalidOfferException);
+    });
+
+    it('rejects updating a Published offer whose period has ended, before the job runs', () => {
+      const published = makeOffer().publish(fixedNow);
+      const after = new Date('2026-09-01T00:00:00.000Z');
+      expect(published.isEditable(after)).toBe(false);
+      expect(() => published.update(content(), after)).toThrow(
         InvalidOfferStatusTransitionException,
       );
+    });
+
+    it('normalizes conditions: sorts and dedupes days, dedupes branches', () => {
+      const updated = makeOffer().update(
+        content({
+          daysOfWeek: [6, 1, 6],
+          branchIds: [
+            'bbbbbbbb-0001-4000-8000-000000000001',
+            'bbbbbbbb-0001-4000-8000-000000000001',
+          ],
+        }),
+        fixedNow,
+      );
+      expect(updated.daysOfWeek).toEqual([1, 6]);
+      expect(updated.branchIds).toHaveLength(1);
+    });
+
+    it.each([
+      ['a day outside 0-6', { daysOfWeek: [7] }],
+      ['only a start hour', { startTime: '12:00' }],
+      ['a malformed hour', { startTime: '25:00', endTime: '26:00' }],
+      ['an end hour not after the start', { startTime: '16:00', endTime: '12:00' }],
+      ['a zero party size', { minPartySize: 0 }],
+      ['a zero cap', { bookingCap: 0 }],
+    ])('rejects %s', (_label, overrides) => {
+      expect(() => makeOffer().update(content(overrides), fixedNow)).toThrow(InvalidOfferException);
     });
 
     it('rejects updating an Expired offer', () => {

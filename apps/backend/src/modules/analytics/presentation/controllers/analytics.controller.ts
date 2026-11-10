@@ -253,7 +253,8 @@ export class AnalyticsController {
   @ResponseMessage('Review summary retrieved successfully.')
   @ApiOperation({
     operationId: 'analyticsReviewsSummary',
-    summary: 'Active review count and average rating (Phase 10 semantics, no new review analytics)',
+    summary:
+      'Review counts, the real 6-month average, per-axis averages, strongest and weakest axis',
     description: AUTHZ_DESCRIPTION,
   })
   @ApiParam({ name: 'restaurantId', format: 'uuid' })

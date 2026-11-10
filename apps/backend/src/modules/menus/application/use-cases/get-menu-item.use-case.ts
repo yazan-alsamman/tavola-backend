@@ -87,6 +87,8 @@ export class GetMenuItemUseCase {
       id: item.menuItemId.value,
       categoryId: item.categoryId.value,
       name: item.name,
+      nameAr: item.nameAr,
+      nameEn: item.nameEn,
       description: item.description,
       price: item.price,
       currency: item.currency,

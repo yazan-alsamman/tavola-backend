@@ -39,6 +39,7 @@ interface NearbyRawRow {
   description: string | null;
   cuisineType: string | null;
   averageRating: number | null;
+  ratingCount: number;
   priceLevel: number | null;
   status: string;
   createdAt: Date;
@@ -293,6 +294,7 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
         r.description AS "description",
         r.cuisine_type AS "cuisineType",
         r.average_rating::float8 AS "averageRating",
+        r.rating_count AS "ratingCount",
         r.price_level AS "priceLevel",
         r.status AS "status",
         r.created_at AS "createdAt",
@@ -342,6 +344,7 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
     description: string | null;
     cuisineType: string | null;
     averageRating: DecimalLike;
+    ratingCount: number;
     priceLevel: number | null;
     status: string;
     createdAt: Date;
@@ -356,6 +359,7 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
       description: row.description,
       cuisineType: row.cuisineType,
       averageRating: toNumberOrNull(row.averageRating),
+      ratingCount: row.ratingCount,
       priceLevel: row.priceLevel,
       status: row.status,
       createdAt: row.createdAt,
@@ -381,6 +385,8 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
     longitude: DecimalLike;
     countryCode: string;
     currency: string | null;
+    referencePrice: DecimalLike;
+    priceLevel: number | null;
     timezone: string;
     phone: string | null;
     createdAt: Date;
@@ -396,6 +402,8 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
       longitude: toNumberOrNull(row.longitude),
       countryCode: row.countryCode,
       currency: row.currency,
+      referencePrice: toNumberOrNull(row.referencePrice),
+      priceLevel: row.priceLevel,
       timezone: row.timezone,
       phone: row.phone,
       createdAt: row.createdAt,

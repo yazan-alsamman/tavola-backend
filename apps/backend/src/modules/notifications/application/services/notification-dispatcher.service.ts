@@ -8,6 +8,7 @@ import { UserRepository } from '@modules/authentication/domain/repositories/auth
 import {
   ReservationApprovedEvent,
   ReservationCancelledEvent,
+  ReservationCompletedEvent,
   ReservationCreatedEvent,
   ReservationNoShowEvent,
   ReservationRescheduledEvent,
@@ -28,6 +29,10 @@ import {
   ReservationWaitlistEntryRepository,
 } from '@modules/waitlist/domain/repositories/reservation-waitlist-entry.repository';
 import { MessageSentEvent } from '@modules/messaging/domain/events/messaging.events';
+import {
+  ReviewCreatedEvent,
+  ReviewReratedEvent,
+} from '@modules/reviews/domain/events/review.events';
 import { MessageSenderType } from '@modules/messaging/domain/enums/messaging.enums';
 import {
   CONVERSATION_PARTICIPANT_REPOSITORY,
@@ -60,12 +65,19 @@ export const StaffNotificationType = {
   ReservationCreated: 'StaffReservationCreated',
   ReservationCancelled: 'StaffReservationCancelled',
   WaitlistEntryCreated: 'StaffWaitlistEntryCreated',
+  ReviewCreated: 'StaffReviewCreated',
+  /** High priority on the dashboard (ADR-045). */
+  LowReviewCreated: 'StaffLowReviewCreated',
 } as const;
+
+/** A review scoring below this is "low" and reaches staff as high priority (ADR-045). */
+export const LOW_REVIEW_SCORE_BELOW = 3;
 
 interface StaffNotificationIntent {
   readonly type: string;
   readonly reservationId: string | null;
   readonly entryId: string | null;
+  readonly reviewId: string | null;
   readonly restaurantId: string;
   readonly branchId: string;
   /** For a cancellation: only notify when this id is the reservation's own customer. */
@@ -87,6 +99,7 @@ export function resolveStaffNotificationIntent(event: DomainEvent): StaffNotific
       type: StaffNotificationType.ReservationCreated,
       reservationId: p.reservationId,
       entryId: null,
+      reviewId: null,
       restaurantId: p.restaurantId,
       branchId: p.branchId,
       cancelledBy: null,
@@ -98,6 +111,7 @@ export function resolveStaffNotificationIntent(event: DomainEvent): StaffNotific
       type: StaffNotificationType.ReservationCancelled,
       reservationId: p.reservationId,
       entryId: null,
+      reviewId: null,
       restaurantId: p.restaurantId,
       branchId: p.branchId,
       cancelledBy: p.cancelledBy,
@@ -112,6 +126,22 @@ export function resolveStaffNotificationIntent(event: DomainEvent): StaffNotific
       type: StaffNotificationType.WaitlistEntryCreated,
       reservationId: null,
       entryId: p.entryId,
+      reviewId: null,
+      restaurantId: p.restaurantId,
+      branchId: p.branchId,
+      cancelledBy: null,
+    };
+  }
+  if (event instanceof ReviewCreatedEvent || event instanceof ReviewReratedEvent) {
+    const p = event.payload;
+    return {
+      type:
+        p.score < LOW_REVIEW_SCORE_BELOW
+          ? StaffNotificationType.LowReviewCreated
+          : StaffNotificationType.ReviewCreated,
+      reservationId: p.reservationId,
+      entryId: null,
+      reviewId: p.reviewId,
       restaurantId: p.restaurantId,
       branchId: p.branchId,
       cancelledBy: null,
@@ -206,6 +236,22 @@ export function resolveNotificationIntent(event: DomainEvent): NotificationInten
     };
   }
 
+  // ADR-045: the visit ended - ask the guest to rate it ("قيّم زيارتك").
+  // Guest-only reservations have no recipient and are skipped downstream.
+  if (event instanceof ReservationCompletedEvent) {
+    const p = event.payload;
+    return {
+      eventType: event.eventName,
+      pushEligible: true,
+      reservationId: p.reservationId,
+      entryId: null,
+      conversationId: null,
+      restaurantId: p.restaurantId,
+      branchId: p.branchId,
+      reservationStartTime: null,
+    };
+  }
+
   if (event instanceof ReservationNoShowEvent) {
     const p = event.payload;
     return {
@@ -290,7 +336,7 @@ export class NotificationDispatcher {
   /**
    * The restaurant-side counterpart of `dispatch`: one In-App row per
    * Owner/Admin/branch Employee for a customer's new booking, cancellation,
-   * or waitlist join. Never Push (owner decision 2026-11-08). Same
+   * waitlist join, or review (a low review as its own high-priority type). Never Push (owner decision 2026-11-08). Same
    * best-effort contract as `dispatch` - the caller swallows failures.
    */
   async dispatchToStaff(event: DomainEvent): Promise<NotificationCreatedEvent[]> {
@@ -315,6 +361,7 @@ export class NotificationDispatcher {
     const data = {
       ...(intent.reservationId !== null ? { reservationId: intent.reservationId } : {}),
       ...(intent.entryId !== null ? { entryId: intent.entryId } : {}),
+      ...(intent.reviewId !== null ? { reviewId: intent.reviewId } : {}),
       restaurantId: intent.restaurantId,
       branchId: intent.branchId,
     };

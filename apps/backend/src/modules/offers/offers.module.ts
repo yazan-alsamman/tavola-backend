@@ -3,6 +3,10 @@ import { BullModule } from '@nestjs/bullmq';
 import { AuthenticationModule } from '@modules/authentication/authentication.module';
 import { AuthorizationModule } from '@modules/authorization/authorization.module';
 import { RestaurantsModule } from '@modules/restaurants/restaurants.module';
+import { BranchesModule } from '@modules/branches/branches.module';
+import { OFFER_IMPACT_READER } from './application/ports/offer-impact-reader.port';
+import { GetOfferImpactUseCase } from './application/use-cases/get-offer-impact.use-case';
+import { PrismaOfferImpactReader } from './infrastructure/persistence/prisma-offer-impact.reader';
 import { OFFER_REPOSITORY } from './domain/repositories/offer.repository';
 import { OFFER_EXPIRATION_SCHEDULER } from './application/ports/offer-expiration-scheduler.port';
 import { CreateOfferUseCase } from './application/use-cases/create-offer.use-case';
@@ -43,6 +47,7 @@ import { OffersController } from './presentation/controllers/offers.controller';
     forwardRef(() => AuthenticationModule),
     AuthorizationModule,
     RestaurantsModule,
+    BranchesModule,
     BullModule.registerQueue({ name: OFFER_EXPIRATION_QUEUE_NAME }),
   ],
   controllers: [OffersController],
@@ -55,6 +60,9 @@ import { OffersController } from './presentation/controllers/offers.controller';
     ListPublicOffersUseCase,
     ListRestaurantIdsWithActiveOfferUseCase,
     ExpireOfferUseCase,
+    GetOfferImpactUseCase,
+    PrismaOfferImpactReader,
+    { provide: OFFER_IMPACT_READER, useExisting: PrismaOfferImpactReader },
     ExpireOfferProcessor,
     PrismaOfferRepository,
     { provide: OFFER_REPOSITORY, useExisting: PrismaOfferRepository },

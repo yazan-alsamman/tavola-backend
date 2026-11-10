@@ -36,10 +36,19 @@ export class PrismaOfferRepository implements OfferRepository {
     return row ? OfferPrismaMapper.toDomain(row) : null;
   }
 
-  async updateIfDraft(offer: Offer): Promise<boolean> {
+  async updateIfEditable(offer: Offer): Promise<boolean> {
     const data = OfferPrismaMapper.toPersistence(offer);
     const result = await this.prismaContext.client.offer.updateMany({
-      where: { id: data.id, status: OfferStatus.Draft },
+      where: {
+        id: data.id,
+        deletedAt: null,
+        // A Published row whose period already ended is Expired in effect,
+        // even before its expiration job runs.
+        OR: [
+          { status: OfferStatus.Draft },
+          { status: OfferStatus.Published, endsAt: { gt: data.updatedAt } },
+        ],
+      },
       data: {
         type: data.type,
         title: data.title,
@@ -48,6 +57,13 @@ export class PrismaOfferRepository implements OfferRepository {
         discountValue: data.discountValue,
         startsAt: data.startsAt,
         endsAt: data.endsAt,
+        daysOfWeek: data.daysOfWeek,
+        startTime: data.startTime,
+        endTime: data.endTime,
+        minPartySize: data.minPartySize,
+        branchIds: data.branchIds,
+        oncePerCustomer: data.oncePerCustomer,
+        bookingCap: data.bookingCap,
         updatedAt: data.updatedAt,
       },
     });
@@ -75,6 +91,15 @@ export class PrismaOfferRepository implements OfferRepository {
     await this.prismaContext.client.offer.updateMany({
       where: { id: id.value, deletedAt: null },
       data: { deletedAt: at, updatedAt: at },
+    });
+  }
+  async recordViews(ids: OfferId[]): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+    await this.prismaContext.client.offer.updateMany({
+      where: { id: { in: ids.map((id) => id.value) } },
+      data: { viewCount: { increment: 1 } },
     });
   }
 

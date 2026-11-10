@@ -12,7 +12,10 @@ export interface RestaurantProps {
   coverImageId: string | null;
   description: string | null;
   cuisineType: string | null;
+  /** Public rating: average review score over the last 6 months, null below 5 reviews (ADR-045). */
   averageRating: number | null;
+  /** Active reviews in that 6-month window. Computed; never written by profile CRUD. */
+  ratingCount?: number;
   priceLevel: number | null;
   status: RestaurantStatus;
   createdAt: Date;
@@ -70,6 +73,10 @@ export class Restaurant extends Entity<RestaurantProps> {
     return this.props.averageRating;
   }
 
+  get ratingCount(): number {
+    return this.props.ratingCount ?? 0;
+  }
+
   get priceLevel(): number | null {
     return this.props.priceLevel;
   }
@@ -124,16 +131,15 @@ export class Restaurant extends Entity<RestaurantProps> {
       name: string;
       description: string | null;
       cuisineType: string | null;
-      priceLevel: number | null;
     },
     at: Date,
   ): Restaurant {
+    // priceLevel is computed from the menu (ADR-046), never set here.
     return Restaurant.reconstitute({
       ...this.props,
       name: props.name,
       description: props.description,
       cuisineType: props.cuisineType,
-      priceLevel: props.priceLevel,
       updatedAt: at,
     });
   }
