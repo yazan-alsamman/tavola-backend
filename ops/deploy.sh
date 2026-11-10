@@ -98,9 +98,23 @@
     wait_for_health "tavla-${svc}-1" 60
   done
   log "Infra services healthy"
-  log "Applying Prisma migrations"
   # shellcheck disable=SC1090
   set -a; source "$ENV_FILE"; set +a
+
+  # A migration cannot be rolled back by rollback.sh (it only swaps the
+  # image), so take a database dump first. A failed or empty dump stops the
+  # deploy before anything touches the schema.
+  BACKUP_DIR="$REPO_DIR/backups"
+  PREDEPLOY_DUMP="$BACKUP_DIR/predeploy_$(date +%Y%m%d-%H%M%S)_${COMMIT}.sql.gz"
+  log "Dumping the database to $PREDEPLOY_DUMP before migrating"
+  mkdir -p "$BACKUP_DIR"
+  docker exec tavla-postgres-1 pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+    | gzip > "$PREDEPLOY_DUMP" || fail "pre-deploy database dump failed"
+  [ "$(gzip -dc "$PREDEPLOY_DUMP" | head -c 1 | wc -c)" -eq 1 ] \
+    || fail "pre-deploy database dump is empty"
+  ls -1t "$BACKUP_DIR"/predeploy_*.sql.gz | tail -n +11 | xargs -r rm -f
+
+  log "Applying Prisma migrations"
   cd "$BACKEND_DIR"
 
   # DATABASE_URL is overridden to 127.0.0.1 (Postgres's host-published port)
