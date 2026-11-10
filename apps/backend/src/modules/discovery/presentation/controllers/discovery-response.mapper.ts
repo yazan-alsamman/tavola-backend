@@ -127,6 +127,8 @@ export function toFloorPlanAreaPublicResponse(
     name: result.name,
     color: result.color,
     sortOrder: result.sortOrder,
+    features: result.features,
+    floor: result.layout.floor,
   };
 }
 

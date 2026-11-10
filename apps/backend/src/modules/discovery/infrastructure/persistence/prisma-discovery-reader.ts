@@ -1,3 +1,4 @@
+import { FloorPlanAreaFeature } from '@modules/tables/domain/enums/table.enums';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@infrastructure/prisma/prisma.service';
@@ -426,6 +427,12 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
     name: string;
     color: string;
     sortOrder: number;
+    features: string[];
+    floor: number | null;
+    positionX: number | null;
+    positionY: number | null;
+    width: number | null;
+    height: number | null;
     createdAt: Date;
     updatedAt: Date;
   }): FloorPlanAreaResult {
@@ -435,6 +442,14 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
       name: row.name,
       color: row.color,
       sortOrder: row.sortOrder,
+      features: row.features as FloorPlanAreaFeature[],
+      layout: {
+        floor: row.floor,
+        positionX: row.positionX,
+        positionY: row.positionY,
+        width: row.width,
+        height: row.height,
+      },
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };

@@ -2,6 +2,29 @@ import { Entity } from '@shared/domain/base/entity.base';
 import { FloorPlanAreaId, FloorPlanId } from '@shared/domain/value-objects/identifiers.vo';
 import { HexColor } from '../value-objects/hex-color.vo';
 import { InvalidFloorPlanAreaException } from '../exceptions/invalid-floor-plan-area.exception';
+import { FloorPlanAreaFeature } from '../enums/table.enums';
+
+/**
+ * CR WJ-R-2026-002 round 2 (ADR-044): where the area is drawn - its floor
+ * (null = ground floor) and its rectangle on the floor-plan grid, in the
+ * same canvas units as `Table.positionX/Y`. All-null geometry means the area
+ * is a named group only and is not drawn.
+ */
+export interface FloorPlanAreaLayout {
+  floor: number | null;
+  positionX: number | null;
+  positionY: number | null;
+  width: number | null;
+  height: number | null;
+}
+
+export const EMPTY_AREA_LAYOUT: FloorPlanAreaLayout = {
+  floor: null,
+  positionX: null,
+  positionY: null,
+  width: null,
+  height: null,
+};
 
 export interface FloorPlanAreaProps {
   id: string;
@@ -9,6 +32,8 @@ export interface FloorPlanAreaProps {
   name: string;
   color: string;
   sortOrder: number;
+  features: FloorPlanAreaFeature[];
+  layout: FloorPlanAreaLayout;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
@@ -39,10 +64,12 @@ export class FloorPlanArea extends Entity<FloorPlanAreaProps> {
   static create(props: FloorPlanAreaProps): FloorPlanArea {
     const name = validateName(props.name);
     validateSortOrder(props.sortOrder);
+    validateLayout(props.layout);
     return new FloorPlanArea({
       ...props,
       name,
       color: HexColor.create(props.color).value,
+      features: normalizeFeatures(props.features),
     });
   }
 
@@ -71,6 +98,14 @@ export class FloorPlanArea extends Entity<FloorPlanAreaProps> {
     return this.props.sortOrder;
   }
 
+  get features(): FloorPlanAreaFeature[] {
+    return [...this.props.features];
+  }
+
+  get layout(): FloorPlanAreaLayout {
+    return { ...this.props.layout };
+  }
+
   get createdAt(): Date {
     return new Date(this.props.createdAt.getTime());
   }
@@ -94,17 +129,31 @@ export class FloorPlanArea extends Entity<FloorPlanAreaProps> {
    * so moving the Area would silently invalidate every one of them - create an
    * Area in the target plan and move the tables instead).
    */
+  /**
+   * `features`/`layout` left undefined keep their current values, so older
+   * clients that only send name/color/sortOrder never wipe them.
+   */
   updateProfile(
-    props: { name: string; color: string; sortOrder: number },
+    props: {
+      name: string;
+      color: string;
+      sortOrder: number;
+      features?: FloorPlanAreaFeature[];
+      layout?: FloorPlanAreaLayout;
+    },
     at: Date,
   ): FloorPlanArea {
     const name = validateName(props.name);
     validateSortOrder(props.sortOrder);
+    const layout = props.layout ?? this.props.layout;
+    validateLayout(layout);
     return FloorPlanArea.reconstitute({
       ...this.props,
       name,
       color: HexColor.create(props.color).value,
       sortOrder: props.sortOrder,
+      features: props.features ? normalizeFeatures(props.features) : this.props.features,
+      layout: { ...layout },
       updatedAt: at,
     });
   }
@@ -133,6 +182,39 @@ function validateName(name: string): string {
     throw new InvalidFloorPlanAreaException('name must not be empty.');
   }
   return trimmed;
+}
+
+function normalizeFeatures(features: FloorPlanAreaFeature[]): FloorPlanAreaFeature[] {
+  return [...new Set(features)];
+}
+
+/** Geometry is all-or-nothing: either a full rectangle with positive size, or none. */
+function validateLayout(layout: FloorPlanAreaLayout): void {
+  const { floor, positionX, positionY, width, height } = layout;
+  if (floor !== null && (!Number.isInteger(floor) || floor < 0)) {
+    throw new InvalidFloorPlanAreaException('floor must be a non-negative integer.');
+  }
+  const geometry = [positionX, positionY, width, height];
+  const set = geometry.filter((value) => value !== null).length;
+  if (set !== 0 && set !== geometry.length) {
+    throw new InvalidFloorPlanAreaException(
+      'positionX, positionY, width and height must be set together or all omitted.',
+    );
+  }
+  if (set === 0) return;
+  if (
+    !Number.isInteger(positionX) ||
+    !Number.isInteger(positionY) ||
+    positionX! < 0 ||
+    positionY! < 0
+  ) {
+    throw new InvalidFloorPlanAreaException(
+      'positionX and positionY must be non-negative integers.',
+    );
+  }
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width! <= 0 || height! <= 0) {
+    throw new InvalidFloorPlanAreaException('width and height must be positive integers.');
+  }
 }
 
 function validateSortOrder(sortOrder: number): void {

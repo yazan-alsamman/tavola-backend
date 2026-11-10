@@ -13,7 +13,7 @@ import {
   BranchRepository,
   BRANCH_REPOSITORY,
 } from '@modules/branches/domain/repositories/branch.repository';
-import { FloorPlanArea } from '../../domain/entities/floor-plan-area.entity';
+import { EMPTY_AREA_LAYOUT, FloorPlanArea } from '../../domain/entities/floor-plan-area.entity';
 import {
   FloorPlanRepository,
   FLOOR_PLAN_REPOSITORY,
@@ -82,6 +82,8 @@ export class CreateFloorPlanAreaUseCase {
       name: command.name,
       color: command.color,
       sortOrder: command.sortOrder,
+      features: command.features ?? [],
+      layout: command.layout ?? EMPTY_AREA_LAYOUT,
       createdAt: now,
       updatedAt: now,
       deletedAt: null,

@@ -2544,3 +2544,33 @@ The dashboard can show who cancelled and why, the auto-closed report
 (Completed with `statusChange.changedBy = System`), and a "closes
 automatically soon" warning during the 30-minute grace. All additions are
 optional fields or new endpoints, so app 1.0.2 is unaffected.
+
+## ADR-044
+
+**Status:** Accepted (CR WJ-R-2026-002 round 2, 2026-11-10)
+
+### Context
+
+The owner wants the floor plan editor ("مخطط المكان") to draw each area as a
+named, coloured rectangle on a fixed grid, with guest-facing traits
+(indoor, outdoor, family, smoking, hookah, quiet, VIP) that every table
+inside the area inherits and that the app can show when a guest picks a
+seat. ADR-040 areas had only a name, colour and tab order.
+
+### Decision
+
+1. `FloorPlanArea` gains `features` (enum array `FloorPlanAreaFeature`,
+   deduplicated, max 8), `floor` (nullable int) and an optional grid
+   rectangle `positionX/positionY/width/height`, all-or-nothing with a
+   positive size (domain invariant on the entity).
+2. Tables do not copy the features: a table's traits are its area's, so
+   changing an area changes all its tables at once and nothing drifts.
+3. Create/Update Floor Plan Area accept the new fields as optional; on
+   update an omitted field keeps its value. Discovery's public area DTO
+   exposes `features` and `floor`.
+
+### Consequences
+
+Additive columns with defaults, so existing rows and app 1.0.2 are
+unaffected. Migration `20261110120000_floor_plan_area_layout_and_features`.
+

@@ -272,6 +272,8 @@ describe('CreateTableUseCase', () => {
           name: 'Main Hall',
           color: '#14B8A6',
           sortOrder: 0,
+          features: [],
+          layout: { floor: null, positionX: null, positionY: null, width: null, height: null },
           createdAt: fixedNow,
           updatedAt: fixedNow,
           deletedAt: null,

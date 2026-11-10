@@ -1,3 +1,5 @@
+import { FloorPlanAreaFeature } from '../../domain/enums/table.enums';
+import { FloorPlanAreaLayout } from '../../domain/entities/floor-plan-area.entity';
 import { AuthenticatedOrganizationMemberActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
 
 export interface CreateFloorPlanAreaCommand {
@@ -8,5 +10,7 @@ export interface CreateFloorPlanAreaCommand {
   name: string;
   color: string;
   sortOrder: number;
+  features?: FloorPlanAreaFeature[];
+  layout?: FloorPlanAreaLayout;
   correlationId?: string;
 }

@@ -79,7 +79,13 @@ export class UpdateFloorPlanAreaUseCase {
 
     const now = this.clock.now();
     const area = existing.updateProfile(
-      { name: command.name, color: command.color, sortOrder: command.sortOrder },
+      {
+        name: command.name,
+        color: command.color,
+        sortOrder: command.sortOrder,
+        features: command.features,
+        layout: command.layout,
+      },
       now,
     );
 

@@ -938,15 +938,35 @@ model FloorPlan {
 // model's own comment.
 // ---------------------------------------------------------------------------
 
+/// CR WJ-R-2026-002 round 2 (ADR-044): area traits a guest can pick in the app.
+enum FloorPlanAreaFeature {
+  Indoor
+  Outdoor
+  Family
+  Smoking
+  NonSmoking
+  Hookah
+  Quiet
+  Vip
+}
+
 model FloorPlanArea {
-  id          String    @id @default(uuid()) @db.Uuid
-  floorPlanId String    @map("floor_plan_id") @db.Uuid
+  id          String                 @id @default(uuid()) @db.Uuid
+  floorPlanId String                 @map("floor_plan_id") @db.Uuid
   name        String
-  color       String    @db.VarChar(7)
-  sortOrder   Int       @default(0) @map("sort_order")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-  deletedAt   DateTime? @map("deleted_at")
+  color       String                 @db.VarChar(7)
+  sortOrder   Int                    @default(0) @map("sort_order")
+  /// CR WJ-R-2026-002 round 2 (ADR-044): what guests get in this area, shown in the app.
+  features    FloorPlanAreaFeature[] @default([])
+  /// Floor the area is drawn on (null = ground floor) and its rectangle on the grid; null geometry = not drawn.
+  floor       Int?
+  positionX   Int?                   @map("position_x")
+  positionY   Int?                   @map("position_y")
+  width       Int?
+  height      Int?
+  createdAt   DateTime               @default(now()) @map("created_at")
+  updatedAt   DateTime               @updatedAt @map("updated_at")
+  deletedAt   DateTime?              @map("deleted_at")
 
   floorPlan FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
   tables    Table[]

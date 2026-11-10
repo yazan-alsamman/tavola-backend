@@ -1,4 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { FloorPlanAreaFeature } from '@modules/tables/domain/enums/table.enums';
 
 /**
  * ADR-040 - the customer-safe public projection of a FloorPlanArea (the
@@ -25,4 +26,20 @@ export class FloorPlanAreaPublicResponseDto {
 
   @ApiProperty({ example: 0, description: 'Presentation order, ascending.' })
   sortOrder!: number;
+
+  @ApiProperty({
+    enum: FloorPlanAreaFeature,
+    isArray: true,
+    example: ['Family', 'Outdoor'],
+    description:
+      'ADR-044: what guests get in this area. Lets the app offer "families" or "outdoor" as a seating choice. Empty when none are set.',
+  })
+  features!: FloorPlanAreaFeature[];
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 0,
+    description: 'ADR-044: floor the area is on (null = ground floor).',
+  })
+  floor!: number | null;
 }
