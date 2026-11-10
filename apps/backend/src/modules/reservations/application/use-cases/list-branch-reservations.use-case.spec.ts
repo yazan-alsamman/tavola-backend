@@ -74,8 +74,18 @@ describe('ListBranchReservationsUseCase', () => {
       updatedAt: new Date('2026-08-10T20:00:00.000Z'),
       specialRequest: null,
       table: { tableId: '55555555-5555-4555-8555-555555555555', tableNumber: 'T1', capacity: 4 },
-      customer: { type: 'User', name: 'Jane Doe', phone: '+963991234567' },
+      customer: {
+        type: 'User',
+        name: 'Jane Doe',
+        phone: '+963991234567',
+        key: 'user:cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        visitCount: 0,
+        noShowCount: 0,
+      },
       offer: null,
+      internalNote: null,
+      approvalDeadlineAt: null,
+      statusChange: null,
       ...overrides,
     };
   }

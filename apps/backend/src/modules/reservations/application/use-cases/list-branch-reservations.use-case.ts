@@ -116,6 +116,7 @@ export class ListBranchReservationsUseCase {
         status: command.status,
         dateFrom: command.dateFrom,
         dateTo: command.dateTo,
+        customerKey: command.customerKey,
       },
       command.page,
       command.limit,

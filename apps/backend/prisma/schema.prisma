@@ -1105,6 +1105,7 @@ model Reservation {
   tableReadyNotifiedAt         DateTime?         @map("table_ready_notified_at")
   rescheduledFromReservationId String?           @map("rescheduled_from_reservation_id") @db.Uuid
   offerId                      String?           @map("offer_id") @db.Uuid
+  internalNote                 String?           @map("internal_note") @db.VarChar(1000)
   createdAt                    DateTime          @default(now()) @map("created_at")
   updatedAt                    DateTime          @updatedAt @map("updated_at")
 

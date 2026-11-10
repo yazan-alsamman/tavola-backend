@@ -16,6 +16,7 @@ import {
   RestaurantRepository,
   RESTAURANT_REPOSITORY,
 } from '@modules/restaurants/domain/repositories/restaurant.repository';
+import { Reservation } from '../../domain/entities/reservation.entity';
 import { ReservationStatus } from '../../domain/enums/reservation.enums';
 import { ReservationHistory } from '../../domain/entities/reservation-history.entity';
 import { ReservationNotFoundException } from '../../domain/exceptions/reservation-not-found.exception';
@@ -76,7 +77,41 @@ export class CompleteReservationUseCase {
       this.restaurantRepository,
     );
     const operatorId = resolveReservationOperatorId(command.actor);
+    const completed = await this.applyCompletion(existing, operatorId, command.correlationId);
+    return toReservationResult(completed);
+  }
 
+  /**
+   * CR WJ-R-2026-002 round 2 - the auto-close sweep's entry point
+   * (`AutoCloseOverdueReservationsUseCase`): the same `Approved ->
+   * Completed` transition, table release and event as a staff completion,
+   * recorded with no operator (`changedBy`/`completedBy` null), which is how
+   * the dashboard tells a table the system closed apart from one staff
+   * closed. Returns `false`, never throws, when the reservation is gone or
+   * no longer Approved - a concurrent staff action simply wins.
+   */
+  async executeAsSystem(reservationId: string, correlationId?: string): Promise<boolean> {
+    const existing = await this.reservationRepository.findById(ReservationId.create(reservationId));
+    if (existing === null || existing.status !== ReservationStatus.Approved) {
+      return false;
+    }
+    try {
+      await this.applyCompletion(existing, null, correlationId);
+      return true;
+    } catch (error) {
+      if (error instanceof InvalidReservationStatusTransitionException) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  private async applyCompletion(
+    existing: Reservation,
+    operatorId: string | null,
+    correlationId: string | undefined,
+  ): Promise<Reservation> {
+    const reservationId = existing.reservationId;
     const now = this.clock.now();
     const completed = existing.complete(now);
 
@@ -134,10 +169,10 @@ export class CompleteReservationUseCase {
           completedBy: operatorId,
         },
         now,
-        command.correlationId,
+        correlationId,
       ),
     );
 
-    return toReservationResult(completed);
+    return completed;
   }
 }

@@ -1,12 +1,13 @@
-import { AuthenticatedActor, AuthenticatedEmployeeActor } from '@modules/authentication/application/dto/authenticated-actor.dto';
+import {
+  AuthenticatedActor,
+  AuthenticatedEmployeeActor,
+} from '@modules/authentication/application/dto/authenticated-actor.dto';
 import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
 import { OrganizationMemberRole } from '@modules/organizations/domain/enums/organization.enums';
 import { EmployeeBranchNotAssignedException } from '@modules/authorization/domain/exceptions/employee-branch-not-assigned.exception';
 import { PermissionDeniedException } from '@modules/authorization/domain/exceptions/permission-denied.exception';
 import { BranchNotFoundException } from '@modules/branches/domain/exceptions/branch-not-found.exception';
-import {
-  RestaurantRepository,
-} from '@modules/restaurants/domain/repositories/restaurant.repository';
+import { RestaurantRepository } from '@modules/restaurants/domain/repositories/restaurant.repository';
 import { BranchId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import { Reservation } from '../../domain/entities/reservation.entity';
 import { ReservationNotFoundException } from '../../domain/exceptions/reservation-not-found.exception';

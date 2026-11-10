@@ -2501,3 +2501,46 @@ reservation booked from an offer should show that it came from that offer.
 Older app builds that never send `offerId` keep working unchanged. Showing the
 offer in the customer app needs an app release that sends `offerId` from the
 offer card.
+
+## ADR-043
+
+**Status:** Accepted (CR WJ-R-2026-002 round 2, 2026-11-10)
+
+### Context
+
+The restaurant owner asked for more context on each booking in the
+dashboard: why and by whom a booking was cancelled, a staff-only note,
+whether the guest is a returning customer, a page per customer, a warning
+before an unanswered booking expires, and automatic closing of tables
+reception forgot to close, with a daily report of those. ADR-019 had kept
+closing a table a staff decision only.
+
+### Decision
+
+1. The staff branch reservation list gains, per item:
+   - `statusChange { status, changedBy: Customer | Restaurant | System,
+     reason, changedAt }` for a booking in a final status, read from its
+     latest `ReservationHistory` row (`changedBy` null means System; equal to
+     the booking's user means Customer; anything else means Restaurant).
+   - `internalNote`, `approvalDeadlineAt` (Pending only: start time plus
+     `pendingReservationTimeoutMinutes`, the moment the expiry job fires).
+   - `customer.key` (`user:<uuid>` or `guest:<E.164 phone>`),
+     `customer.visitCount` and `customer.noShowCount` across the restaurant,
+     computed with two grouped queries per page.
+   - A `customerKey` query filter, which powers the customer page.
+2. `Reservation.internalNote` (nullable, max 1000) set through
+   `PATCH /reservations/:id/internal-note` by Owner/Admin or an Employee with
+   `reservations:create`. Written on its own column update, so it never races
+   a lifecycle transition.
+3. Auto-close (amends ADR-019): a recurring BullMQ job
+   (`ReservationAutoCloseQueue`, every 5 minutes) completes `Approved`
+   reservations 30 minutes after `reservationEndTime`, through the same
+   completion path as staff, with no operator. `ReservationCompletedEvent.completedBy`
+   becomes nullable (null = System) and is audited as a System actor.
+
+### Consequences
+
+The dashboard can show who cancelled and why, the auto-closed report
+(Completed with `statusChange.changedBy = System`), and a "closes
+automatically soon" warning during the 30-minute grace. All additions are
+optional fields or new endpoints, so app 1.0.2 is unaffected.

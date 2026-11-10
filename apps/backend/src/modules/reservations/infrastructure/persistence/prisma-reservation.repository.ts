@@ -237,6 +237,23 @@ export class PrismaReservationRepository implements ReservationRepository {
     return result.count > 0;
   }
 
+  async updateInternalNote(id: ReservationId, note: string | null, at: Date): Promise<void> {
+    await this.prismaContext.client.reservation.update({
+      where: { id: id.value },
+      data: { internalNote: note, updatedAt: at },
+    });
+  }
+
+  async findOverdueApprovedIds(endedBefore: Date, limit: number): Promise<ReservationId[]> {
+    const rows = await this.prismaContext.client.reservation.findMany({
+      where: { status: ReservationStatus.Approved, reservationEndTime: { lt: endedBefore } },
+      orderBy: { reservationEndTime: 'asc' },
+      take: limit,
+      select: { id: true },
+    });
+    return rows.map((row) => ReservationId.create(row.id));
+  }
+
   async hasBlockingReservation(tableId: TableId, now: Date): Promise<boolean> {
     const count = await this.prismaContext.client.reservation.count({
       where: {

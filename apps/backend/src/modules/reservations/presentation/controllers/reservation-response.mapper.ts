@@ -84,8 +84,21 @@ export function toBranchReservationItemResponse(
       type: item.customer.type,
       name: item.customer.name,
       phone: item.customer.phone,
+      key: item.customer.key,
+      visitCount: item.customer.visitCount,
+      noShowCount: item.customer.noShowCount,
     },
     offer: item.offer ? { offerId: item.offer.offerId, title: item.offer.title } : null,
+    internalNote: item.internalNote,
+    approvalDeadlineAt: item.approvalDeadlineAt?.toISOString() ?? null,
+    statusChange: item.statusChange
+      ? {
+          status: item.statusChange.status,
+          changedBy: item.statusChange.changedBy,
+          reason: item.statusChange.reason,
+          changedAt: item.statusChange.changedAt.toISOString(),
+        }
+      : null,
   };
 }
 

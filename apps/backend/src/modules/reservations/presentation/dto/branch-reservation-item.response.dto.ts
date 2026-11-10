@@ -24,6 +24,37 @@ export class StaffReservationCustomerResponseDto {
 
   @ApiPropertyOptional({ nullable: true, example: '+963991234567' })
   phone!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'guest:+963991234567',
+    description:
+      'Stable handle for this customer at the restaurant: user:<uuid> or guest:<E.164 phone>. Pass it as customerKey to list only their bookings.',
+  })
+  key!: string | null;
+
+  @ApiProperty({ example: 3, description: 'Completed visits at this restaurant, all branches.' })
+  visitCount!: number;
+
+  @ApiProperty({ example: 0, description: 'No-shows at this restaurant, all branches.' })
+  noShowCount!: number;
+}
+
+export class StaffReservationStatusChangeResponseDto {
+  @ApiProperty({ enum: ReservationStatus })
+  status!: ReservationStatus;
+
+  @ApiProperty({
+    enum: ['Customer', 'Restaurant', 'System'],
+    description: 'Who moved the reservation into its current final status.',
+  })
+  changedBy!: 'Customer' | 'Restaurant' | 'System';
+
+  @ApiPropertyOptional({ nullable: true, example: 'Guest asked to cancel by phone' })
+  reason!: string | null;
+
+  @ApiProperty({ format: 'date-time' })
+  changedAt!: string;
 }
 
 export class StaffReservationOfferResponseDto {
@@ -83,4 +114,26 @@ export class BranchReservationItemResponseDto {
     description: 'The offer the customer booked from, or null for an ordinary booking.',
   })
   offer!: StaffReservationOfferResponseDto | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Staff-only note (special request, allergy). Never shown to the customer.',
+  })
+  internalNote!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    format: 'date-time',
+    description:
+      'When this Pending booking expires if nobody answers it; null in any other status.',
+  })
+  approvalDeadlineAt!: string | null;
+
+  @ApiPropertyOptional({
+    type: StaffReservationStatusChangeResponseDto,
+    nullable: true,
+    description:
+      'Who moved the booking into its final status (Rejected, Cancelled, Completed, Expired, NoShow) and the reason given; null while Pending or Approved.',
+  })
+  statusChange!: StaffReservationStatusChangeResponseDto | null;
 }
