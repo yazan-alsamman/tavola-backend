@@ -2739,3 +2739,35 @@ percentage offer depends on the branch reference price, so it is an
 estimate, labelled as such. The app does not yet show days/hours; it keeps
 listing offers as before (app release later). Migration
 `20261110210000_offer_kinds_schedule_conditions`.
+
+---
+## ADR-048
+
+### Title
+
+Security fixes from the 2026-11-10 review
+
+### Status
+
+**Accepted — owner-approved 2026-11-10** (the owner asked for the review findings to be fixed). Changes behaviour without changing any route or schema.
+
+### Context
+
+The 2026-11-10 review found that PlatformSupport could call Platform Admin mutation routes, that reservation creation trusted the client for opening hours, duration and volume, that rate limits keyed on a client-chosen `X-Forwarded-For` value, that anyone could lock any account by failing its login, and that the OTP attempt cap could be passed by parallel guesses.
+
+### Decision
+
+1. `POST /platform-admin/restaurant-owners` and the four `POST /platform-admin/organizations/:id/subscription*` routes run `PlatformAdminRoleGuard` and require `PlatformAdmin`. `POST /platform-admin/login` and `/refresh` use the existing `login` and `refresh` rate-limit policies.
+2. `CreateReservationUseCase` refuses a booking when the restaurant is not `Active` (409 `CONFLICT`) or the duration is outside 15–480 minutes. For `Online` bookings it also requires the slot to be inside the branch's opening hours (branch row first, restaurant default otherwise, the same `BranchOpeningHoursService` the time-slot listing uses), no more than 90 days ahead, no more guests than `maxGuestsPerReservation`, and fewer than 5 upcoming Pending/Approved bookings for the customer (409 `CONFLICT`). Staff-entered bookings skip the online-only rules.
+3. The client IP is the entry `TRUSTED_PROXY_HOPS` (default 1) from the right of `X-Forwarded-For` plus the socket address. The Socket.IO gateway uses the same rule.
+4. A failed Platform Admin login only counts toward lockout when the account is a Platform Admin. Audit rows that unauthenticated requests can trigger (`auth.jwt.invalid`, `auth.jwt.expired`, rate-limit exceeded) are written at most once per action, IP and minute.
+5. OTP verification charges an attempt with a conditional update (`incorrectAttemptCount < max`) before comparing the code, and refunds it when the code is right.
+6. `ops/deploy.sh` dumps the database before running migrations and stops if the dump fails.
+
+### Alternatives
+
+Express `trust proxy` was not used because the gateway and the HTTP layer would then resolve the IP differently. Opening hours were not left to the client because the time-slot listing is advisory and the create endpoint is public.
+
+### Consequences
+
+The API port must not be reachable except through the trusted proxies, or a client can again choose its own IP. The ordinary-user per-email lockout (AUTHENTICATION_ARCHITECTURE.md) is unchanged and still lets a third party lock a known email for the lock window; that trade-off stays as documented.
