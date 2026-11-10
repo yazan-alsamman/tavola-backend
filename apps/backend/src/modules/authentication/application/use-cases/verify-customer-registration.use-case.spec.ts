@@ -44,11 +44,7 @@ describe('VerifyCustomerRegistrationUseCase', () => {
       now: fixedNow,
     });
     if (overrides?.incorrectAttemptCount) {
-      for (let i = 0; i < overrides.incorrectAttemptCount; i += 1) {
-        await pendingRegistrationRepository.incrementAttemptCount(
-          pendingRegistrationRepository.rows[0].id,
-        );
-      }
+      pendingRegistrationRepository.rows[0].incorrectAttemptCount = overrides.incorrectAttemptCount;
     }
     return code;
   }
@@ -90,6 +86,31 @@ describe('VerifyCustomerRegistrationUseCase', () => {
     await expect(useCase.execute({ ...phoneCommand, code: '000000' })).rejects.toThrow(
       OtpAttemptsExhaustedException,
     );
+  });
+
+  it('never accepts more wrong guesses than the cap when guesses arrive in parallel', async () => {
+    const { useCase, pendingRegistrationRepository, otpService } = createUseCase();
+    await seedPendingRegistration(pendingRegistrationRepository, otpService);
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 10 }, () => useCase.execute({ ...phoneCommand, code: '000000' })),
+    );
+    const reasons = results.map((result) =>
+      result.status === 'rejected' ? (result.reason as Error).constructor : null,
+    );
+
+    expect(reasons.filter((reason) => reason === InvalidOtpException)).toHaveLength(5);
+    expect(reasons.filter((reason) => reason === OtpAttemptsExhaustedException)).toHaveLength(5);
+    expect(pendingRegistrationRepository.rows[0].incorrectAttemptCount).toBe(5);
+  });
+
+  it('does not count a correct code as an incorrect attempt', async () => {
+    const { useCase, pendingRegistrationRepository, otpService } = createUseCase();
+    const code = await seedPendingRegistration(pendingRegistrationRepository, otpService);
+
+    await useCase.execute({ ...phoneCommand, code });
+
+    expect(pendingRegistrationRepository.rows[0].incorrectAttemptCount).toBe(0);
   });
 
   it('rejects an expired code', async () => {

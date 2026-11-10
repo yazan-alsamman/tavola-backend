@@ -76,10 +76,17 @@ export class VerifyCustomerPasswordResetUseCase {
       throw new ExpiredOtpException();
     }
 
+    // Charge the attempt before checking the code, so parallel guesses
+    // cannot all pass the cap check above before any of them is counted.
+    if (
+      !(await this.customerPasswordResetRepository.chargeAttempt(record.id, maxIncorrectAttempts))
+    ) {
+      throw new OtpAttemptsExhaustedException();
+    }
     if (!this.otpService.verify(command.code, record.codeHash)) {
-      await this.customerPasswordResetRepository.incrementAttemptCount(record.id);
       throw new InvalidOtpException();
     }
+    await this.customerPasswordResetRepository.refundAttempt(record.id);
 
     await this.customerPasswordResetRepository.markVerified(record.id, now);
 
