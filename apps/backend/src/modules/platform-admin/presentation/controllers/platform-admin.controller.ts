@@ -7,6 +7,9 @@ import { ErrorResponseDto } from '@common/dto/error-response.dto';
 import { ProvisionRestaurantOwnerUseCase } from '@modules/authentication/application/use-cases/provision-restaurant-owner.use-case';
 import { resolveClientIp } from '@modules/authentication/presentation/utils/resolve-client-ip.util';
 import { PlatformAdminGuard } from '../guards/platform-admin.guard';
+import { PlatformAdminRoleGuard } from '../guards/platform-admin-role.guard';
+import { RequirePlatformAdminRole } from '../decorators/require-platform-admin-role.decorator';
+import { PlatformAdminRole } from '../../domain/enums/platform-admin.enums';
 import { CurrentPlatformAdmin } from '../decorators/current-platform-admin.decorator';
 import { PlatformAdminActor } from '../../application/dto/platform-admin-actor.dto';
 import { PlatformAdminLoginUseCase } from '../../application/use-cases/platform-admin-login.use-case';
@@ -170,7 +173,8 @@ export class PlatformAdminController {
   }
 
   @Post('restaurant-owners')
-  @UseGuards(PlatformAdminGuard)
+  @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)
+  @RequirePlatformAdminRole(PlatformAdminRole.PlatformAdmin)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.CREATED)
   @ResponseMessage('Restaurant Owner provisioned successfully.')
