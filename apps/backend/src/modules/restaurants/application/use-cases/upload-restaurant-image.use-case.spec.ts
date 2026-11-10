@@ -52,11 +52,15 @@ describe('UploadRestaurantImageUseCase', () => {
       subscriptionPlanRepository,
       subscriptionUsageRepository,
       restaurantUsageRepository,
-    } = createPermissiveSubscriptionFixture(baseActor().organizationId, {
-      planId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      subscriptionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-      usageId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-    }, fixedNow);
+    } = createPermissiveSubscriptionFixture(
+      baseActor().organizationId,
+      {
+        planId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        subscriptionId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        usageId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      },
+      fixedNow,
+    );
     const createUseCase = new CreateRestaurantUseCase(
       restaurantRepository,
       restaurantSettingsRepository,
@@ -95,12 +99,22 @@ describe('UploadRestaurantImageUseCase', () => {
       auditLogWriter,
       BUCKET,
     );
-    return { useCase, restaurantRepository, restaurantSettingsRepository, fileRepository, storagePort, auditLogWriter };
+    return {
+      useCase,
+      restaurantRepository,
+      restaurantSettingsRepository,
+      fileRepository,
+      storagePort,
+      auditLogWriter,
+    };
   }
 
   it('stores the object and sets coverImageId, leaving the gallery unused', async () => {
     const ctx = createUseCase();
-    const restaurantId = await seedRestaurant(ctx.restaurantRepository, ctx.restaurantSettingsRepository);
+    const restaurantId = await seedRestaurant(
+      ctx.restaurantRepository,
+      ctx.restaurantSettingsRepository,
+    );
 
     const result = await ctx.useCase.execute({
       actorUserId: baseActor().userId,
@@ -124,7 +138,10 @@ describe('UploadRestaurantImageUseCase', () => {
 
   it('replaces a previous cover and removes the old object', async () => {
     const ctx = createUseCase([FILE_ID, REPLACEMENT_FILE_ID]);
-    const restaurantId = await seedRestaurant(ctx.restaurantRepository, ctx.restaurantSettingsRepository);
+    const restaurantId = await seedRestaurant(
+      ctx.restaurantRepository,
+      ctx.restaurantSettingsRepository,
+    );
     await ctx.useCase.execute({
       actorUserId: baseActor().userId,
       organizationId: baseActor().organizationId,
@@ -153,7 +170,10 @@ describe('UploadRestaurantImageUseCase', () => {
 
   it('sets logoId without changing coverImageId', async () => {
     const ctx = createUseCase();
-    const restaurantId = await seedRestaurant(ctx.restaurantRepository, ctx.restaurantSettingsRepository);
+    const restaurantId = await seedRestaurant(
+      ctx.restaurantRepository,
+      ctx.restaurantSettingsRepository,
+    );
 
     await ctx.useCase.execute({
       actorUserId: baseActor().userId,
@@ -185,7 +205,10 @@ describe('UploadRestaurantImageUseCase', () => {
 
   it('rejects a missing file', async () => {
     const ctx = createUseCase();
-    const restaurantId = await seedRestaurant(ctx.restaurantRepository, ctx.restaurantSettingsRepository);
+    const restaurantId = await seedRestaurant(
+      ctx.restaurantRepository,
+      ctx.restaurantSettingsRepository,
+    );
     await expect(
       ctx.useCase.execute({
         actorUserId: baseActor().userId,
@@ -199,7 +222,10 @@ describe('UploadRestaurantImageUseCase', () => {
 
   it('rejects a file whose bytes do not match the declared type', async () => {
     const ctx = createUseCase();
-    const restaurantId = await seedRestaurant(ctx.restaurantRepository, ctx.restaurantSettingsRepository);
+    const restaurantId = await seedRestaurant(
+      ctx.restaurantRepository,
+      ctx.restaurantSettingsRepository,
+    );
     await expect(
       ctx.useCase.execute({
         actorUserId: baseActor().userId,
@@ -213,7 +239,10 @@ describe('UploadRestaurantImageUseCase', () => {
 
   it('does not point the restaurant at a file when storage fails', async () => {
     const ctx = createUseCase();
-    const restaurantId = await seedRestaurant(ctx.restaurantRepository, ctx.restaurantSettingsRepository);
+    const restaurantId = await seedRestaurant(
+      ctx.restaurantRepository,
+      ctx.restaurantSettingsRepository,
+    );
     ctx.storagePort.uploadShouldFail = true;
     await expect(
       ctx.useCase.execute({
@@ -230,7 +259,10 @@ describe('UploadRestaurantImageUseCase', () => {
 
   it('keeps the new cover when deleting the previous object fails', async () => {
     const ctx = createUseCase([FILE_ID, REPLACEMENT_FILE_ID]);
-    const restaurantId = await seedRestaurant(ctx.restaurantRepository, ctx.restaurantSettingsRepository);
+    const restaurantId = await seedRestaurant(
+      ctx.restaurantRepository,
+      ctx.restaurantSettingsRepository,
+    );
     await ctx.useCase.execute({
       actorUserId: baseActor().userId,
       organizationId: baseActor().organizationId,

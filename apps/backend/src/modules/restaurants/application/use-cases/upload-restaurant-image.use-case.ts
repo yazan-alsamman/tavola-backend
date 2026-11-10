@@ -77,8 +77,7 @@ export class UploadRestaurantImageUseCase {
     const fileId = this.idGenerator.generate();
     const extension = EXTENSION_BY_MIME_TYPE[detectedMimeType];
     const objectKey = `restaurants/${restaurantId.value}/${command.slot}/${fileId}.${extension}`;
-    const previousFileId =
-      command.slot === 'cover' ? restaurant.coverImageId : restaurant.logoId;
+    const previousFileId = command.slot === 'cover' ? restaurant.coverImageId : restaurant.logoId;
 
     await this.uploadOrFail(objectKey, file, detectedMimeType);
 
