@@ -1,3 +1,5 @@
+import { LoginLockoutService } from '@modules/authentication/application/services/login-lockout.service';
+import { InMemoryLoginFailureCounter } from '../../../../../test/authentication/support/in-memory-login-failure-counter';
 import { CustomerLoginUseCase } from './customer-login.use-case';
 import { CustomerRegistrationPolicy } from '../../domain/services/customer-registration.policy';
 import { PhoneNumber } from '@shared/domain/value-objects/phone-number.vo';
@@ -65,6 +67,7 @@ describe('CustomerLoginUseCase', () => {
       new InMemorySystemConfiguration(),
       new FixedAuthTokenTtl(900),
       auditLogWriter,
+      new LoginLockoutService(new InMemoryLoginFailureCounter(), new InMemorySystemConfiguration()),
     );
 
     return {

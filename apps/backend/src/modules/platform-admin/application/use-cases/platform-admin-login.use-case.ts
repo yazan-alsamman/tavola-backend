@@ -10,23 +10,18 @@ import {
 import { UserRepository } from '@modules/authentication/domain/repositories/authentication.repositories';
 import { LoginAttemptRepository } from '@modules/authentication/domain/repositories/authentication.repositories';
 import { PasswordHasher } from '@modules/authentication/domain/services/password-hasher.port';
-import { LoginPolicy } from '@modules/authentication/domain/services/login-policy';
 import { TIMING_SAFE_DUMMY_PASSWORD_HASH } from '@modules/authentication/domain/services/timing-safe-dummy';
 import {
   USER_REPOSITORY,
   LOGIN_ATTEMPT_REPOSITORY,
   PASSWORD_HASHER,
-  SYSTEM_CONFIGURATION,
 } from '@modules/authentication/domain/tokens/authentication.tokens';
 import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
-import {
-  SYSTEM_CONFIG_KEYS,
-  SystemConfigurationPort,
-} from '@shared/application/ports/system-configuration.port';
 import {
   PlatformAdminRepository,
   PLATFORM_ADMIN_REPOSITORY,
 } from '../../domain/repositories/platform-admin.repository';
+import { LoginLockoutService } from '@modules/authentication/application/services/login-lockout.service';
 import { PlatformAdminSessionIssuer } from '../services/platform-admin-session-issuer.service';
 import { InvalidPlatformAdminCredentialsException } from '../../domain/exceptions/invalid-platform-admin-credentials.exception';
 import {
@@ -62,8 +57,8 @@ export class PlatformAdminLoginUseCase {
     @Inject(PASSWORD_HASHER) private readonly passwordHasher: PasswordHasher,
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
-    @Inject(SYSTEM_CONFIGURATION) private readonly systemConfiguration: SystemConfigurationPort,
     @Inject(AUDIT_LOG_WRITER) private readonly auditLogWriter: AuditLogWriterPort,
+    private readonly loginLockout: LoginLockoutService,
   ) {}
 
   async execute(command: PlatformAdminLoginCommand): Promise<PlatformAdminLoginResult> {
@@ -88,19 +83,7 @@ export class PlatformAdminLoginUseCase {
       // lockout. A wrong password sent here for an ordinary owner or
       // customer email must not lock that person out of their own app.
       if (user !== null && authContext !== null) {
-        const maxFailedLoginAttempts = await this.systemConfiguration.getNumber(
-          SYSTEM_CONFIG_KEYS.maxFailedLoginAttempts,
-          5,
-        );
-        const accountLockDurationMinutes = await this.systemConfiguration.getNumber(
-          SYSTEM_CONFIG_KEYS.accountLockDurationMinutes,
-          30,
-        );
-        const updatedUser = LoginPolicy.applyFailedLogin(
-          user,
-          { maxFailedLoginAttempts, accountLockDurationMinutes },
-          now,
-        );
+        const updatedUser = await this.loginLockout.recordFailure(user, ipAddress, now);
         await this.userRepository.save(updatedUser);
       }
 
@@ -128,11 +111,17 @@ export class PlatformAdminLoginUseCase {
       throw new InvalidPlatformAdminCredentialsException();
     }
 
+    // A lock from this address is reported like any other failure, so the
+    // response never confirms that the password was right.
+    if ((await this.loginLockout.lockFor(user, ipAddress, now)) !== null) {
+      throw new InvalidPlatformAdminCredentialsException();
+    }
     try {
       user.canLogin(now);
     } catch {
       throw new InvalidPlatformAdminCredentialsException();
     }
+    await this.loginLockout.clear(user, ipAddress);
 
     await this.loginAttemptRepository.save({
       id: this.idGenerator.generate(),

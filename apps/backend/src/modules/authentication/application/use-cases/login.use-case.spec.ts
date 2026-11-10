@@ -1,3 +1,6 @@
+import { IdGeneratorPort } from '@shared/application/ports/id-generator.port';
+import { LoginLockoutService } from '@modules/authentication/application/services/login-lockout.service';
+import { InMemoryLoginFailureCounter } from '../../../../../test/authentication/support/in-memory-login-failure-counter';
 import { LoginUseCase } from './login.use-case';
 import { RegistrationPolicy } from '../../domain/services/registration-policy';
 import { Email } from '@shared/domain/value-objects/email.vo';
@@ -28,6 +31,7 @@ import {
   InMemoryTokenFamilyRepository,
   InMemoryUserRepository,
   SequentialIdGenerator,
+  UuidGenerator,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryEmployeeRepository } from '../../../../../test/authorization/support/in-memory-employee.repository';
 import { SYSTEM_CONFIG_KEYS } from '@shared/application/ports/system-configuration.port';
@@ -69,6 +73,7 @@ describe('LoginUseCase', () => {
     loginAttemptRepository?: InMemoryLoginAttemptRepository;
     eventPublisher?: CollectingEventPublisher;
     systemConfiguration?: InMemorySystemConfiguration;
+    idGenerator?: IdGeneratorPort;
     organizationReader?: InMemoryLoginOrganizationReader;
     employeeAccessResolver?: InMemoryEmployeeAccessResolver;
     employeeRepository?: InMemoryEmployeeRepository;
@@ -85,6 +90,15 @@ describe('LoginUseCase', () => {
     const eventPublisher = overrides?.eventPublisher ?? new CollectingEventPublisher();
     const auditLogWriter = overrides?.auditLogWriter ?? new CollectingAuditLogWriter();
 
+    const systemConfiguration =
+      overrides?.systemConfiguration ??
+      new InMemorySystemConfiguration({
+        [SYSTEM_CONFIG_KEYS.maxFailedLoginAttempts]: 5,
+        [SYSTEM_CONFIG_KEYS.accountLockDurationMinutes]: 30,
+        [SYSTEM_CONFIG_KEYS.maxActiveSessionsPerUser]: 2,
+        [SYSTEM_CONFIG_KEYS.refreshTokenTtlDays]: 30,
+      });
+    const loginFailureCounter = new InMemoryLoginFailureCounter();
     const useCase = new LoginUseCase(
       userRepository,
       deviceSessionRepository,
@@ -96,19 +110,15 @@ describe('LoginUseCase', () => {
       overrides?.unitOfWork ?? new ImmediateUnitOfWork(),
       eventPublisher,
       new FixedClock(fixedNow),
-      new SequentialIdGenerator([tokenFamilyId, sessionId, loginAttemptId, eventId]),
-      overrides?.systemConfiguration ??
-        new InMemorySystemConfiguration({
-          [SYSTEM_CONFIG_KEYS.maxFailedLoginAttempts]: 5,
-          [SYSTEM_CONFIG_KEYS.accountLockDurationMinutes]: 30,
-          [SYSTEM_CONFIG_KEYS.maxActiveSessionsPerUser]: 2,
-          [SYSTEM_CONFIG_KEYS.refreshTokenTtlDays]: 30,
-        }),
+      overrides?.idGenerator ??
+        new SequentialIdGenerator([tokenFamilyId, sessionId, loginAttemptId, eventId]),
+      systemConfiguration,
       new FixedAuthTokenTtl(900),
       overrides?.organizationReader ?? new InMemoryLoginOrganizationReader(),
       overrides?.employeeAccessResolver ?? new InMemoryEmployeeAccessResolver(),
       overrides?.employeeRepository ?? new InMemoryEmployeeRepository(),
       auditLogWriter,
+      new LoginLockoutService(loginFailureCounter, systemConfiguration),
     );
 
     return {
@@ -323,9 +333,9 @@ describe('LoginUseCase', () => {
     expect(auditLogWriter.entries[0].action).toBe('auth.login.blocked_locked');
   });
 
-  it('locks account after max failed attempts and publishes AccountLockedEvent (not a direct audit write)', async () => {
+  it('locks the account everywhere only after the account-wide threshold and publishes AccountLockedEvent (not a direct audit write)', async () => {
     const { useCase, userRepository, auditLogWriter, eventPublisher } = createUseCase();
-    await userRepository.save(createActiveUser({ failedLoginCount: 4 }));
+    await userRepository.save(createActiveUser({ failedLoginCount: 49 }));
 
     await expect(
       useCase.execute({
@@ -339,7 +349,7 @@ describe('LoginUseCase', () => {
       (await import('@shared/domain/value-objects/identifiers.vo')).UserId.create(userId),
     ))!;
     expect(savedUser.status).toBe(UserStatus.Locked);
-    expect(savedUser.failedLoginCount).toBe(5);
+    expect(savedUser.failedLoginCount).toBe(50);
     expect(savedUser.lockedUntil).not.toBeNull();
 
     const lockedEvent = eventPublisher.events.find(
@@ -348,7 +358,7 @@ describe('LoginUseCase', () => {
     expect(lockedEvent).toBeDefined();
     expect(lockedEvent?.payload).toMatchObject({
       userId,
-      failedAttempts: 5,
+      failedAttempts: 50,
       lockedUntil: savedUser.lockedUntil,
     });
 
@@ -359,6 +369,31 @@ describe('LoginUseCase', () => {
     const actions = auditLogWriter.entries.map((entry) => entry.action);
     expect(actions).not.toContain('auth.account.locked');
     expect(actions).toContain('auth.login.failed');
+  });
+
+  it('locks an account only for the address its failures came from', async () => {
+    const { useCase, userRepository } = createUseCase({ idGenerator: new UuidGenerator() });
+    await userRepository.save(createActiveUser());
+    const attempt = (ipAddress: string, password: string) =>
+      useCase.execute({ email: 'login@example.com', password, ipAddress });
+
+    for (let i = 0; i < 5; i += 1) {
+      await expect(attempt('198.51.100.7', 'WrongPass123!')).rejects.toBeInstanceOf(
+        InvalidCredentialsException,
+      );
+    }
+
+    await expect(attempt('198.51.100.7', 'WrongPass123!')).rejects.toBeInstanceOf(
+      AccountLockedException,
+    );
+    const savedUser = (await userRepository.findById(
+      (await import('@shared/domain/value-objects/identifiers.vo')).UserId.create(userId),
+    ))!;
+    expect(savedUser.status).not.toBe(UserStatus.Locked);
+    // The owner, on another address, is still asked for the password, not locked out.
+    await expect(attempt('203.0.113.9', 'WrongPass123!')).rejects.toBeInstanceOf(
+      InvalidCredentialsException,
+    );
   });
 
   it('rejects login when active session cap is reached', async () => {

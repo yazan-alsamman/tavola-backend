@@ -1,3 +1,5 @@
+import { LoginLockoutService } from '@modules/authentication/application/services/login-lockout.service';
+import { InMemoryLoginFailureCounter } from './support/in-memory-login-failure-counter';
 import { LoginUseCase } from '@modules/authentication/application/use-cases/login.use-case';
 import { RegistrationPolicy } from '@modules/authentication/domain/services/registration-policy';
 import { Email } from '@shared/domain/value-objects/email.vo';
@@ -99,6 +101,7 @@ describe('LoginUseCase (integration)', () => {
       new InMemoryEmployeeAccessResolver(),
       new InMemoryEmployeeRepository(),
       new CollectingAuditLogWriter(),
+      new LoginLockoutService(new InMemoryLoginFailureCounter(), new InMemorySystemConfiguration()),
     );
 
     const result = await useCase.execute({

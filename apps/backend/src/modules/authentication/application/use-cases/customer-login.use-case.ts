@@ -27,7 +27,6 @@ import {
   TokenFamilyRepository,
   UserRepository,
 } from '../../domain/repositories/authentication.repositories';
-import { LoginPolicy } from '../../domain/services/login-policy';
 import { OpaqueTokenService } from '../../domain/services/opaque-token.port';
 import { PasswordHasher } from '../../domain/services/password-hasher.port';
 import { SessionPolicy } from '../../domain/services/authentication-policies';
@@ -52,6 +51,7 @@ import {
   InvalidCredentialsException,
 } from '../exceptions/login.exceptions';
 import { TooManySessionsException } from '../exceptions/too-many-sessions.exception';
+import { LoginLockoutService } from '../services/login-lockout.service';
 import { TIMING_SAFE_DUMMY_PASSWORD_HASH } from '../../domain/services/timing-safe-dummy';
 
 /**
@@ -84,6 +84,7 @@ export class CustomerLoginUseCase {
     @Inject(SYSTEM_CONFIGURATION) private readonly systemConfiguration: SystemConfigurationPort,
     @Inject(AUTH_TOKEN_TTL) private readonly authTokenTtl: AuthTokenTtlPort,
     @Inject(AUDIT_LOG_WRITER) private readonly auditLogWriter: AuditLogWriterPort,
+    private readonly loginLockout: LoginLockoutService,
   ) {}
 
   async execute(command: CustomerLoginCommand): Promise<CustomerLoginResult> {
@@ -96,6 +97,10 @@ export class CustomerLoginUseCase {
 
     if (user !== null) {
       try {
+        const lockout = await this.loginLockout.lockFor(user, ipAddress, now);
+        if (lockout !== null) {
+          throw new AccountLockedException(lockout.lockedUntil);
+        }
         user.canLogin(now);
       } catch (error) {
         await this.auditLogWriter.record({
@@ -125,19 +130,7 @@ export class CustomerLoginUseCase {
 
     if (user === null || !passwordMatches) {
       if (user !== null) {
-        const maxFailedLoginAttempts = await this.systemConfiguration.getNumber(
-          SYSTEM_CONFIG_KEYS.maxFailedLoginAttempts,
-          5,
-        );
-        const accountLockDurationMinutes = await this.systemConfiguration.getNumber(
-          SYSTEM_CONFIG_KEYS.accountLockDurationMinutes,
-          30,
-        );
-        const updatedUser = LoginPolicy.applyFailedLogin(
-          user,
-          { maxFailedLoginAttempts, accountLockDurationMinutes },
-          now,
-        );
+        const updatedUser = await this.loginLockout.recordFailure(user, ipAddress, now);
         await this.userRepository.save(updatedUser);
       }
 
@@ -231,6 +224,7 @@ export class CustomerLoginUseCase {
     });
 
     const loggedInUser = await this.unitOfWork.execute(async () => {
+      await this.loginLockout.clear(user, ipAddress);
       const updatedUser = user.recordSuccessfulLogin(now);
       await this.userRepository.save(updatedUser);
       await this.tokenFamilyRepository.save(tokenFamily);

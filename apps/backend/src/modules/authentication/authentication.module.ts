@@ -5,6 +5,9 @@ import { OrganizationsModule } from '@modules/organizations/organizations.module
 import { SubscriptionsModule } from '@modules/subscriptions/subscriptions.module';
 import { PlatformAdminModule } from '@modules/platform-admin/platform-admin.module';
 import { LoginUseCase } from './application/use-cases/login.use-case';
+import { LoginLockoutService } from './application/services/login-lockout.service';
+import { RedisLoginFailureCounter } from './infrastructure/redis/redis-login-failure-counter';
+import { LOGIN_FAILURE_COUNTER } from './domain/services/login-failure-counter.port';
 import { RefreshSessionUseCase } from './application/use-cases/refresh-session.use-case';
 import { LogoutCurrentSessionUseCase } from './application/use-cases/logout-current-session.use-case';
 import { LogoutAllDevicesUseCase } from './application/use-cases/logout-all-devices.use-case';
@@ -233,6 +236,9 @@ import { UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
     { provide: AUTH_REFRESH_POLICY, useExisting: NestAuthRefreshPolicy },
     { provide: AUTH_RATE_LIMIT_POLICY, useExisting: NestAuthRateLimitPolicy },
     { provide: RATE_LIMITER, useExisting: RedisSlidingWindowRateLimiter },
+    RedisLoginFailureCounter,
+    { provide: LOGIN_FAILURE_COUNTER, useExisting: RedisLoginFailureCounter },
+    LoginLockoutService,
     { provide: LOGIN_ORGANIZATION_READER, useExisting: PrismaLoginOrganizationReader },
     { provide: USER_CONSENT_REPOSITORY, useExisting: PrismaUserConsentRepository },
   ],
@@ -254,6 +260,7 @@ import { UNIT_OF_WORK } from '@shared/application/ports/unit-of-work.port';
     AUTH_REFRESH_POLICY,
     AUTH_RATE_LIMIT_POLICY,
     RATE_LIMITER,
+    LoginLockoutService,
     LOGIN_ORGANIZATION_READER,
     USER_CONSENT_REPOSITORY,
     JwtAuthGuard,

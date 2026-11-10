@@ -1,3 +1,5 @@
+import { LoginLockoutService } from '@modules/authentication/application/services/login-lockout.service';
+import { InMemoryLoginFailureCounter } from '../../../../../test/authentication/support/in-memory-login-failure-counter';
 import { UserId } from '@shared/domain/value-objects/identifiers.vo';
 import { ConfigService } from '@nestjs/config';
 import { PlatformAdminLoginUseCase } from './platform-admin-login.use-case';
@@ -114,8 +116,8 @@ describe('PlatformAdminLoginUseCase', () => {
       new FakePasswordHasher(),
       new FixedClock(fixedNow),
       new SequentialIdGenerator([attemptId, attemptId]),
-      new InMemorySystemConfiguration(),
       auditLogWriter,
+      new LoginLockoutService(new InMemoryLoginFailureCounter(), new InMemorySystemConfiguration()),
     );
 
     return { useCase, userRepository, auditLogWriter, sessionRepository };
