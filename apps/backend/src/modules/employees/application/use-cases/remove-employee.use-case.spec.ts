@@ -1,3 +1,5 @@
+import { InMemoryUserRepository } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
+import { testUser } from '../../../../../test/reviews/support/review-test-fixtures';
 import { RemoveEmployeeUseCase } from './remove-employee.use-case';
 import { EmployeeNotFoundException } from '@modules/authorization/domain/exceptions/employee-not-found.exception';
 import { CannotRemoveLastManagerException } from '@modules/authorization/domain/exceptions/cannot-remove-last-manager.exception';
@@ -8,7 +10,7 @@ import { Role } from '@modules/authorization/domain/entities/role.entity';
 import { Restaurant } from '@modules/restaurants/domain/entities/restaurant.entity';
 import { RestaurantStatus } from '@modules/restaurants/domain/enums/restaurant.enums';
 import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
-import { EmployeeId } from '@shared/domain/value-objects/identifiers.vo';
+import { EmployeeId, UserId } from '@shared/domain/value-objects/identifiers.vo';
 import {
   FixedClock,
   ImmediateUnitOfWork,
@@ -40,12 +42,12 @@ describe('RemoveEmployeeUseCase', () => {
     };
   }
 
-  function makeEmployee(id: string, roleId: string, email: string) {
+  function makeEmployee(id: string, roleId: string, email: string, userId: string | null = null) {
     return Employee.create({
       id,
       restaurantId,
       roleId,
-      userId: null,
+      userId,
       permissionsVersion: 1,
       firstName: 'Jane',
       lastName: 'Doe',
@@ -63,6 +65,7 @@ describe('RemoveEmployeeUseCase', () => {
     const employeeRepository = new InMemoryEmployeeRepository();
     const roleRepository = new InMemoryRoleRepository();
     const restaurantRepository = new InMemoryRestaurantRepository();
+    const userRepository = new InMemoryUserRepository();
 
     await restaurantRepository.save(
       Restaurant.create({
@@ -113,9 +116,10 @@ describe('RemoveEmployeeUseCase', () => {
       new InMemoryRestaurantUsageRepository(),
       new FixedClock(fixedNow),
       new ImmediateUnitOfWork(),
+      userRepository,
     );
 
-    return { useCase, employeeRepository };
+    return { useCase, employeeRepository, userRepository };
   }
 
   it('soft-deletes a non-manager employee', async () => {
@@ -126,6 +130,20 @@ describe('RemoveEmployeeUseCase', () => {
 
     const stored = await employeeRepository.findById(EmployeeId.create(employeeId));
     expect(stored?.deletedAt).not.toBeNull();
+  });
+
+  it("ends the removed employee's sessions so their token stops working at once", async () => {
+    const { useCase, employeeRepository, userRepository } = await build();
+    const staffUserId = '77777777-7777-4777-8777-777777777777';
+    await userRepository.save(testUser({ id: staffUserId, username: 'reception_one' }));
+    await employeeRepository.save(
+      makeEmployee(employeeId, receptionistRoleId, 'r@example.com', staffUserId),
+    );
+
+    await useCase.execute({ actor: baseActor(), restaurantId, employeeId });
+
+    const user = await userRepository.findById(UserId.create(staffUserId));
+    expect(user?.sessionVersion).toBe(2);
   });
 
   it('soft-deletes a manager when another manager remains', async () => {

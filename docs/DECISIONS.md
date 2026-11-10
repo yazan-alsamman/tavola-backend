@@ -2765,6 +2765,7 @@ The 2026-11-10 review found that PlatformSupport could call Platform Admin mutat
 6. `ops/deploy.sh` dumps the database before running migrations and stops if the dump fails.
 7. Submit Review refuses a reservation the auto-close sweep completed (an `Approved -> Completed` history row with no operator), with 400 `VALIDATION_ERROR`, because nobody confirmed the guest came. It stays Completed; a booking staff closed by hand can still be reviewed (owner choice, 2026-11-10).
 8. An offer's `viewCount` counts one view per viewer (client IP) per UTC day, deduplicated in Redis (`OFFER_VIEW_DEDUPE`), instead of one per list request.
+9. Removing an Employee bumps that user's `sessionVersion` in the same transaction, so `SessionVersionGuard` rejects their existing access token at once instead of after it expires.
 
 ### Alternatives
 
