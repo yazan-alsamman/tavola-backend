@@ -22,7 +22,7 @@ const rawPrisma = new PrismaClient();
 const TEST_PREFIX = 'reservation-lifecycle-';
 
 /**
- * Phase 7.3 (Reservation Lifecycle, architecture frozen 2026-07-23) -
+ * Phase 7.3 (Reservation Lifecycle, architecture frozen 2037-07-23) -
  * integration coverage against real PostgreSQL for the repository-level
  * building blocks Cancel/Reschedule/Complete/NoShow/Expire orchestrate:
  * `updateTransitioningFrom`'s generalized conditional UPDATE, ADR-023's
@@ -157,8 +157,8 @@ describe('Phase 7.3 Reservation Lifecycle - Prisma repositories (integration)', 
     }> = {},
   ): Reservation {
     const now = new Date();
-    const startTime = overrides.startTime ?? new Date('2026-11-01T18:00:00.000Z');
-    const endTime = overrides.endTime ?? new Date('2026-11-01T19:30:00.000Z');
+    const startTime = overrides.startTime ?? new Date('2037-11-01T18:00:00.000Z');
+    const endTime = overrides.endTime ?? new Date('2037-11-01T19:30:00.000Z');
     const created = Reservation.create({
       id: overrides.id ?? randomUUID(),
       userId,
@@ -245,8 +245,8 @@ describe('Phase 7.3 Reservation Lifecycle - Prisma repositories (integration)', 
       const { restaurantId, branchId, tableIds } = await seedBranchWithTables();
       const user = await seedUser();
       const pending = buildReservation(restaurantId, branchId, tableIds[0], user.id, {
-        startTime: new Date('2026-11-02T18:00:00.000Z'),
-        endTime: new Date('2026-11-02T19:30:00.000Z'),
+        startTime: new Date('2037-11-02T18:00:00.000Z'),
+        endTime: new Date('2037-11-02T19:30:00.000Z'),
       });
       await reservationRepository.createWithLock(pending, `lock-${randomUUID()}`);
       const approvedNow = new Date();
@@ -285,8 +285,8 @@ describe('Phase 7.3 Reservation Lifecycle - Prisma repositories (integration)', 
       const { restaurantId, branchId, tableIds } = await seedBranchWithTables();
       const user = await seedUser();
       const pending = buildReservation(restaurantId, branchId, tableIds[0], user.id, {
-        startTime: new Date('2026-11-03T18:00:00.000Z'),
-        endTime: new Date('2026-11-03T19:30:00.000Z'),
+        startTime: new Date('2037-11-03T18:00:00.000Z'),
+        endTime: new Date('2037-11-03T19:30:00.000Z'),
       });
       await reservationRepository.createWithLock(pending, `lock-${randomUUID()}`);
       const approvedAt = new Date();
@@ -298,7 +298,7 @@ describe('Phase 7.3 Reservation Lifecycle - Prisma repositories (integration)', 
       );
       await tableRepository.save(reservedTable);
 
-      const completedAt = new Date('2026-11-03T18:05:00.000Z');
+      const completedAt = new Date('2037-11-03T18:05:00.000Z');
       const completed = approved.complete(completedAt);
       await prismaContext.runInTransaction(async () => {
         const applied = await reservationRepository.updateTransitioningFrom(
@@ -322,8 +322,8 @@ describe('Phase 7.3 Reservation Lifecycle - Prisma repositories (integration)', 
       const { restaurantId, branchId, tableIds } = await seedBranchWithTables();
       const user = await seedUser();
       const pending = buildReservation(restaurantId, branchId, tableIds[0], user.id, {
-        startTime: new Date('2026-11-04T18:00:00.000Z'),
-        endTime: new Date('2026-11-04T19:30:00.000Z'),
+        startTime: new Date('2037-11-04T18:00:00.000Z'),
+        endTime: new Date('2037-11-04T19:30:00.000Z'),
       });
       await reservationRepository.createWithLock(pending, `lock-${randomUUID()}`);
       const approvedAt = new Date();
@@ -335,7 +335,7 @@ describe('Phase 7.3 Reservation Lifecycle - Prisma repositories (integration)', 
       );
       await tableRepository.save(reservedTable);
 
-      const noShowAt = new Date('2026-11-04T18:10:00.000Z');
+      const noShowAt = new Date('2037-11-04T18:10:00.000Z');
       const noShow = approved.markNoShow(noShowAt);
       await prismaContext.runInTransaction(async () => {
         const applied = await reservationRepository.updateTransitioningFrom(
@@ -361,8 +361,8 @@ describe('Phase 7.3 Reservation Lifecycle - Prisma repositories (integration)', 
       const { restaurantId, branchId, tableIds } = await seedBranchWithTables(2);
       const user = await seedUser();
       const pending = buildReservation(restaurantId, branchId, tableIds[0], user.id, {
-        startTime: new Date('2026-11-05T18:00:00.000Z'),
-        endTime: new Date('2026-11-05T19:30:00.000Z'),
+        startTime: new Date('2037-11-05T18:00:00.000Z'),
+        endTime: new Date('2037-11-05T19:30:00.000Z'),
       });
       await reservationRepository.createWithLock(pending, `lock-${randomUUID()}`);
 
@@ -402,8 +402,8 @@ describe('Phase 7.3 Reservation Lifecycle - Prisma repositories (integration)', 
       const { restaurantId, branchId, tableIds } = await seedBranchWithTables(2);
       const user = await seedUser();
       const pending = buildReservation(restaurantId, branchId, tableIds[0], user.id, {
-        startTime: new Date('2026-11-06T18:00:00.000Z'),
-        endTime: new Date('2026-11-06T19:30:00.000Z'),
+        startTime: new Date('2037-11-06T18:00:00.000Z'),
+        endTime: new Date('2037-11-06T19:30:00.000Z'),
       });
       await reservationRepository.createWithLock(pending, `lock-${randomUUID()}`);
       const approvedAt = new Date();
@@ -477,8 +477,8 @@ describe('Phase 7.3 Reservation Lifecycle - Prisma repositories (integration)', 
       const { restaurantId, branchId, tableIds } = await seedBranchWithTables(2);
       const user = await seedUser();
       const pending = buildReservation(restaurantId, branchId, tableIds[0], user.id, {
-        startTime: new Date('2026-11-07T18:00:00.000Z'),
-        endTime: new Date('2026-11-07T19:30:00.000Z'),
+        startTime: new Date('2037-11-07T18:00:00.000Z'),
+        endTime: new Date('2037-11-07T19:30:00.000Z'),
       });
       await reservationRepository.createWithLock(pending, `lock-${randomUUID()}`);
       const approvedAt = new Date();
@@ -491,8 +491,8 @@ describe('Phase 7.3 Reservation Lifecycle - Prisma repositories (integration)', 
       await tableRepository.save(reservedTable);
 
       const overlappingPending = buildReservation(restaurantId, branchId, tableIds[1], user.id, {
-        startTime: new Date('2026-11-07T18:15:00.000Z'),
-        endTime: new Date('2026-11-07T19:45:00.000Z'),
+        startTime: new Date('2037-11-07T18:15:00.000Z'),
+        endTime: new Date('2037-11-07T19:45:00.000Z'),
       });
       await reservationRepository.createWithLock(overlappingPending, `lock-${randomUUID()}`);
 
@@ -550,8 +550,8 @@ describe('Phase 7.3 Reservation Lifecycle - Prisma repositories (integration)', 
       const { restaurantId, branchId, tableIds } = await seedBranchWithTables(2);
       const user = await seedUser();
       const pending = buildReservation(restaurantId, branchId, tableIds[0], user.id, {
-        startTime: new Date('2026-11-08T18:00:00.000Z'),
-        endTime: new Date('2026-11-08T19:30:00.000Z'),
+        startTime: new Date('2037-11-08T18:00:00.000Z'),
+        endTime: new Date('2037-11-08T19:30:00.000Z'),
       });
       await reservationRepository.createWithLock(pending, `lock-${randomUUID()}`);
 
@@ -561,9 +561,9 @@ describe('Phase 7.3 Reservation Lifecycle - Prisma repositories (integration)', 
           restaurantId,
           branchId,
           tableId: tableIds[1],
-          reservationDate: new Date('2026-11-08T00:00:00.000Z'),
-          reservationStartTime: new Date('2026-11-08T18:15:00.000Z'),
-          reservationEndTime: new Date('2026-11-08T19:45:00.000Z'),
+          reservationDate: new Date('2037-11-08T00:00:00.000Z'),
+          reservationStartTime: new Date('2037-11-08T18:15:00.000Z'),
+          reservationEndTime: new Date('2037-11-08T19:45:00.000Z'),
           guests: 2,
           status: 'Approved',
           source: 'Online',
@@ -617,8 +617,8 @@ describe('Phase 7.3 Reservation Lifecycle - Prisma repositories (integration)', 
       const { restaurantId, branchId, tableIds } = await seedBranchWithTables(2);
       const user = await seedUser();
       const pending = buildReservation(restaurantId, branchId, tableIds[0], user.id, {
-        startTime: new Date('2026-11-09T18:00:00.000Z'),
-        endTime: new Date('2026-11-09T19:30:00.000Z'),
+        startTime: new Date('2037-11-09T18:00:00.000Z'),
+        endTime: new Date('2037-11-09T19:30:00.000Z'),
       });
       await reservationRepository.createWithLock(pending, `lock-${randomUUID()}`);
 
@@ -675,8 +675,8 @@ describe('Phase 7.3 Reservation Lifecycle - Prisma repositories (integration)', 
       const { restaurantId, branchId, tableIds } = await seedBranchWithTables();
       const user = await seedUser();
       const pending = buildReservation(restaurantId, branchId, tableIds[0], user.id, {
-        startTime: new Date('2026-11-10T18:00:00.000Z'),
-        endTime: new Date('2026-11-10T19:30:00.000Z'),
+        startTime: new Date('2037-11-10T18:00:00.000Z'),
+        endTime: new Date('2037-11-10T19:30:00.000Z'),
       });
       await reservationRepository.createWithLock(pending, `lock-${randomUUID()}`);
 
@@ -700,8 +700,8 @@ describe('Phase 7.3 Reservation Lifecycle - Prisma repositories (integration)', 
       const { restaurantId, branchId, tableIds } = await seedBranchWithTables();
       const user = await seedUser();
       const pending = buildReservation(restaurantId, branchId, tableIds[0], user.id, {
-        startTime: new Date('2026-11-11T18:00:00.000Z'),
-        endTime: new Date('2026-11-11T19:30:00.000Z'),
+        startTime: new Date('2037-11-11T18:00:00.000Z'),
+        endTime: new Date('2037-11-11T19:30:00.000Z'),
       });
       await reservationRepository.createWithLock(pending, `lock-${randomUUID()}`);
 

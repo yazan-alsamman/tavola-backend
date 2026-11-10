@@ -101,6 +101,36 @@ export function addCalendarDays(date: string, days: number): string {
   return `${utc.getUTCFullYear()}-${month}-${day}`;
 }
 
+/**
+ * The open ranges of one weekday's schedule as UTC instants, starting on
+ * `date` in `timeZone`. An overnight range ends on the following calendar
+ * day, exactly like the candidate starts `buildReservationTimeSlots` builds.
+ */
+export function openWindowInstants(
+  date: string,
+  schedule: DayScheduleWindow | null,
+  timeZone: string,
+): { start: Date; end: Date }[] {
+  if (schedule === null) {
+    return [];
+  }
+  return openWindows(schedule).map((window) => ({
+    start: localMinuteToInstant(date, window.start, timeZone),
+    end: localMinuteToInstant(date, window.end, timeZone),
+  }));
+}
+
+function localMinuteToInstant(date: string, minuteOfRange: number, timeZone: string): Date {
+  const dayOffset = Math.floor(minuteOfRange / MINUTES_PER_DAY);
+  return new Date(
+    zonedLocalToUtcIso(
+      addCalendarDays(date, dayOffset),
+      formatMinutes(minuteOfRange % MINUTES_PER_DAY),
+      timeZone,
+    ),
+  );
+}
+
 /** Converts a branch-local wall time to a UTC ISO instant. */
 export function zonedLocalToUtcIso(date: string, time: string, timeZone: string): string {
   const parts = parseCalendarDate(date);

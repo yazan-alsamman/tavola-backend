@@ -1,3 +1,4 @@
+import { InMemoryOfferViewDedupe } from '../../../../../test/offers/support/in-memory-offer-view-dedupe';
 import { ListDiscoverableOffersUseCase } from './list-discoverable-offers.use-case';
 import { RestaurantNotFoundException } from '@modules/restaurants/domain/exceptions/restaurant-not-found.exception';
 import { ListPublicOffersUseCase } from '@modules/offers/application/use-cases/list-public-offers.use-case';
@@ -51,10 +52,16 @@ describe('ListDiscoverableOffersUseCase', () => {
     const listPublicOffersUseCase = new ListPublicOffersUseCase(
       offerRepository,
       new FixedClock(now),
+      new InMemoryOfferViewDedupe(),
     );
     const useCase = new ListDiscoverableOffersUseCase(discoveryReader, listPublicOffersUseCase);
 
-    const result = await useCase.execute({ restaurantId, page: 1, limit: 20 });
+    const result = await useCase.execute({
+      restaurantId,
+      page: 1,
+      limit: 20,
+      viewerKey: '203.0.113.1',
+    });
     expect(result.total).toBe(1);
     expect(result.items[0].offerId).toBe(active.offerId.value);
   });
@@ -65,11 +72,12 @@ describe('ListDiscoverableOffersUseCase', () => {
     const listPublicOffersUseCase = new ListPublicOffersUseCase(
       offerRepository,
       new FixedClock(now),
+      new InMemoryOfferViewDedupe(),
     );
     const useCase = new ListDiscoverableOffersUseCase(discoveryReader, listPublicOffersUseCase);
 
-    await expect(useCase.execute({ restaurantId, page: 1, limit: 20 })).rejects.toBeInstanceOf(
-      RestaurantNotFoundException,
-    );
+    await expect(
+      useCase.execute({ restaurantId, page: 1, limit: 20, viewerKey: '203.0.113.1' }),
+    ).rejects.toBeInstanceOf(RestaurantNotFoundException);
   });
 });

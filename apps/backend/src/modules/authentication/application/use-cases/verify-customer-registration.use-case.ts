@@ -29,8 +29,8 @@ import {
 /**
  * ADR-022 §"REGISTER — VERIFY": marks the pending registration verified;
  * MUST NOT create the User, set a password, or create a session. Max 5
- * incorrect attempts per issued OTP (Decision #6) - `incrementAttemptCount`
- * runs on every wrong guess, `OtpAttemptsExhaustedException` once the cap
+ * incorrect attempts per issued OTP (Decision #6) - `chargeAttempt` atomically
+ * counts every guess and `refundAttempt` returns it when the code is right, `OtpAttemptsExhaustedException` once the cap
  * is hit (no automatic reissue).
  */
 @Injectable()
@@ -74,10 +74,17 @@ export class VerifyCustomerRegistrationUseCase {
       throw new ExpiredOtpException();
     }
 
+    // Charge the attempt before checking the code, so parallel guesses
+    // cannot all pass the cap check above before any of them is counted.
+    if (
+      !(await this.pendingRegistrationRepository.chargeAttempt(record.id, maxIncorrectAttempts))
+    ) {
+      throw new OtpAttemptsExhaustedException();
+    }
     if (!this.otpService.verify(command.code, record.codeHash)) {
-      await this.pendingRegistrationRepository.incrementAttemptCount(record.id);
       throw new InvalidOtpException();
     }
+    await this.pendingRegistrationRepository.refundAttempt(record.id);
 
     await this.pendingRegistrationRepository.markVerified(record.id, now);
 

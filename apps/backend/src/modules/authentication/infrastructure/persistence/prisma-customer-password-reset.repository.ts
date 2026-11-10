@@ -67,10 +67,18 @@ export class PrismaCustomerPasswordResetRepository implements CustomerPasswordRe
     });
   }
 
-  async incrementAttemptCount(id: string): Promise<void> {
-    await this.prismaContext.client.customerPasswordResetToken.update({
-      where: { id },
+  async chargeAttempt(id: string, maxIncorrectAttempts: number): Promise<boolean> {
+    const { count } = await this.prismaContext.client.customerPasswordResetToken.updateMany({
+      where: { id, incorrectAttemptCount: { lt: maxIncorrectAttempts } },
       data: { incorrectAttemptCount: { increment: 1 } },
+    });
+    return count === 1;
+  }
+
+  async refundAttempt(id: string): Promise<void> {
+    await this.prismaContext.client.customerPasswordResetToken.updateMany({
+      where: { id, incorrectAttemptCount: { gt: 0 } },
+      data: { incorrectAttemptCount: { decrement: 1 } },
     });
   }
 

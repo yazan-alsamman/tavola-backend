@@ -16,6 +16,7 @@ import { RateLimiterPort } from '../../domain/services/rate-limiter.port';
 import { RATE_LIMITER } from '../../domain/tokens/authentication.tokens';
 import { RATE_LIMIT_KEY } from '../decorators/rate-limit.decorator';
 import { resolveClientIp } from '../utils/resolve-client-ip.util';
+import { recordThrottledAudit } from '../utils/throttled-audit.util';
 import { PhoneNumber } from '@shared/domain/value-objects/phone-number.vo';
 import {
   AUTHENTICATED_ACTOR_KEY,
@@ -161,7 +162,7 @@ export class RateLimitGuard implements CanActivate {
     );
 
     if (!decision.allowed) {
-      await this.auditLogWriter.record({
+      await recordThrottledAudit(this.auditLogWriter, this.rateLimiter, {
         actorId: null,
         actorType: 'User',
         action: 'auth.rate_limit.exceeded',

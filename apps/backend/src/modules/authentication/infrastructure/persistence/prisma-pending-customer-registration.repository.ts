@@ -87,10 +87,18 @@ export class PrismaPendingCustomerRegistrationRepository implements PendingCusto
     }
   }
 
-  async incrementAttemptCount(id: string): Promise<void> {
-    await this.prismaContext.client.pendingCustomerRegistration.update({
-      where: { id },
+  async chargeAttempt(id: string, maxIncorrectAttempts: number): Promise<boolean> {
+    const { count } = await this.prismaContext.client.pendingCustomerRegistration.updateMany({
+      where: { id, incorrectAttemptCount: { lt: maxIncorrectAttempts } },
       data: { incorrectAttemptCount: { increment: 1 } },
+    });
+    return count === 1;
+  }
+
+  async refundAttempt(id: string): Promise<void> {
+    await this.prismaContext.client.pendingCustomerRegistration.updateMany({
+      where: { id, incorrectAttemptCount: { gt: 0 } },
+      data: { incorrectAttemptCount: { decrement: 1 } },
     });
   }
 

@@ -116,8 +116,8 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
     overrides: Partial<{ startTime: Date; endTime: Date }> = {},
   ): Reservation {
     const now = new Date();
-    const startTime = overrides.startTime ?? new Date('2026-09-01T18:00:00.000Z');
-    const endTime = overrides.endTime ?? new Date('2026-09-01T19:30:00.000Z');
+    const startTime = overrides.startTime ?? new Date('2037-09-01T18:00:00.000Z');
+    const endTime = overrides.endTime ?? new Date('2037-09-01T19:30:00.000Z');
     return Reservation.create({
       id: randomUUID(),
       userId,
@@ -126,7 +126,7 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
       restaurantId,
       branchId,
       tableId,
-      reservationDate: new Date('2026-09-01T00:00:00.000Z'),
+      reservationDate: new Date('2037-09-01T00:00:00.000Z'),
       reservationStartTime: startTime,
       reservationEndTime: endTime,
       guests: 2,
@@ -154,8 +154,8 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
 
     const overlapping = await repository.findOverlappingPendingOrApproved(
       TableId.create(tableId),
-      new Date('2026-09-01T18:30:00.000Z'),
-      new Date('2026-09-01T20:00:00.000Z'),
+      new Date('2037-09-01T18:30:00.000Z'),
+      new Date('2037-09-01T20:00:00.000Z'),
     );
     expect(overlapping).toHaveLength(1);
     expect(overlapping[0].reservationId.value).toBe(reservation.reservationId.value);
@@ -167,14 +167,14 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
     const { restaurantId, branchId, tableId } = await seedRestaurantBranchTable();
     const user = await seedUser();
     const reservation = buildReservation(restaurantId, branchId, tableId, user.id, {
-      startTime: new Date('2026-09-04T18:00:00.000Z'),
-      endTime: new Date('2026-09-04T19:30:00.000Z'),
+      startTime: new Date('2037-09-04T18:00:00.000Z'),
+      endTime: new Date('2037-09-04T19:30:00.000Z'),
     });
     await repository.createWithLock(reservation, `lock-${randomUUID()}`);
 
     const hasOpen = await repository.hasOpenReservationsByUserId(
       UserId.create(user.id),
-      new Date('2026-09-01T00:00:00.000Z'),
+      new Date('2037-09-01T00:00:00.000Z'),
     );
 
     expect(hasOpen).toBe(true);
@@ -186,8 +186,8 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
     const { restaurantId, branchId, tableId } = await seedRestaurantBranchTable();
     const user = await seedUser();
     const reservation = buildReservation(restaurantId, branchId, tableId, user.id, {
-      startTime: new Date('2026-09-05T18:00:00.000Z'),
-      endTime: new Date('2026-09-05T19:30:00.000Z'),
+      startTime: new Date('2037-09-05T18:00:00.000Z'),
+      endTime: new Date('2037-09-05T19:30:00.000Z'),
     });
     await repository.createWithLock(reservation, `lock-${randomUUID()}`);
     await rawPrisma.reservation.update({
@@ -197,7 +197,7 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
 
     const hasOpen = await repository.hasOpenReservationsByUserId(
       UserId.create(user.id),
-      new Date('2026-09-01T00:00:00.000Z'),
+      new Date('2037-09-01T00:00:00.000Z'),
     );
 
     expect(hasOpen).toBe(true);
@@ -209,14 +209,14 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
     const { restaurantId, branchId, tableId } = await seedRestaurantBranchTable();
     const user = await seedUser();
     const pastReservation = buildReservation(restaurantId, branchId, tableId, user.id, {
-      startTime: new Date('2026-09-06T18:00:00.000Z'),
-      endTime: new Date('2026-09-06T19:30:00.000Z'),
+      startTime: new Date('2037-09-06T18:00:00.000Z'),
+      endTime: new Date('2037-09-06T19:30:00.000Z'),
     });
     await repository.createWithLock(pastReservation, `lock-${randomUUID()}`);
 
     const hasOpenAfterEnd = await repository.hasOpenReservationsByUserId(
       UserId.create(user.id),
-      new Date('2026-09-07T00:00:00.000Z'),
+      new Date('2037-09-07T00:00:00.000Z'),
     );
     expect(hasOpenAfterEnd).toBe(false);
 
@@ -226,7 +226,7 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
     });
     const hasOpenCancelled = await repository.hasOpenReservationsByUserId(
       UserId.create(user.id),
-      new Date('2026-09-01T00:00:00.000Z'),
+      new Date('2037-09-01T00:00:00.000Z'),
     );
     expect(hasOpenCancelled).toBe(false);
   });
@@ -238,21 +238,21 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
     const userA = await seedUser();
     const userB = await seedUser();
     const reservation = buildReservation(restaurantId, branchId, tableId, userA.id, {
-      startTime: new Date('2026-09-08T18:00:00.000Z'),
-      endTime: new Date('2026-09-08T19:30:00.000Z'),
+      startTime: new Date('2037-09-08T18:00:00.000Z'),
+      endTime: new Date('2037-09-08T19:30:00.000Z'),
     });
     await repository.createWithLock(reservation, `lock-${randomUUID()}`);
 
     expect(
       await repository.hasOpenReservationsByUserId(
         UserId.create(userA.id),
-        new Date('2026-09-01T00:00:00.000Z'),
+        new Date('2037-09-01T00:00:00.000Z'),
       ),
     ).toBe(true);
     expect(
       await repository.hasOpenReservationsByUserId(
         UserId.create(userB.id),
-        new Date('2026-09-01T00:00:00.000Z'),
+        new Date('2037-09-01T00:00:00.000Z'),
       ),
     ).toBe(false);
   });
@@ -263,12 +263,12 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
     const { restaurantId, branchId, tableId } = await seedRestaurantBranchTable();
     const user = await seedUser();
     const first = buildReservation(restaurantId, branchId, tableId, user.id, {
-      startTime: new Date('2026-09-02T18:00:00.000Z'),
-      endTime: new Date('2026-09-02T19:30:00.000Z'),
+      startTime: new Date('2037-09-02T18:00:00.000Z'),
+      endTime: new Date('2037-09-02T19:30:00.000Z'),
     });
     const second = buildReservation(restaurantId, branchId, tableId, user.id, {
-      startTime: new Date('2026-09-02T18:15:00.000Z'),
-      endTime: new Date('2026-09-02T19:45:00.000Z'),
+      startTime: new Date('2037-09-02T18:15:00.000Z'),
+      endTime: new Date('2037-09-02T19:45:00.000Z'),
     });
 
     await repository.createWithLock(first, `lock-${randomUUID()}`);
@@ -289,9 +289,9 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
         restaurantId,
         branchId,
         tableId,
-        reservationDate: new Date('2026-09-03T00:00:00.000Z'),
-        reservationStartTime: new Date('2026-09-03T18:00:00.000Z'),
-        reservationEndTime: new Date('2026-09-03T19:30:00.000Z'),
+        reservationDate: new Date('2037-09-03T00:00:00.000Z'),
+        reservationStartTime: new Date('2037-09-03T18:00:00.000Z'),
+        reservationEndTime: new Date('2037-09-03T19:30:00.000Z'),
         guests: 2,
         status: 'Approved',
         source: 'Online',
@@ -306,9 +306,9 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
           restaurantId,
           branchId,
           tableId,
-          reservationDate: new Date('2026-09-03T00:00:00.000Z'),
-          reservationStartTime: new Date('2026-09-03T18:30:00.000Z'),
-          reservationEndTime: new Date('2026-09-03T20:00:00.000Z'),
+          reservationDate: new Date('2037-09-03T00:00:00.000Z'),
+          reservationStartTime: new Date('2037-09-03T18:30:00.000Z'),
+          reservationEndTime: new Date('2037-09-03T20:00:00.000Z'),
           guests: 2,
           status: 'Approved',
           source: 'Online',
@@ -330,9 +330,9 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
         restaurantId,
         branchId,
         tableId,
-        reservationDate: new Date('2026-09-04T00:00:00.000Z'),
-        reservationStartTime: new Date('2026-09-04T18:00:00.000Z'),
-        reservationEndTime: new Date('2026-09-04T19:30:00.000Z'),
+        reservationDate: new Date('2037-09-04T00:00:00.000Z'),
+        reservationStartTime: new Date('2037-09-04T18:00:00.000Z'),
+        reservationEndTime: new Date('2037-09-04T19:30:00.000Z'),
         guests: 2,
         status: 'Approved',
         source: 'Online',
@@ -341,8 +341,8 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
     });
 
     const conflicting = buildReservation(restaurantId, branchId, tableId, user.id, {
-      startTime: new Date('2026-09-04T18:30:00.000Z'),
-      endTime: new Date('2026-09-04T20:00:00.000Z'),
+      startTime: new Date('2037-09-04T18:30:00.000Z'),
+      endTime: new Date('2037-09-04T20:00:00.000Z'),
     });
 
     await expect(
@@ -365,9 +365,9 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
         restaurantId,
         branchId,
         tableId,
-        reservationDate: new Date('2026-09-06T00:00:00.000Z'),
-        reservationStartTime: new Date('2026-09-06T18:00:00.000Z'),
-        reservationEndTime: new Date('2026-09-06T19:30:00.000Z'),
+        reservationDate: new Date('2037-09-06T00:00:00.000Z'),
+        reservationStartTime: new Date('2037-09-06T18:00:00.000Z'),
+        reservationEndTime: new Date('2037-09-06T19:30:00.000Z'),
         guests: 2,
         status: 'Approved',
         source: 'Online',
@@ -388,9 +388,9 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
       restaurantId,
       branchId,
       tableId,
-      reservationDate: new Date('2026-09-06T00:00:00.000Z'),
-      reservationStartTime: new Date('2026-09-06T18:30:00.000Z'),
-      reservationEndTime: new Date('2026-09-06T20:00:00.000Z'),
+      reservationDate: new Date('2037-09-06T00:00:00.000Z'),
+      reservationStartTime: new Date('2037-09-06T18:30:00.000Z'),
+      reservationEndTime: new Date('2037-09-06T20:00:00.000Z'),
       guests: 2,
       status: ReservationStatus.Approved,
       source: ReservationSource.Online,
@@ -479,9 +479,9 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
           restaurantId,
           branchId,
           tableId,
-          reservationDate: new Date('2026-09-07T00:00:00.000Z'),
-          reservationStartTime: new Date('2026-09-07T18:00:00.000Z'),
-          reservationEndTime: new Date('2026-09-07T19:30:00.000Z'),
+          reservationDate: new Date('2037-09-07T00:00:00.000Z'),
+          reservationStartTime: new Date('2037-09-07T18:00:00.000Z'),
+          reservationEndTime: new Date('2037-09-07T19:30:00.000Z'),
           guests: 2,
           status: 'Approved',
           source: 'Online',
@@ -497,7 +497,7 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
       const { restaurantId, branchId, tableId } = await seedRestaurantBranchTable();
       const user = await seedUser();
       const id = await seedApprovedReservation(restaurantId, branchId, tableId, user.id);
-      const at = new Date('2026-09-07T18:20:00.000Z');
+      const at = new Date('2037-09-07T18:20:00.000Z');
 
       const applied = await repository.markLateArrivalNotifiedIfEligible(
         ReservationId.create(id),
@@ -566,9 +566,9 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
           restaurantId,
           branchId,
           tableId,
-          reservationDate: new Date('2026-09-08T00:00:00.000Z'),
-          reservationStartTime: new Date('2026-09-08T18:00:00.000Z'),
-          reservationEndTime: new Date('2026-09-08T19:30:00.000Z'),
+          reservationDate: new Date('2037-09-08T00:00:00.000Z'),
+          reservationStartTime: new Date('2037-09-08T18:00:00.000Z'),
+          reservationEndTime: new Date('2037-09-08T19:30:00.000Z'),
           guests: 2,
           status: 'Completed',
           source: 'Online',
@@ -594,11 +594,11 @@ describe('Reservation round-trip via PrismaReservationRepository (integration)',
 
       const first = await repository.markTableReadyNotifiedIfEligible(
         reservationId,
-        new Date('2026-09-07T17:50:00.000Z'),
+        new Date('2037-09-07T17:50:00.000Z'),
       );
       const second = await repository.markTableReadyNotifiedIfEligible(
         reservationId,
-        new Date('2026-09-07T17:55:00.000Z'),
+        new Date('2037-09-07T17:55:00.000Z'),
       );
 
       expect(first).toBe(true);

@@ -179,7 +179,14 @@ export interface PendingCustomerRegistrationRepository {
     codeExpiresAt: Date;
     now: Date;
   }): Promise<PendingCustomerRegistrationRecord>;
-  incrementAttemptCount(id: string): Promise<void>;
+  /**
+   * Atomically charges one attempt against the OTP, only while fewer than
+   * `maxIncorrectAttempts` are charged. Returns false when the cap is
+   * already reached, so concurrent guesses can never exceed it.
+   */
+  chargeAttempt(id: string, maxIncorrectAttempts: number): Promise<boolean>;
+  /** Returns the attempt `chargeAttempt` took when the guess was correct. */
+  refundAttempt(id: string): Promise<void>;
   markVerified(id: string, at: Date): Promise<void>;
   /** Atomic conditional consume - only the first caller for a given id can succeed. */
   consumeIfVerifiedAndUnconsumed(
@@ -208,7 +215,14 @@ export interface CustomerPasswordResetRepository {
   findActiveByUserId(userId: UserId, now: Date): Promise<CustomerPasswordResetTokenRecord | null>;
   save(record: CustomerPasswordResetTokenRecord): Promise<void>;
   invalidateActiveByUserId(userId: UserId): Promise<void>;
-  incrementAttemptCount(id: string): Promise<void>;
+  /**
+   * Atomically charges one attempt against the OTP, only while fewer than
+   * `maxIncorrectAttempts` are charged. Returns false when the cap is
+   * already reached, so concurrent guesses can never exceed it.
+   */
+  chargeAttempt(id: string, maxIncorrectAttempts: number): Promise<boolean>;
+  /** Returns the attempt `chargeAttempt` took when the guess was correct. */
+  refundAttempt(id: string): Promise<void>;
   markVerified(id: string, at: Date): Promise<void>;
   consumeIfVerifiedAndUnconsumed(
     id: string,

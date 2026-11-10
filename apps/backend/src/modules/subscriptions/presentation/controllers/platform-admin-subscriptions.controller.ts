@@ -23,6 +23,9 @@ import { ResponseMessage } from '@common/decorators/response-message.decorator';
 import { ApiErrorResponse } from '@common/decorators/api-error-response.decorator';
 import { ErrorResponseDto } from '@common/dto/error-response.dto';
 import { PlatformAdminGuard } from '@modules/platform-admin/presentation/guards/platform-admin.guard';
+import { PlatformAdminRoleGuard } from '@modules/platform-admin/presentation/guards/platform-admin-role.guard';
+import { RequirePlatformAdminRole } from '@modules/platform-admin/presentation/decorators/require-platform-admin-role.decorator';
+import { PlatformAdminRole } from '@modules/platform-admin/domain/enums/platform-admin.enums';
 import { CurrentPlatformAdmin } from '@modules/platform-admin/presentation/decorators/current-platform-admin.decorator';
 import { PlatformAdminActor } from '@modules/platform-admin/application/dto/platform-admin-actor.dto';
 import { ListSubscriptionPlansUseCase } from '../../application/use-cases/list-subscription-plans.use-case';
@@ -106,7 +109,8 @@ export class PlatformAdminSubscriptionsController {
   }
 
   @Post('organizations/:id/subscription')
-  @UseGuards(PlatformAdminGuard)
+  @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)
+  @RequirePlatformAdminRole(PlatformAdminRole.PlatformAdmin)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ResponseMessage('Subscription assigned successfully.')
@@ -148,7 +152,8 @@ export class PlatformAdminSubscriptionsController {
   }
 
   @Post('organizations/:id/subscription/suspend')
-  @UseGuards(PlatformAdminGuard)
+  @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)
+  @RequirePlatformAdminRole(PlatformAdminRole.PlatformAdmin)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ResponseMessage('Subscription suspended successfully.')
@@ -181,7 +186,8 @@ export class PlatformAdminSubscriptionsController {
   }
 
   @Post('organizations/:id/subscription/reactivate')
-  @UseGuards(PlatformAdminGuard)
+  @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)
+  @RequirePlatformAdminRole(PlatformAdminRole.PlatformAdmin)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ResponseMessage('Subscription reactivated successfully.')
@@ -213,7 +219,8 @@ export class PlatformAdminSubscriptionsController {
   }
 
   @Post('organizations/:id/subscription/cancel')
-  @UseGuards(PlatformAdminGuard)
+  @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)
+  @RequirePlatformAdminRole(PlatformAdminRole.PlatformAdmin)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ResponseMessage('Subscription cancelled successfully.')

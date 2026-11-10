@@ -14,6 +14,8 @@ import { UpdateOfferUseCase } from './application/use-cases/update-offer.use-cas
 import { PublishOfferUseCase } from './application/use-cases/publish-offer.use-case';
 import { DeleteOfferUseCase } from './application/use-cases/delete-offer.use-case';
 import { ListRestaurantOffersUseCase } from './application/use-cases/list-restaurant-offers.use-case';
+import { RedisOfferViewDedupe } from './infrastructure/redis/redis-offer-view-dedupe';
+import { OFFER_VIEW_DEDUPE } from './application/ports/offer-view-dedupe.port';
 import { ListPublicOffersUseCase } from './application/use-cases/list-public-offers.use-case';
 import { ListRestaurantIdsWithActiveOfferUseCase } from './application/use-cases/list-restaurant-ids-with-active-offer.use-case';
 import { ExpireOfferUseCase } from './application/use-cases/expire-offer.use-case';
@@ -66,6 +68,8 @@ import { OffersController } from './presentation/controllers/offers.controller';
     ExpireOfferProcessor,
     PrismaOfferRepository,
     { provide: OFFER_REPOSITORY, useExisting: PrismaOfferRepository },
+    RedisOfferViewDedupe,
+    { provide: OFFER_VIEW_DEDUPE, useExisting: RedisOfferViewDedupe },
     BullMqOfferExpirationScheduler,
     { provide: OFFER_EXPIRATION_SCHEDULER, useExisting: BullMqOfferExpirationScheduler },
   ],

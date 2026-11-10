@@ -55,6 +55,9 @@ export const envValidationSchema = Joi.object({
   CORRELATION_ID_HEADER: Joi.string().default('x-correlation-id'),
   SWAGGER_ENABLED: Joi.boolean().optional(),
   REQUEST_BODY_LIMIT: Joi.string().default('10mb'),
+  // Reverse proxies in front of the app that append to X-Forwarded-For
+  // (production: Nginx = 1). See resolve-client-ip.util.ts.
+  TRUSTED_PROXY_HOPS: Joi.number().integer().min(0).default(1),
 
   JWT_ACCESS_SECRET: Joi.string().min(32).required(),
   JWT_ACCESS_SECRET_PREVIOUS: Joi.string().min(32).allow('').default(''),

@@ -16,6 +16,7 @@ import {
   CollectingAuditLogWriter,
   FakeTokenService,
 } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
+import { InMemoryRateLimiter } from '../../../../../test/authentication/support/in-memory-rate-limiter';
 
 describe('JwtAuthGuard', () => {
   const userId = '11111111-1111-4111-8111-111111111111';
@@ -55,7 +56,11 @@ describe('JwtAuthGuard', () => {
 
   it('allows access and attaches the authenticated actor for a valid token', async () => {
     const auditLogWriter = new CollectingAuditLogWriter();
-    const guard = new JwtAuthGuard(new FakeTokenService(), auditLogWriter);
+    const guard = new JwtAuthGuard(
+      new FakeTokenService(),
+      auditLogWriter,
+      new InMemoryRateLimiter(),
+    );
     const token = `jwt.${userId}.${sessionId}`;
     const { context, request } = createExecutionContext({
       authorization: `Bearer ${token}`,
@@ -76,7 +81,11 @@ describe('JwtAuthGuard', () => {
 
   it('rejects requests without an authorization header and does not audit it', async () => {
     const auditLogWriter = new CollectingAuditLogWriter();
-    const guard = new JwtAuthGuard(new FakeTokenService(), auditLogWriter);
+    const guard = new JwtAuthGuard(
+      new FakeTokenService(),
+      auditLogWriter,
+      new InMemoryRateLimiter(),
+    );
     const { context } = createExecutionContext();
 
     await expect(guard.canActivate(context)).rejects.toThrow(MissingAccessTokenException);
@@ -84,7 +93,11 @@ describe('JwtAuthGuard', () => {
   });
 
   it('rejects malformed authorization headers', async () => {
-    const guard = new JwtAuthGuard(new FakeTokenService(), new CollectingAuditLogWriter());
+    const guard = new JwtAuthGuard(
+      new FakeTokenService(),
+      new CollectingAuditLogWriter(),
+      new InMemoryRateLimiter(),
+    );
 
     await expect(
       guard.canActivate(createExecutionContext({ authorization: 'Token abc' }).context),
@@ -97,7 +110,11 @@ describe('JwtAuthGuard', () => {
 
   it('rejects tokens with an invalid signature and audits auth.jwt.invalid', async () => {
     const auditLogWriter = new CollectingAuditLogWriter();
-    const guard = new JwtAuthGuard(new ThrowingTokenService(), auditLogWriter);
+    const guard = new JwtAuthGuard(
+      new ThrowingTokenService(),
+      auditLogWriter,
+      new InMemoryRateLimiter(),
+    );
     const { context } = createExecutionContext({
       authorization: 'Bearer invalid-token',
     });
@@ -113,7 +130,11 @@ describe('JwtAuthGuard', () => {
 
   it('rejects expired tokens and audits auth.jwt.expired', async () => {
     const auditLogWriter = new CollectingAuditLogWriter();
-    const guard = new JwtAuthGuard(new ExpiredTokenService(), auditLogWriter);
+    const guard = new JwtAuthGuard(
+      new ExpiredTokenService(),
+      auditLogWriter,
+      new InMemoryRateLimiter(),
+    );
     const { context } = createExecutionContext({
       authorization: 'Bearer expired-token',
     });
@@ -143,6 +164,7 @@ describe('JwtAuthGuard', () => {
         verifyAccessToken: () => claims,
       },
       new CollectingAuditLogWriter(),
+      new InMemoryRateLimiter(),
     );
     const { context, request } = createExecutionContext({
       authorization: 'Bearer employee-token',
@@ -181,6 +203,7 @@ describe('JwtAuthGuard', () => {
         verifyAccessToken: () => claims,
       },
       new CollectingAuditLogWriter(),
+      new InMemoryRateLimiter(),
     );
     const { context, request } = createExecutionContext({
       authorization: 'Bearer org-member-token',
@@ -214,6 +237,7 @@ describe('JwtAuthGuard', () => {
         verifyAccessToken: () => claims,
       },
       auditLogWriter,
+      new InMemoryRateLimiter(),
     );
     const { context } = createExecutionContext({
       authorization: 'Bearer platform-admin-token',
@@ -234,6 +258,7 @@ describe('JwtAuthGuard', () => {
         },
       },
       auditLogWriter,
+      new InMemoryRateLimiter(),
     );
     const { context } = createExecutionContext({
       authorization: 'Bearer no-cause-token',
@@ -255,6 +280,7 @@ describe('JwtAuthGuard', () => {
         },
       },
       auditLogWriter,
+      new InMemoryRateLimiter(),
     );
     const { context } = createExecutionContext({
       authorization: 'Bearer tampered-token',
@@ -276,6 +302,7 @@ describe('JwtAuthGuard', () => {
         },
       },
       auditLogWriter,
+      new InMemoryRateLimiter(),
     );
     const { context } = createExecutionContext({
       authorization: 'Bearer expired-token',
@@ -283,5 +310,21 @@ describe('JwtAuthGuard', () => {
 
     await expect(guard.canActivate(context)).rejects.toThrow(ExpiredAccessTokenException);
     expect(auditLogWriter.entries[0].action).toBe('auth.jwt.expired');
+  });
+
+  it('records at most one invalid-token audit row per address per minute', async () => {
+    const auditLogWriter = new CollectingAuditLogWriter();
+    const guard = new JwtAuthGuard(
+      new ThrowingTokenService(),
+      auditLogWriter,
+      new InMemoryRateLimiter(),
+    );
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const { context } = createExecutionContext({ authorization: 'Bearer invalid-token' });
+      await expect(guard.canActivate(context)).rejects.toThrow(InvalidAccessTokenException);
+    }
+
+    expect(auditLogWriter.entries).toHaveLength(1);
   });
 });

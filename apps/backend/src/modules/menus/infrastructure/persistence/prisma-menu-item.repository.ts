@@ -36,6 +36,17 @@ export class PrismaMenuItemRepository implements MenuItemRepository {
     return rows.map(MenuItemPrismaMapper.toDomain);
   }
 
+  async findManyByCategoryIds(categoryIds: MenuCategoryId[]): Promise<MenuItem[]> {
+    if (categoryIds.length === 0) {
+      return [];
+    }
+    const rows = await this.prismaContext.client.menuItem.findMany({
+      where: { categoryId: { in: categoryIds.map((id) => id.value) }, deletedAt: null },
+      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+    return rows.map(MenuItemPrismaMapper.toDomain);
+  }
+
   async update(item: MenuItem): Promise<void> {
     const data = MenuItemPrismaMapper.toPersistence(item);
     await this.prismaContext.client.menuItem.updateMany({

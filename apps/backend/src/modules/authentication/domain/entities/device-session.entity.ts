@@ -67,8 +67,9 @@ export class DeviceSession extends Entity<DeviceSessionProps> {
     return DeviceSessionStatus.Active;
   }
 
+  /** Uses the caller's clock, never the wall clock, so it agrees with `ClockPort`. */
   isActive(now: Date = new Date()): boolean {
-    return this.status === DeviceSessionStatus.Active && this.props.expiresAt > now;
+    return this.props.revokedAt === null && this.props.expiresAt > now;
   }
 
   assertActiveForRefresh(now: Date = new Date()): void {

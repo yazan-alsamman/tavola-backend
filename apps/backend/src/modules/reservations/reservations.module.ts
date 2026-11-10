@@ -58,6 +58,9 @@ import { AUTO_CLOSE_QUEUE_NAME } from './infrastructure/bullmq/auto-close-queue.
 import { AutoCloseOverdueReservationsUseCase } from './application/use-cases/auto-close-overdue-reservations.use-case';
 import { ReservationsController } from './presentation/controllers/reservations.controller';
 import { BranchReservationsController } from './presentation/controllers/branch-reservations.controller';
+import { BranchOpeningHoursService } from './application/services/branch-opening-hours.service';
+import { BOOKING_ELIGIBILITY_READER } from './application/ports/booking-eligibility-reader.port';
+import { PrismaBookingEligibilityReader } from './infrastructure/persistence/prisma-booking-eligibility.reader';
 
 /**
  * Phase 7.1 (Reservation Core): Search Availability + Create Reservation,
@@ -203,6 +206,9 @@ import { BranchReservationsController } from './presentation/controllers/branch-
     AutoCloseProcessor,
     AutoCloseScheduler,
     AutoCloseOverdueReservationsUseCase,
+    BranchOpeningHoursService,
+    PrismaBookingEligibilityReader,
+    { provide: BOOKING_ELIGIBILITY_READER, useExisting: PrismaBookingEligibilityReader },
     PrismaReservationRepository,
     { provide: RESERVATION_REPOSITORY, useExisting: PrismaReservationRepository },
     PrismaMyReservationsReader,
@@ -230,6 +236,8 @@ import { BranchReservationsController } from './presentation/controllers/branch-
   ],
   exports: [
     RESERVATION_REPOSITORY,
+    // Submit Review refuses reservations the auto-close sweep completed (ADR-048).
+    RESERVATION_HISTORY_REPOSITORY,
     RESERVATION_GUEST_REPOSITORY,
     APPROVED_RESERVATION_OPERATIONAL_SCHEDULER,
     ScheduleApprovedReservationSignalsService,

@@ -22,7 +22,9 @@ import {
 } from '../../application/exceptions/access-token.exceptions';
 import { AccessTokenActorType } from '../../domain/services/access-token-claims';
 import { TokenService } from '../../domain/services/token-service.port';
-import { TOKEN_SERVICE } from '../../domain/tokens/authentication.tokens';
+import { RATE_LIMITER, TOKEN_SERVICE } from '../../domain/tokens/authentication.tokens';
+import { RateLimiterPort } from '../../domain/services/rate-limiter.port';
+import { recordThrottledAudit } from '../utils/throttled-audit.util';
 import { resolveClientIp } from '../utils/resolve-client-ip.util';
 
 /**
@@ -38,6 +40,7 @@ export class JwtAuthGuard implements CanActivate {
   constructor(
     @Inject(TOKEN_SERVICE) private readonly tokenService: TokenService,
     @Inject(AUDIT_LOG_WRITER) private readonly auditLogWriter: AuditLogWriterPort,
+    @Inject(RATE_LIMITER) private readonly rateLimiter: RateLimiterPort,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -112,7 +115,7 @@ export class JwtAuthGuard implements CanActivate {
         resolved instanceof InvalidAccessTokenException ||
         resolved instanceof ExpiredAccessTokenException
       ) {
-        await this.auditLogWriter.record({
+        await recordThrottledAudit(this.auditLogWriter, this.rateLimiter, {
           actorId: null,
           actorType: 'User',
           action:

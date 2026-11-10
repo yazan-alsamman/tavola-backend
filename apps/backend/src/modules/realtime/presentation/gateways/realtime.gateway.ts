@@ -25,6 +25,7 @@ import {
 } from '../../application/room';
 import { SocketIoRealtimeBroadcaster } from '../../infrastructure/socket-io-realtime-broadcaster';
 import { RoomSubscriptionAck, RoomSubscriptionRequest } from '../dto/room-subscription.dto';
+import { clientIpFromForwardedChain } from '@modules/authentication/presentation/utils/resolve-client-ip.util';
 
 interface RealtimeSocketData {
   actor: AuthenticatedActor;
@@ -269,11 +270,10 @@ function extractHandshakeToken(client: Socket): string | undefined {
 }
 
 function resolveSocketIp(client: Socket): string {
-  const forwarded = client.handshake.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.length > 0) {
-    return forwarded.split(',')[0]?.trim() || 'unknown';
-  }
-  return client.handshake.address || 'unknown';
+  return clientIpFromForwardedChain(
+    client.handshake.headers['x-forwarded-for'],
+    client.handshake.address,
+  );
 }
 
 function extractRoomType(body: RoomSubscriptionRequest | null | undefined): RoomType | null {

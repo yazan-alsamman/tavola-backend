@@ -98,7 +98,7 @@ Legend: **Supported** = full architectural specification exists | **Partial** = 
 |---|---|---|
 | Payment provider not selected (open ADR) | Cannot complete Phase 13 integration | ADR before Phase 13; PaymentGateway port exists |
 | Phased DB migrations lag DATABASE_SCHEMA.md | Implementation drift | MIGRATION_POLICY.md phase gates; integration tests per migration |
-| Permission staleness (JWT TTL) | Revoked employee retains access up to 15 min | permissionsVersion + refresh re-resolution (ADR-017) |
+| Permission staleness (JWT TTL) | A role change takes effect at the next refresh (up to 15 min); a removed employee is cut off at once | permissionsVersion + refresh re-resolution (ADR-017); removal bumps sessionVersion (ADR-048) |
 
 ## Medium
 

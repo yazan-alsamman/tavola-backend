@@ -781,7 +781,8 @@ Read via typed config at startup; changes take effect without redeploy.
 
 | Control | Implementation |
 |---|---|
-| Per-email lockout | After `maxFailedLoginAttempts` → `status = Locked`, `lockedUntil` set |
+| Per-account-and-address lockout (ADR-048) | After `maxFailedLoginAttempts` failures from one IP, that IP gets `AUTH_ACCOUNT_LOCKED` for `accountLockDurationMinutes` (Redis counter); other addresses are unaffected |
+| Account-wide lockout | After `maxFailedLoginAttempts × 10` failures from all addresses → `status = Locked`, `lockedUntil` set |
 | Per-IP rate limit | Redis sliding window on `login` endpoint |
 | Global auth rate limit | Nginx + application `@Throttle()` |
 | Constant-time response | Same 401 message for bad email vs bad password |
@@ -1237,7 +1238,7 @@ sequenceDiagram
 | `DeviceSessionRepository` | Unique refreshTokenHash |
 | `EmailVerificationTokenRepository` | Expiry, consume idempotency |
 | Token reuse | Two parallel refresh with same token → family revoked |
-| `LoginAttempt` + lockout | 5 failures → Locked status |
+| `LoginAttempt` + lockout | 5 failures from one IP → locked for that IP; 50 in total → Locked status |
 
 Real PostgreSQL via Docker Compose (TESTING_STRATEGY.md).
 

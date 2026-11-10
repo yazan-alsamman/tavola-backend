@@ -984,10 +984,19 @@ export class InMemoryPendingCustomerRegistrationRepository implements PendingCus
     return { ...created };
   }
 
-  async incrementAttemptCount(id: string): Promise<void> {
+  async chargeAttempt(id: string, maxIncorrectAttempts: number): Promise<boolean> {
     const row = this.rows.find((entry) => entry.id === id);
-    if (row) {
-      row.incorrectAttemptCount += 1;
+    if (!row || row.incorrectAttemptCount >= maxIncorrectAttempts) {
+      return false;
+    }
+    row.incorrectAttemptCount += 1;
+    return true;
+  }
+
+  async refundAttempt(id: string): Promise<void> {
+    const row = this.rows.find((entry) => entry.id === id);
+    if (row && row.incorrectAttemptCount > 0) {
+      row.incorrectAttemptCount -= 1;
     }
   }
 
@@ -1060,10 +1069,19 @@ export class InMemoryCustomerPasswordResetRepository implements CustomerPassword
     }
   }
 
-  async incrementAttemptCount(id: string): Promise<void> {
+  async chargeAttempt(id: string, maxIncorrectAttempts: number): Promise<boolean> {
     const row = this.rows.find((entry) => entry.id === id);
-    if (row) {
-      row.incorrectAttemptCount += 1;
+    if (!row || row.incorrectAttemptCount >= maxIncorrectAttempts) {
+      return false;
+    }
+    row.incorrectAttemptCount += 1;
+    return true;
+  }
+
+  async refundAttempt(id: string): Promise<void> {
+    const row = this.rows.find((entry) => entry.id === id);
+    if (row && row.incorrectAttemptCount > 0) {
+      row.incorrectAttemptCount -= 1;
     }
   }
 

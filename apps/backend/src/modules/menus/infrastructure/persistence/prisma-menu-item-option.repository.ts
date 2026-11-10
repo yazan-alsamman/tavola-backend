@@ -36,6 +36,19 @@ export class PrismaMenuItemOptionRepository implements MenuItemOptionRepository 
     return rows.map(MenuItemOptionPrismaMapper.toDomain);
   }
 
+  async findManyByOptionGroupIds(
+    optionGroupIds: MenuItemOptionGroupId[],
+  ): Promise<MenuItemOption[]> {
+    if (optionGroupIds.length === 0) {
+      return [];
+    }
+    const rows = await this.prismaContext.client.menuItemOption.findMany({
+      where: { optionGroupId: { in: optionGroupIds.map((id) => id.value) }, deletedAt: null },
+      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+    return rows.map(MenuItemOptionPrismaMapper.toDomain);
+  }
+
   async update(option: MenuItemOption): Promise<void> {
     const data = MenuItemOptionPrismaMapper.toPersistence(option);
     await this.prismaContext.client.menuItemOption.updateMany({

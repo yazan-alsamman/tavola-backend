@@ -7,6 +7,11 @@ import { ErrorResponseDto } from '@common/dto/error-response.dto';
 import { ProvisionRestaurantOwnerUseCase } from '@modules/authentication/application/use-cases/provision-restaurant-owner.use-case';
 import { resolveClientIp } from '@modules/authentication/presentation/utils/resolve-client-ip.util';
 import { PlatformAdminGuard } from '../guards/platform-admin.guard';
+import { RateLimitGuard } from '@modules/authentication/presentation/guards/rate-limit.guard';
+import { RateLimit } from '@modules/authentication/presentation/decorators/rate-limit.decorator';
+import { PlatformAdminRoleGuard } from '../guards/platform-admin-role.guard';
+import { RequirePlatformAdminRole } from '../decorators/require-platform-admin-role.decorator';
+import { PlatformAdminRole } from '../../domain/enums/platform-admin.enums';
 import { CurrentPlatformAdmin } from '../decorators/current-platform-admin.decorator';
 import { PlatformAdminActor } from '../../application/dto/platform-admin-actor.dto';
 import { PlatformAdminLoginUseCase } from '../../application/use-cases/platform-admin-login.use-case';
@@ -45,6 +50,8 @@ export class PlatformAdminController {
   ) {}
 
   @Post('login')
+  @UseGuards(RateLimitGuard)
+  @RateLimit('login')
   @HttpCode(HttpStatus.OK)
   @ResponseMessage('Login successful.')
   @ApiOperation({
@@ -61,6 +68,7 @@ export class PlatformAdminController {
   @ApiErrorResponse(401, 'Invalid credentials, or not an active Platform Admin', [
     'AUTH_INVALID_CREDENTIALS',
   ])
+  @ApiErrorResponse(429, 'Too many login attempts from this IP', ['RATE_LIMIT_EXCEEDED'])
   async login(
     @Body() body: PlatformAdminLoginRequestDto,
     @Req() request: Request,
@@ -76,6 +84,8 @@ export class PlatformAdminController {
   }
 
   @Post('refresh')
+  @UseGuards(RateLimitGuard)
+  @RateLimit('refresh')
   @HttpCode(HttpStatus.OK)
   @ResponseMessage('Session refreshed successfully.')
   @ApiOperation({
@@ -93,6 +103,7 @@ export class PlatformAdminController {
   @ApiErrorResponse(401, 'Invalid, expired, revoked, or replayed refresh token', [
     'AUTH_INVALID_REFRESH_TOKEN',
   ])
+  @ApiErrorResponse(429, 'Too many refresh attempts for this token', ['RATE_LIMIT_EXCEEDED'])
   async refresh(
     @Body() body: PlatformAdminRefreshRequestDto,
     @Req() request: Request,
@@ -170,7 +181,8 @@ export class PlatformAdminController {
   }
 
   @Post('restaurant-owners')
-  @UseGuards(PlatformAdminGuard)
+  @UseGuards(PlatformAdminGuard, PlatformAdminRoleGuard)
+  @RequirePlatformAdminRole(PlatformAdminRole.PlatformAdmin)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.CREATED)
   @ResponseMessage('Restaurant Owner provisioned successfully.')

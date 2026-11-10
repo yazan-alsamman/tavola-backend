@@ -21,6 +21,8 @@ import {
   RestaurantUsageRepository,
   RESTAURANT_USAGE_REPOSITORY,
 } from '@modules/restaurants/domain/repositories/restaurant-usage.repository';
+import { UserRepository } from '@modules/authentication/domain/repositories/authentication.repositories';
+import { USER_REPOSITORY } from '@modules/authentication/domain/tokens/authentication.tokens';
 import { toEmployeeResult } from '../mappers/employee-result.mapper';
 import { RemoveEmployeeCommand } from '../dto/remove-employee.command';
 import { EmployeeResult } from '../dto/employee.result';
@@ -53,6 +55,7 @@ export class RemoveEmployeeUseCase {
     private readonly restaurantUsageRepository: RestaurantUsageRepository,
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
+    @Inject(USER_REPOSITORY) private readonly userRepository: UserRepository,
   ) {}
 
   async execute(command: RemoveEmployeeCommand): Promise<EmployeeResult> {
@@ -89,6 +92,11 @@ export class RemoveEmployeeUseCase {
     await this.unitOfWork.execute(async () => {
       await this.employeeRepository.save(removed);
       await this.restaurantUsageRepository.decrementEmployeeCount(restaurantId);
+      // ADR-048: end the removed employee's sessions now. Without this their
+      // access token kept its Employee permissions until it expired.
+      if (employee.userId !== null) {
+        await this.userRepository.incrementSessionVersion(employee.userId, now);
+      }
     });
 
     return toEmployeeResult(removed);

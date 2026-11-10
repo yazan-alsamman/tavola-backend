@@ -136,8 +136,8 @@ describe('Phase 7.2 Approval Workflow - PrismaReservationRepository + PrismaTabl
     overrides: Partial<{ id: string; startTime: Date; endTime: Date }> = {},
   ): Reservation {
     const now = new Date();
-    const startTime = overrides.startTime ?? new Date('2026-10-01T18:00:00.000Z');
-    const endTime = overrides.endTime ?? new Date('2026-10-01T19:30:00.000Z');
+    const startTime = overrides.startTime ?? new Date('2037-10-01T18:00:00.000Z');
+    const endTime = overrides.endTime ?? new Date('2037-10-01T19:30:00.000Z');
     return Reservation.create({
       id: overrides.id ?? randomUUID(),
       userId,
@@ -146,7 +146,7 @@ describe('Phase 7.2 Approval Workflow - PrismaReservationRepository + PrismaTabl
       restaurantId,
       branchId,
       tableId,
-      reservationDate: new Date('2026-10-01T00:00:00.000Z'),
+      reservationDate: new Date('2037-10-01T00:00:00.000Z'),
       reservationStartTime: startTime,
       reservationEndTime: endTime,
       guests: 2,
@@ -268,12 +268,12 @@ describe('Phase 7.2 Approval Workflow - PrismaReservationRepository + PrismaTabl
     const { restaurantId, branchId, tableId } = await seedRestaurantBranchTable();
     const user = await seedUser();
     const approvedTarget = buildPendingReservation(restaurantId, branchId, tableId, user.id, {
-      startTime: new Date('2026-10-02T18:00:00.000Z'),
-      endTime: new Date('2026-10-02T19:30:00.000Z'),
+      startTime: new Date('2037-10-02T18:00:00.000Z'),
+      endTime: new Date('2037-10-02T19:30:00.000Z'),
     });
     const overlappingPending = buildPendingReservation(restaurantId, branchId, tableId, user.id, {
-      startTime: new Date('2026-10-02T18:30:00.000Z'),
-      endTime: new Date('2026-10-02T20:00:00.000Z'),
+      startTime: new Date('2037-10-02T18:30:00.000Z'),
+      endTime: new Date('2037-10-02T20:00:00.000Z'),
     });
     await reservationRepository.createWithLock(approvedTarget, `lock-${randomUUID()}`);
     await reservationRepository.createWithLock(overlappingPending, `lock-${randomUUID()}`);
@@ -331,8 +331,8 @@ describe('Phase 7.2 Approval Workflow - PrismaReservationRepository + PrismaTabl
     const { restaurantId, branchId, tableId } = await seedRestaurantBranchTable();
     const user = await seedUser();
     const pending = buildPendingReservation(restaurantId, branchId, tableId, user.id, {
-      startTime: new Date('2026-10-03T18:00:00.000Z'),
-      endTime: new Date('2026-10-03T19:30:00.000Z'),
+      startTime: new Date('2037-10-03T18:00:00.000Z'),
+      endTime: new Date('2037-10-03T19:30:00.000Z'),
     });
     await reservationRepository.createWithLock(pending, `lock-${randomUUID()}`);
 
@@ -345,9 +345,9 @@ describe('Phase 7.2 Approval Workflow - PrismaReservationRepository + PrismaTabl
         restaurantId,
         branchId,
         tableId,
-        reservationDate: new Date('2026-10-03T00:00:00.000Z'),
-        reservationStartTime: new Date('2026-10-03T18:15:00.000Z'),
-        reservationEndTime: new Date('2026-10-03T19:45:00.000Z'),
+        reservationDate: new Date('2037-10-03T00:00:00.000Z'),
+        reservationStartTime: new Date('2037-10-03T18:15:00.000Z'),
+        reservationEndTime: new Date('2037-10-03T19:45:00.000Z'),
         guests: 2,
         status: 'Approved',
         source: 'Online',
@@ -388,8 +388,8 @@ describe('Phase 7.2 Approval Workflow - PrismaReservationRepository + PrismaTabl
     const { restaurantId, branchId, tableId } = await seedRestaurantBranchTable();
     const user = await seedUser();
     const pending = buildPendingReservation(restaurantId, branchId, tableId, user.id, {
-      startTime: new Date('2026-10-04T18:00:00.000Z'),
-      endTime: new Date('2026-10-04T19:30:00.000Z'),
+      startTime: new Date('2037-10-04T18:00:00.000Z'),
+      endTime: new Date('2037-10-04T19:30:00.000Z'),
     });
     await reservationRepository.createWithLock(pending, `lock-${randomUUID()}`);
 
@@ -403,9 +403,9 @@ describe('Phase 7.2 Approval Workflow - PrismaReservationRepository + PrismaTabl
         restaurantId,
         branchId,
         tableId,
-        reservationDate: new Date('2026-10-04T00:00:00.000Z'),
-        reservationStartTime: new Date('2026-10-04T18:15:00.000Z'),
-        reservationEndTime: new Date('2026-10-04T19:45:00.000Z'),
+        reservationDate: new Date('2037-10-04T00:00:00.000Z'),
+        reservationStartTime: new Date('2037-10-04T18:15:00.000Z'),
+        reservationEndTime: new Date('2037-10-04T19:45:00.000Z'),
         guests: 2,
         status: 'Approved',
         source: 'Online',
@@ -441,9 +441,9 @@ describe('Phase 7.2 Approval Workflow - PrismaReservationRepository + PrismaTabl
       restaurantId,
       branchId,
       tableId,
-      reservationDate: new Date('2026-10-05T00:00:00.000Z'),
-      reservationStartTime: new Date('2026-10-05T18:00:00.000Z'),
-      reservationEndTime: new Date('2026-10-05T19:30:00.000Z'),
+      reservationDate: new Date('2037-10-05T00:00:00.000Z'),
+      reservationStartTime: new Date('2037-10-05T18:00:00.000Z'),
+      reservationEndTime: new Date('2037-10-05T19:30:00.000Z'),
       guests: 2,
       tableCapacity: 4,
       notes: null,

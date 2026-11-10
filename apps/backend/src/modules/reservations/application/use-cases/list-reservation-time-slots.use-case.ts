@@ -6,8 +6,6 @@ import {
   BRANCH_REPOSITORY,
 } from '@modules/branches/domain/repositories/branch.repository';
 import { BranchNotFoundException } from '@modules/branches/domain/exceptions/branch-not-found.exception';
-import { ListBranchWorkingHoursByBranchIdsUseCase } from '@modules/branches/application/use-cases/list-branch-working-hours-by-branch-ids.use-case';
-import { ListWorkingHoursByRestaurantIdsUseCase } from '@modules/restaurants/application/use-cases/list-working-hours-by-restaurant-ids.use-case';
 import {
   RestaurantSettingsRepository,
   RESTAURANT_SETTINGS_REPOSITORY,
@@ -25,7 +23,6 @@ import {
   buildReservationTimeSlots,
   calendarDateInTimeZone,
   dayOfWeekFromCalendarDate,
-  DayScheduleWindow,
   parseCalendarDate,
   zonedLocalToUtcIso,
 } from '../../domain/services/reservation-time-slots.service';
@@ -34,12 +31,15 @@ import {
   ReservationTimeSlotResult,
   ReservationTimeSlotsResult,
 } from '../dto/reservation-time-slots.result';
+import { BranchOpeningHoursService } from '../services/branch-opening-hours.service';
+import {
+  MAX_RESERVATION_DURATION_MINUTES,
+  MIN_RESERVATION_DURATION_MINUTES,
+} from '../../domain/services/reservation-booking-policy';
 
 const DEFAULT_INTERVAL_MINUTES = 30;
 const DEFAULT_DURATION_MINUTES = 90;
 const DEFAULT_MAX_GUESTS = 20;
-const MIN_DURATION_MINUTES = 15;
-const MAX_DURATION_MINUTES = 480;
 
 export interface ListReservationTimeSlotsCommand {
   branchId: string;
@@ -67,8 +67,7 @@ interface InstantWindow {
 export class ListReservationTimeSlotsUseCase {
   constructor(
     @Inject(BRANCH_REPOSITORY) private readonly branchRepository: BranchRepository,
-    private readonly listBranchWorkingHours: ListBranchWorkingHoursByBranchIdsUseCase,
-    private readonly listRestaurantWorkingHours: ListWorkingHoursByRestaurantIdsUseCase,
+    private readonly openingHours: BranchOpeningHoursService,
     @Inject(RESTAURANT_SETTINGS_REPOSITORY)
     private readonly restaurantSettingsRepository: RestaurantSettingsRepository,
     @Inject(TABLE_REPOSITORY) private readonly tableRepository: TableRepository,
@@ -111,11 +110,8 @@ export class ListReservationTimeSlotsUseCase {
     }
 
     const dayOfWeek = dayOfWeekFromCalendarDate(command.date);
-    const schedule = await this.resolveSchedule(
-      command.branchId,
-      branch.restaurantId.value,
-      dayOfWeek,
-    );
+    const weekly = await this.openingHours.load(command.branchId, branch.restaurantId.value);
+    const schedule = weekly.forDay(dayOfWeek);
     const base = {
       branchId: command.branchId,
       date: command.date,
@@ -194,8 +190,8 @@ export class ListReservationTimeSlotsUseCase {
     const duration = requested ?? fallback;
     if (
       !Number.isInteger(duration) ||
-      duration < MIN_DURATION_MINUTES ||
-      duration > MAX_DURATION_MINUTES
+      duration < MIN_RESERVATION_DURATION_MINUTES ||
+      duration > MAX_RESERVATION_DURATION_MINUTES
     ) {
       throw new InvalidReservationTimeException(
         'durationMinutes must be an integer between 15 and 480.',
@@ -203,42 +199,6 @@ export class ListReservationTimeSlotsUseCase {
     }
     return duration;
   }
-
-  private async resolveSchedule(
-    branchId: string,
-    restaurantId: string,
-    dayOfWeek: number,
-  ): Promise<DayScheduleWindow | null> {
-    const branchHours = await this.listBranchWorkingHours.execute({ branchIds: [branchId] });
-    const branchDay = (branchHours.get(branchId) ?? []).find(
-      (entry) => entry.dayOfWeek === dayOfWeek,
-    );
-    if (branchDay !== undefined) {
-      return toWindow(branchDay);
-    }
-
-    const restaurantHours = await this.listRestaurantWorkingHours.execute({
-      restaurantIds: [restaurantId],
-    });
-    const restaurantDay = (restaurantHours.get(restaurantId) ?? []).find(
-      (entry) => entry.dayOfWeek === dayOfWeek,
-    );
-    return restaurantDay === undefined ? null : toWindow(restaurantDay);
-  }
-}
-
-function toWindow(entry: {
-  openingTime: string;
-  closingTime: string;
-  breakStartTime: string | null;
-  breakEndTime: string | null;
-}): DayScheduleWindow {
-  return {
-    openingTime: entry.openingTime,
-    closingTime: entry.closingTime,
-    breakStartTime: entry.breakStartTime,
-    breakEndTime: entry.breakEndTime,
-  };
 }
 
 function toSlot(window: InstantWindow): ReservationTimeSlotResult {

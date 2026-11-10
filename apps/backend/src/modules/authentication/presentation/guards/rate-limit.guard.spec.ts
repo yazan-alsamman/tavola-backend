@@ -99,7 +99,12 @@ describe('RateLimitGuard', () => {
   }
 
   function createGuard(decision: RateLimitDecision) {
-    const consume = jest.fn().mockResolvedValue(decision);
+    // Audit-throttle keys always pass so each test sees its own audit row.
+    const consume = jest.fn((key: string, _limit: number, _windowSeconds: number, _now: Date) =>
+      Promise.resolve(
+        key.startsWith('audit:throttle:') ? { ...decision, allowed: true } : decision,
+      ),
+    );
     const rateLimiter: RateLimiterPort = { consume };
     const policyPort: AuthRateLimitPolicyPort = {
       getPolicy: (_name: RateLimitPolicyName) => policy,

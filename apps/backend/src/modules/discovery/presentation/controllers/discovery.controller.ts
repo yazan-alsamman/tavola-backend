@@ -8,8 +8,11 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
+import { resolveClientIp } from '@modules/authentication/presentation/utils/resolve-client-ip.util';
 import { ApiExtraModels, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ResponseMessage } from '@common/decorators/response-message.decorator';
 import { ApiErrorResponse } from '@common/decorators/api-error-response.decorator';
@@ -329,11 +332,13 @@ export class DiscoveryController {
   async listOffers(
     @Param('restaurantId', ParseUUIDPipe) restaurantId: string,
     @Query() query: ListOffersQueryDto,
+    @Req() request: Request,
   ): Promise<OfferListResponseDto> {
     const result = await this.listDiscoverableOffersUseCase.execute({
       restaurantId,
       page: query.page ?? 1,
       limit: query.limit ?? 20,
+      viewerKey: resolveClientIp(request),
     });
     return toOfferListResponse(result);
   }
