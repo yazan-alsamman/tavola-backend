@@ -2908,3 +2908,23 @@ Venue identity, temporary closures, extra booking limits, per-branch plan state 
 ### Consequences
 
 Additive migration `20261114000000_branch_identity_closures_and_booking_limits`; existing branches have no trial, no closures and no extra limits, so behaviour is unchanged until the owner sets them. The Front Desk role and permission come from `prisma db seed`, which must run after deploy. App 1.0.2 ignores the new response fields; a closed or paused branch reads as no available slots.
+
+## ADR-054
+
+### Title
+
+Customers default to Arabic for notifications
+
+### Status
+
+**Accepted — owner-approved 2026-11-13.**
+
+### Decision
+
+1. Customer registration stores `User.language = 'ar'` (`DEFAULT_CUSTOMER_LANGUAGE`) instead of `'en'`. A customer can still change it with `PATCH /users/me`.
+2. Data migration `20261114020000_customer_language_arabic_default` sets existing customer accounts (a username, no organization membership, no employee row) from `'en'` to `'ar'`. Staff accounts keep their language.
+3. `prisma db seed` adds Arabic `InApp`/`Push` templates for every customer notification type, so Arabic customers no longer fall back to the English default rows.
+
+### Consequences
+
+`User.language` is read only by notification template resolution today, so the only visible change is that customer push and in-app notifications are in Arabic. App 1.0.2 has no language sync; an English-speaking customer gets Arabic until the app sends its language through `PATCH /users/me`. The restaurant dashboard words staff notifications itself (dashboard ADR-032) and is unaffected.
