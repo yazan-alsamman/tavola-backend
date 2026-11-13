@@ -83,7 +83,7 @@ export class RecordCustomerAcquisitionOnApprovalService {
     // of its Organization's plan" principle (PRODUCT_REQUIREMENTS.md FR-12,
     // 2026-07-28 note), extended here to monetization configuration. A
     // Restaurant with NO configured operating currency at all (both
-    // RestaurantSettings.defaultCurrency and Branch.currency null - the
+    // Branch.currency and RestaurantSettings.defaultCurrency null - the
     // out-of-the-box default for every restaurant) has not yet reached the
     // point ADR-033 §17 actually addresses ("if no rule exists in the
     // matching currency" presupposes a currency is already known) - this is
@@ -165,25 +165,24 @@ export class RecordCustomerAcquisitionOnApprovalService {
   }
 
   /**
-   * ADR-033 §17: RestaurantSettings.defaultCurrency, falling back to
-   * Branch.currency. Returns `null` (not a thrown exception) when neither
-   * is configured - the caller treats that as a silent skip, not a fail-closed
-   * error; see this method's caller for the full reasoning.
+   * ADR-033 §17 as amended by ADR-050: currency belongs to the branch, so the
+   * reservation's own Branch.currency wins, falling back to the legacy
+   * RestaurantSettings.defaultCurrency for branches that never set one.
+   * Returns `null` (not a thrown exception) when neither is configured - the
+   * caller treats that as a silent skip, not a fail-closed error; see this
+   * method's caller for the full reasoning.
    */
   private async resolveOperatingCurrency(
     restaurantId: string,
     branchId: string,
   ): Promise<string | null> {
-    const settings = await this.restaurantSettingsRepository.findByRestaurantId(
-      RestaurantId.create(restaurantId),
-    );
-    if (settings?.defaultCurrency) {
-      return settings.defaultCurrency;
-    }
     const branch = await this.branchRepository.findById(BranchId.create(branchId));
     if (branch?.currency) {
       return branch.currency;
     }
-    return null;
+    const settings = await this.restaurantSettingsRepository.findByRestaurantId(
+      RestaurantId.create(restaurantId),
+    );
+    return settings?.defaultCurrency || null;
   }
 }

@@ -1,3 +1,4 @@
+import { BranchNotFoundException } from '@modules/branches/domain/exceptions/branch-not-found.exception';
 import { Injectable, Inject } from '@nestjs/common';
 import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
@@ -81,7 +82,19 @@ export class AddRestaurantGalleryImageUseCase {
       throw new RestaurantNotFoundException();
     }
 
-    const existing = await this.galleryRepository.findAllByRestaurantId(restaurantId);
+    if (command.branchId !== undefined) {
+      const isBranch = await this.galleryRepository.isLiveBranchOf(restaurantId, command.branchId);
+      if (!isBranch) {
+        throw new BranchNotFoundException();
+      }
+    }
+
+    const branchId =
+      command.branchId ?? (await this.galleryRepository.findFirstLiveBranchId(restaurantId));
+    const existing = await this.galleryRepository.findAllByRestaurantId(
+      restaurantId,
+      branchId ?? undefined,
+    );
     if (existing.length >= GALLERY_MAX_IMAGES_PER_RESTAURANT) {
       throw new RestaurantGalleryLimitExceededException(GALLERY_MAX_IMAGES_PER_RESTAURANT);
     }
@@ -116,6 +129,7 @@ export class AddRestaurantGalleryImageUseCase {
     const galleryImage = RestaurantGalleryImage.create({
       id: this.idGenerator.generate(),
       restaurantId: restaurantId.value,
+      branchId,
       fileId,
       caption: command.caption,
       sortOrder: nextSortOrder,

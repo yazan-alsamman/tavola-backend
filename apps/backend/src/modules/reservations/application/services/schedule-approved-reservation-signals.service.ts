@@ -80,8 +80,9 @@ export class ScheduleApprovedReservationSignalsService {
   private async resolveMinutes(
     reservation: Reservation,
   ): Promise<{ reminderMinutesBefore: number; lateArrivalGraceMinutes: number }> {
-    const settings = await this.restaurantSettingsRepository.findByRestaurantId(
+    const settings = await this.restaurantSettingsRepository.findForBranch(
       reservation.restaurantId,
+      reservation.branchId,
     );
     return {
       reminderMinutesBefore: settings?.reservationReminderMinutesBefore ?? 60,

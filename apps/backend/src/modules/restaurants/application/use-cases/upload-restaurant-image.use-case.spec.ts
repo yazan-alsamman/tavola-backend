@@ -20,6 +20,8 @@ import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restau
 import { InMemoryFileRepository } from '../../../../../test/restaurants/support/in-memory-file-repository';
 import { FakeStoragePort } from '../../../../../test/restaurants/support/fake-storage-port';
 import { createSeededCuisineCategoryRepository } from '../../../../../test/restaurants/support/in-memory-cuisine-category.repository';
+import { InMemoryBranchCoverImageRepository } from '../../../../../test/restaurants/support/in-memory-branch-cover-image.repository';
+import { BranchNotFoundException } from '@modules/branches/domain/exceptions/branch-not-found.exception';
 
 const BUCKET = 'tavla-public';
 const FILE_ID = '66666666-6666-4666-8666-666666666666';
@@ -92,6 +94,7 @@ describe('UploadRestaurantImageUseCase', () => {
     const fileRepository = new InMemoryFileRepository();
     const storagePort = new FakeStoragePort();
     const auditLogWriter = new CollectingAuditLogWriter();
+    const branchCoverImageRepository = new InMemoryBranchCoverImageRepository();
     const useCase = new UploadRestaurantImageUseCase(
       restaurantRepository,
       fileRepository,
@@ -100,9 +103,11 @@ describe('UploadRestaurantImageUseCase', () => {
       new SequentialIdGenerator(ids),
       auditLogWriter,
       BUCKET,
+      branchCoverImageRepository,
     );
     return {
       useCase,
+      branchCoverImageRepository,
       restaurantRepository,
       restaurantSettingsRepository,
       fileRepository,
@@ -168,6 +173,81 @@ describe('UploadRestaurantImageUseCase', () => {
     );
     const previous = ctx.fileRepository.get(FILE_ID);
     expect(previous?.isDeleted()).toBe(true);
+  });
+
+  it('sets a branch cover without touching the restaurant cover (ADR-051)', async () => {
+    const ctx = createUseCase();
+    const restaurantId = await seedRestaurant(
+      ctx.restaurantRepository,
+      ctx.restaurantSettingsRepository,
+    );
+    const branchId = '88888888-8888-4888-8888-888888888888';
+    ctx.branchCoverImageRepository.branches.set(branchId, { restaurantId, coverImageId: null });
+
+    const result = await ctx.useCase.execute({
+      actorUserId: baseActor().userId,
+      organizationId: baseActor().organizationId,
+      restaurantId,
+      branchId,
+      slot: 'cover',
+      file: jpeg(),
+    });
+
+    expect(result.branchId).toBe(branchId);
+    expect(ctx.branchCoverImageRepository.branches.get(branchId)?.coverImageId).toBe(FILE_ID);
+    const saved = await ctx.restaurantRepository.findById(RestaurantId.create(restaurantId));
+    expect(saved?.coverImageId).toBeNull();
+    expect(ctx.storagePort.uploaded[0].objectKey).toBe(
+      `restaurants/${restaurantId}/branches/${branchId}/cover/${FILE_ID}.jpg`,
+    );
+    expect(ctx.auditLogWriter.entries[0]?.action).toBe('branch.cover.uploaded');
+  });
+
+  it('keeps a replaced cover file that another branch still shows', async () => {
+    const ctx = createUseCase([FILE_ID, REPLACEMENT_FILE_ID]);
+    const restaurantId = await seedRestaurant(
+      ctx.restaurantRepository,
+      ctx.restaurantSettingsRepository,
+    );
+    await ctx.useCase.execute({
+      actorUserId: baseActor().userId,
+      organizationId: baseActor().organizationId,
+      restaurantId,
+      slot: 'cover',
+      file: jpeg(),
+    });
+    const branchId = '88888888-8888-4888-8888-888888888888';
+    ctx.branchCoverImageRepository.branches.set(branchId, { restaurantId, coverImageId: FILE_ID });
+
+    await ctx.useCase.execute({
+      actorUserId: baseActor().userId,
+      organizationId: baseActor().organizationId,
+      restaurantId,
+      slot: 'cover',
+      file: jpeg(),
+    });
+
+    expect(ctx.storagePort.deleted).toHaveLength(0);
+    expect(ctx.fileRepository.get(FILE_ID)?.isDeleted()).toBe(false);
+  });
+
+  it('rejects a branch that does not belong to the restaurant', async () => {
+    const ctx = createUseCase();
+    const restaurantId = await seedRestaurant(
+      ctx.restaurantRepository,
+      ctx.restaurantSettingsRepository,
+    );
+    await expect(
+      ctx.useCase.execute({
+        actorUserId: baseActor().userId,
+        organizationId: baseActor().organizationId,
+        restaurantId,
+        branchId: '88888888-8888-4888-8888-888888888888',
+        slot: 'cover',
+        file: jpeg(),
+      }),
+    ).rejects.toBeInstanceOf(BranchNotFoundException);
+    expect(ctx.storagePort.uploaded).toHaveLength(0);
   });
 
   it('sets logoId without changing coverImageId', async () => {

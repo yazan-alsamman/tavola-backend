@@ -4,6 +4,7 @@ import {
   dayOfWeekFromCalendarDate,
   DayScheduleWindow,
   openWindowInstants,
+  zonedLocalToUtcIso,
 } from './reservation-time-slots.service';
 
 /** Shortest and longest reservation a guest or staff member can book. */
@@ -57,4 +58,41 @@ export function fitsOpeningHours(
         window.start.getTime() <= start.getTime() && end.getTime() <= window.end.getTime(),
     ),
   );
+}
+
+/**
+ * ADR-053: true when an online booking starting at `start` respects the
+ * branch's minimum notice.
+ */
+export function meetsMinLeadTime(start: Date, now: Date, minLeadTimeMinutes: number): boolean {
+  return start.getTime() - now.getTime() >= minLeadTimeMinutes * 60_000;
+}
+
+/**
+ * ADR-053: the last branch-local date a guest may book online, from the
+ * branch's own limit or the platform horizon, whichever is shorter.
+ */
+export function lastBookableDate(today: string, maxDaysAhead: number | null): string {
+  const days =
+    maxDaysAhead === null
+      ? MAX_ONLINE_BOOKING_ADVANCE_DAYS
+      : Math.min(maxDaysAhead, MAX_ONLINE_BOOKING_ADVANCE_DAYS);
+  return addCalendarDays(today, days);
+}
+
+/** ADR-053: the instants a branch-local calendar day starts and ends. */
+export function localDayBounds(date: string, timeZone: string): { start: Date; end: Date } {
+  return {
+    start: new Date(zonedLocalToUtcIso(date, '00:00', timeZone)),
+    end: new Date(zonedLocalToUtcIso(addCalendarDays(date, 1), '00:00', timeZone)),
+  };
+}
+
+/** ADR-053: true when adding `guests` keeps the day within the branch's cap. */
+export function fitsDailyGuestCap(
+  alreadyBooked: number,
+  guests: number,
+  dailyGuestCap: number | null,
+): boolean {
+  return dailyGuestCap === null || alreadyBooked + guests <= dailyGuestCap;
 }

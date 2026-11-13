@@ -7,6 +7,13 @@ export class RestaurantGalleryImageResponseDto {
   @ApiProperty({ example: '22222222-2222-4222-8222-222222222222' })
   restaurantId!: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'ADR-051: the branch the photo belongs to.',
+  })
+  branchId!: string | null;
+
   @ApiPropertyOptional({ example: 'Our dining room', nullable: true })
   caption!: string | null;
 

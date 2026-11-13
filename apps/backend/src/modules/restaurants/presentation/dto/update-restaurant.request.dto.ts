@@ -3,24 +3,54 @@ import { IsEnum, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength } from
 import { RestaurantStatus } from '../../domain/enums/restaurant.enums';
 
 /**
- * Full-replace semantics, matching `UpdateUserProfileRequestDto`'s
+ * ADR-052: at least one of `name`, `nameAr`, `nameEn` is required (checked
+ * in the use case). Full-replace semantics, matching `UpdateUserProfileRequestDto`'s
  * established convention - every field required except the ones already
  * nullable in the domain. `slug` and `averageRating` are deliberately absent
  * - see `Restaurant.updateProfile()`'s own doc comment for why (slug is
  * URL-stable once created; averageRating is computed, never client-settable).
  */
 export class UpdateRestaurantRequestDto {
-  @ApiProperty({ example: 'The Old Mill' })
+  @ApiPropertyOptional({
+    example: 'The Old Mill',
+    description:
+      'Legacy single name. Used only when neither nameAr nor nameEn is sent (ADR-052); then filed under the language of its script.',
+  })
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
-  name!: string;
+  name?: string;
+
+  @ApiPropertyOptional({ example: 'المطحنة القديمة', nullable: true, description: 'ADR-052' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  nameAr?: string | null;
+
+  @ApiPropertyOptional({ example: 'The Old Mill', nullable: true, description: 'ADR-052' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  nameEn?: string | null;
 
   @ApiPropertyOptional({ example: 'A cozy neighborhood restaurant.', nullable: true })
   @IsOptional()
   @IsString()
   @MaxLength(2000)
   description?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'ADR-052: Arabic description.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  descriptionAr?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'ADR-052: English description.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  descriptionEn?: string | null;
 
   @ApiPropertyOptional({
     example: 'Italian',

@@ -20,6 +20,26 @@ export class RestaurantResponseDto {
   @ApiPropertyOptional({ example: 'A cozy neighborhood restaurant.', nullable: true })
   description!: string | null;
 
+  @ApiPropertyOptional({
+    example: 'المطحنة القديمة',
+    nullable: true,
+    description: 'ADR-052: Arabic name. `name` is this, else nameEn (for app 1.0.2).',
+  })
+  nameAr!: string | null;
+
+  @ApiPropertyOptional({
+    example: 'The Old Mill',
+    nullable: true,
+    description: 'ADR-052: English name.',
+  })
+  nameEn!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'ADR-052: Arabic description.' })
+  descriptionAr!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'ADR-052: English description.' })
+  descriptionEn!: string | null;
+
   @ApiPropertyOptional({ example: 'Italian', nullable: true })
   cuisineType!: string | null;
 

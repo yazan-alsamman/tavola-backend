@@ -1,3 +1,8 @@
+import {
+  BranchFeature,
+  BranchSubscriptionStatus,
+  BranchVenueType,
+} from '@modules/branches/domain/enums/branch.enums';
 import { FloorPlanAreaFeature } from '@modules/tables/domain/enums/table.enums';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -37,6 +42,10 @@ interface NearbyRawRow {
   logoId: string | null;
   coverImageId: string | null;
   description: string | null;
+  nameAr: string | null;
+  nameEn: string | null;
+  descriptionAr: string | null;
+  descriptionEn: string | null;
   cuisineType: string | null;
   averageRating: number | null;
   ratingCount: number;
@@ -136,7 +145,8 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
     page: number,
     limit: number,
   ): Promise<DiscoveryListPage<BranchResult>> {
-    const where = { restaurantId, deletedAt: null };
+    // ADR-053: a paused branch is hidden from guests.
+    const where = { restaurantId, deletedAt: null, pausedAt: null };
     const [rows, total] = await Promise.all([
       this.prisma.branch.findMany({
         where,
@@ -151,7 +161,7 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
 
   async getBranchById(branchId: string, restaurantId: string): Promise<BranchResult | null> {
     const row = await this.prisma.branch.findFirst({
-      where: { id: branchId, restaurantId, deletedAt: null },
+      where: { id: branchId, restaurantId, deletedAt: null, pausedAt: null },
     });
     return row ? this.toBranchResult(row) : null;
   }
@@ -191,7 +201,12 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
       deletedAt: null,
     };
     if (filters.q) {
-      where.name = { contains: filters.q, mode: 'insensitive' };
+      // ADR-052: a guest may search in either language.
+      where.OR = [
+        { name: { contains: filters.q, mode: 'insensitive' } },
+        { nameAr: { contains: filters.q, mode: 'insensitive' } },
+        { nameEn: { contains: filters.q, mode: 'insensitive' } },
+      ];
     }
     if (filters.cuisineId) {
       where.cuisineCategories = { some: { cuisineCategoryId: filters.cuisineId } };
@@ -207,7 +222,11 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
     }
     if (filters.city) {
       where.branches = {
-        some: { city: { equals: filters.city, mode: 'insensitive' }, deletedAt: null },
+        some: {
+          city: { equals: filters.city, mode: 'insensitive' },
+          deletedAt: null,
+          pausedAt: null,
+        },
       };
     }
     return where;
@@ -267,7 +286,7 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
             )
           ) AS distance_km
         FROM branches b
-        WHERE b.deleted_at IS NULL
+        WHERE b.deleted_at IS NULL AND b.paused_at IS NULL
           AND b.latitude IS NOT NULL
           AND b.longitude IS NOT NULL
           AND b.latitude BETWEEN ${box.minLat}::float8 AND ${box.maxLat}::float8
@@ -292,6 +311,10 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
         r.logo_id AS "logoId",
         r.cover_image_id AS "coverImageId",
         r.description AS "description",
+        r.name_ar AS "nameAr",
+        r.name_en AS "nameEn",
+        r.description_ar AS "descriptionAr",
+        r.description_en AS "descriptionEn",
         r.cuisine_type AS "cuisineType",
         r.average_rating::float8 AS "averageRating",
         r.rating_count AS "ratingCount",
@@ -311,7 +334,10 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
   private buildNearbyFilterSql(filters: DiscoverableRestaurantFilters): Prisma.Sql {
     const fragments: Prisma.Sql[] = [];
     if (filters.q) {
-      fragments.push(Prisma.sql`AND r.name ILIKE ${`%${filters.q}%`}`);
+      const pattern = `%${filters.q}%`;
+      fragments.push(
+        Prisma.sql`AND (r.name ILIKE ${pattern} OR r.name_ar ILIKE ${pattern} OR r.name_en ILIKE ${pattern})`,
+      );
     }
     if (filters.cuisineId) {
       fragments.push(
@@ -342,6 +368,10 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
     logoId: string | null;
     coverImageId: string | null;
     description: string | null;
+    nameAr: string | null;
+    nameEn: string | null;
+    descriptionAr: string | null;
+    descriptionEn: string | null;
     cuisineType: string | null;
     averageRating: DecimalLike;
     ratingCount: number;
@@ -357,6 +387,10 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
       logoId: row.logoId,
       coverImageId: row.coverImageId,
       description: row.description,
+      nameAr: row.nameAr,
+      nameEn: row.nameEn,
+      descriptionAr: row.descriptionAr,
+      descriptionEn: row.descriptionEn,
       cuisineType: row.cuisineType,
       averageRating: toNumberOrNull(row.averageRating),
       ratingCount: row.ratingCount,
@@ -385,6 +419,11 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
     longitude: DecimalLike;
     countryCode: string;
     currency: string | null;
+    coverImageId: string | null;
+    venueType: string | null;
+    features: string[];
+    trialEndsAt: Date | null;
+    pausedAt: Date | null;
     referencePrice: DecimalLike;
     priceLevel: number | null;
     timezone: string;
@@ -402,6 +441,15 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
       longitude: toNumberOrNull(row.longitude),
       countryCode: row.countryCode,
       currency: row.currency,
+      coverImageId: row.coverImageId,
+      venueType: row.venueType as BranchVenueType | null,
+      features: row.features as BranchFeature[],
+      // Paused branches never reach this mapper (see the queries above).
+      subscriptionStatus:
+        row.trialEndsAt !== null && row.trialEndsAt.getTime() > Date.now()
+          ? BranchSubscriptionStatus.Trial
+          : BranchSubscriptionStatus.Active,
+      trialEndsAt: row.trialEndsAt,
       referencePrice: toNumberOrNull(row.referencePrice),
       priceLevel: row.priceLevel,
       timezone: row.timezone,

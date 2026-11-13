@@ -57,6 +57,8 @@ export class UpdateBranchUseCase {
         currency: command.currency,
         timezone: command.timezone,
         phone: command.phone,
+        venueType: command.venueType,
+        features: command.features,
       },
       now,
     );
@@ -77,6 +79,6 @@ export class UpdateBranchUseCase {
       ),
     );
 
-    return toBranchResult(branch);
+    return toBranchResult(branch, now);
   }
 }

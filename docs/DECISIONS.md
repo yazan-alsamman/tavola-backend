@@ -2803,3 +2803,108 @@ Broadcasting `MessageSent` to the branch or restaurant room was not chosen becau
 ### Consequences
 
 Owners and permitted staff see new messages in the notification count and list. The realtime hint for each row goes to the recipient's own `user:{id}` room, as for every other staff notification.
+
+## ADR-050
+
+### Title
+
+Working hours and currency belong to the branch
+
+### Status
+
+**Accepted — owner-approved 2026-11-13** (the owner asked for working hours, currency and timezone to be set per branch and for the restaurant-wide working hours to be removed from restaurant settings). Amends Phase 4.3, Phase 5.2 and ADR-033 §17.
+
+### Context
+
+A restaurant had a weekly `WorkingHours` default and each branch an optional `BranchWorkingHours` override, merged per weekday when bookings were checked. `RestaurantSettings` also carried `timezone` and `defaultCurrency`, while `Branch` already had its own required `timezone` and optional `currency`. Branches of one restaurant can keep different hours and sit in different countries, so a restaurant-wide value is the wrong owner.
+
+### Decision
+
+1. Bookings (`BranchOpeningHoursService`: time slots and reservation creation) read the branch's `BranchWorkingHours` alone. A weekday without a branch row is closed; a branch with no row at all keeps the existing "no hours configured" behaviour.
+2. Migration `20261113180000_branch_owned_hours_and_currency` copies each restaurant's `working_hours` rows onto every live branch for the weekdays that branch had no row of its own, so every branch keeps exactly the schedule it had, and sets `branches.currency` from `restaurant_settings.default_currency` where the branch had none. Data only and forward-only; no table or column is dropped.
+3. The Discovery restaurant responses keep their `workingHours` field for the customer app; it now carries the schedule of the restaurant's oldest live branch (`ListRestaurantWorkingHoursFromBranchesUseCase`, one query). Branch responses are unchanged.
+4. Customer acquisition fees resolve the reservation branch's `currency` first and fall back to `RestaurantSettings.defaultCurrency` (amends ADR-033 §17's order). The platform-admin manual record, which names no branch, uses the oldest branch with a currency, then the same fallback.
+5. `GET`/`PATCH /restaurants/:id/working-hours` and the `timezone`/`defaultCurrency` fields of restaurant settings stay in the API for older clients but are marked deprecated in Swagger and no longer drive any behaviour, except `defaultCurrency` as the fallback in 4. `RestaurantSettings.timezone` was never read by any feature; every time calculation already uses `Branch.timezone`.
+
+### Alternatives
+
+Dropping the `working_hours` table and the two settings columns was not chosen: the deployed dashboard and app builds still call those endpoints and fields, and the drop can follow once no client sends them. Deriving the restaurant-level Discovery hours from every branch was not chosen because branches can differ; the oldest branch is the restaurant's original location.
+
+### Consequences
+
+Owners set hours, currency and timezone on each branch in the dashboard's Branches page; restaurant settings no longer show them. A new branch starts with no hours until the owner sets them.
+
+
+---
+
+## ADR-051
+
+### Title
+
+Reservation rules, photos and cover belong to the branch
+
+### Status
+
+**Accepted — owner-approved 2026-11-13** (the owner asked for reservation rules and photos to be set per branch, then confirmed in the Branches/Settings sheets that the restaurant keeps its name, description, cuisine type and categories while the cover and photos move to the branch). Extends ADR-050.
+
+### Context
+
+`RestaurantSettings` held one set of reservation rules for every branch, and `RestaurantGallery` and `Restaurant.coverImageId` one set of photos and one cover. Branches of one restaurant can differ in size, service style and look.
+
+### Decision
+
+1. New `BranchSettings` table (one row per branch: interval, max guests, cancellation window, pending timeout, default duration, auto approval, reminder minutes, late-arrival grace). `RestaurantSettingsRepository.findForBranch(restaurantId, branchId)` returns the restaurant settings with the branch's rule fields applied; every booking path (create, approve, cancel, reschedule, time slots, availability search, approved-reservation signals, waitlist recheck/promote) reads the branch's rules. `GET`/`PATCH /restaurants/:id/branches/:branchId/settings` (Owner/Admin). Migration `20261113190000_branch_settings_and_gallery` seeds a row per live branch from the restaurant settings.
+2. `RestaurantGallery.branchId`. Listing, adding and reordering take an optional `branchId`; without it the restaurant's oldest live branch is used, which is what app 1.0.2 reads. The same migration copies each existing photo onto every other live branch, sharing the stored file; a file is deleted only with its last gallery row.
+3. `Branch.coverImageId`. `POST /restaurants/:id/cover` takes an optional multipart `branchId`; with it the upload sets that branch's cover. A replaced cover file is deleted only once no restaurant or branch still points at it. Discovery branch responses carry `coverImageUrl`: the branch cover, else the restaurant cover. Migration `20261113200000_branch_cover_image` starts every live branch on the restaurant's cover file.
+4. The restaurant keeps its name, description, cuisine type and cuisine/occasion categories (brand-level, see ADR-052).
+
+### Consequences
+
+The dashboard edits rules on the Branches page and photos/cover on the Photos page for the selected branch. Restaurant-level rules remain only as the default a new branch starts from.
+
+---
+
+## ADR-052
+
+### Title
+
+Restaurant name and description in Arabic and English
+
+### Status
+
+**Accepted — owner-approved 2026-11-13** (Settings sheet: "two fields, Arabic and English, and the app shows the user's language").
+
+### Decision
+
+1. `Restaurant.nameAr`/`nameEn`/`descriptionAr`/`descriptionEn` (nullable). At least one name is required. `name`/`description`, read by app 1.0.2, are the Arabic text, else the English one (same rule as `MenuItem`, ADR-046).
+2. `PATCH /restaurants/:id` accepts the four fields; a client that sends only the old `name`/`description` keeps working: an unchanged text keeps the stored translations, a new one is filed under the language of its script. Creation files the single name the same way.
+3. Restaurant responses (management and Discovery) carry the four fields. Discovery search `q` matches any of the three names.
+4. Migration `20261113210000_restaurant_bilingual_profile` files existing names and descriptions by script.
+
+### Consequences
+
+A newer app build picks `nameAr`/`nameEn` by the user's language; app 1.0.2 keeps showing `name`.
+
+---
+
+## ADR-053
+
+### Title
+
+Venue identity, temporary closures, extra booking limits, per-branch plan state and the Front Desk role
+
+### Status
+
+**Accepted — owner-approved 2026-11-14** (Branches and Settings sheets, "proposed additions"; the map search item is out of scope).
+
+### Decision
+
+1. **Venue identity.** `Branch.venueType` (`Restaurant`, `Cafe`, `Patisserie`, `Brunch`, nullable) and `Branch.features` (`Shisha`, `OutdoorSeating`, `Heating`, `Parking`, `FamilyFriendly`, `PrivateRoom`). Set on branch create/update (omitted on update keeps the stored value) and returned by the management and Discovery branch responses.
+2. **Temporary closures.** `BranchClosure` rows (`startDate`..`endDate`, inclusive branch-local dates, at most 366 days, optional reason). `GET/POST /restaurants/:id/branches/:branchId/closures`, `DELETE .../closures/:closureId` (Owner/Admin). Online time slots return `Closed` and online bookings are refused on a closed date; staff bookings and existing reservations are unaffected, same as opening hours.
+3. **Extra booking limits** on the branch rules (`branch_settings`, mirrored on `restaurant_settings` so the entity keeps one shape): `autoApprovalMaxGuests` (auto-approval only up to this party size, also for waitlist promotion), `minLeadTimeMinutes`, `maxDaysAhead` (1-90, null = the platform 90 days) and `dailyGuestCap` (Pending + Approved guests starting that branch-local day). Online only. Omitted on PATCH keeps the stored value; null removes the limit.
+4. **Per-branch plan state.** `Branch.trialEndsAt` (new branches get 30 days) and `Branch.pausedAt`. `subscriptionStatus` is derived: `Paused`, else `Trial` until `trialEndsAt`, else `Active`. `POST .../pause` and `.../resume` (Owner/Admin). A paused branch is hidden from Discovery and takes no online bookings. Billing stays with the organization subscription; there is no per-branch price yet.
+5. **Front Desk role** (`front-desk`, seeded): `reservations:create`, `complete`, `noshow`, `tableready`, `waitlist`, plus `reservations:today-only`, which makes `GET /restaurants/:id/branches/:branchId/reservations` return only the branch's current day whatever range is asked.
+
+### Consequences
+
+Additive migration `20261114000000_branch_identity_closures_and_booking_limits`; existing branches have no trial, no closures and no extra limits, so behaviour is unchanged until the owner sets them. The Front Desk role and permission come from `prisma db seed`, which must run after deploy. App 1.0.2 ignores the new response fields; a closed or paused branch reads as no available slots.

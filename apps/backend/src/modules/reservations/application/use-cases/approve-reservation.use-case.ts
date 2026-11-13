@@ -108,8 +108,9 @@ export class ApproveReservationUseCase {
     // race-safe gate (ADR-013).
     const approved = existing.approve(operatorId, now);
 
-    const settings = await this.restaurantSettingsRepository.findByRestaurantId(
+    const settings = await this.restaurantSettingsRepository.findForBranch(
       existing.restaurantId,
+      existing.branchId,
     );
     const reservationIntervalMinutes = settings?.reservationIntervalMinutes ?? 30;
     const timeSlotBucket = ReservationAvailabilityService.deriveTimeSlotBucket(

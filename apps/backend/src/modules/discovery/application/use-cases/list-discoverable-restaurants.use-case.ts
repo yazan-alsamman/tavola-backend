@@ -3,7 +3,7 @@ import { RestaurantResult } from '@modules/restaurants/application/dto/restauran
 import { WorkingHoursEntryResult } from '@modules/restaurants/application/dto/working-hours.result';
 import { ListRestaurantIdsWithActiveOfferUseCase } from '@modules/offers/application/use-cases/list-restaurant-ids-with-active-offer.use-case';
 import { ListRestaurantIdsWithMenuUseCase } from '@modules/menus/application/use-cases/list-restaurant-ids-with-menu.use-case';
-import { ListWorkingHoursByRestaurantIdsUseCase } from '@modules/restaurants/application/use-cases/list-working-hours-by-restaurant-ids.use-case';
+import { ListRestaurantWorkingHoursFromBranchesUseCase } from '@modules/branches/application/use-cases/list-restaurant-working-hours-from-branches.use-case';
 import {
   DiscoverableRestaurantSort,
   DiscoveryReaderPort,
@@ -56,7 +56,7 @@ export class ListDiscoverableRestaurantsUseCase {
     @Inject(DISCOVERY_READER) private readonly discoveryReader: DiscoveryReaderPort,
     private readonly listRestaurantIdsWithActiveOfferUseCase: ListRestaurantIdsWithActiveOfferUseCase,
     private readonly listRestaurantIdsWithMenuUseCase: ListRestaurantIdsWithMenuUseCase,
-    private readonly listWorkingHoursByRestaurantIdsUseCase: ListWorkingHoursByRestaurantIdsUseCase,
+    private readonly listWorkingHoursByRestaurantIdsUseCase: ListRestaurantWorkingHoursFromBranchesUseCase,
     private readonly restaurantCoverImageUrlResolver: RestaurantCoverImageUrlResolver,
   ) {}
 

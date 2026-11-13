@@ -15,6 +15,14 @@ export interface RestaurantSettingsProps {
   defaultCurrency: string | null;
   reservationReminderMinutesBefore: number;
   lateArrivalGraceMinutes: number;
+  /** ADR-053: auto-approval stops above this party size; null means any size. */
+  autoApprovalMaxGuests?: number | null;
+  /** ADR-053: an online booking must start at least this far from now. */
+  minLeadTimeMinutes?: number;
+  /** ADR-053: furthest day ahead to book online; null means the platform limit. */
+  maxDaysAhead?: number | null;
+  /** ADR-053: most guests accepted online on one day; null means no cap. */
+  dailyGuestCap?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -111,6 +119,31 @@ export class RestaurantSettings extends Entity<RestaurantSettingsProps> {
     return this.props.lateArrivalGraceMinutes;
   }
 
+  get autoApprovalMaxGuests(): number | null {
+    return this.props.autoApprovalMaxGuests ?? null;
+  }
+
+  get minLeadTimeMinutes(): number {
+    return this.props.minLeadTimeMinutes ?? 0;
+  }
+
+  get maxDaysAhead(): number | null {
+    return this.props.maxDaysAhead ?? null;
+  }
+
+  get dailyGuestCap(): number | null {
+    return this.props.dailyGuestCap ?? null;
+  }
+
+  /** ADR-053: true when a party of this size is approved without staff review. */
+  autoApprovesParty(guests: number): boolean {
+    if (!this.props.autoApproval) {
+      return false;
+    }
+    const limit = this.autoApprovalMaxGuests;
+    return limit === null || guests <= limit;
+  }
+
   get createdAt(): Date {
     return new Date(this.props.createdAt.getTime());
   }
@@ -133,14 +166,20 @@ export class RestaurantSettings extends Entity<RestaurantSettingsProps> {
       defaultCurrency: string | null;
       reservationReminderMinutesBefore: number;
       lateArrivalGraceMinutes: number;
+      /** ADR-053: each omitted limit keeps its stored value. */
+      autoApprovalMaxGuests?: number | null;
+      minLeadTimeMinutes?: number;
+      maxDaysAhead?: number | null;
+      dailyGuestCap?: number | null;
     },
     at: Date,
   ): RestaurantSettings {
-    const next = {
-      ...this.props,
-      ...props,
-      updatedAt: at,
-    };
+    const next: RestaurantSettingsProps = { ...this.props, updatedAt: at };
+    for (const [key, value] of Object.entries(props)) {
+      if (value !== undefined) {
+        (next as unknown as Record<string, unknown>)[key] = value;
+      }
+    }
     validate(next);
     return RestaurantSettings.reconstitute(next);
   }
@@ -199,5 +238,35 @@ function validate(props: RestaurantSettingsProps): void {
     throw new InvalidRestaurantSettingsException(
       'lateArrivalGraceMinutes must be between 1 and 1440.',
     );
+  }
+  validateBookingLimits(props);
+}
+
+/** Furthest a branch may let guests book online (ADR-053), matching the platform horizon. */
+export const MAX_DAYS_AHEAD_LIMIT = 90;
+
+function validateBookingLimits(props: RestaurantSettingsProps): void {
+  const autoMax = props.autoApprovalMaxGuests ?? null;
+  if (autoMax !== null && (!Number.isInteger(autoMax) || autoMax < 1 || autoMax > 100)) {
+    throw new InvalidRestaurantSettingsException(
+      'autoApprovalMaxGuests must be between 1 and 100.',
+    );
+  }
+  const lead = props.minLeadTimeMinutes ?? 0;
+  if (!Number.isInteger(lead) || lead < 0 || lead > 10080) {
+    throw new InvalidRestaurantSettingsException('minLeadTimeMinutes must be between 0 and 10080.');
+  }
+  const daysAhead = props.maxDaysAhead ?? null;
+  if (
+    daysAhead !== null &&
+    (!Number.isInteger(daysAhead) || daysAhead < 1 || daysAhead > MAX_DAYS_AHEAD_LIMIT)
+  ) {
+    throw new InvalidRestaurantSettingsException(
+      `maxDaysAhead must be between 1 and ${MAX_DAYS_AHEAD_LIMIT}.`,
+    );
+  }
+  const cap = props.dailyGuestCap ?? null;
+  if (cap !== null && (!Number.isInteger(cap) || cap < 1 || cap > 100000)) {
+    throw new InvalidRestaurantSettingsException('dailyGuestCap must be between 1 and 100000.');
   }
 }

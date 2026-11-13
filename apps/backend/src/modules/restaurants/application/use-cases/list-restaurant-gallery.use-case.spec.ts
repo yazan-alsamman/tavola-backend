@@ -1,3 +1,4 @@
+import { BranchNotFoundException } from '@modules/branches/domain/exceptions/branch-not-found.exception';
 import { ListRestaurantGalleryUseCase } from './list-restaurant-gallery.use-case';
 import { CreateRestaurantUseCase } from './create-restaurant.use-case';
 import { RestaurantNotFoundException } from '../../domain/exceptions/restaurant-not-found.exception';
@@ -133,6 +134,7 @@ describe('ListRestaurantGalleryUseCase', () => {
       RestaurantGalleryImage.create({
         id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
         restaurantId,
+        branchId: null,
         fileId: fileB.fileId.value,
         caption: 'Second',
         sortOrder: 1,
@@ -144,6 +146,7 @@ describe('ListRestaurantGalleryUseCase', () => {
       RestaurantGalleryImage.create({
         id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
         restaurantId,
+        branchId: null,
         fileId: fileA.fileId.value,
         caption: 'First',
         sortOrder: 0,
@@ -176,6 +179,7 @@ describe('ListRestaurantGalleryUseCase', () => {
       RestaurantGalleryImage.create({
         id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
         restaurantId,
+        branchId: null,
         fileId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
         caption: null,
         sortOrder: 0,
@@ -195,6 +199,48 @@ describe('ListRestaurantGalleryUseCase', () => {
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0].imageUrl).toBeNull();
+  });
+
+  it("lists one branch's photos, and the oldest branch's when no branch is named (ADR-051)", async () => {
+    const restaurantRepository = new InMemoryRestaurantRepository();
+    const restaurantSettingsRepository = new InMemoryRestaurantSettingsRepository();
+    const galleryRepository = new InMemoryRestaurantGalleryRepository();
+    const restaurantId = await seedRestaurant(restaurantRepository, restaurantSettingsRepository);
+    const firstBranch = '99999999-9999-4999-8999-999999999991';
+    const secondBranch = '99999999-9999-4999-8999-999999999992';
+    galleryRepository.branchesByRestaurant.set(restaurantId, [firstBranch, secondBranch]);
+    for (const [id, branchId] of [
+      ['eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1', firstBranch],
+      ['eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2', secondBranch],
+    ]) {
+      await galleryRepository.add(
+        RestaurantGalleryImage.create({
+          id,
+          restaurantId,
+          branchId,
+          fileId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          caption: null,
+          sortOrder: 0,
+          createdAt: fixedNow,
+          updatedAt: fixedNow,
+        }),
+      );
+    }
+    const useCase = new ListRestaurantGalleryUseCase(
+      restaurantRepository,
+      galleryRepository,
+      new InMemoryFileRepository(),
+      new FakeStoragePort(),
+    );
+
+    const second = await useCase.execute({ restaurantId, branchId: secondBranch });
+    const unnamed = await useCase.execute({ restaurantId });
+
+    expect(second.items.map((item) => item.branchId)).toEqual([secondBranch]);
+    expect(unnamed.items.map((item) => item.branchId)).toEqual([firstBranch]);
+    await expect(
+      useCase.execute({ restaurantId, branchId: '99999999-9999-4999-8999-999999999999' }),
+    ).rejects.toBeInstanceOf(BranchNotFoundException);
   });
 
   it('throws RestaurantNotFoundException when the restaurant does not exist', async () => {

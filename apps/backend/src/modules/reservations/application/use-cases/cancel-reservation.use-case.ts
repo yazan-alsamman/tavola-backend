@@ -111,8 +111,9 @@ export class CancelReservationUseCase {
     const sourceStatus = existing.status;
     const cancelled = existing.cancel(now);
 
-    const settings = await this.restaurantSettingsRepository.findByRestaurantId(
+    const settings = await this.restaurantSettingsRepository.findForBranch(
       existing.restaurantId,
+      existing.branchId,
     );
     const cancellationWindowMinutes = settings?.cancellationWindowMinutes ?? 60;
     const withinCancellationWindow = CancellationWindowService.isWithinWindow(

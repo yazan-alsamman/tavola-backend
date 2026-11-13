@@ -132,7 +132,11 @@ describe('DeleteBranchUseCase', () => {
       eventPublisher,
       new ImmediateUnitOfWork(),
     );
-    const getUseCase = new GetBranchUseCase(branchRepository, restaurantRepository);
+    const getUseCase = new GetBranchUseCase(
+      branchRepository,
+      restaurantRepository,
+      new FixedClock(new Date('2026-08-01T00:00:00.000Z')),
+    );
     return { useCase, getUseCase, eventPublisher, created, floorPlanRepository, tableRepository };
   }
 

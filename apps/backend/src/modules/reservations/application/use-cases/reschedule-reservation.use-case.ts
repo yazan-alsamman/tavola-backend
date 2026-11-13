@@ -116,8 +116,9 @@ export class RescheduleReservationUseCase {
       );
     }
 
-    const settings = await this.restaurantSettingsRepository.findByRestaurantId(
+    const settings = await this.restaurantSettingsRepository.findForBranch(
       existing.restaurantId,
+      existing.branchId,
     );
     const cancellationWindowMinutes = settings?.cancellationWindowMinutes ?? 60;
     const reservationIntervalMinutes = settings?.reservationIntervalMinutes ?? 30;

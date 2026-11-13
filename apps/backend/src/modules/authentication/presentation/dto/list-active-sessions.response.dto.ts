@@ -25,6 +25,21 @@ export class ActiveSessionResponseDto {
 
   @ApiProperty({ nullable: true, example: '203.0.113.10' })
   ipAddress!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    example: 'Chrome',
+    description:
+      'Browser parsed from the User-Agent at sign-in; a product name, never the raw header.',
+  })
+  browser!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    example: 'Windows',
+    description: 'Operating system parsed from the User-Agent at sign-in.',
+  })
+  operatingSystem!: string | null;
 }
 
 export class ListActiveSessionsResponseDto {

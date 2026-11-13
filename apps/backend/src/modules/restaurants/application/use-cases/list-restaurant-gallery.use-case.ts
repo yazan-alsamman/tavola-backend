@@ -1,3 +1,4 @@
+import { BranchNotFoundException } from '@modules/branches/domain/exceptions/branch-not-found.exception';
 import { Injectable, Inject } from '@nestjs/common';
 import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import {
@@ -42,7 +43,17 @@ export class ListRestaurantGalleryUseCase {
       throw new RestaurantNotFoundException();
     }
 
-    const images = await this.galleryRepository.findAllByRestaurantId(restaurantId);
+    if (command.branchId !== undefined) {
+      const isBranch = await this.galleryRepository.isLiveBranchOf(restaurantId, command.branchId);
+      if (!isBranch) {
+        throw new BranchNotFoundException();
+      }
+    }
+
+    const images = await this.galleryRepository.findAllByRestaurantId(
+      restaurantId,
+      command.branchId,
+    );
     const sorted = [...images].sort((a, b) => a.sortOrder - b.sortOrder);
 
     // Bounded, disclosed N+1: at most GALLERY_MAX_IMAGES_PER_RESTAURANT (20)

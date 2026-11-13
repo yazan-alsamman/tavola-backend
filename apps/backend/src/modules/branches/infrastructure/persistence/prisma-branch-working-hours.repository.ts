@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaContext } from '@infrastructure/prisma/prisma-context.service';
-import { BranchId } from '@shared/domain/value-objects/identifiers.vo';
+import { BranchId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import { BranchWorkingHours } from '../../domain/entities/branch-working-hours.entity';
 import { BranchWorkingHoursRepository } from '../../domain/repositories/branch-working-hours.repository';
 import { BranchWorkingHoursPrismaMapper } from './branch-working-hours.prisma-mapper';
@@ -41,6 +41,33 @@ export class PrismaBranchWorkingHoursRepository implements BranchWorkingHoursRep
       orderBy: [{ branchId: 'asc' }, { dayOfWeek: 'asc' }],
     });
     return rows.map(BranchWorkingHoursPrismaMapper.toDomain);
+  }
+
+  /**
+   * `distinct` keeps the first branch per restaurant in `orderBy` order, so
+   * ordering by `createdAt` within each restaurant picks its oldest branch.
+   */
+  async findForFirstBranchOfRestaurants(
+    restaurantIds: RestaurantId[],
+  ): Promise<Map<string, BranchWorkingHours[]>> {
+    if (restaurantIds.length === 0) {
+      return new Map();
+    }
+    const branches = await this.prismaContext.client.branch.findMany({
+      where: { restaurantId: { in: restaurantIds.map((id) => id.value) }, deletedAt: null },
+      orderBy: [{ restaurantId: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+      distinct: ['restaurantId'],
+      select: {
+        restaurantId: true,
+        workingHours: { orderBy: { dayOfWeek: 'asc' } },
+      },
+    });
+    return new Map(
+      branches.map((branch) => [
+        branch.restaurantId,
+        branch.workingHours.map(BranchWorkingHoursPrismaMapper.toDomain),
+      ]),
+    );
   }
 
   /**

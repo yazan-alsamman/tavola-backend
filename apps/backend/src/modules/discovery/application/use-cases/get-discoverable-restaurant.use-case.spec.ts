@@ -1,15 +1,17 @@
 import { GetDiscoverableRestaurantUseCase } from './get-discoverable-restaurant.use-case';
 import { RestaurantNotFoundException } from '@modules/restaurants/domain/exceptions/restaurant-not-found.exception';
-import { ListWorkingHoursByRestaurantIdsUseCase } from '@modules/restaurants/application/use-cases/list-working-hours-by-restaurant-ids.use-case';
-import { WorkingHours } from '@modules/restaurants/domain/entities/working-hours.entity';
-import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
+import { ListRestaurantWorkingHoursFromBranchesUseCase } from '@modules/branches/application/use-cases/list-restaurant-working-hours-from-branches.use-case';
+import { BranchWorkingHours } from '@modules/branches/domain/entities/branch-working-hours.entity';
+import { BranchId } from '@shared/domain/value-objects/identifiers.vo';
 import { FakeDiscoveryReader } from '../../../../../test/discovery/support/fake-discovery-reader';
-import { InMemoryWorkingHoursRepository } from '../../../../../test/restaurants/support/in-memory-working-hours.repository';
+import { InMemoryBranchWorkingHoursRepository } from '../../../../../test/branches/support/in-memory-branch-working-hours.repository';
 import { RestaurantResult } from '@modules/restaurants/application/dto/restaurant.result';
 import { FileRecord } from '@modules/files/domain/entities/file-record.entity';
 import { RestaurantCoverImageUrlResolver } from '../services/restaurant-cover-image-url.resolver';
 import { InMemoryFileRepository } from '../../../../../test/restaurants/support/in-memory-file-repository';
 import { FakeStoragePort } from '../../../../../test/restaurants/support/fake-storage-port';
+
+const firstBranchId = '44444444-4444-4444-8444-444444444441';
 
 const restaurantId = '11111111-1111-4111-8111-111111111111';
 
@@ -22,6 +24,10 @@ function restaurant(): RestaurantResult {
     coverImageId: null,
     description: 'Cozy spot.',
     cuisineType: 'Italian',
+    nameAr: null,
+    nameEn: null,
+    descriptionAr: null,
+    descriptionEn: null,
     averageRating: 4.5,
     ratingCount: 0,
     priceLevel: 2,
@@ -47,8 +53,8 @@ function coverFile(id: string): FileRecord {
 }
 
 function buildUseCase(reader: FakeDiscoveryReader) {
-  const workingHoursRepository = new InMemoryWorkingHoursRepository();
-  const listWorkingHoursByRestaurantIdsUseCase = new ListWorkingHoursByRestaurantIdsUseCase(
+  const workingHoursRepository = new InMemoryBranchWorkingHoursRepository();
+  const listWorkingHoursByRestaurantIdsUseCase = new ListRestaurantWorkingHoursFromBranchesUseCase(
     workingHoursRepository,
   );
   const fileRepository = new InMemoryFileRepository();
@@ -81,15 +87,16 @@ describe('GetDiscoverableRestaurantUseCase', () => {
     );
   });
 
-  it('includes workingHours from the Restaurant-level default schedule (Public Working Hours)', async () => {
+  it('includes workingHours from the oldest branch schedule (ADR-050)', async () => {
     const reader = new FakeDiscoveryReader();
     reader.restaurants = [restaurant()];
 
     const { useCase, workingHoursRepository } = buildUseCase(reader);
-    await workingHoursRepository.replaceAllForRestaurant(RestaurantId.create(restaurantId), [
-      WorkingHours.create({
+    workingHoursRepository.registerBranch(restaurantId, firstBranchId);
+    await workingHoursRepository.replaceAllForBranch(BranchId.create(firstBranchId), [
+      BranchWorkingHours.create({
         id: '33333333-3333-4333-8333-333333333331',
-        restaurantId,
+        branchId: firstBranchId,
         dayOfWeek: 2,
         openingTime: '09:00',
         closingTime: '17:00',

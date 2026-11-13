@@ -1,3 +1,4 @@
+import { BranchNotFoundException } from '@modules/branches/domain/exceptions/branch-not-found.exception';
 import { Injectable, Inject } from '@nestjs/common';
 import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import {
@@ -42,7 +43,17 @@ export class ReorderRestaurantGalleryUseCase {
       throw new RestaurantNotFoundException();
     }
 
-    const images = await this.galleryRepository.findAllByRestaurantId(restaurantId);
+    if (command.branchId !== undefined) {
+      const isBranch = await this.galleryRepository.isLiveBranchOf(restaurantId, command.branchId);
+      if (!isBranch) {
+        throw new BranchNotFoundException();
+      }
+    }
+
+    const images = await this.galleryRepository.findAllByRestaurantId(
+      restaurantId,
+      command.branchId,
+    );
     const byId = new Map(images.map((image) => [image.galleryImageId, image]));
     const requested = new Set(command.galleryItemIds);
     if (

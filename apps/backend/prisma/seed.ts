@@ -310,6 +310,10 @@ const SYSTEM_CONFIGURATION: Array<{
 
 const PERMISSIONS: Array<{ slug: string; description: string }> = [
   {
+    slug: 'reservations:today-only',
+    description: "Limits reservation lists to the branch's current day (Front Desk)",
+  },
+  {
     slug: 'organization:members:manage',
     description: 'Invite, remove, and change organization member roles',
   },
@@ -425,6 +429,20 @@ const ROLES: Array<{
       'reservations:tableready',
       'reservations:waitlist',
       'conversations:manage',
+    ],
+  },
+  {
+    name: 'Front Desk',
+    slug: 'front-desk',
+    description: "Today's reservations only, on a tablet at the entrance",
+    scope: RoleScope.Restaurant,
+    permissionSlugs: [
+      'reservations:today-only',
+      'reservations:create',
+      'reservations:complete',
+      'reservations:noshow',
+      'reservations:tableready',
+      'reservations:waitlist',
     ],
   },
   {

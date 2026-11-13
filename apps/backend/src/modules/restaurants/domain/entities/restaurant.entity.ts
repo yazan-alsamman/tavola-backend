@@ -2,6 +2,7 @@ import { Entity } from '@shared/domain/base/entity.base';
 import { RestaurantId, OrganizationId } from '@shared/domain/value-objects/identifiers.vo';
 import { RestaurantSlug } from '@shared/domain/value-objects/restaurant-slug.vo';
 import { RestaurantStatus } from '../enums/restaurant.enums';
+import { RestaurantTexts, resolveRestaurantTexts } from '../services/restaurant-texts';
 
 export interface RestaurantProps {
   id: string;
@@ -11,6 +12,11 @@ export interface RestaurantProps {
   logoId: string | null;
   coverImageId: string | null;
   description: string | null;
+  /** ADR-052: the name and description in each language. `name`/`description` mirror them for app 1.0.2. */
+  nameAr?: string | null;
+  nameEn?: string | null;
+  descriptionAr?: string | null;
+  descriptionEn?: string | null;
   cuisineType: string | null;
   /** Public rating: average review score over the last 6 months, null below 5 reviews (ADR-045). */
   averageRating: number | null;
@@ -30,7 +36,10 @@ export class Restaurant extends Entity<RestaurantProps> {
 
   static create(props: RestaurantProps): Restaurant {
     RestaurantSlug.create(props.slug);
-    return new Restaurant({ ...props });
+    // A new restaurant created with only the single name/description gets
+    // them filed under the language of their script (ADR-052).
+    const texts = resolveRestaurantTexts(props);
+    return new Restaurant({ ...props, ...(texts ?? {}) });
   }
 
   static reconstitute(props: RestaurantProps): Restaurant {
@@ -63,6 +72,22 @@ export class Restaurant extends Entity<RestaurantProps> {
 
   get description(): string | null {
     return this.props.description;
+  }
+
+  get nameAr(): string | null {
+    return this.props.nameAr ?? null;
+  }
+
+  get nameEn(): string | null {
+    return this.props.nameEn ?? null;
+  }
+
+  get descriptionAr(): string | null {
+    return this.props.descriptionAr ?? null;
+  }
+
+  get descriptionEn(): string | null {
+    return this.props.descriptionEn ?? null;
   }
 
   get cuisineType(): string | null {
@@ -127,9 +152,7 @@ export class Restaurant extends Entity<RestaurantProps> {
   }
 
   updateProfile(
-    props: {
-      name: string;
-      description: string | null;
+    props: RestaurantTexts & {
       cuisineType: string | null;
     },
     at: Date,
@@ -138,7 +161,11 @@ export class Restaurant extends Entity<RestaurantProps> {
     return Restaurant.reconstitute({
       ...this.props,
       name: props.name,
+      nameAr: props.nameAr,
+      nameEn: props.nameEn,
       description: props.description,
+      descriptionAr: props.descriptionAr,
+      descriptionEn: props.descriptionEn,
       cuisineType: props.cuisineType,
       updatedAt: at,
     });

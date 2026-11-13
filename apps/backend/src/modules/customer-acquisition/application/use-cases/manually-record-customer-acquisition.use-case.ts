@@ -14,6 +14,10 @@ import {
   PlatformAdminRestaurantLookupReaderPort,
   PLATFORM_ADMIN_RESTAURANT_LOOKUP_READER,
 } from '@modules/restaurants/application/ports/platform-admin-restaurant-lookup-reader.port';
+import {
+  BranchRepository,
+  BRANCH_REPOSITORY,
+} from '@modules/branches/domain/repositories/branch.repository';
 import { RestaurantNotFoundException } from '@modules/restaurants/domain/exceptions/restaurant-not-found.exception';
 import {
   RestaurantSettingsRepository,
@@ -54,6 +58,7 @@ export class ManuallyRecordCustomerAcquisitionUseCase {
     private readonly pricingRuleRepository: AcquisitionPricingRuleRepository,
     @Inject(RESTAURANT_SETTINGS_REPOSITORY)
     private readonly restaurantSettingsRepository: RestaurantSettingsRepository,
+    @Inject(BRANCH_REPOSITORY) private readonly branchRepository: BranchRepository,
     @Inject(PLATFORM_ADMIN_RESTAURANT_LOOKUP_READER)
     private readonly restaurantLookupReader: PlatformAdminRestaurantLookupReaderPort,
     @Inject(TENANT_CONTEXT_PORT) private readonly tenantContext: TenantContextPort,
@@ -85,13 +90,10 @@ export class ManuallyRecordCustomerAcquisitionUseCase {
       },
       async () => {
         const now = this.clock.now();
-        const settings = await this.restaurantSettingsRepository.findByRestaurantId(
-          RestaurantId.create(command.restaurantId),
-        );
-        const currency = settings?.defaultCurrency;
-        if (!currency) {
+        const currency = await this.resolveOperatingCurrency(command.restaurantId);
+        if (currency === null) {
           throw new NoMatchingPricingRuleException(
-            `Restaurant "${command.restaurantId}" has no configured RestaurantSettings.defaultCurrency - cannot resolve a pricing rule.`,
+            `Restaurant "${command.restaurantId}" has no branch currency or RestaurantSettings.defaultCurrency - cannot resolve a pricing rule.`,
           );
         }
 
@@ -159,5 +161,23 @@ export class ManuallyRecordCustomerAcquisitionUseCase {
         return toCustomerAcquisitionResult(acquisition);
       },
     );
+  }
+
+  /**
+   * ADR-050: currency belongs to branches. A manual record names no branch,
+   * so the first branch of the restaurant with a currency wins, falling back
+   * to the legacy RestaurantSettings.defaultCurrency.
+   */
+  private async resolveOperatingCurrency(restaurantId: string): Promise<string | null> {
+    const id = RestaurantId.create(restaurantId);
+    const branches = await this.branchRepository.findManyByRestaurantId(id, 1, 100);
+    const branchCurrency = [...branches.items]
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .find((branch) => branch.currency)?.currency;
+    if (branchCurrency) {
+      return branchCurrency;
+    }
+    const settings = await this.restaurantSettingsRepository.findByRestaurantId(id);
+    return settings?.defaultCurrency || null;
   }
 }

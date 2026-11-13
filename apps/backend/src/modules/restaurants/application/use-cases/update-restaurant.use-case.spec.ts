@@ -1,3 +1,4 @@
+import { InvalidRestaurantProfileException } from '../../domain/exceptions/invalid-restaurant-profile.exception';
 import { UpdateRestaurantUseCase } from './update-restaurant.use-case';
 import { CreateRestaurantUseCase } from './create-restaurant.use-case';
 import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
@@ -176,6 +177,77 @@ describe('UpdateRestaurantUseCase', () => {
     expect(result.slug).toBe('original-name');
   });
 
+  it('stores the name and description in both languages (ADR-052)', async () => {
+    const repository = new InMemoryRestaurantRepository();
+    const restaurantId = await seedRestaurant(repository);
+    const { useCase } = createUseCase(repository);
+
+    const result = await useCase.execute({
+      actor: baseActor(),
+      restaurantId,
+      nameAr: 'المطحنة',
+      nameEn: 'The Mill',
+      description: null,
+      descriptionAr: 'مطعم قديم',
+      descriptionEn: 'An old place',
+      cuisineType: null,
+      status: RestaurantStatus.Active,
+    });
+
+    expect(result).toMatchObject({
+      name: 'المطحنة',
+      nameAr: 'المطحنة',
+      nameEn: 'The Mill',
+      description: 'مطعم قديم',
+      descriptionEn: 'An old place',
+    });
+  });
+
+  it('keeps the translations when an older client resends the same single name', async () => {
+    const repository = new InMemoryRestaurantRepository();
+    const restaurantId = await seedRestaurant(repository);
+    const { useCase } = createUseCase(repository);
+    await useCase.execute({
+      actor: baseActor(),
+      restaurantId,
+      nameAr: 'المطحنة',
+      nameEn: 'The Mill',
+      description: null,
+      cuisineType: null,
+      status: RestaurantStatus.Active,
+    });
+
+    const result = await useCase.execute({
+      actor: baseActor(),
+      restaurantId,
+      name: 'المطحنة',
+      description: null,
+      cuisineType: 'Oriental',
+      status: RestaurantStatus.Active,
+    });
+
+    expect(result.nameEn).toBe('The Mill');
+    expect(result.cuisineType).toBe('Oriental');
+  });
+
+  it('rejects a profile with no name in any language', async () => {
+    const repository = new InMemoryRestaurantRepository();
+    const restaurantId = await seedRestaurant(repository);
+    const { useCase } = createUseCase(repository);
+
+    await expect(
+      useCase.execute({
+        actor: baseActor(),
+        restaurantId,
+        nameAr: ' ',
+        nameEn: null,
+        description: null,
+        cuisineType: null,
+        status: RestaurantStatus.Active,
+      }),
+    ).rejects.toBeInstanceOf(InvalidRestaurantProfileException);
+  });
+
   it('throws RestaurantNotFoundException for an unknown id', async () => {
     const repository = new InMemoryRestaurantRepository();
     const { useCase } = createUseCase(repository);
@@ -242,7 +314,15 @@ describe('UpdateRestaurantUseCase', () => {
       const existing = await repository.findById(RestaurantId.create(restaurantId));
       await repository.save(
         existing!.updateProfile(
-          { name: 'Original Name', description: 'Original description', cuisineType: 'مشاوي' },
+          {
+            name: existing!.name,
+            nameAr: existing!.nameAr,
+            nameEn: existing!.nameEn,
+            description: existing!.description,
+            descriptionAr: existing!.descriptionAr,
+            descriptionEn: existing!.descriptionEn,
+            cuisineType: 'مشاوي',
+          },
           fixedNow,
         ),
       );

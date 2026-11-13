@@ -57,6 +57,7 @@ export class SearchAvailabilityUseCase {
 
     const endTime = await this.resolveEndTime(
       branch.restaurantId,
+      branchId,
       startTime,
       command.reservationEndTime,
     );
@@ -116,6 +117,7 @@ export class SearchAvailabilityUseCase {
 
   private async resolveEndTime(
     restaurantId: RestaurantId,
+    branchId: BranchId,
     startTime: Date,
     clientEndTime?: string,
   ): Promise<Date> {
@@ -132,7 +134,7 @@ export class SearchAvailabilityUseCase {
       return endTime;
     }
 
-    const settings = await this.restaurantSettingsRepository.findByRestaurantId(restaurantId);
+    const settings = await this.restaurantSettingsRepository.findForBranch(restaurantId, branchId);
     const durationMinutes = settings?.defaultReservationDurationMinutes ?? 90;
     return new Date(startTime.getTime() + durationMinutes * 60_000);
   }

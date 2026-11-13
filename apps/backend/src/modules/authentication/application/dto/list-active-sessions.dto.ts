@@ -14,6 +14,9 @@ export interface ActiveSessionItem {
   expiresAt: Date;
   isCurrentSession: boolean;
   ipAddress: string | null;
+  /** Parsed from the stored User-Agent; product names only. */
+  browser: string | null;
+  operatingSystem: string | null;
 }
 
 export interface ListActiveSessionsResult {

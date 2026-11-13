@@ -17,7 +17,12 @@ import {
   RestaurantRepository,
   RESTAURANT_REPOSITORY,
 } from '../../domain/repositories/restaurant.repository';
+import {
+  BranchCoverImageRepository,
+  BRANCH_COVER_IMAGE_REPOSITORY,
+} from '../../domain/repositories/branch-cover-image.repository';
 import { RestaurantNotFoundException } from '../../domain/exceptions/restaurant-not-found.exception';
+import { BranchNotFoundException } from '@modules/branches/domain/exceptions/branch-not-found.exception';
 import { MissingRestaurantImageFileException } from '../../domain/exceptions/missing-restaurant-image-file.exception';
 import { RestaurantImageFileTooLargeException } from '../../domain/exceptions/restaurant-image-file-too-large.exception';
 import { UnsupportedRestaurantImageFileTypeException } from '../../domain/exceptions/unsupported-restaurant-image-file-type.exception';
@@ -51,6 +56,11 @@ const ACCESS_POLICY = 'Public' as const;
  * Replace semantics match avatar upload: the new object is persisted first,
  * then the restaurant column is updated, then the previous file is removed.
  * A failed upload never leaves the column pointing at a missing object.
+ *
+ * ADR-051: a cover upload that names a `branchId` writes `Branch.coverImageId`
+ * instead. Branches may share a cover file with the restaurant or each other
+ * (the data migration copied it), so the previous file is only deleted once no
+ * restaurant or branch references it any more.
  */
 @Injectable()
 export class UploadRestaurantImageUseCase {
@@ -62,6 +72,8 @@ export class UploadRestaurantImageUseCase {
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
     @Inject(AUDIT_LOG_WRITER) private readonly auditLogWriter: AuditLogWriterPort,
     @Inject(GALLERY_BUCKET) private readonly bucket: string,
+    @Inject(BRANCH_COVER_IMAGE_REPOSITORY)
+    private readonly branchCoverImageRepository: BranchCoverImageRepository,
   ) {}
 
   async execute(command: UploadRestaurantImageCommand): Promise<UploadRestaurantImageResult> {
@@ -73,11 +85,28 @@ export class UploadRestaurantImageUseCase {
       throw new RestaurantNotFoundException();
     }
 
+    const branchId = command.slot === 'cover' ? (command.branchId ?? null) : null;
+    let previousFileId: string | null;
+    if (branchId !== null) {
+      const branchCover = await this.branchCoverImageRepository.findCoverImageId(
+        restaurantId,
+        branchId,
+      );
+      if (branchCover === undefined) {
+        throw new BranchNotFoundException();
+      }
+      previousFileId = branchCover;
+    } else {
+      previousFileId = command.slot === 'cover' ? restaurant.coverImageId : restaurant.logoId;
+    }
+
     const now = this.clock.now();
     const fileId = this.idGenerator.generate();
     const extension = EXTENSION_BY_MIME_TYPE[detectedMimeType];
-    const objectKey = `restaurants/${restaurantId.value}/${command.slot}/${fileId}.${extension}`;
-    const previousFileId = command.slot === 'cover' ? restaurant.coverImageId : restaurant.logoId;
+    const objectKey =
+      branchId !== null
+        ? `restaurants/${restaurantId.value}/branches/${branchId}/cover/${fileId}.${extension}`
+        : `restaurants/${restaurantId.value}/${command.slot}/${fileId}.${extension}`;
 
     await this.uploadOrFail(objectKey, file, detectedMimeType);
 
@@ -102,7 +131,13 @@ export class UploadRestaurantImageUseCase {
     }
 
     try {
-      await this.restaurantRepository.save(restaurant.assignBrandImage(command.slot, fileId, now));
+      if (branchId !== null) {
+        await this.branchCoverImageRepository.assignCoverImage(branchId, fileId, now);
+      } else {
+        await this.restaurantRepository.save(
+          restaurant.assignBrandImage(command.slot, fileId, now),
+        );
+      }
     } catch (error) {
       await this.fileRepository.softDelete(FileId.create(fileId), now).catch(() => undefined);
       await this.compensateUpload(objectKey);
@@ -116,9 +151,9 @@ export class UploadRestaurantImageUseCase {
     await this.auditLogWriter.record({
       actorId: command.actorUserId,
       actorType: 'User',
-      action: this.auditAction(command.slot),
-      targetType: 'Restaurant',
-      targetId: restaurantId.value,
+      action: branchId !== null ? 'branch.cover.uploaded' : this.auditAction(command.slot),
+      targetType: branchId !== null ? 'Branch' : 'Restaurant',
+      targetId: branchId ?? restaurantId.value,
       organizationId: command.organizationId,
       correlationId: command.correlationId ?? null,
       ipAddress: null,
@@ -128,6 +163,7 @@ export class UploadRestaurantImageUseCase {
     const imageUrl = await this.storagePort.getSignedReadUrl(this.bucket, objectKey);
     return {
       slot: command.slot,
+      branchId,
       fileId,
       imageUrl,
       mimeType: detectedMimeType,
@@ -189,6 +225,9 @@ export class UploadRestaurantImageUseCase {
     try {
       const oldFile = await this.fileRepository.findById(FileId.create(oldFileId));
       if (oldFile === null || oldFile.isDeleted()) {
+        return;
+      }
+      if ((await this.branchCoverImageRepository.countCoverReferences(oldFileId)) > 0) {
         return;
       }
       await this.storagePort.delete(oldFile.bucket, oldFile.objectKey);

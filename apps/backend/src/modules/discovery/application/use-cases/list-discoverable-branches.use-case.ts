@@ -4,6 +4,7 @@ import { BranchWorkingHoursEntryResult } from '@modules/branches/application/dto
 import { ListBranchWorkingHoursByBranchIdsUseCase } from '@modules/branches/application/use-cases/list-branch-working-hours-by-branch-ids.use-case';
 import { RestaurantNotFoundException } from '@modules/restaurants/domain/exceptions/restaurant-not-found.exception';
 import { DiscoveryReaderPort, DISCOVERY_READER } from '../ports/discovery-reader.port';
+import { RestaurantCoverImageUrlResolver } from '../services/restaurant-cover-image-url.resolver';
 
 export interface ListDiscoverableBranchesCommand {
   restaurantId: string;
@@ -13,6 +14,8 @@ export interface ListDiscoverableBranchesCommand {
 
 export type DiscoverableBranch = BranchResult & {
   workingHours: BranchWorkingHoursEntryResult[];
+  /** ADR-051: the branch cover, or the restaurant cover when the branch has none. */
+  coverImageUrl: string | null;
 };
 
 export interface DiscoverableBranchListResult {
@@ -28,18 +31,16 @@ export interface DiscoverableBranchListResult {
  * same shape as every management use case's own precedent) - an unknown or
  * non-discoverable restaurant 404s before any branch query runs.
  *
- * Public Working Hours: `workingHours` is each branch's own override
- * schedule (`BranchWorkingHours`, Phase 5.2) - an empty array means no
- * override is configured for that branch (see `BranchWorkingHours`'s own
- * Prisma model comment; no fallback to the Restaurant-level default is
- * invented here, matching this codebase's existing "out of CRUD scope"
- * precedent).
+ * Public Working Hours: `workingHours` is each branch's own weekly
+ * schedule (`BranchWorkingHours`, the only source of opening hours since
+ * ADR-050) - an empty array means the branch has not set its hours yet.
  */
 @Injectable()
 export class ListDiscoverableBranchesUseCase {
   constructor(
     @Inject(DISCOVERY_READER) private readonly discoveryReader: DiscoveryReaderPort,
     private readonly listBranchWorkingHoursByBranchIdsUseCase: ListBranchWorkingHoursByBranchIdsUseCase,
+    private readonly coverImageUrlResolver: RestaurantCoverImageUrlResolver,
   ) {}
 
   async execute(command: ListDiscoverableBranchesCommand): Promise<DiscoverableBranchListResult> {
@@ -59,8 +60,15 @@ export class ListDiscoverableBranchesUseCase {
       branchIds,
     });
 
+    const withCovers = await this.coverImageUrlResolver.attach(
+      page.items.map((item) => ({
+        ...item,
+        coverImageId: item.coverImageId ?? restaurant.coverImageId,
+      })),
+    );
+
     return {
-      items: page.items.map((item) => ({
+      items: withCovers.map((item) => ({
         ...item,
         workingHours: workingHoursByBranchId.get(item.branchId) ?? [],
       })),

@@ -3,7 +3,7 @@ import { ListRestaurantIdsWithActiveOfferUseCase } from '@modules/offers/applica
 import { ListRestaurantIdsWithMenuUseCase } from '@modules/menus/application/use-cases/list-restaurant-ids-with-menu.use-case';
 import { RestaurantResult } from '@modules/restaurants/application/dto/restaurant.result';
 import { WorkingHoursEntryResult } from '@modules/restaurants/application/dto/working-hours.result';
-import { ListWorkingHoursByRestaurantIdsUseCase } from '@modules/restaurants/application/use-cases/list-working-hours-by-restaurant-ids.use-case';
+import { ListRestaurantWorkingHoursFromBranchesUseCase } from '@modules/branches/application/use-cases/list-restaurant-working-hours-from-branches.use-case';
 import { DiscoveryReaderPort, DISCOVERY_READER } from '../ports/discovery-reader.port';
 import { RestaurantCoverImageUrlResolver } from '../services/restaurant-cover-image-url.resolver';
 
@@ -50,7 +50,7 @@ export class CompareRestaurantsUseCase {
     @Inject(DISCOVERY_READER) private readonly discoveryReader: DiscoveryReaderPort,
     private readonly listRestaurantIdsWithActiveOfferUseCase: ListRestaurantIdsWithActiveOfferUseCase,
     private readonly listRestaurantIdsWithMenuUseCase: ListRestaurantIdsWithMenuUseCase,
-    private readonly listWorkingHoursByRestaurantIdsUseCase: ListWorkingHoursByRestaurantIdsUseCase,
+    private readonly listWorkingHoursByRestaurantIdsUseCase: ListRestaurantWorkingHoursFromBranchesUseCase,
     private readonly restaurantCoverImageUrlResolver: RestaurantCoverImageUrlResolver,
   ) {}
 

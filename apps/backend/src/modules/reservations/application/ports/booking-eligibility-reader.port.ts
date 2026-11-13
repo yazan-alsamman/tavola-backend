@@ -10,6 +10,12 @@ export interface BookingEligibilityReaderPort {
 
   /** Pending or Approved reservations of this customer that have not ended. */
   countUpcomingActiveForUser(userId: string, now: Date): Promise<number>;
+
+  /**
+   * ADR-053: guests of the branch's Pending or Approved reservations that
+   * start in `[from, to)`. Backs the daily guest cap.
+   */
+  sumActiveGuestsForBranchBetween(branchId: string, from: Date, to: Date): Promise<number>;
 }
 
 export const BOOKING_ELIGIBILITY_READER = Symbol('BOOKING_ELIGIBILITY_READER');

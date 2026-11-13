@@ -50,6 +50,8 @@ import { PrismaRestaurantRepository } from './infrastructure/persistence/prisma-
 import { PrismaRestaurantSettingsRepository } from './infrastructure/persistence/prisma-restaurant-settings.repository';
 import { PrismaWorkingHoursRepository } from './infrastructure/persistence/prisma-working-hours.repository';
 import { PrismaRestaurantGalleryRepository } from './infrastructure/persistence/prisma-restaurant-gallery.repository';
+import { PrismaBranchCoverImageRepository } from './infrastructure/persistence/prisma-branch-cover-image.repository';
+import { BRANCH_COVER_IMAGE_REPOSITORY } from './domain/repositories/branch-cover-image.repository';
 import { PrismaCuisineCategoryRepository } from './infrastructure/persistence/prisma-cuisine-category.repository';
 import { PrismaOccasionCategoryRepository } from './infrastructure/persistence/prisma-occasion-category.repository';
 import { PrismaRestaurantCuisineCategoryRepository } from './infrastructure/persistence/prisma-restaurant-cuisine-category.repository';
@@ -174,6 +176,7 @@ import { PlatformAdminRestaurantsController } from './presentation/controllers/p
     PrismaRestaurantSettingsRepository,
     PrismaWorkingHoursRepository,
     PrismaRestaurantGalleryRepository,
+    PrismaBranchCoverImageRepository,
     PrismaCuisineCategoryRepository,
     PrismaOccasionCategoryRepository,
     PrismaRestaurantCuisineCategoryRepository,
@@ -189,6 +192,7 @@ import { PlatformAdminRestaurantsController } from './presentation/controllers/p
     { provide: RESTAURANT_SETTINGS_REPOSITORY, useExisting: PrismaRestaurantSettingsRepository },
     { provide: WORKING_HOURS_REPOSITORY, useExisting: PrismaWorkingHoursRepository },
     { provide: RESTAURANT_GALLERY_REPOSITORY, useExisting: PrismaRestaurantGalleryRepository },
+    { provide: BRANCH_COVER_IMAGE_REPOSITORY, useExisting: PrismaBranchCoverImageRepository },
     { provide: CUISINE_CATEGORY_REPOSITORY, useExisting: PrismaCuisineCategoryRepository },
     { provide: OCCASION_CATEGORY_REPOSITORY, useExisting: PrismaOccasionCategoryRepository },
     {

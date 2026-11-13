@@ -13,8 +13,14 @@ import { RestaurantStatus } from '../../domain/enums/restaurant.enums';
 export interface UpdateRestaurantCommand {
   actor: AuthenticatedOrganizationMemberActor;
   restaurantId: string;
-  name: string;
+  /** Legacy single name (app 1.0.2 era); used only when neither nameAr nor nameEn is sent. */
+  name?: string | null;
+  /** ADR-052. Undefined = not sent by this client. */
+  nameAr?: string | null;
+  nameEn?: string | null;
   description: string | null;
+  descriptionAr?: string | null;
+  descriptionEn?: string | null;
   cuisineType: string | null;
   status: RestaurantStatus;
   correlationId?: string;
