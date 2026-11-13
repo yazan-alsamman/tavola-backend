@@ -32,7 +32,8 @@ const PLATFORM_ADMIN_BOOTSTRAP_MIN_PASSWORD_LENGTH = 12;
  * it, so seeding one would be dead data). Generic, lock-screen-safe copy
  * only - never `ReservationGuest` contact fields, internal ids, or notes
  * (the frozen PII policy). Additional languages are a pure content/data
- * addition (LOCALIZATION.md), never a code change - not seeded here.
+ * addition (LOCALIZATION.md), never a code change; Arabic rows are seeded
+ * for every customer and staff template.
  */
 const NOTIFICATION_TEMPLATES: Array<{
   eventType: string;
@@ -162,6 +163,112 @@ const NOTIFICATION_TEMPLATES: Array<{
     channel: NotificationChannel.Push,
     title: 'New message',
     body: 'You have a new message from the restaurant. Tap to view.',
+  },
+  // Arabic copies of the customer templates above (used when User.language is 'ar').
+  {
+    eventType: 'ReservationApproved',
+    channel: NotificationChannel.InApp,
+    language: 'ar',
+    title: 'تم تأكيد الحجز',
+    body: 'تم تأكيد حجزك.',
+  },
+  {
+    eventType: 'ReservationApproved',
+    channel: NotificationChannel.Push,
+    language: 'ar',
+    title: 'تم تأكيد الحجز',
+    body: 'تم تأكيد حجزك. اضغط لعرض التفاصيل.',
+  },
+  {
+    eventType: 'ReservationCancelled',
+    channel: NotificationChannel.InApp,
+    language: 'ar',
+    title: 'تم إلغاء الحجز',
+    body: 'تم إلغاء حجزك.',
+  },
+  {
+    eventType: 'ReservationCancelled',
+    channel: NotificationChannel.Push,
+    language: 'ar',
+    title: 'تم إلغاء الحجز',
+    body: 'تم إلغاء حجزك. اضغط لعرض التفاصيل.',
+  },
+  {
+    eventType: 'ReservationRescheduled',
+    channel: NotificationChannel.InApp,
+    language: 'ar',
+    title: 'تم تعديل موعد الحجز',
+    body: 'تغيّر موعد حجزك.',
+  },
+  {
+    eventType: 'ReservationRescheduled',
+    channel: NotificationChannel.Push,
+    language: 'ar',
+    title: 'تم تعديل موعد الحجز',
+    body: 'تغيّر موعد حجزك. اضغط لعرض التفاصيل الجديدة.',
+  },
+  {
+    eventType: 'ReservationReminderDue',
+    channel: NotificationChannel.InApp,
+    language: 'ar',
+    title: 'حجز قادم',
+    body: 'لديك حجز قريب.',
+  },
+  {
+    eventType: 'ReservationReminderDue',
+    channel: NotificationChannel.Push,
+    language: 'ar',
+    title: 'تذكير بالحجز',
+    body: 'موعد حجزك يقترب.',
+  },
+  {
+    eventType: 'TableReadyNotified',
+    channel: NotificationChannel.InApp,
+    language: 'ar',
+    title: 'طاولتك جاهزة',
+    body: 'طاولتك جاهزة للجلوس.',
+  },
+  {
+    eventType: 'TableReadyNotified',
+    channel: NotificationChannel.Push,
+    language: 'ar',
+    title: 'الطاولة جاهزة',
+    body: 'طاولتك جاهزة. توجّه إلى الاستقبال من فضلك.',
+  },
+  {
+    eventType: 'WaitlistEntryPromoted',
+    channel: NotificationChannel.InApp,
+    language: 'ar',
+    title: 'خرجت من قائمة الانتظار',
+    body: 'أصبحت هناك طاولة متاحة لك.',
+  },
+  {
+    eventType: 'WaitlistEntryPromoted',
+    channel: NotificationChannel.Push,
+    language: 'ar',
+    title: 'طاولة متاحة',
+    body: 'أصبحت هناك طاولة متاحة لك. اضغط لعرض التفاصيل.',
+  },
+  {
+    eventType: 'ReservationNoShow',
+    channel: NotificationChannel.InApp,
+    language: 'ar',
+    title: 'تم تسجيل عدم الحضور',
+    body: 'تم تسجيل حجزك كعدم حضور.',
+  },
+  {
+    eventType: 'MessageSent',
+    channel: NotificationChannel.InApp,
+    language: 'ar',
+    title: 'رسالة جديدة',
+    body: 'لديك رسالة جديدة من المطعم.',
+  },
+  {
+    eventType: 'MessageSent',
+    channel: NotificationChannel.Push,
+    language: 'ar',
+    title: 'رسالة جديدة',
+    body: 'لديك رسالة جديدة من المطعم. اضغط للعرض.',
   },
   // Restaurant-side, In-App only (Restaurant Dashboard notifications page):
   // a customer's own booking, cancellation, or waitlist join. Seeded in
