@@ -13,6 +13,9 @@ import { DeleteBranchUseCase } from './application/use-cases/delete-branch.use-c
 import { GetBranchWorkingHoursUseCase } from './application/use-cases/get-branch-working-hours.use-case';
 import { UpdateBranchWorkingHoursUseCase } from './application/use-cases/update-branch-working-hours.use-case';
 import { ListBranchWorkingHoursByBranchIdsUseCase } from './application/use-cases/list-branch-working-hours-by-branch-ids.use-case';
+import { GetBranchSettingsUseCase } from './application/use-cases/get-branch-settings.use-case';
+import { UpdateBranchSettingsUseCase } from './application/use-cases/update-branch-settings.use-case';
+import { BranchSettingsAccessService } from './application/services/branch-settings-access.service';
 import { ListRestaurantWorkingHoursFromBranchesUseCase } from './application/use-cases/list-restaurant-working-hours-from-branches.use-case';
 import { BRANCH_REPOSITORY } from './domain/repositories/branch.repository';
 import { BRANCH_WORKING_HOURS_REPOSITORY } from './domain/repositories/branch-working-hours.repository';
@@ -83,6 +86,9 @@ import { BranchesController } from './presentation/controllers/branches.controll
     UpdateBranchWorkingHoursUseCase,
     ListBranchWorkingHoursByBranchIdsUseCase,
     ListRestaurantWorkingHoursFromBranchesUseCase,
+    BranchSettingsAccessService,
+    GetBranchSettingsUseCase,
+    UpdateBranchSettingsUseCase,
     PrismaBranchRepository,
     PrismaBranchWorkingHoursRepository,
     { provide: BRANCH_REPOSITORY, useExisting: PrismaBranchRepository },

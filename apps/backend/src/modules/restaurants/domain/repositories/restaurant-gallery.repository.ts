@@ -17,7 +17,21 @@ import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
  * the wrong parent path.
  */
 export interface RestaurantGalleryRepository {
-  findAllByRestaurantId(restaurantId: RestaurantId): Promise<RestaurantGalleryImage[]>;
+  /**
+   * ADR-051: a branch's photos when `branchId` is given; otherwise the photos
+   * of the restaurant's oldest live branch (rows with no branch when it has
+   * none), which is what older clients that name no branch see.
+   */
+  findAllByRestaurantId(
+    restaurantId: RestaurantId,
+    branchId?: string,
+  ): Promise<RestaurantGalleryImage[]>;
+  /** The restaurant's oldest live branch, or null when it has none. */
+  findFirstLiveBranchId(restaurantId: RestaurantId): Promise<string | null>;
+  /** True when `branchId` is a live branch of `restaurantId`. */
+  isLiveBranchOf(restaurantId: RestaurantId, branchId: string): Promise<boolean>;
+  /** How many gallery rows still point at a stored file (copies share files, ADR-051). */
+  countByFileId(fileId: string): Promise<number>;
   findById(id: string, restaurantId: RestaurantId): Promise<RestaurantGalleryImage | null>;
   add(image: RestaurantGalleryImage): Promise<void>;
   remove(id: string): Promise<void>;

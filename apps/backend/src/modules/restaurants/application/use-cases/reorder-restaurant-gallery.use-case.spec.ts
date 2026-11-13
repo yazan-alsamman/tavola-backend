@@ -47,6 +47,7 @@ describe('ReorderRestaurantGalleryUseCase (ADR-046)', () => {
         RestaurantGalleryImage.create({
           id,
           restaurantId: RESTAURANT_ID,
+          branchId: null,
           fileId: `bbbbbbbb-0000-4000-8000-00000000000${index + 1}`,
           caption: null,
           sortOrder: index,

@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { ArrayMaxSize, ArrayUnique, IsArray, IsUUID } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ArrayMaxSize, ArrayUnique, IsArray, IsOptional, IsUUID } from 'class-validator';
 import { GALLERY_MAX_IMAGES_PER_RESTAURANT } from '../../application/policies/gallery-upload.policy';
 
 export class ReorderRestaurantGalleryRequestDto {
@@ -13,4 +13,12 @@ export class ReorderRestaurantGalleryRequestDto {
   @ArrayMaxSize(GALLERY_MAX_IMAGES_PER_RESTAURANT)
   @IsUUID('all', { each: true })
   galleryItemIds!: string[];
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: "ADR-051: the branch whose gallery is reordered. Omitted, the restaurant's oldest branch.",
+  })
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
 }

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaContext } from '@infrastructure/prisma/prisma-context.service';
-import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
+import { BranchId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import { RestaurantSettings } from '../../domain/entities/restaurant-settings.entity';
 import { RestaurantSettingsRepository } from '../../domain/repositories/restaurant-settings.repository';
 import { RestaurantSettingsPrismaMapper } from './restaurant-settings.prisma-mapper';
@@ -45,6 +45,58 @@ export class PrismaRestaurantSettingsRepository implements RestaurantSettingsRep
         lateArrivalGraceMinutes: data.lateArrivalGraceMinutes,
         updatedAt: data.updatedAt,
       },
+    });
+  }
+
+  async findForBranch(
+    restaurantId: RestaurantId,
+    branchId: BranchId,
+  ): Promise<RestaurantSettings | null> {
+    const [restaurantRow, branchRow] = await Promise.all([
+      this.prismaContext.client.restaurantSettings.findUnique({
+        where: { restaurantId: restaurantId.value },
+      }),
+      this.prismaContext.client.branchSettings.findUnique({
+        where: { branchId: branchId.value },
+      }),
+    ]);
+    if (branchRow === null) {
+      return restaurantRow ? RestaurantSettingsPrismaMapper.toDomain(restaurantRow) : null;
+    }
+    return RestaurantSettings.reconstitute({
+      id: branchRow.id,
+      restaurantId: restaurantId.value,
+      reservationIntervalMinutes: branchRow.reservationIntervalMinutes,
+      maxGuestsPerReservation: branchRow.maxGuestsPerReservation,
+      cancellationWindowMinutes: branchRow.cancellationWindowMinutes,
+      pendingReservationTimeoutMinutes: branchRow.pendingReservationTimeoutMinutes,
+      defaultReservationDurationMinutes: branchRow.defaultReservationDurationMinutes,
+      autoApproval: branchRow.autoApproval,
+      timezone: restaurantRow?.timezone ?? 'UTC',
+      defaultCurrency: restaurantRow?.defaultCurrency ?? null,
+      reservationReminderMinutesBefore: branchRow.reservationReminderMinutesBefore,
+      lateArrivalGraceMinutes: branchRow.lateArrivalGraceMinutes,
+      createdAt: branchRow.createdAt,
+      updatedAt: branchRow.updatedAt,
+    });
+  }
+
+  async saveForBranch(branchId: BranchId, settings: RestaurantSettings): Promise<void> {
+    const rules = {
+      reservationIntervalMinutes: settings.reservationIntervalMinutes,
+      maxGuestsPerReservation: settings.maxGuestsPerReservation,
+      cancellationWindowMinutes: settings.cancellationWindowMinutes,
+      pendingReservationTimeoutMinutes: settings.pendingReservationTimeoutMinutes,
+      defaultReservationDurationMinutes: settings.defaultReservationDurationMinutes,
+      autoApproval: settings.autoApproval,
+      reservationReminderMinutesBefore: settings.reservationReminderMinutesBefore,
+      lateArrivalGraceMinutes: settings.lateArrivalGraceMinutes,
+      updatedAt: settings.updatedAt,
+    };
+    await this.prismaContext.client.branchSettings.upsert({
+      where: { branchId: branchId.value },
+      create: { branchId: branchId.value, ...rules },
+      update: rules,
     });
   }
 }

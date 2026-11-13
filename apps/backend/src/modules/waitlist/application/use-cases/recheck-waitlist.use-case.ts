@@ -73,8 +73,9 @@ export class RecheckWaitlistUseCase {
       return;
     }
 
-    const settings = await this.restaurantSettingsRepository.findByRestaurantId(
+    const settings = await this.restaurantSettingsRepository.findForBranch(
       branch.restaurantId,
+      branch.branchId,
     );
 
     const preferredDate = new Date(`${input.preferredDateIso}T00:00:00.000Z`);

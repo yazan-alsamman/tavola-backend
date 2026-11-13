@@ -399,6 +399,9 @@ describe('AddRestaurantGalleryImageUseCase', () => {
       add: jest.fn().mockRejectedValue(new Error('gallery insert failed')),
       remove: jest.fn().mockResolvedValue(undefined),
       updateSortOrders: jest.fn().mockResolvedValue(undefined),
+      findFirstLiveBranchId: jest.fn().mockResolvedValue(null),
+      isLiveBranchOf: jest.fn().mockResolvedValue(true),
+      countByFileId: jest.fn().mockResolvedValue(0),
     };
 
     const useCase = new AddRestaurantGalleryImageUseCase(

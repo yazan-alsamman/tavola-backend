@@ -24,6 +24,7 @@ import {
   ApiExtraModels,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -592,6 +593,7 @@ export class RestaurantsController {
       properties: {
         file: { type: 'string', format: 'binary' },
         caption: { type: 'string' },
+        branchId: { type: 'string', format: 'uuid' },
       },
       required: ['file'],
     },
@@ -601,7 +603,7 @@ export class RestaurantsController {
     operationId: 'restaurantsAddGalleryImage',
     summary: 'Add an image to a restaurant gallery',
     description:
-      'Accepts a single multipart image file (JPEG/PNG/WebP, 5MB max, validated by magic-byte signature - not just Content-Type) plus an optional caption. Appended to the end of the gallery (existing sortOrder values are never reassigned - no reorder endpoint exists). Restaurant-level only, maximum 20 images per restaurant.',
+      'Accepts a single multipart image file (JPEG/PNG/WebP, 5MB max, validated by magic-byte signature - not just Content-Type) plus an optional caption. Appended to the end of the gallery (existing sortOrder values are never reassigned - no reorder endpoint exists). Belongs to `branchId` (ADR-051; omitted, the oldest branch), maximum 20 images per branch.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({
@@ -639,6 +641,7 @@ export class RestaurantsController {
       restaurantId: id,
       file: file ? { buffer: file.buffer, mimeType: file.mimetype, sizeBytes: file.size } : null,
       caption: body.caption ?? null,
+      branchId: body.branchId,
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
     return this.toGalleryImageResponse(result);
@@ -651,9 +654,10 @@ export class RestaurantsController {
     operationId: 'restaurantsListGallery',
     summary: 'List a restaurant gallery',
     description:
-      'Public, unauthenticated, including guest sessions with no access token. Ordered by sortOrder. A missing or soft-deleted restaurant returns 404. A brand-new restaurant has an empty gallery until images are explicitly added. Adding and removing images remain Owner/Admin.',
+      "Public, unauthenticated, including guest sessions with no access token. Ordered by sortOrder. A missing or soft-deleted restaurant returns 404. A brand-new restaurant has an empty gallery until images are explicitly added. Adding and removing images remain Owner/Admin. Photos belong to branches (ADR-051): `branchId` picks a branch; omitted, the restaurant's oldest branch is used.",
   })
   @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiQuery({ name: 'branchId', required: false, format: 'uuid' })
   @ApiResponse({
     status: 200,
     description: 'Restaurant gallery retrieved',
@@ -663,9 +667,11 @@ export class RestaurantsController {
   @ApiErrorResponse(404, 'Restaurant not found', ['NOT_FOUND'])
   async listGallery(
     @Param('id', ParseUUIDPipe) id: string,
+    @Query('branchId', new ParseUUIDPipe({ optional: true })) branchId?: string,
   ): Promise<RestaurantGalleryListResponseDto> {
     const result = await this.listRestaurantGalleryUseCase.execute({
       restaurantId: id,
+      branchId,
     });
     return this.toGalleryListResponse(result);
   }
@@ -701,6 +707,7 @@ export class RestaurantsController {
       actor,
       restaurantId: id,
       galleryItemIds: body.galleryItemIds,
+      branchId: body.branchId,
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
   }
@@ -967,6 +974,7 @@ export class RestaurantsController {
     return {
       galleryItemId: result.galleryItemId,
       restaurantId: result.restaurantId,
+      branchId: result.branchId,
       caption: result.caption,
       sortOrder: result.sortOrder,
       imageUrl: result.imageUrl,

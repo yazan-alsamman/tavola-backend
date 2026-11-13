@@ -4,11 +4,29 @@ import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 
 export class InMemoryRestaurantGalleryRepository implements RestaurantGalleryRepository {
   private readonly rows = new Map<string, RestaurantGalleryImage>();
+  /** restaurantId -> live branch ids, oldest first. */
+  readonly branchesByRestaurant = new Map<string, string[]>();
 
-  async findAllByRestaurantId(restaurantId: RestaurantId): Promise<RestaurantGalleryImage[]> {
+  async findAllByRestaurantId(
+    restaurantId: RestaurantId,
+    branchId?: string,
+  ): Promise<RestaurantGalleryImage[]> {
+    const resolved = branchId ?? this.branchesByRestaurant.get(restaurantId.value)?.[0] ?? null;
     return [...this.rows.values()].filter(
-      (image) => image.restaurantId.value === restaurantId.value,
+      (image) => image.restaurantId.value === restaurantId.value && image.branchId === resolved,
     );
+  }
+
+  async findFirstLiveBranchId(restaurantId: RestaurantId): Promise<string | null> {
+    return this.branchesByRestaurant.get(restaurantId.value)?.[0] ?? null;
+  }
+
+  async isLiveBranchOf(restaurantId: RestaurantId, branchId: string): Promise<boolean> {
+    return this.branchesByRestaurant.get(restaurantId.value)?.includes(branchId) ?? false;
+  }
+
+  async countByFileId(fileId: string): Promise<number> {
+    return [...this.rows.values()].filter((image) => image.fileId.value === fileId).length;
   }
 
   async findById(id: string, restaurantId: RestaurantId): Promise<RestaurantGalleryImage | null> {

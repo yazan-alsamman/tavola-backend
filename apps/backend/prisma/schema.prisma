@@ -703,6 +703,8 @@ model WorkingHours {
 model RestaurantGallery {
   id           String   @id @default(uuid()) @db.Uuid
   restaurantId String   @map("restaurant_id") @db.Uuid
+  /// ADR-051: the branch this photo belongs to. Null only on legacy rows of a restaurant that had no branch.
+  branchId     String?  @map("branch_id") @db.Uuid
   fileId       String   @map("file_id") @db.Uuid
   caption      String?
   sortOrder    Int      @map("sort_order")
@@ -712,6 +714,7 @@ model RestaurantGallery {
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
   @@index([restaurantId])
+  @@index([branchId])
   @@map("restaurant_gallery")
 }
 
@@ -839,6 +842,7 @@ model Branch {
   restaurant                Restaurant                 @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   employeeBranchAssignments EmployeeBranchAssignment[]
   workingHours              BranchWorkingHours[]
+  settings                  BranchSettings?
   floorPlans                FloorPlan[]
   tables                    Table[]
   reservations              Reservation[]
@@ -884,6 +888,34 @@ model BranchWorkingHours {
   @@unique([branchId, dayOfWeek])
   @@index([branchId])
   @@map("branch_working_hours")
+}
+
+// ---------------------------------------------------------------------------
+// Branch Settings (ADR-051). Each branch's own reservation rules. Same rule
+// columns as RestaurantSettings; timezone and currency already live on
+// Branch. A branch without a row uses its restaurant's RestaurantSettings
+// (only a branch created after the ADR-051 migration and never edited).
+// Tenant-owned transitively via branchId -> Branch.restaurantId, like
+// BranchWorkingHours.
+// ---------------------------------------------------------------------------
+
+model BranchSettings {
+  id                                String   @id @default(uuid()) @db.Uuid
+  branchId                          String   @unique @map("branch_id") @db.Uuid
+  reservationIntervalMinutes        Int      @default(30) @map("reservation_interval_minutes")
+  maxGuestsPerReservation           Int      @default(20) @map("max_guests_per_reservation")
+  cancellationWindowMinutes         Int      @default(60) @map("cancellation_window_minutes")
+  pendingReservationTimeoutMinutes  Int      @default(15) @map("pending_reservation_timeout_minutes")
+  defaultReservationDurationMinutes Int      @default(90) @map("default_reservation_duration_minutes")
+  autoApproval                      Boolean  @default(false) @map("auto_approval")
+  reservationReminderMinutesBefore  Int      @default(60) @map("reservation_reminder_minutes_before")
+  lateArrivalGraceMinutes           Int      @default(15) @map("late_arrival_grace_minutes")
+  createdAt                         DateTime @default(now()) @map("created_at")
+  updatedAt                         DateTime @updatedAt @map("updated_at")
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@map("branch_settings")
 }
 
 // ---------------------------------------------------------------------------

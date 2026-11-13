@@ -66,8 +66,9 @@ export class PromoteWaitlistEntryUseCase {
     if (branch === null) {
       throw new BranchNotFoundException();
     }
-    const settings = await this.restaurantSettingsRepository.findByRestaurantId(
+    const settings = await this.restaurantSettingsRepository.findForBranch(
       existing.restaurantId,
+      existing.branchId,
     );
 
     const now = this.clock.now();

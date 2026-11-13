@@ -6,6 +6,7 @@ export class RestaurantGalleryPrismaMapper {
     return RestaurantGalleryImageEntity.reconstitute({
       id: row.id,
       restaurantId: row.restaurantId,
+      branchId: row.branchId,
       fileId: row.fileId,
       caption: row.caption,
       sortOrder: row.sortOrder,
@@ -19,6 +20,7 @@ export class RestaurantGalleryPrismaMapper {
     return {
       id: props.id,
       restaurantId: props.restaurantId,
+      branchId: props.branchId,
       fileId: props.fileId,
       caption: props.caption,
       sortOrder: props.sortOrder,

@@ -202,8 +202,9 @@ export class CreateReservationUseCase {
       throw new InvalidReservationTimeException('reservationStartTime is not a valid date-time.');
     }
 
-    const settings = await this.restaurantSettingsRepository.findByRestaurantId(
+    const settings = await this.restaurantSettingsRepository.findForBranch(
       branch.restaurantId,
+      branch.branchId,
     );
     const endTime = this.resolveEndTime(startTime, command.reservationEndTime, settings);
 

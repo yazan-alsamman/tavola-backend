@@ -89,8 +89,9 @@ export class ListReservationTimeSlotsUseCase {
       throw new BranchNotFoundException();
     }
 
-    const settings = await this.restaurantSettingsRepository.findByRestaurantId(
+    const settings = await this.restaurantSettingsRepository.findForBranch(
       RestaurantId.create(branch.restaurantId.value),
+      branch.branchId,
     );
     const intervalMinutes = settings?.reservationIntervalMinutes ?? DEFAULT_INTERVAL_MINUTES;
     const durationMinutes = this.resolveDuration(

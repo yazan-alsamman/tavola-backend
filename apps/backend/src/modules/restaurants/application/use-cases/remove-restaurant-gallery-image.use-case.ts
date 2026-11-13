@@ -53,16 +53,23 @@ export class RemoveRestaurantGalleryImageUseCase {
       throw new RestaurantGalleryItemNotFoundException();
     }
 
-    const file = await this.fileRepository.findById(image.fileId);
-    if (file !== null) {
-      await this.storagePort.delete(file.bucket, file.objectKey).catch(() => undefined);
+    // ADR-051: branches copied from one restaurant gallery share stored
+    // files, so the file goes only with the last row that uses it.
+    const fileIsShared = (await this.galleryRepository.countByFileId(image.fileId.value)) > 1;
+    if (!fileIsShared) {
+      const file = await this.fileRepository.findById(image.fileId);
+      if (file !== null) {
+        await this.storagePort.delete(file.bucket, file.objectKey).catch(() => undefined);
+      }
     }
 
     const now = this.clock.now();
     // Both writes run inside one transaction so a failure between them can
     // never leave the gallery row pointing at a soft-deleted file.
     await this.unitOfWork.execute(async () => {
-      await this.fileRepository.softDelete(image.fileId, now);
+      if (!fileIsShared) {
+        await this.fileRepository.softDelete(image.fileId, now);
+      }
       await this.galleryRepository.remove(image.galleryImageId);
     });
 

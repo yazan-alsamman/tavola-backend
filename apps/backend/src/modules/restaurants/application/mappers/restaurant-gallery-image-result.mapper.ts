@@ -8,6 +8,7 @@ export function toRestaurantGalleryImageResult(
   return {
     galleryItemId: image.galleryImageId,
     restaurantId: image.restaurantId.value,
+    branchId: image.branchId,
     caption: image.caption,
     sortOrder: image.sortOrder,
     imageUrl,

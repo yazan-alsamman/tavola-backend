@@ -19,12 +19,36 @@ import { RestaurantGalleryPrismaMapper } from './restaurant-gallery.prisma-mappe
 export class PrismaRestaurantGalleryRepository implements RestaurantGalleryRepository {
   constructor(private readonly prismaContext: PrismaContext) {}
 
-  async findAllByRestaurantId(restaurantId: RestaurantId): Promise<RestaurantGalleryImage[]> {
+  async findAllByRestaurantId(
+    restaurantId: RestaurantId,
+    branchId?: string,
+  ): Promise<RestaurantGalleryImage[]> {
+    const resolvedBranchId = branchId ?? (await this.findFirstLiveBranchId(restaurantId));
     const rows = await this.prismaContext.client.restaurantGallery.findMany({
-      where: { restaurantId: restaurantId.value },
+      where: { restaurantId: restaurantId.value, branchId: resolvedBranchId },
       orderBy: { sortOrder: 'asc' },
     });
     return rows.map((row) => RestaurantGalleryPrismaMapper.toDomain(row));
+  }
+
+  async isLiveBranchOf(restaurantId: RestaurantId, branchId: string): Promise<boolean> {
+    const count = await this.prismaContext.client.branch.count({
+      where: { id: branchId, restaurantId: restaurantId.value, deletedAt: null },
+    });
+    return count > 0;
+  }
+
+  async countByFileId(fileId: string): Promise<number> {
+    return this.prismaContext.client.restaurantGallery.count({ where: { fileId } });
+  }
+
+  async findFirstLiveBranchId(restaurantId: RestaurantId): Promise<string | null> {
+    const branch = await this.prismaContext.client.branch.findFirst({
+      where: { restaurantId: restaurantId.value, deletedAt: null },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: { id: true },
+    });
+    return branch?.id ?? null;
   }
 
   async findById(id: string, restaurantId: RestaurantId): Promise<RestaurantGalleryImage | null> {

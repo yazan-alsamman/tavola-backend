@@ -14,6 +14,8 @@ export interface UploadedGalleryImageFile {
 export interface AddRestaurantGalleryImageCommand {
   actor: AuthenticatedOrganizationMemberActor;
   restaurantId: string;
+  /** ADR-051: the branch whose photos these are; omitted, the restaurant's oldest branch. */
+  branchId?: string;
   file: UploadedGalleryImageFile | null;
   caption: string | null;
   correlationId?: string;

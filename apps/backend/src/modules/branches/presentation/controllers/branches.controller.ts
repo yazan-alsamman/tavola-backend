@@ -50,6 +50,11 @@ import { UpdateBranchWorkingHoursRequestDto } from '../dto/update-branch-working
 import { BranchResponseDto } from '../dto/branch.response.dto';
 import { BranchListResponseDto } from '../dto/branch-list.response.dto';
 import { BranchWorkingHoursResponseDto } from '../dto/branch-working-hours.response.dto';
+import { BranchSettingsResponseDto } from '../dto/branch-settings.response.dto';
+import { UpdateBranchSettingsRequestDto } from '../dto/update-branch-settings.request.dto';
+import { GetBranchSettingsUseCase } from '../../application/use-cases/get-branch-settings.use-case';
+import { UpdateBranchSettingsUseCase } from '../../application/use-cases/update-branch-settings.use-case';
+import { BranchSettingsResult } from '../../application/dto/branch-settings.result';
 
 /**
  * Nested under `/restaurants/:restaurantId` (not a flat top-level `/branches`
@@ -75,6 +80,8 @@ export class BranchesController {
     private readonly deleteBranchUseCase: DeleteBranchUseCase,
     private readonly getBranchWorkingHoursUseCase: GetBranchWorkingHoursUseCase,
     private readonly updateBranchWorkingHoursUseCase: UpdateBranchWorkingHoursUseCase,
+    private readonly getBranchSettingsUseCase: GetBranchSettingsUseCase,
+    private readonly updateBranchSettingsUseCase: UpdateBranchSettingsUseCase,
   ) {}
 
   @Post()
@@ -409,6 +416,79 @@ export class BranchesController {
       limit: result.limit,
       total: result.total,
     };
+  }
+
+  @Get(':branchId/settings')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
+  @RequireOrgRole(OrganizationMemberRole.Owner, OrganizationMemberRole.Admin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Branch settings retrieved successfully.')
+  @ApiOperation({
+    operationId: 'branchesGetSettings',
+    summary: 'Get a branch reservation rules',
+    description:
+      'ADR-051: each branch has its own reservation rules. A branch that never saved its own returns its restaurant settings.',
+  })
+  @ApiParam({ name: 'restaurantId', format: 'uuid' })
+  @ApiParam({ name: 'branchId', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Branch settings', type: BranchSettingsResponseDto })
+  @ApiErrorResponse(400, 'restaurantId or branchId is not a valid UUID', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller is not an Owner/Admin organization member', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Restaurant or branch not found', ['NOT_FOUND'])
+  async getSettings(
+    @Param('restaurantId', ParseUUIDPipe) restaurantId: string,
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+    @CurrentActor() actor: AuthenticatedOrganizationMemberActor,
+  ): Promise<BranchSettingsResponseDto> {
+    const result = await this.getBranchSettingsUseCase.execute({ actor, restaurantId, branchId });
+    return this.toSettingsResponse(result);
+  }
+
+  @Patch(':branchId/settings')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
+  @RequireOrgRole(OrganizationMemberRole.Owner, OrganizationMemberRole.Admin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Branch settings updated successfully.')
+  @ApiOperation({
+    operationId: 'branchesUpdateSettings',
+    summary: 'Replace a branch reservation rules',
+    description: 'ADR-051: full replace of this branch rules; other branches are unchanged.',
+  })
+  @ApiParam({ name: 'restaurantId', format: 'uuid' })
+  @ApiParam({ name: 'branchId', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Branch settings', type: BranchSettingsResponseDto })
+  @ApiErrorResponse(400, 'Invalid body or ids', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller is not an Owner/Admin organization member', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Restaurant or branch not found', ['NOT_FOUND'])
+  async updateSettings(
+    @Param('restaurantId', ParseUUIDPipe) restaurantId: string,
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+    @Body() body: UpdateBranchSettingsRequestDto,
+    @CurrentActor() actor: AuthenticatedOrganizationMemberActor,
+    @Req() request: Request,
+  ): Promise<BranchSettingsResponseDto> {
+    const result = await this.updateBranchSettingsUseCase.execute({
+      actor,
+      restaurantId,
+      branchId,
+      ...body,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return this.toSettingsResponse(result);
+  }
+
+  private toSettingsResponse(result: BranchSettingsResult): BranchSettingsResponseDto {
+    return { ...result, updatedAt: result.updatedAt.toISOString() };
   }
 
   private toWorkingHoursResponse(result: BranchWorkingHoursResult): BranchWorkingHoursResponseDto {

@@ -1,5 +1,5 @@
 import { RestaurantSettings } from '../entities/restaurant-settings.entity';
-import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
+import { BranchId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 
 /**
  * No `organizationId` parameter, same reasoning as `RestaurantRepository`,
@@ -15,6 +15,15 @@ import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 export interface RestaurantSettingsRepository {
   findByRestaurantId(restaurantId: RestaurantId): Promise<RestaurantSettings | null>;
   save(settings: RestaurantSettings): Promise<void>;
+  /**
+   * ADR-051: the reservation rules a branch actually uses - its own
+   * `BranchSettings` row over the restaurant's `timezone`/`defaultCurrency`,
+   * or the restaurant row alone when the branch has none. Null when neither
+   * exists.
+   */
+  findForBranch(restaurantId: RestaurantId, branchId: BranchId): Promise<RestaurantSettings | null>;
+  /** ADR-051: stores the rule fields of `settings` as this branch's own rules. */
+  saveForBranch(branchId: BranchId, settings: RestaurantSettings): Promise<void>;
 }
 
 export const RESTAURANT_SETTINGS_REPOSITORY = Symbol('RESTAURANT_SETTINGS_REPOSITORY');
