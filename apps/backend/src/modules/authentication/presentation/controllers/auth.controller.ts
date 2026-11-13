@@ -415,6 +415,8 @@ export class AuthController {
         expiresAt: session.expiresAt.toISOString(),
         isCurrentSession: session.isCurrentSession,
         ipAddress: session.ipAddress,
+        browser: session.browser,
+        operatingSystem: session.operatingSystem,
       })),
     };
   }
