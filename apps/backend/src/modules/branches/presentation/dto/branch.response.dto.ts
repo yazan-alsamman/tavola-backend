@@ -29,24 +29,10 @@ export class BranchResponseDto {
   currency!: string | null;
 
   @ApiPropertyOptional({
-    example: 'Naranj Malki',
-    nullable: true,
-    description: "ADR-051: the branch's own name. Null means the restaurant name is shown.",
-  })
-  name!: string | null;
-
-  @ApiPropertyOptional({
-    nullable: true,
-    description:
-      "ADR-051: the branch's own description. Null means the restaurant description is shown.",
-  })
-  description!: string | null;
-
-  @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,
     description:
-      'ADR-051: File id of the branch cover (set with POST /restaurants/{id}/cover-image and branchId).',
+      'ADR-051: File id of the branch cover (set with POST /restaurants/{id}/cover and branchId).',
   })
   coverImageId!: string | null;
 

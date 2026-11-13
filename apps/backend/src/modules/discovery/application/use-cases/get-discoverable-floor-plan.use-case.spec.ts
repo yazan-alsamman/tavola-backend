@@ -42,8 +42,6 @@ function branch(): BranchResult {
     longitude: null,
     countryCode: 'SY',
     currency: null,
-    name: null,
-    description: null,
     coverImageId: null,
     timezone: 'Asia/Damascus',
     referencePrice: null,

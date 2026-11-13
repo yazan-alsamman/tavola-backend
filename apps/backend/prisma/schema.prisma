@@ -740,7 +740,6 @@ model CuisineCategory {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   restaurants RestaurantCuisineCategory[]
-  branches    BranchCuisineCategory[]
 
   @@index([isActive])
   @@map("cuisine_categories")
@@ -770,7 +769,6 @@ model OccasionCategory {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   restaurants RestaurantOccasionCategory[]
-  branches    BranchOccasionCategory[]
 
   @@index([isActive])
   @@map("occasion_categories")
@@ -788,39 +786,6 @@ model RestaurantOccasionCategory {
   @@unique([restaurantId, occasionCategoryId], map: "restaurant_occasion_category_unique")
   @@index([occasionCategoryId])
   @@map("restaurant_occasion_categories")
-}
-
-// Per-branch category assignments (ADR-051). The restaurant-level tables above
-// stay as the union of the restaurant's live branches, so Discovery filters by
-// cuisine or occasion keep working unchanged.
-model BranchCuisineCategory {
-  id                String   @id @default(uuid()) @db.Uuid
-  branchId          String   @map("branch_id") @db.Uuid
-  cuisineCategoryId String   @map("cuisine_category_id") @db.Uuid
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at")
-
-  branch          Branch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  cuisineCategory CuisineCategory @relation(fields: [cuisineCategoryId], references: [id], onDelete: Cascade)
-
-  @@unique([branchId, cuisineCategoryId], map: "branch_cuisine_category_unique")
-  @@index([cuisineCategoryId])
-  @@map("branch_cuisine_categories")
-}
-
-model BranchOccasionCategory {
-  id                 String   @id @default(uuid()) @db.Uuid
-  branchId           String   @map("branch_id") @db.Uuid
-  occasionCategoryId String   @map("occasion_category_id") @db.Uuid
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at")
-
-  branch           Branch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  occasionCategory OccasionCategory @relation(fields: [occasionCategoryId], references: [id], onDelete: Cascade)
-
-  @@unique([branchId, occasionCategoryId], map: "branch_occasion_category_unique")
-  @@index([occasionCategoryId])
-  @@map("branch_occasion_categories")
 }
 
 // ---------------------------------------------------------------------------
@@ -863,10 +828,6 @@ model Branch {
   longitude      Decimal?  @db.Decimal(10, 7)
   countryCode    String    @map("country_code")
   currency       String?
-  /// The branch's own display name (ADR-051). Null means the restaurant name is shown.
-  name           String?
-  /// The branch's own description (ADR-051). Null means the restaurant description is shown.
-  description    String?
   /// File id of the branch's own cover image (ADR-051). May share a file with the restaurant or another branch.
   coverImageId   String?   @map("cover_image_id") @db.Uuid
   /// Average price of the menu's items ranked 2 to 11 by price (ADR-046). Recomputed, never written by the restaurant.
@@ -890,8 +851,6 @@ model Branch {
   waitlistEntries           ReservationWaitlistEntry[]
   conversations             Conversation[]
   menus                     Menu[]
-  cuisineCategories         BranchCuisineCategory[]
-  occasionCategories        BranchOccasionCategory[]
 
   @@index([restaurantId])
   @@index([city])

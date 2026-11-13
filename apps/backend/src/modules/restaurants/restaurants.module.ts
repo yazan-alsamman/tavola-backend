@@ -239,12 +239,6 @@ import { PlatformAdminRestaurantsController } from './presentation/controllers/p
   exports: [
     RESTAURANT_REPOSITORY,
     RESTAURANT_SETTINGS_REPOSITORY,
-    // ADR-051: BranchesModule's per-branch category use cases validate ids
-    // against the taxonomy and rebuild the restaurant-level union.
-    CUISINE_CATEGORY_REPOSITORY,
-    OCCASION_CATEGORY_REPOSITORY,
-    RESTAURANT_CUISINE_CATEGORY_REPOSITORY,
-    RESTAURANT_OCCASION_CATEGORY_REPOSITORY,
     RESTAURANT_USAGE_REPOSITORY,
     ListWorkingHoursByRestaurantIdsUseCase,
     // Phase 19.2 (ADR-033): the Customer Acquisition module reuses this

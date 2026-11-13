@@ -12,8 +12,6 @@ export function toBranchResult(branch: Branch): BranchResult {
     longitude: branch.longitude,
     countryCode: branch.countryCode,
     currency: branch.currency,
-    name: branch.name,
-    description: branch.description,
     coverImageId: branch.coverImageId,
     referencePrice: branch.referencePrice,
     priceLevel: branch.priceLevel,
