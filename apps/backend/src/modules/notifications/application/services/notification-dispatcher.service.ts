@@ -34,6 +34,7 @@ import {
   ReviewReratedEvent,
 } from '@modules/reviews/domain/events/review.events';
 import { MessageSenderType } from '@modules/messaging/domain/enums/messaging.enums';
+import { CONVERSATIONS_MANAGE_PERMISSION } from '@modules/messaging/application/services/assert-actor-can-manage-conversation';
 import {
   CONVERSATION_PARTICIPANT_REPOSITORY,
   ConversationParticipantRepository,
@@ -68,6 +69,8 @@ export const StaffNotificationType = {
   ReviewCreated: 'StaffReviewCreated',
   /** High priority on the dashboard (ADR-045). */
   LowReviewCreated: 'StaffLowReviewCreated',
+  /** A customer wrote in a conversation (ADR-049). */
+  MessageReceived: 'StaffMessageReceived',
 } as const;
 
 /** A review scoring below this is "low" and reaches staff as high priority (ADR-045). */
@@ -78,10 +81,14 @@ interface StaffNotificationIntent {
   readonly reservationId: string | null;
   readonly entryId: string | null;
   readonly reviewId: string | null;
+  readonly conversationId: string | null;
   readonly restaurantId: string;
-  readonly branchId: string;
+  /** `null` = restaurant-wide (a conversation with no branch). */
+  readonly branchId: string | null;
   /** For a cancellation: only notify when this id is the reservation's own customer. */
   readonly cancelledBy: string | null;
+  /** Employees must hold this permission to be told (Owner/Admin always are). */
+  readonly requiredPermission?: string;
 }
 
 /**
@@ -100,6 +107,7 @@ export function resolveStaffNotificationIntent(event: DomainEvent): StaffNotific
       reservationId: p.reservationId,
       entryId: null,
       reviewId: null,
+      conversationId: null,
       restaurantId: p.restaurantId,
       branchId: p.branchId,
       cancelledBy: null,
@@ -112,6 +120,7 @@ export function resolveStaffNotificationIntent(event: DomainEvent): StaffNotific
       reservationId: p.reservationId,
       entryId: null,
       reviewId: null,
+      conversationId: null,
       restaurantId: p.restaurantId,
       branchId: p.branchId,
       cancelledBy: p.cancelledBy,
@@ -127,6 +136,7 @@ export function resolveStaffNotificationIntent(event: DomainEvent): StaffNotific
       reservationId: null,
       entryId: p.entryId,
       reviewId: null,
+      conversationId: null,
       restaurantId: p.restaurantId,
       branchId: p.branchId,
       cancelledBy: null,
@@ -142,9 +152,31 @@ export function resolveStaffNotificationIntent(event: DomainEvent): StaffNotific
       reservationId: p.reservationId,
       entryId: null,
       reviewId: p.reviewId,
+      conversationId: null,
       restaurantId: p.restaurantId,
       branchId: p.branchId,
       cancelledBy: null,
+    };
+  }
+  // ADR-049: a customer's message reaches the staff who can answer it
+  // (D15: Owner/Admin, or an Employee with `conversations:manage` in the
+  // conversation's branch scope). Staff and System messages never notify
+  // staff - the sender already knows.
+  if (event instanceof MessageSentEvent) {
+    const p = event.payload;
+    if (p.senderType !== MessageSenderType.Customer) {
+      return null;
+    }
+    return {
+      type: StaffNotificationType.MessageReceived,
+      reservationId: null,
+      entryId: null,
+      reviewId: null,
+      conversationId: p.conversationId,
+      restaurantId: p.restaurantId,
+      branchId: p.branchId,
+      cancelledBy: null,
+      requiredPermission: CONVERSATIONS_MANAGE_PERMISSION,
     };
   }
   return null;
@@ -266,12 +298,10 @@ export function resolveNotificationIntent(event: DomainEvent): NotificationInten
     };
   }
 
-  // Phase 15.6 (Messaging, DECISIONS.md D6) - customer-only: only a
-  // Restaurant-side sender (Employee/OrganizationMember) notifies the
-  // Customer participant. A Customer-sent message never notifies anyone
-  // (staff visibility is realtime-only, D9); a System-sent message is
-  // likewise excluded. No Employee/OrganizationMember ever receives a
-  // Notification row for messaging.
+  // Phase 15.6 (Messaging, DECISIONS.md D6) - only a Restaurant-side sender
+  // (Employee/OrganizationMember) notifies the Customer participant here. A
+  // Customer-sent message reaches staff through `dispatchToStaff` instead
+  // (ADR-049, `StaffMessageReceived`); a System-sent message notifies no one.
   if (event instanceof MessageSentEvent) {
     const p = event.payload;
     if (p.senderType === MessageSenderType.Customer || p.senderType === MessageSenderType.System) {
@@ -336,7 +366,8 @@ export class NotificationDispatcher {
   /**
    * The restaurant-side counterpart of `dispatch`: one In-App row per
    * Owner/Admin/branch Employee for a customer's new booking, cancellation,
-   * waitlist join, or review (a low review as its own high-priority type). Never Push (owner decision 2026-11-08). Same
+   * waitlist join, review (a low review as its own high-priority type), or
+   * message (ADR-049). Never Push (owner decision 2026-11-08). Same
    * best-effort contract as `dispatch` - the caller swallows failures.
    */
   async dispatchToStaff(event: DomainEvent): Promise<NotificationCreatedEvent[]> {
@@ -357,13 +388,15 @@ export class NotificationDispatcher {
     const recipientIds = await this.staffRecipientReader.findRecipientUserIds(
       intent.restaurantId,
       intent.branchId,
+      intent.requiredPermission,
     );
     const data = {
       ...(intent.reservationId !== null ? { reservationId: intent.reservationId } : {}),
       ...(intent.entryId !== null ? { entryId: intent.entryId } : {}),
       ...(intent.reviewId !== null ? { reviewId: intent.reviewId } : {}),
+      ...(intent.conversationId !== null ? { conversationId: intent.conversationId } : {}),
       restaurantId: intent.restaurantId,
-      branchId: intent.branchId,
+      ...(intent.branchId !== null ? { branchId: intent.branchId } : {}),
     };
 
     const created: NotificationCreatedEvent[] = [];
