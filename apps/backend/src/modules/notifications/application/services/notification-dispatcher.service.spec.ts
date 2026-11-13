@@ -1,3 +1,4 @@
+import { UserId } from '@shared/domain/value-objects/identifiers.vo';
 import {
   GuestLateArrivalNotifiedEvent,
   ReservationApprovedEvent,
@@ -695,8 +696,15 @@ describe('NotificationDispatcher', () => {
       );
       const saved = customer.notificationRepository.save.mock.calls[0][0];
       expect(saved.type).toBe('StaffMessageReceived');
-      expect(saved.data).toEqual({ conversationId, restaurantId, branchId });
+      // The sender's name (never the message text) so staff see who wrote.
+      expect(saved.data).toEqual({
+        conversationId,
+        restaurantId,
+        branchId,
+        senderName: 'Test User',
+      });
       expect(saved.data).not.toHaveProperty('body');
+      expect(customer.userRepository.findById).toHaveBeenCalledWith(UserId.create(userId));
       expect(customer.deliveryScheduler.enqueueDelivery).not.toHaveBeenCalled();
 
       const restaurantWide = buildDispatcher({ staffRecipientIds: [ownerId] });
@@ -709,7 +717,16 @@ describe('NotificationDispatcher', () => {
       expect(restaurantWide.notificationRepository.save.mock.calls[0][0].data).toEqual({
         conversationId,
         restaurantId,
+        senderName: 'Test User',
       });
+
+      // A customer with no name on file: the notification still goes out, unnamed.
+      const unnamed = buildDispatcher({ staffRecipientIds: [ownerId] });
+      unnamed.userRepository.findById.mockResolvedValueOnce(null);
+      await unnamed.dispatcher.dispatchToStaff(message(MessageSenderType.Customer));
+      expect(unnamed.notificationRepository.save.mock.calls[0][0].data).not.toHaveProperty(
+        'senderName',
+      );
 
       for (const senderType of [
         MessageSenderType.Employee,

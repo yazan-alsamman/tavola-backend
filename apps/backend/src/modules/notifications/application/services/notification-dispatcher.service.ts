@@ -89,6 +89,8 @@ interface StaffNotificationIntent {
   readonly cancelledBy: string | null;
   /** Employees must hold this permission to be told (Owner/Admin always are). */
   readonly requiredPermission?: string;
+  /** The customer who wrote, so staff see who it is from (ADR-049). */
+  readonly senderUserId?: string | null;
 }
 
 /**
@@ -177,6 +179,7 @@ export function resolveStaffNotificationIntent(event: DomainEvent): StaffNotific
       branchId: p.branchId,
       cancelledBy: null,
       requiredPermission: CONVERSATIONS_MANAGE_PERMISSION,
+      senderUserId: p.senderUserId,
     };
   }
   return null;
@@ -364,6 +367,23 @@ export class NotificationDispatcher {
   ) {}
 
   /**
+   * "First Last" of the customer behind a staff notification, or `null` for a
+   * guest or a user with no name on file. Shown by the dashboard as the
+   * sender; never the message text itself (ADR-049).
+   */
+  private async customerDisplayName(userId: string | null): Promise<string | null> {
+    if (userId === null) {
+      return null;
+    }
+    const user = await this.userRepository.findById(UserId.create(userId));
+    const name = [user?.firstName, user?.lastName]
+      .map((part) => part?.trim() ?? '')
+      .filter((part) => part.length > 0)
+      .join(' ');
+    return name.length > 0 ? name : null;
+  }
+
+  /**
    * The restaurant-side counterpart of `dispatch`: one In-App row per
    * Owner/Admin/branch Employee for a customer's new booking, cancellation,
    * waitlist join, review (a low review as its own high-priority type), or
@@ -390,6 +410,7 @@ export class NotificationDispatcher {
       intent.branchId,
       intent.requiredPermission,
     );
+    const senderName = await this.customerDisplayName(intent.senderUserId ?? null);
     const data = {
       ...(intent.reservationId !== null ? { reservationId: intent.reservationId } : {}),
       ...(intent.entryId !== null ? { entryId: intent.entryId } : {}),
@@ -397,6 +418,7 @@ export class NotificationDispatcher {
       ...(intent.conversationId !== null ? { conversationId: intent.conversationId } : {}),
       restaurantId: intent.restaurantId,
       ...(intent.branchId !== null ? { branchId: intent.branchId } : {}),
+      ...(senderName !== null ? { senderName } : {}),
     };
 
     const created: NotificationCreatedEvent[] = [];

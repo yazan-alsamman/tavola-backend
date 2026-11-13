@@ -2793,7 +2793,7 @@ D6 kept messaging notifications customer-only and D9 left staff with realtime on
 
 1. `NotificationDispatcher.dispatchToStaff` handles `MessageSent` when `senderType = Customer` and creates one `StaffMessageReceived` In-App notification per recipient. Messages from staff or the System never notify staff. Never Push, like every staff notification (ADR-041).
 2. Recipients are the people D15 lets answer: active Owner/Admin members, plus active Employees of the restaurant whose effective permissions include `conversations:manage` and whose branch scope covers the conversation's branch. A conversation with no branch reaches every such Employee. `StaffNotificationRecipientReaderPort.findRecipientUserIds` takes an optional required permission and a nullable branch for this; the other staff notifications are unchanged.
-3. `data` is `{ conversationId, restaurantId, branchId? }`. The message text is never copied into the notification. Templates are seeded in English and Arabic.
+3. `data` is `{ conversationId, restaurantId, branchId?, senderName? }`. `senderName` is the customer's "first last" name (left out for a customer with no name on file) so the dashboard can say who wrote; the dashboard opens the conversation from `conversationId`. The message text is never copied into the notification. Templates are seeded in English and Arabic.
 4. Each customer message makes its own notification, so the dashboard can chime on every one; `SendMessage`'s per-participant rate limit (D8) bounds the volume.
 
 ### Alternatives
