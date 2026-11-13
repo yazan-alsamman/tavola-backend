@@ -1,3 +1,9 @@
+import {
+  BranchFeature,
+  BranchSubscriptionStatus,
+  BranchVenueType,
+} from '../../domain/enums/branch.enums';
+
 export interface BranchResult {
   branchId: string;
   restaurantId: string;
@@ -8,6 +14,13 @@ export interface BranchResult {
   longitude: number | null;
   countryCode: string;
   currency: string | null;
+  /** ADR-051: the branch cover file; null means the restaurant cover is shown. */
+  coverImageId: string | null;
+  /** ADR-053 */
+  venueType: BranchVenueType | null;
+  features: BranchFeature[];
+  subscriptionStatus: BranchSubscriptionStatus;
+  trialEndsAt: Date | null;
   referencePrice: number | null;
   priceLevel: number | null;
   timezone: string;

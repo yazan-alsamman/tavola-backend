@@ -13,11 +13,25 @@ import { DeleteBranchUseCase } from './application/use-cases/delete-branch.use-c
 import { GetBranchWorkingHoursUseCase } from './application/use-cases/get-branch-working-hours.use-case';
 import { UpdateBranchWorkingHoursUseCase } from './application/use-cases/update-branch-working-hours.use-case';
 import { ListBranchWorkingHoursByBranchIdsUseCase } from './application/use-cases/list-branch-working-hours-by-branch-ids.use-case';
+import { GetBranchSettingsUseCase } from './application/use-cases/get-branch-settings.use-case';
+import { UpdateBranchSettingsUseCase } from './application/use-cases/update-branch-settings.use-case';
+import { BranchSettingsAccessService } from './application/services/branch-settings-access.service';
+import { BranchAccessService } from './application/services/branch-access.service';
+import { ListRestaurantWorkingHoursFromBranchesUseCase } from './application/use-cases/list-restaurant-working-hours-from-branches.use-case';
 import { BRANCH_REPOSITORY } from './domain/repositories/branch.repository';
 import { BRANCH_WORKING_HOURS_REPOSITORY } from './domain/repositories/branch-working-hours.repository';
 import { PrismaBranchRepository } from './infrastructure/persistence/prisma-branch.repository';
 import { PrismaBranchWorkingHoursRepository } from './infrastructure/persistence/prisma-branch-working-hours.repository';
 import { BranchesController } from './presentation/controllers/branches.controller';
+import { BranchAvailabilityController } from './presentation/controllers/branch-availability.controller';
+import {
+  CreateBranchClosureUseCase,
+  DeleteBranchClosureUseCase,
+  ListBranchClosuresUseCase,
+} from './application/use-cases/branch-closures.use-cases';
+import { SetBranchPausedUseCase } from './application/use-cases/set-branch-paused.use-case';
+import { BRANCH_CLOSURE_REPOSITORY } from './domain/repositories/branch-closure.repository';
+import { PrismaBranchClosureRepository } from './infrastructure/persistence/prisma-branch-closure.repository';
 
 /**
  * Phase 5.1 (Branch CRUD) + Phase 5.2 (Working Schedule, branch-level
@@ -71,7 +85,7 @@ import { BranchesController } from './presentation/controllers/branches.controll
     forwardRef(() => TablesModule),
     PrismaModule,
   ],
-  controllers: [BranchesController],
+  controllers: [BranchesController, BranchAvailabilityController],
   providers: [
     CreateBranchUseCase,
     GetBranchUseCase,
@@ -81,8 +95,19 @@ import { BranchesController } from './presentation/controllers/branches.controll
     GetBranchWorkingHoursUseCase,
     UpdateBranchWorkingHoursUseCase,
     ListBranchWorkingHoursByBranchIdsUseCase,
+    ListRestaurantWorkingHoursFromBranchesUseCase,
+    BranchAccessService,
+    BranchSettingsAccessService,
+    GetBranchSettingsUseCase,
+    UpdateBranchSettingsUseCase,
+    ListBranchClosuresUseCase,
+    CreateBranchClosureUseCase,
+    DeleteBranchClosureUseCase,
+    SetBranchPausedUseCase,
     PrismaBranchRepository,
     PrismaBranchWorkingHoursRepository,
+    PrismaBranchClosureRepository,
+    { provide: BRANCH_CLOSURE_REPOSITORY, useExisting: PrismaBranchClosureRepository },
     { provide: BRANCH_REPOSITORY, useExisting: PrismaBranchRepository },
     { provide: BRANCH_WORKING_HOURS_REPOSITORY, useExisting: PrismaBranchWorkingHoursRepository },
   ],
@@ -97,7 +122,15 @@ import { BranchesController } from './presentation/controllers/branches.controll
   // batched lookup for Discovery's customer-facing (no-organizationId)
   // callers, which have already resolved branch visibility themselves before
   // calling it - same passthrough-safe shape as this module's own
-  // BRANCH_WORKING_HOURS_REPOSITORY.
-  exports: [BRANCH_REPOSITORY, ListBranchWorkingHoursByBranchIdsUseCase],
+  // BRANCH_WORKING_HOURS_REPOSITORY. ListRestaurantWorkingHoursFromBranchesUseCase
+  // is exported for DiscoveryModule's restaurant-level `workingHours` (ADR-050).
+  // BRANCH_CLOSURE_REPOSITORY is exported for ReservationsModule (ADR-053):
+  // time slots and online booking refuse a closed date.
+  exports: [
+    BRANCH_REPOSITORY,
+    BRANCH_CLOSURE_REPOSITORY,
+    ListBranchWorkingHoursByBranchIdsUseCase,
+    ListRestaurantWorkingHoursFromBranchesUseCase,
+  ],
 })
 export class BranchesModule {}

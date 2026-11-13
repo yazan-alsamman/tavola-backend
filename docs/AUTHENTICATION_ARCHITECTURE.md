@@ -690,7 +690,7 @@ Redis sliding window for rate limiting; DB for audit and suspicious-login analys
 | `createdAt` | timestamp | |
 | `updatedAt` | timestamp | |
 
-Seed: Manager, Receptionist, Cashier, … — not org Owner (that's `OrganizationMember`).
+Seed: Manager, Receptionist, Front Desk, Cashier, … — not org Owner (that's `OrganizationMember`).
 
 ## 7.9 Permissions (complete schema)
 

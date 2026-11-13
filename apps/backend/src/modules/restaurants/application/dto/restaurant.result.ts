@@ -11,6 +11,11 @@ export interface RestaurantResult {
   logoId: string | null;
   coverImageId: string | null;
   description: string | null;
+  /** ADR-052 */
+  nameAr: string | null;
+  nameEn: string | null;
+  descriptionAr: string | null;
+  descriptionEn: string | null;
   cuisineType: string | null;
   averageRating: number | null;
   ratingCount: number;

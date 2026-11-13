@@ -16,6 +16,10 @@ export class RestaurantSettingsPrismaMapper {
       defaultCurrency: row.defaultCurrency,
       reservationReminderMinutesBefore: row.reservationReminderMinutesBefore,
       lateArrivalGraceMinutes: row.lateArrivalGraceMinutes,
+      autoApprovalMaxGuests: row.autoApprovalMaxGuests,
+      minLeadTimeMinutes: row.minLeadTimeMinutes,
+      maxDaysAhead: row.maxDaysAhead,
+      dailyGuestCap: row.dailyGuestCap,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     });
@@ -36,6 +40,10 @@ export class RestaurantSettingsPrismaMapper {
       defaultCurrency: props.defaultCurrency,
       reservationReminderMinutesBefore: props.reservationReminderMinutesBefore,
       lateArrivalGraceMinutes: props.lateArrivalGraceMinutes,
+      autoApprovalMaxGuests: props.autoApprovalMaxGuests ?? null,
+      minLeadTimeMinutes: props.minLeadTimeMinutes ?? 0,
+      maxDaysAhead: props.maxDaysAhead ?? null,
+      dailyGuestCap: props.dailyGuestCap ?? null,
       createdAt: props.createdAt,
       updatedAt: props.updatedAt,
     };

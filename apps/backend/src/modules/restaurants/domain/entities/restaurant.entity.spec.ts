@@ -44,7 +44,15 @@ describe('Restaurant entity', () => {
       const at = new Date('2026-02-01T00:00:00.000Z');
 
       const updated = restaurant.updateProfile(
-        { name: 'New Name', description: 'A cozy place', cuisineType: 'Italian' },
+        {
+          name: 'New Name',
+          description: 'A cozy place',
+          cuisineType: 'Italian',
+          nameAr: null,
+          nameEn: null,
+          descriptionAr: null,
+          descriptionEn: null,
+        },
         at,
       );
 
@@ -59,7 +67,15 @@ describe('Restaurant entity', () => {
       const restaurant = createRestaurant();
 
       restaurant.updateProfile(
-        { name: 'Changed', description: null, cuisineType: null },
+        {
+          name: 'Changed',
+          description: null,
+          cuisineType: null,
+          nameAr: null,
+          nameEn: null,
+          descriptionAr: null,
+          descriptionEn: null,
+        },
         new Date('2026-02-01T00:00:00.000Z'),
       );
 
@@ -70,7 +86,15 @@ describe('Restaurant entity', () => {
       const restaurant = createRestaurant();
 
       const updated = restaurant.updateProfile(
-        { name: 'Changed', description: null, cuisineType: null },
+        {
+          name: 'Changed',
+          description: null,
+          cuisineType: null,
+          nameAr: null,
+          nameEn: null,
+          descriptionAr: null,
+          descriptionEn: null,
+        },
         new Date('2026-02-01T00:00:00.000Z'),
       );
 

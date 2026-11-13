@@ -1,5 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ArrayMaxSize,
+  IsArray,
+  IsEnum,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -9,6 +12,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { BranchFeature, BranchVenueType } from '../../domain/enums/branch.enums';
 
 export class CreateBranchRequestDto {
   @ApiProperty({ example: 'Damascus' })
@@ -81,4 +85,24 @@ export class CreateBranchRequestDto {
   @IsString()
   @MaxLength(20)
   phone?: string | null;
+
+  @ApiPropertyOptional({
+    enum: BranchVenueType,
+    nullable: true,
+    description: 'ADR-053: what kind of place this is. Omitted keeps the stored value.',
+  })
+  @IsOptional()
+  @IsEnum(BranchVenueType)
+  venueType?: BranchVenueType | null;
+
+  @ApiPropertyOptional({
+    enum: BranchFeature,
+    isArray: true,
+    description: 'ADR-053: amenities. Omitted keeps the stored list; [] clears it.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsEnum(BranchFeature, { each: true })
+  features?: BranchFeature[];
 }

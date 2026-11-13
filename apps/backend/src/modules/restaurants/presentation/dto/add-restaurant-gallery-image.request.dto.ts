@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, IsUUID } from 'class-validator';
 
 /**
  * Multipart request: the image file itself is handled via
@@ -12,4 +12,13 @@ export class AddRestaurantGalleryImageRequestDto {
   @IsOptional()
   @IsString()
   caption?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "ADR-051: the branch the photo belongs to. Omitted, the restaurant's oldest branch.",
+  })
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
 }

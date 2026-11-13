@@ -1,3 +1,8 @@
+import {
+  BranchFeature,
+  BranchSubscriptionStatus,
+  BranchVenueType,
+} from '../../domain/enums/branch.enums';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class BranchResponseDto {
@@ -27,6 +32,29 @@ export class BranchResponseDto {
 
   @ApiPropertyOptional({ example: 'SYP', nullable: true })
   currency!: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'ADR-051: File id of the branch cover (set with POST /restaurants/{id}/cover and branchId).',
+  })
+  coverImageId!: string | null;
+
+  @ApiProperty({ enum: BranchVenueType, nullable: true, description: 'ADR-053' })
+  venueType!: BranchVenueType | null;
+
+  @ApiProperty({ enum: BranchFeature, isArray: true, description: 'ADR-053' })
+  features!: BranchFeature[];
+
+  @ApiProperty({
+    enum: BranchSubscriptionStatus,
+    description: 'ADR-053: Trial until trialEndsAt, Paused while the owner paused the branch.',
+  })
+  subscriptionStatus!: BranchSubscriptionStatus;
+
+  @ApiProperty({ type: String, format: 'date-time', nullable: true, description: 'ADR-053' })
+  trialEndsAt!: string | null;
 
   @ApiPropertyOptional({
     example: 40.6,

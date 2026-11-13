@@ -5,6 +5,8 @@ import { InvalidRestaurantGalleryImageException } from '../exceptions/invalid-re
 export interface RestaurantGalleryImageProps {
   id: string;
   restaurantId: string;
+  /** ADR-051: the branch this photo belongs to; null only on a restaurant with no branch. */
+  branchId: string | null;
   fileId: string;
   caption: string | null;
   sortOrder: number;
@@ -13,8 +15,7 @@ export interface RestaurantGalleryImageProps {
 }
 
 /**
- * One image in a Restaurant's gallery. Restaurant-owned only (approved
- * architecture decision, Phase 4.4) - no Branch ownership. Images are
+ * One image in a branch's gallery (ADR-051; Phase 4.4 made it restaurant-owned). Images are
  * added and removed; the only change after creation is the position
  * (`moveTo`, drag ordering - ADR-046).
  */
@@ -38,6 +39,10 @@ export class RestaurantGalleryImage extends Entity<RestaurantGalleryImageProps> 
 
   get restaurantId(): RestaurantId {
     return RestaurantId.create(this.props.restaurantId);
+  }
+
+  get branchId(): string | null {
+    return this.props.branchId;
   }
 
   get fileId(): FileId {

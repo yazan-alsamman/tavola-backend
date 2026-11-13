@@ -583,6 +583,11 @@ model Restaurant {
   logoId         String?   @map("logo_id") @db.Uuid
   coverImageId   String?   @map("cover_image_id") @db.Uuid
   description    String?
+  /// ADR-052: name and description per language. `name`/`description` mirror the Arabic (else English) text for app 1.0.2.
+  nameAr         String?   @map("name_ar")
+  nameEn         String?   @map("name_en")
+  descriptionAr  String?   @map("description_ar")
+  descriptionEn  String?   @map("description_en")
   cuisineType    String?   @map("cuisine_type")
   averageRating  Decimal?  @map("average_rating") @db.Decimal(3, 2)
   /// Active reviews in the rating window (last 6 months). `averageRating` is null below 5.
@@ -649,6 +654,14 @@ model RestaurantSettings {
   defaultCurrency                   String?  @map("default_currency")
   reservationReminderMinutesBefore  Int      @default(60) @map("reservation_reminder_minutes_before")
   lateArrivalGraceMinutes           Int      @default(15) @map("late_arrival_grace_minutes")
+  /// ADR-053: auto-approval applies only up to this party size; null means any size.
+  autoApprovalMaxGuests             Int?     @map("auto_approval_max_guests")
+  /// ADR-053: an online booking must start at least this many minutes from now.
+  minLeadTimeMinutes                Int      @default(0) @map("min_lead_time_minutes")
+  /// ADR-053: furthest day ahead a guest can book online; null means the platform limit.
+  maxDaysAhead                      Int?     @map("max_days_ahead")
+  /// ADR-053: most guests the branch accepts online on one day; null means no cap.
+  dailyGuestCap                     Int?     @map("daily_guest_cap")
   createdAt                         DateTime @default(now()) @map("created_at")
   updatedAt                         DateTime @updatedAt @map("updated_at")
 
@@ -703,6 +716,8 @@ model WorkingHours {
 model RestaurantGallery {
   id           String   @id @default(uuid()) @db.Uuid
   restaurantId String   @map("restaurant_id") @db.Uuid
+  /// ADR-051: the branch this photo belongs to. Null only on legacy rows of a restaurant that had no branch.
+  branchId     String?  @map("branch_id") @db.Uuid
   fileId       String   @map("file_id") @db.Uuid
   caption      String?
   sortOrder    Int      @map("sort_order")
@@ -712,6 +727,7 @@ model RestaurantGallery {
   restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
   @@index([restaurantId])
+  @@index([branchId])
   @@map("restaurant_gallery")
 }
 
@@ -816,35 +832,47 @@ model Favorite {
 }
 
 model Branch {
-  id             String    @id @default(uuid()) @db.Uuid
-  restaurantId   String    @map("restaurant_id") @db.Uuid
+  id             String           @id @default(uuid()) @db.Uuid
+  restaurantId   String           @map("restaurant_id") @db.Uuid
   city           String
   district       String?
   address        String
-  latitude       Decimal?  @db.Decimal(10, 7)
-  longitude      Decimal?  @db.Decimal(10, 7)
-  countryCode    String    @map("country_code")
+  latitude       Decimal?         @db.Decimal(10, 7)
+  longitude      Decimal?         @db.Decimal(10, 7)
+  countryCode    String           @map("country_code")
   currency       String?
+  /// File id of the branch's own cover image (ADR-051). May share a file with the restaurant or another branch.
+  coverImageId   String?          @map("cover_image_id") @db.Uuid
+  /// ADR-053: what kind of place the branch is. Null until the owner picks one.
+  venueType      BranchVenueType? @map("venue_type")
+  /// ADR-053: amenities guests can filter on.
+  features       BranchFeature[]  @default([])
+  /// ADR-053: end of the free period of a branch created after per-branch plans. Null for older branches.
+  trialEndsAt    DateTime?        @map("trial_ends_at")
+  /// ADR-053: set while the owner has paused the branch; it takes no online bookings and is hidden from guests.
+  pausedAt       DateTime?        @map("paused_at")
   /// Average price of the menu's items ranked 2 to 11 by price (ADR-046). Recomputed, never written by the restaurant.
-  referencePrice Decimal?  @map("reference_price") @db.Decimal(10, 2)
+  referencePrice Decimal?         @map("reference_price") @db.Decimal(10, 2)
   /// 1-4: the branch's quartile of reference prices among branches with the same currency (ADR-046).
-  priceLevel     Int?      @map("price_level")
-  openingHours   Json?     @map("opening_hours")
+  priceLevel     Int?             @map("price_level")
+  openingHours   Json?            @map("opening_hours")
   timezone       String
   phone          String?
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
-  deletedAt      DateTime? @map("deleted_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+  deletedAt      DateTime?        @map("deleted_at")
 
   restaurant                Restaurant                 @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   employeeBranchAssignments EmployeeBranchAssignment[]
   workingHours              BranchWorkingHours[]
+  settings                  BranchSettings?
   floorPlans                FloorPlan[]
   tables                    Table[]
   reservations              Reservation[]
   waitlistEntries           ReservationWaitlistEntry[]
   conversations             Conversation[]
   menus                     Menu[]
+  closures                  BranchClosure[]
 
   @@index([restaurantId])
   @@index([city])
@@ -884,6 +912,77 @@ model BranchWorkingHours {
   @@unique([branchId, dayOfWeek])
   @@index([branchId])
   @@map("branch_working_hours")
+}
+
+// ---------------------------------------------------------------------------
+// Branch Settings (ADR-051). Each branch's own reservation rules. Same rule
+// columns as RestaurantSettings; timezone and currency already live on
+// Branch. A branch without a row uses its restaurant's RestaurantSettings
+// (only a branch created after the ADR-051 migration and never edited).
+// Tenant-owned transitively via branchId -> Branch.restaurantId, like
+// BranchWorkingHours.
+// ---------------------------------------------------------------------------
+
+/// ADR-053: kinds of place a branch can be.
+enum BranchVenueType {
+  Restaurant
+  Cafe
+  Patisserie
+  Brunch
+}
+
+/// ADR-053: branch amenities.
+enum BranchFeature {
+  Shisha
+  OutdoorSeating
+  Heating
+  Parking
+  FamilyFriendly
+  PrivateRoom
+}
+
+/// ADR-053: dates a branch is closed without changing its weekly hours.
+/// Both dates are inclusive calendar dates in the branch timezone.
+model BranchClosure {
+  id        String   @id @default(uuid()) @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+  startDate DateTime @map("start_date") @db.Date
+  endDate   DateTime @map("end_date") @db.Date
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([branchId, endDate])
+  @@map("branch_closures")
+}
+
+model BranchSettings {
+  id                                String   @id @default(uuid()) @db.Uuid
+  branchId                          String   @unique @map("branch_id") @db.Uuid
+  reservationIntervalMinutes        Int      @default(30) @map("reservation_interval_minutes")
+  maxGuestsPerReservation           Int      @default(20) @map("max_guests_per_reservation")
+  cancellationWindowMinutes         Int      @default(60) @map("cancellation_window_minutes")
+  pendingReservationTimeoutMinutes  Int      @default(15) @map("pending_reservation_timeout_minutes")
+  defaultReservationDurationMinutes Int      @default(90) @map("default_reservation_duration_minutes")
+  autoApproval                      Boolean  @default(false) @map("auto_approval")
+  reservationReminderMinutesBefore  Int      @default(60) @map("reservation_reminder_minutes_before")
+  lateArrivalGraceMinutes           Int      @default(15) @map("late_arrival_grace_minutes")
+  /// ADR-053: auto-approval applies only up to this party size; null means any size.
+  autoApprovalMaxGuests             Int?     @map("auto_approval_max_guests")
+  /// ADR-053: an online booking must start at least this many minutes from now.
+  minLeadTimeMinutes                Int      @default(0) @map("min_lead_time_minutes")
+  /// ADR-053: furthest day ahead a guest can book online; null means the platform limit.
+  maxDaysAhead                      Int?     @map("max_days_ahead")
+  /// ADR-053: most guests the branch accepts online on one day; null means no cap.
+  dailyGuestCap                     Int?     @map("daily_guest_cap")
+  createdAt                         DateTime @default(now()) @map("created_at")
+  updatedAt                         DateTime @updatedAt @map("updated_at")
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@map("branch_settings")
 }
 
 // ---------------------------------------------------------------------------

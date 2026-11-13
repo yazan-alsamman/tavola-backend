@@ -197,7 +197,7 @@ export class DiscoveryController {
     operationId: 'discoveryGetRestaurant',
     summary: 'Get a restaurant by id (public, unauthenticated)',
     description:
-      'Unknown, soft-deleted, or non-Active (e.g. Suspended) restaurants 404. Includes workingHours (the Restaurant-level default weekly schedule, Phase 4.3) - Public Working Hours, customer-facing correction. `coverImageUrl` is a short-lived signed read URL for `coverImageId` (null when there is no cover).',
+      'Unknown, soft-deleted, or non-Active (e.g. Suspended) restaurants 404. Includes workingHours (the weekly schedule of the oldest branch of the restaurant; hours belong to branches, ADR-050) - Public Working Hours, customer-facing correction. `coverImageUrl` is a short-lived signed read URL for `coverImageId` (null when there is no cover).',
   })
   @ApiParam({ name: 'restaurantId', format: 'uuid' })
   @ApiResponse({

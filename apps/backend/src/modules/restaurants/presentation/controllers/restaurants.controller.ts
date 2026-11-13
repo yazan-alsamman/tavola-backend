@@ -24,6 +24,7 @@ import {
   ApiExtraModels,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -74,6 +75,7 @@ import { UpdateRestaurantRequestDto } from '../dto/update-restaurant.request.dto
 import { UpdateRestaurantSettingsRequestDto } from '../dto/update-restaurant-settings.request.dto';
 import { UpdateWorkingHoursRequestDto } from '../dto/update-working-hours.request.dto';
 import { AddRestaurantGalleryImageRequestDto } from '../dto/add-restaurant-gallery-image.request.dto';
+import { UploadRestaurantCoverImageRequestDto } from '../dto/upload-restaurant-cover-image.request.dto';
 import { SetRestaurantCuisineCategoriesRequestDto } from '../dto/set-restaurant-cuisine-categories.request.dto';
 import { SetRestaurantOccasionCategoriesRequestDto } from '../dto/set-restaurant-occasion-categories.request.dto';
 import { ListRestaurantsQueryDto } from '../dto/list-restaurants.query.dto';
@@ -261,7 +263,11 @@ export class RestaurantsController {
       actor,
       restaurantId: id,
       name: body.name,
+      nameAr: body.nameAr,
+      nameEn: body.nameEn,
       description: body.description ?? null,
+      descriptionAr: body.descriptionAr,
+      descriptionEn: body.descriptionEn,
       cuisineType: body.cuisineType ?? null,
       status: body.status,
       correlationId: request.headers['x-correlation-id'] as string | undefined,
@@ -397,9 +403,10 @@ export class RestaurantsController {
   @ResponseMessage('Restaurant working hours retrieved successfully.')
   @ApiOperation({
     operationId: 'restaurantsGetWorkingHours',
-    summary: 'Get a restaurant weekly working hours',
+    summary: 'Get a restaurant weekly working hours (deprecated)',
+    deprecated: true,
     description:
-      'Restaurant-level default only (Phase 4.3 scope; branch-level override is a future phase). Only restaurants belonging to the caller organization are ever visible - tenant scoping is automatic (TENANCY.md). A day absent from `entries` is closed that day; a brand-new restaurant has an empty `entries` array until explicitly configured.',
+      'Deprecated (ADR-050): working hours belong to branches - use GET /restaurants/{id}/branches/{branchId}/working-hours. These legacy rows no longer affect bookings or customer-facing hours. Restaurant-level default only (Phase 4.3 scope; branch-level override is a future phase). Only restaurants belonging to the caller organization are ever visible - tenant scoping is automatic (TENANCY.md). A day absent from `entries` is closed that day; a brand-new restaurant has an empty `entries` array until explicitly configured.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({
@@ -433,9 +440,10 @@ export class RestaurantsController {
   @ResponseMessage('Restaurant working hours updated successfully.')
   @ApiOperation({
     operationId: 'restaurantsUpdateWorkingHours',
-    summary: 'Replace a restaurant weekly working hours (full-replace)',
+    summary: 'Replace a restaurant weekly working hours (deprecated)',
+    deprecated: true,
     description:
-      "Full-replace of the entire week: the submitted `entries` become the restaurant's complete schedule - a day omitted from `entries` becomes closed that day. Restaurant-level only (Phase 4.3 scope; branch-level override is a future phase). Only restaurants belonging to the caller organization can be updated - tenant scoping is automatic (TENANCY.md).",
+      "Deprecated (ADR-050): working hours belong to branches - use PATCH /restaurants/{id}/branches/{branchId}/working-hours. These legacy rows no longer affect bookings or customer-facing hours. Full-replace of the entire week: the submitted `entries` become the restaurant's complete schedule - a day omitted from `entries` becomes closed that day. Restaurant-level only (Phase 4.3 scope; branch-level override is a future phase). Only restaurants belonging to the caller organization can be updated - tenant scoping is automatic (TENANCY.md).",
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({
@@ -487,7 +495,10 @@ export class RestaurantsController {
   @ApiBody({
     schema: {
       type: 'object',
-      properties: { file: { type: 'string', format: 'binary' } },
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        branchId: { type: 'string', format: 'uuid' },
+      },
       required: ['file'],
     },
   })
@@ -496,7 +507,7 @@ export class RestaurantsController {
     operationId: 'restaurantsUploadCoverImage',
     summary: 'Upload a restaurant cover image',
     description:
-      'Stores the file in the public bucket and sets Restaurant.coverImageId to the new File id. Replaces any previous cover. Does not write the gallery and does not use the logo. Discovery then signs coverImageUrl from this id.',
+      'Stores the file in the public bucket and sets Restaurant.coverImageId to the new File id. With `branchId` (ADR-051) it sets the own cover of that branch instead. Replaces any previous cover; the old file is deleted only when no restaurant or branch still uses it. Does not write the gallery and does not use the logo. Discovery then signs coverImageUrl from this id.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 201, type: RestaurantCoverImageResponseDto })
@@ -504,13 +515,16 @@ export class RestaurantsController {
     'VALIDATION_ERROR',
     'INVALID_FILE',
   ])
-  @ApiErrorResponse(404, 'Restaurant not found (or belongs to another organization)', ['NOT_FOUND'])
+  @ApiErrorResponse(404, 'Restaurant or branch not found (or belongs to another organization)', [
+    'NOT_FOUND',
+  ])
   @ApiErrorResponse(413, 'Image file exceeds the maximum allowed size', ['FILE_TOO_LARGE'])
   @ApiErrorResponse(415, 'Unsupported image file type', ['UNSUPPORTED_FILE_TYPE'])
   @ApiErrorResponse(503, 'Image storage is temporarily unavailable', ['STORAGE_UNAVAILABLE'])
   async uploadCover(
     @Param('id', ParseUUIDPipe) id: string,
     @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() body: UploadRestaurantCoverImageRequestDto,
     @CurrentActor() actor: AuthenticatedOrganizationMemberActor,
     @Req() request: Request,
   ): Promise<RestaurantCoverImageResponseDto> {
@@ -519,6 +533,7 @@ export class RestaurantsController {
       organizationId: actor.organizationId,
       restaurantId: id,
       slot: 'cover',
+      branchId: body.branchId ?? null,
       file: file ? { buffer: file.buffer, mimeType: file.mimetype, sizeBytes: file.size } : null,
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
@@ -590,6 +605,7 @@ export class RestaurantsController {
       properties: {
         file: { type: 'string', format: 'binary' },
         caption: { type: 'string' },
+        branchId: { type: 'string', format: 'uuid' },
       },
       required: ['file'],
     },
@@ -599,7 +615,7 @@ export class RestaurantsController {
     operationId: 'restaurantsAddGalleryImage',
     summary: 'Add an image to a restaurant gallery',
     description:
-      'Accepts a single multipart image file (JPEG/PNG/WebP, 5MB max, validated by magic-byte signature - not just Content-Type) plus an optional caption. Appended to the end of the gallery (existing sortOrder values are never reassigned - no reorder endpoint exists). Restaurant-level only, maximum 20 images per restaurant.',
+      'Accepts a single multipart image file (JPEG/PNG/WebP, 5MB max, validated by magic-byte signature - not just Content-Type) plus an optional caption. Appended to the end of the gallery (existing sortOrder values are never reassigned - no reorder endpoint exists). Belongs to `branchId` (ADR-051; omitted, the oldest branch), maximum 20 images per branch.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({
@@ -637,6 +653,7 @@ export class RestaurantsController {
       restaurantId: id,
       file: file ? { buffer: file.buffer, mimeType: file.mimetype, sizeBytes: file.size } : null,
       caption: body.caption ?? null,
+      branchId: body.branchId,
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
     return this.toGalleryImageResponse(result);
@@ -649,9 +666,10 @@ export class RestaurantsController {
     operationId: 'restaurantsListGallery',
     summary: 'List a restaurant gallery',
     description:
-      'Public, unauthenticated, including guest sessions with no access token. Ordered by sortOrder. A missing or soft-deleted restaurant returns 404. A brand-new restaurant has an empty gallery until images are explicitly added. Adding and removing images remain Owner/Admin.',
+      "Public, unauthenticated, including guest sessions with no access token. Ordered by sortOrder. A missing or soft-deleted restaurant returns 404. A brand-new restaurant has an empty gallery until images are explicitly added. Adding and removing images remain Owner/Admin. Photos belong to branches (ADR-051): `branchId` picks a branch; omitted, the restaurant's oldest branch is used.",
   })
   @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiQuery({ name: 'branchId', required: false, format: 'uuid' })
   @ApiResponse({
     status: 200,
     description: 'Restaurant gallery retrieved',
@@ -661,9 +679,11 @@ export class RestaurantsController {
   @ApiErrorResponse(404, 'Restaurant not found', ['NOT_FOUND'])
   async listGallery(
     @Param('id', ParseUUIDPipe) id: string,
+    @Query('branchId', new ParseUUIDPipe({ optional: true })) branchId?: string,
   ): Promise<RestaurantGalleryListResponseDto> {
     const result = await this.listRestaurantGalleryUseCase.execute({
       restaurantId: id,
+      branchId,
     });
     return this.toGalleryListResponse(result);
   }
@@ -699,6 +719,7 @@ export class RestaurantsController {
       actor,
       restaurantId: id,
       galleryItemIds: body.galleryItemIds,
+      branchId: body.branchId,
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
   }
@@ -907,6 +928,10 @@ export class RestaurantsController {
       logoId: result.logoId,
       coverImageId: result.coverImageId,
       description: result.description,
+      nameAr: result.nameAr,
+      nameEn: result.nameEn,
+      descriptionAr: result.descriptionAr,
+      descriptionEn: result.descriptionEn,
       cuisineType: result.cuisineType,
       averageRating: result.averageRating,
       ratingCount: result.ratingCount,
@@ -965,6 +990,7 @@ export class RestaurantsController {
     return {
       galleryItemId: result.galleryItemId,
       restaurantId: result.restaurantId,
+      branchId: result.branchId,
       caption: result.caption,
       sortOrder: result.sortOrder,
       imageUrl: result.imageUrl,

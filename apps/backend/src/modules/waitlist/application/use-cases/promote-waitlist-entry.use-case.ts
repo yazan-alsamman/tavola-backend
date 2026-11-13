@@ -66,8 +66,9 @@ export class PromoteWaitlistEntryUseCase {
     if (branch === null) {
       throw new BranchNotFoundException();
     }
-    const settings = await this.restaurantSettingsRepository.findByRestaurantId(
+    const settings = await this.restaurantSettingsRepository.findForBranch(
       existing.restaurantId,
+      existing.branchId,
     );
 
     const now = this.clock.now();
@@ -76,7 +77,8 @@ export class PromoteWaitlistEntryUseCase {
       branchTimezone: branch.timezone,
       reservationIntervalMinutes: settings?.reservationIntervalMinutes ?? 30,
       defaultReservationDurationMinutes: settings?.defaultReservationDurationMinutes ?? 90,
-      autoApproval: settings?.autoApproval === true,
+      // ADR-053: auto-approval may stop above a party size.
+      autoApproval: settings?.autoApprovesParty(existing.partySize) === true,
       promotedBy: resolveWaitlistActingId(command.actor),
       now,
       correlationId: command.correlationId,

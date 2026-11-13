@@ -2,6 +2,7 @@ import { Injectable, Inject } from '@nestjs/common';
 import { UserId } from '@shared/domain/value-objects/identifiers.vo';
 import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import { DeviceSessionRepository } from '../../domain/repositories/authentication.repositories';
+import { describeUserAgent, parseUserAgent } from '../../domain/services/describe-user-agent';
 import { DEVICE_SESSION_REPOSITORY } from '../../domain/tokens/authentication.tokens';
 import {
   ActiveSessionItem,
@@ -26,13 +27,14 @@ export class ListActiveSessionsUseCase {
       const props = session.toProps();
       return {
         sessionId: props.id,
-        deviceName: props.deviceName,
+        deviceName: props.deviceName ?? describeUserAgent(props.userAgent),
         deviceType: props.deviceType,
         createdAt: props.createdAt,
         lastUsedAt: props.lastUsedAt,
         expiresAt: props.expiresAt,
         isCurrentSession: props.id === command.actor.sessionId,
         ipAddress: props.ipAddress,
+        ...parseUserAgent(props.userAgent),
       };
     });
 

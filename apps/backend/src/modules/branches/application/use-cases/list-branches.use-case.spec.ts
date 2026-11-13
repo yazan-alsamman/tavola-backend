@@ -113,7 +113,11 @@ describe('ListBranchesUseCase', () => {
     await seedBranches(branchRepository, restaurantRepository, restaurantId, 3);
     await seedBranches(branchRepository, restaurantRepository, otherRestaurantId, 2);
 
-    const useCase = new ListBranchesUseCase(branchRepository, restaurantRepository);
+    const useCase = new ListBranchesUseCase(
+      branchRepository,
+      restaurantRepository,
+      new FixedClock(new Date('2026-08-01T00:00:00.000Z')),
+    );
     const result = await useCase.execute({ actor: baseActor(), restaurantId, page: 1, limit: 20 });
 
     expect(result.total).toBe(3);
@@ -127,7 +131,11 @@ describe('ListBranchesUseCase', () => {
     await seedRestaurant(restaurantRepository, restaurantId);
     await seedBranches(branchRepository, restaurantRepository, restaurantId, 3);
 
-    const useCase = new ListBranchesUseCase(branchRepository, restaurantRepository);
+    const useCase = new ListBranchesUseCase(
+      branchRepository,
+      restaurantRepository,
+      new FixedClock(new Date('2026-08-01T00:00:00.000Z')),
+    );
     const result = await useCase.execute({ actor: baseActor(), restaurantId, page: 1, limit: 2 });
 
     expect(result.items).toHaveLength(2);
@@ -139,7 +147,11 @@ describe('ListBranchesUseCase', () => {
   it('throws RestaurantNotFoundException when the restaurant does not exist', async () => {
     const branchRepository = new InMemoryBranchRepository();
     const restaurantRepository = new InMemoryRestaurantRepository();
-    const useCase = new ListBranchesUseCase(branchRepository, restaurantRepository);
+    const useCase = new ListBranchesUseCase(
+      branchRepository,
+      restaurantRepository,
+      new FixedClock(new Date('2026-08-01T00:00:00.000Z')),
+    );
 
     await expect(
       useCase.execute({ actor: baseActor(), restaurantId, page: 1, limit: 20 }),

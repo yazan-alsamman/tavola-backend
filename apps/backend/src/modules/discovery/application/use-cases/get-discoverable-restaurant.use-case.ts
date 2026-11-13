@@ -2,7 +2,7 @@ import { Injectable, Inject } from '@nestjs/common';
 import { RestaurantResult } from '@modules/restaurants/application/dto/restaurant.result';
 import { WorkingHoursEntryResult } from '@modules/restaurants/application/dto/working-hours.result';
 import { RestaurantNotFoundException } from '@modules/restaurants/domain/exceptions/restaurant-not-found.exception';
-import { ListWorkingHoursByRestaurantIdsUseCase } from '@modules/restaurants/application/use-cases/list-working-hours-by-restaurant-ids.use-case';
+import { ListRestaurantWorkingHoursFromBranchesUseCase } from '@modules/branches/application/use-cases/list-restaurant-working-hours-from-branches.use-case';
 import { DiscoveryReaderPort, DISCOVERY_READER } from '../ports/discovery-reader.port';
 import { RestaurantCoverImageUrlResolver } from '../services/restaurant-cover-image-url.resolver';
 
@@ -21,8 +21,8 @@ export type DiscoverableRestaurantDetail = RestaurantResult & {
  * collapse to the same 404 - IDOR-safe, matching every other resource's
  * existing convention (never a distinguishing status).
  *
- * Public Working Hours: `workingHours` is the Restaurant-level default
- * schedule (`WorkingHours`, Phase 4.3) - never `hasActiveOffer`/`hasMenu`,
+ * Public Working Hours: `workingHours` is the schedule of the restaurant's
+ * oldest branch (hours belong to branches, ADR-050) - never `hasActiveOffer`/`hasMenu`,
  * which remain search-family-only annotations (unchanged pre-existing
  * behavior, see `DiscoverableRestaurant`'s own doc comment).
  */
@@ -30,7 +30,7 @@ export type DiscoverableRestaurantDetail = RestaurantResult & {
 export class GetDiscoverableRestaurantUseCase {
   constructor(
     @Inject(DISCOVERY_READER) private readonly discoveryReader: DiscoveryReaderPort,
-    private readonly listWorkingHoursByRestaurantIdsUseCase: ListWorkingHoursByRestaurantIdsUseCase,
+    private readonly listWorkingHoursByRestaurantIdsUseCase: ListRestaurantWorkingHoursFromBranchesUseCase,
     private readonly restaurantCoverImageUrlResolver: RestaurantCoverImageUrlResolver,
   ) {}
 

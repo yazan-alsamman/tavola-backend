@@ -132,7 +132,18 @@ describe('Restaurant round-trip via PrismaRestaurantRepository (integration)', (
 
     const at = new Date();
     const updated = restaurant
-      .updateProfile({ name: 'New Name', description: null, cuisineType: null }, at)
+      .updateProfile(
+        {
+          name: 'New Name',
+          nameAr: null,
+          nameEn: 'New Name',
+          description: null,
+          descriptionAr: null,
+          descriptionEn: null,
+          cuisineType: null,
+        },
+        at,
+      )
       .suspend(at);
     await asOrgA(() => repository.save(updated));
 

@@ -1,3 +1,4 @@
+import { BranchSubscriptionStatus } from '@modules/branches/domain/enums/branch.enums';
 import { GetDiscoverableFloorPlanUseCase } from './get-discoverable-floor-plan.use-case';
 import { RestaurantNotFoundException } from '@modules/restaurants/domain/exceptions/restaurant-not-found.exception';
 import { BranchNotFoundException } from '@modules/branches/domain/exceptions/branch-not-found.exception';
@@ -22,6 +23,10 @@ function restaurant(): RestaurantResult {
     coverImageId: null,
     description: null,
     cuisineType: null,
+    nameAr: null,
+    nameEn: null,
+    descriptionAr: null,
+    descriptionEn: null,
     averageRating: null,
     ratingCount: 0,
     priceLevel: null,
@@ -42,6 +47,11 @@ function branch(): BranchResult {
     longitude: null,
     countryCode: 'SY',
     currency: null,
+    coverImageId: null,
+    venueType: null,
+    features: [],
+    subscriptionStatus: BranchSubscriptionStatus.Active,
+    trialEndsAt: null,
     timezone: 'Asia/Damascus',
     referencePrice: null,
     priceLevel: null,

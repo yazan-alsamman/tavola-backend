@@ -647,8 +647,8 @@ Fields
 * pendingReservationTimeoutMinutes
 * defaultReservationDurationMinutes (Phase 7.1 — fallback `Reservation.reservationEndTime` duration when the client omits it)
 * autoApproval (boolean)
-* timezone
-* defaultCurrency
+* timezone (deprecated by ADR-050: never read; every time calculation uses `Branch.timezone`)
+* defaultCurrency (deprecated by ADR-050: only a fallback for a branch without `currency`)
 * reservationReminderMinutesBefore (Phase 7.6 — ADR-019 Operational Signals; int, 1-10080, default 60; minutes before `reservationStartTime` the `ReservationReminderDue` BullMQ job fires)
 * lateArrivalGraceMinutes (Phase 7.6 — ADR-019 Operational Signals; int, 1-1440, default 15; minutes after `reservationStartTime` the `GuestLateArrivalNotified` BullMQ job fires)
 * createdAt
@@ -682,6 +682,8 @@ Indexes
 
 * restaurantId
 * unique composite (restaurantId, dayOfWeek)
+
+**Superseded by ADR-050 (2026-11-13)**: working hours belong to branches. This table is kept read-only for older clients; its rows were copied onto each branch (migration `20261113180000_branch_owned_hours_and_currency`) and no longer affect bookings or customer-facing hours. The Discovery restaurant `workingHours` field now comes from the restaurant's oldest live branch.
 
 **Resolved in Phase 5.2**: branch-level override was delivered as a separate table, `BranchWorkingHours` (see "Branch Working Hours" below), not as a nullable `branchId` column added to this table - each aggregate owns its own child entity, avoiding the dual-parent design this section originally anticipated.
 
@@ -784,6 +786,8 @@ Notes
 ## Branch Working Hours
 
 Purpose
+
+**ADR-050 (2026-11-13)**: this table is the only source of opening hours. Bookings read it alone (a weekday without a row is closed), with no fallback to the restaurant `WorkingHours`.
 
 Branch-level weekly opening/closing schedule override (Phase 5.2), resolving the branch-level override the "Working Hours" section above deferred to Phase 5. A separate table from `WorkingHours` (Restaurant-level, Phase 4.3) - each aggregate owns its own child entity, not a nullable `branchId` added to the Restaurant-level table. Structurally identical to `WorkingHours`, scoped to `branchId` instead of `restaurantId`.
 
@@ -2315,3 +2319,21 @@ This section consolidates the highest-value composite indexes defined per-table 
 * Migration files must be committed to version control.
 * The initial migration must enable the `btree_gist` PostgreSQL extension before creating the `Reservations` table's exclusion constraint.
 * Reference tables (`Country`, `Currency`, initial `Roles`/`Permissions`) are populated via the Seed System (see TASKS.md Phase 1), not via manual migration data, so environments remain reproducible.
+
+## Branch-owned rules, photos and cover (ADR-051, 2026-11-13)
+
+* `branch_settings`: one row per branch (`branch_id` unique, cascade). Columns mirror the rule columns of `restaurant_settings` (`reservation_interval_minutes`, `max_guests_per_reservation`, `cancellation_window_minutes`, `pending_reservation_timeout_minutes`, `default_reservation_duration_minutes`, `auto_approval`, `reservation_reminder_minutes_before`, `late_arrival_grace_minutes`) plus `created_at`/`updated_at`.
+* `restaurant_gallery.branch_id` (nullable, indexed): the branch a photo belongs to. Copies on several branches may share one `file_id`.
+* `branches.cover_image_id` (nullable UUID): the branch cover file; may be shared with the restaurant or other branches.
+
+## Restaurant names per language (ADR-052, 2026-11-13)
+
+* `restaurants.name_ar`, `name_en`, `description_ar`, `description_en` (nullable). `name`/`description` mirror the Arabic, else English, text.
+
+
+## Venue identity, closures, booking limits, plan state (ADR-053, 2026-11-14)
+
+* `branches.venue_type` (enum `BranchVenueType`, nullable), `branches.features` (`BranchFeature[]`, default empty), `branches.trial_ends_at` and `branches.paused_at` (nullable timestamps).
+* `branch_closures`: `id`, `branch_id` (cascade), `start_date`/`end_date` (DATE, inclusive, branch-local), `reason` (nullable), `created_at`, `updated_at`. Index `(branch_id, end_date)`. Rows are removed, not soft-deleted: they are configuration with no history value.
+* `branch_settings` and `restaurant_settings`: `auto_approval_max_guests`, `max_days_ahead`, `daily_guest_cap` (nullable INT) and `min_lead_time_minutes` (INT, default 0).
+* Seeded permission `reservations:today-only` and role `front-desk`.

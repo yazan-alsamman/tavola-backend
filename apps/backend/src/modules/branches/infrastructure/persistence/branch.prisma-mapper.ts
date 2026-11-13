@@ -1,5 +1,6 @@
 import { Branch as PrismaBranch } from '@prisma/client';
 import { Branch as BranchEntity } from '../../domain/entities/branch.entity';
+import { BranchFeature, BranchVenueType } from '../../domain/enums/branch.enums';
 
 export class BranchPrismaMapper {
   static toDomain(row: PrismaBranch): BranchEntity {
@@ -13,6 +14,11 @@ export class BranchPrismaMapper {
       longitude: row.longitude === null ? null : row.longitude.toNumber(),
       countryCode: row.countryCode,
       currency: row.currency,
+      coverImageId: row.coverImageId,
+      venueType: row.venueType as BranchVenueType | null,
+      features: row.features as BranchFeature[],
+      trialEndsAt: row.trialEndsAt,
+      pausedAt: row.pausedAt,
       referencePrice: row.referencePrice === null ? null : row.referencePrice.toNumber(),
       priceLevel: row.priceLevel,
       timezone: row.timezone,
@@ -45,6 +51,10 @@ export class BranchPrismaMapper {
     currency: string | null;
     timezone: string;
     phone: string | null;
+    venueType: BranchVenueType | null;
+    features: BranchFeature[];
+    trialEndsAt: Date | null;
+    pausedAt: Date | null;
     createdAt: Date;
     updatedAt: Date;
     deletedAt: Date | null;
@@ -62,6 +72,10 @@ export class BranchPrismaMapper {
       currency: props.currency,
       timezone: props.timezone,
       phone: props.phone,
+      venueType: props.venueType ?? null,
+      features: props.features ?? [],
+      trialEndsAt: props.trialEndsAt ?? null,
+      pausedAt: props.pausedAt ?? null,
       createdAt: props.createdAt,
       updatedAt: props.updatedAt,
       deletedAt: props.deletedAt,

@@ -1,3 +1,7 @@
+import { BranchSubscriptionStatus } from '@modules/branches/domain/enums/branch.enums';
+import { RestaurantCoverImageUrlResolver } from '../services/restaurant-cover-image-url.resolver';
+import { InMemoryFileRepository } from '../../../../../test/restaurants/support/in-memory-file-repository';
+import { FakeStoragePort } from '../../../../../test/restaurants/support/fake-storage-port';
 import { ListDiscoverableBranchesUseCase } from './list-discoverable-branches.use-case';
 import { RestaurantNotFoundException } from '@modules/restaurants/domain/exceptions/restaurant-not-found.exception';
 import { ListBranchWorkingHoursByBranchIdsUseCase } from '@modules/branches/application/use-cases/list-branch-working-hours-by-branch-ids.use-case';
@@ -20,6 +24,10 @@ function restaurant(id: string): RestaurantResult {
     coverImageId: null,
     description: null,
     cuisineType: null,
+    nameAr: null,
+    nameEn: null,
+    descriptionAr: null,
+    descriptionEn: null,
     averageRating: null,
     ratingCount: 0,
     priceLevel: null,
@@ -40,6 +48,11 @@ function branch(id: string, ownerRestaurantId: string): BranchResult {
     longitude: null,
     countryCode: 'SY',
     currency: null,
+    coverImageId: null,
+    venueType: null,
+    features: [],
+    subscriptionStatus: BranchSubscriptionStatus.Active,
+    trialEndsAt: null,
     timezone: 'Asia/Damascus',
     referencePrice: null,
     priceLevel: null,
@@ -55,7 +68,11 @@ function buildUseCase(reader: FakeDiscoveryReader) {
     branchWorkingHoursRepository,
   );
   return {
-    useCase: new ListDiscoverableBranchesUseCase(reader, listBranchWorkingHoursByBranchIdsUseCase),
+    useCase: new ListDiscoverableBranchesUseCase(
+      reader,
+      listBranchWorkingHoursByBranchIdsUseCase,
+      new RestaurantCoverImageUrlResolver(new InMemoryFileRepository(), new FakeStoragePort()),
+    ),
     branchWorkingHoursRepository,
   };
 }

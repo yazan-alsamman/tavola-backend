@@ -33,9 +33,16 @@ import {
 } from '../dto/reservation-time-slots.result';
 import { BranchOpeningHoursService } from '../services/branch-opening-hours.service';
 import {
+  fitsDailyGuestCap,
+  lastBookableDate,
+  localDayBounds,
   MAX_RESERVATION_DURATION_MINUTES,
   MIN_RESERVATION_DURATION_MINUTES,
 } from '../../domain/services/reservation-booking-policy';
+import {
+  BookingEligibilityReaderPort,
+  BOOKING_ELIGIBILITY_READER,
+} from '../ports/booking-eligibility-reader.port';
 
 const DEFAULT_INTERVAL_MINUTES = 30;
 const DEFAULT_DURATION_MINUTES = 90;
@@ -74,6 +81,8 @@ export class ListReservationTimeSlotsUseCase {
     @Inject(RESERVATION_REPOSITORY)
     private readonly reservationRepository: ReservationRepository,
     @Inject(CLOCK) private readonly clock: ClockPort,
+    @Inject(BOOKING_ELIGIBILITY_READER)
+    private readonly bookingEligibility: BookingEligibilityReaderPort,
   ) {}
 
   async execute(command: ListReservationTimeSlotsCommand): Promise<ReservationTimeSlotsResult> {
@@ -89,8 +98,9 @@ export class ListReservationTimeSlotsUseCase {
       throw new BranchNotFoundException();
     }
 
-    const settings = await this.restaurantSettingsRepository.findByRestaurantId(
+    const settings = await this.restaurantSettingsRepository.findForBranch(
       RestaurantId.create(branch.restaurantId.value),
+      branch.branchId,
     );
     const intervalMinutes = settings?.reservationIntervalMinutes ?? DEFAULT_INTERVAL_MINUTES;
     const durationMinutes = this.resolveDuration(
@@ -110,7 +120,7 @@ export class ListReservationTimeSlotsUseCase {
     }
 
     const dayOfWeek = dayOfWeekFromCalendarDate(command.date);
-    const weekly = await this.openingHours.load(command.branchId, branch.restaurantId.value);
+    const weekly = await this.openingHours.load(command.branchId);
     const schedule = weekly.forDay(dayOfWeek);
     const base = {
       branchId: command.branchId,
@@ -133,14 +143,34 @@ export class ListReservationTimeSlotsUseCase {
       end: new Date(zonedLocalToUtcIso(slot.endDate, slot.endTime, branch.timezone)),
     }));
 
-    if (candidates.length === 0) {
+    // ADR-053: a paused branch, a temporary closure or a date past the
+    // branch's booking window reads as closed.
+    const closedForBooking =
+      branch.isPaused() ||
+      command.date > lastBookableDate(today, settings?.maxDaysAhead ?? null) ||
+      (await this.openingHours.isClosedOn(command.branchId, command.date));
+    if (candidates.length === 0 || closedForBooking) {
       return { ...base, outcome: ReservationSlotOutcome.Closed, slots: [] };
     }
 
-    const now = this.clock.now().getTime();
-    const upcoming = candidates.filter((slot) => slot.start.getTime() > now);
+    // ADR-053: slots inside the branch's minimum notice are not offered.
+    const earliestStart = this.clock.now().getTime() + (settings?.minLeadTimeMinutes ?? 0) * 60_000;
+    const upcoming = candidates.filter((slot) => slot.start.getTime() > earliestStart);
     if (upcoming.length === 0) {
       return { ...base, outcome: ReservationSlotOutcome.NoRemainingSlots, slots: [] };
+    }
+
+    const dailyGuestCap = settings?.dailyGuestCap ?? null;
+    if (dailyGuestCap !== null) {
+      const day = localDayBounds(command.date, branch.timezone);
+      const booked = await this.bookingEligibility.sumActiveGuestsForBranchBetween(
+        command.branchId,
+        day.start,
+        day.end,
+      );
+      if (!fitsDailyGuestCap(booked, command.partySize, dailyGuestCap)) {
+        return { ...base, outcome: ReservationSlotOutcome.NoRemainingSlots, slots: [] };
+      }
     }
 
     const tables = await this.tableRepository.findManyAvailableByBranchIdAndMinCapacity(

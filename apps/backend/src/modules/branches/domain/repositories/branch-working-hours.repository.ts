@@ -1,5 +1,5 @@
 import { BranchWorkingHours } from '../entities/branch-working-hours.entity';
-import { BranchId } from '@shared/domain/value-objects/identifiers.vo';
+import { BranchId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 
 /**
  * No `restaurantId`/`organizationId` parameter on any method: `BranchWorkingHours`
@@ -16,6 +16,15 @@ export interface BranchWorkingHoursRepository {
   findAllByBranchId(branchId: BranchId): Promise<BranchWorkingHours[]>;
   /** Batched lookup across many branches in one query - avoids N+1 (see `ListBranchWorkingHoursByBranchIdsUseCase`). */
   findAllByBranchIds(branchIds: BranchId[]): Promise<BranchWorkingHours[]>;
+  /**
+   * The weekly rows of each restaurant's oldest non-deleted branch, keyed by
+   * restaurant id, in one query. Backs the restaurant-level `workingHours`
+   * the customer app still reads now that hours belong to branches (ADR-050).
+   * A restaurant without a branch has no key.
+   */
+  findForFirstBranchOfRestaurants(
+    restaurantIds: RestaurantId[],
+  ): Promise<Map<string, BranchWorkingHours[]>>;
   replaceAllForBranch(branchId: BranchId, entries: BranchWorkingHours[]): Promise<void>;
 }
 

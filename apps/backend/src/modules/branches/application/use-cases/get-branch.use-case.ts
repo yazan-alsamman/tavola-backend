@@ -1,3 +1,4 @@
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import { Injectable, Inject } from '@nestjs/common';
 import { BranchId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import {
@@ -16,6 +17,7 @@ export class GetBranchUseCase {
   constructor(
     @Inject(BRANCH_REPOSITORY) private readonly branchRepository: BranchRepository,
     @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
+    @Inject(CLOCK) private readonly clock: ClockPort,
   ) {}
 
   async execute(command: GetBranchCommand): Promise<BranchResult> {
@@ -35,6 +37,6 @@ export class GetBranchUseCase {
       throw new BranchNotFoundException();
     }
 
-    return toBranchResult(branch);
+    return toBranchResult(branch, this.clock.now());
   }
 }

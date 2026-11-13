@@ -11,6 +11,12 @@ import {
   RestaurantRepository,
   RESTAURANT_REPOSITORY,
 } from '../../domain/repositories/restaurant.repository';
+import { Restaurant } from '../../domain/entities/restaurant.entity';
+import {
+  RestaurantTextsInput,
+  resolveRestaurantTexts,
+} from '../../domain/services/restaurant-texts';
+import { InvalidRestaurantProfileException } from '../../domain/exceptions/invalid-restaurant-profile.exception';
 import { RestaurantNotFoundException } from '../../domain/exceptions/restaurant-not-found.exception';
 import {
   RestaurantActivatedEvent,
@@ -20,6 +26,42 @@ import {
 import { toRestaurantResult } from '../mappers/restaurant-result.mapper';
 import { UpdateRestaurantCommand } from '../dto/update-restaurant.command';
 import { RestaurantResult } from '../dto/restaurant.result';
+
+/**
+ * A client that predates ADR-052 sends only `name`/`description`. When that
+ * text is unchanged, the stored translations are kept rather than rebuilt
+ * from the single field, so an old client never erases the other language.
+ */
+function withKeptTranslations(
+  restaurant: Restaurant,
+  command: UpdateRestaurantCommand,
+): RestaurantTextsInput {
+  const input: RestaurantTextsInput = {
+    name: command.name,
+    nameAr: command.nameAr,
+    nameEn: command.nameEn,
+    description: command.description,
+    descriptionAr: command.descriptionAr,
+    descriptionEn: command.descriptionEn,
+  };
+  if (
+    command.nameAr === undefined &&
+    command.nameEn === undefined &&
+    command.name === restaurant.name
+  ) {
+    input.nameAr = restaurant.nameAr;
+    input.nameEn = restaurant.nameEn;
+  }
+  if (
+    command.descriptionAr === undefined &&
+    command.descriptionEn === undefined &&
+    command.description === restaurant.description
+  ) {
+    input.descriptionAr = restaurant.descriptionAr;
+    input.descriptionEn = restaurant.descriptionEn;
+  }
+  return input;
+}
 
 @Injectable()
 export class UpdateRestaurantUseCase {
@@ -40,14 +82,12 @@ export class UpdateRestaurantUseCase {
     const now = this.clock.now();
     const statusChanged = command.status !== restaurant.status;
 
-    let updated = restaurant.updateProfile(
-      {
-        name: command.name,
-        description: command.description,
-        cuisineType: command.cuisineType,
-      },
-      now,
-    );
+    const texts = resolveRestaurantTexts(withKeptTranslations(restaurant, command));
+    if (texts === null) {
+      throw new InvalidRestaurantProfileException('An Arabic or English name is required.');
+    }
+
+    let updated = restaurant.updateProfile({ ...texts, cuisineType: command.cuisineType }, now);
 
     if (statusChanged) {
       updated =

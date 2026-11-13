@@ -1,3 +1,5 @@
+import { BranchClosure } from '@modules/branches/domain/entities/branch-closure.entity';
+import { InMemoryBranchClosureRepository } from '../../../../../test/branches/support/in-memory-branch-closure.repository';
 import { CreateReservationUseCase } from './create-reservation.use-case';
 import { OfferAttributionReaderPort } from '../ports/offer-attribution-reader.port';
 import { BranchNotFoundException } from '@modules/branches/domain/exceptions/branch-not-found.exception';
@@ -39,11 +41,8 @@ import { ActiveReservationLimitReachedException } from '@modules/reservations/do
 import { RestaurantNotAcceptingReservationsException } from '@modules/reservations/domain/exceptions/restaurant-not-accepting-reservations.exception';
 import { BranchOpeningHoursService } from '@modules/reservations/application/services/branch-opening-hours.service';
 import { ListBranchWorkingHoursByBranchIdsUseCase } from '@modules/branches/application/use-cases/list-branch-working-hours-by-branch-ids.use-case';
-import { ListWorkingHoursByRestaurantIdsUseCase } from '@modules/restaurants/application/use-cases/list-working-hours-by-restaurant-ids.use-case';
-import { WorkingHours } from '@modules/restaurants/domain/entities/working-hours.entity';
-import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
+import { BranchWorkingHours } from '@modules/branches/domain/entities/branch-working-hours.entity';
 import { InMemoryBranchWorkingHoursRepository } from '../../../../../test/branches/support/in-memory-branch-working-hours.repository';
-import { InMemoryWorkingHoursRepository } from '../../../../../test/restaurants/support/in-memory-working-hours.repository';
 import { InMemoryBookingEligibilityReader } from '../../../../../test/reservations/support/in-memory-booking-eligibility.reader';
 
 describe('CreateReservationUseCase', () => {
@@ -94,6 +93,12 @@ describe('CreateReservationUseCase', () => {
     tableStatus?: TableStatus;
     tableCapacity?: number;
     autoApproval?: boolean;
+    limits?: {
+      autoApprovalMaxGuests?: number | null;
+      minLeadTimeMinutes?: number;
+      maxDaysAhead?: number | null;
+      dailyGuestCap?: number | null;
+    };
   }) {
     const branchRepository = new InMemoryBranchRepository();
     const tableRepository = new InMemoryTableRepository();
@@ -102,7 +107,6 @@ describe('CreateReservationUseCase', () => {
     const restaurantSettingsRepository = new InMemoryRestaurantSettingsRepository();
     const expirationScheduler = new InMemoryReservationExpirationScheduler();
     const branchHoursRepository = new InMemoryBranchWorkingHoursRepository();
-    const restaurantHoursRepository = new InMemoryWorkingHoursRepository();
     const bookingEligibility = new InMemoryBookingEligibilityReader();
 
     await branchRepository.save(
@@ -130,9 +134,13 @@ describe('CreateReservationUseCase', () => {
       fixedNow,
     );
     await restaurantSettingsRepository.save(
-      overrides?.autoApproval
+      overrides?.autoApproval || overrides?.limits
         ? defaultSettings.updateSettings(
-            { ...defaultSettings.toProps(), autoApproval: true },
+            {
+              ...defaultSettings.toProps(),
+              autoApproval: overrides.autoApproval === true,
+              ...overrides.limits,
+            },
             fixedNow,
           )
         : defaultSettings,
@@ -179,6 +187,7 @@ describe('CreateReservationUseCase', () => {
       operationalScheduler,
       restaurantSettingsRepository,
     );
+    const closureRepository = new InMemoryBranchClosureRepository();
     const useCase = new CreateReservationUseCase(
       branchRepository,
       tableRepository,
@@ -201,20 +210,23 @@ describe('CreateReservationUseCase', () => {
       bookingEligibility,
       new BranchOpeningHoursService(
         new ListBranchWorkingHoursByBranchIdsUseCase(branchHoursRepository),
-        new ListWorkingHoursByRestaurantIdsUseCase(restaurantHoursRepository),
+        closureRepository,
       ),
     );
 
     return {
       useCase,
+      closureRepository,
+      restaurantSettingsRepository,
+      branchRepository,
       bookingEligibility,
-      restaurantHoursRepository,
       reservationRepository,
       reservationGuestRepository,
       tableRepository,
       eventPublisher,
       expirationScheduler,
       operationalScheduler,
+      branchHoursRepository,
     };
   }
 
@@ -806,11 +818,11 @@ describe('CreateReservationUseCase', () => {
 
   describe('booking rules (report finding #2)', () => {
     // 2026-08-01 is a Saturday (dayOfWeek 6); Asia/Damascus is UTC+3.
-    function openSaturdayEvenings(repository: InMemoryWorkingHoursRepository) {
-      return repository.replaceAllForRestaurant(RestaurantId.create(restaurantId), [
-        WorkingHours.create({
+    function openSaturdayEvenings(repository: InMemoryBranchWorkingHoursRepository) {
+      return repository.replaceAllForBranch(BranchId.create(branchId), [
+        BranchWorkingHours.create({
           id: 'abababab-abab-4bab-8bab-abababababab',
-          restaurantId,
+          branchId,
           dayOfWeek: 6,
           openingTime: '18:00',
           closingTime: '23:00',
@@ -867,8 +879,8 @@ describe('CreateReservationUseCase', () => {
     });
 
     it('rejects an online booking outside the opening hours once hours are configured', async () => {
-      const { useCase, restaurantHoursRepository } = await build();
-      await openSaturdayEvenings(restaurantHoursRepository);
+      const { useCase, branchHoursRepository } = await build();
+      await openSaturdayEvenings(branchHoursRepository);
 
       await expect(
         useCase.execute({
@@ -883,8 +895,8 @@ describe('CreateReservationUseCase', () => {
     });
 
     it('rejects an online booking that runs past closing time', async () => {
-      const { useCase, restaurantHoursRepository } = await build();
-      await openSaturdayEvenings(restaurantHoursRepository);
+      const { useCase, branchHoursRepository } = await build();
+      await openSaturdayEvenings(branchHoursRepository);
 
       await expect(
         useCase.execute({
@@ -900,8 +912,8 @@ describe('CreateReservationUseCase', () => {
     });
 
     it('accepts an online booking inside the opening hours', async () => {
-      const { useCase, restaurantHoursRepository } = await build();
-      await openSaturdayEvenings(restaurantHoursRepository);
+      const { useCase, branchHoursRepository } = await build();
+      await openSaturdayEvenings(branchHoursRepository);
 
       const result = await useCase.execute({
         actor: baseActor(),
@@ -916,8 +928,8 @@ describe('CreateReservationUseCase', () => {
     });
 
     it('lets staff book a phone reservation outside the opening hours', async () => {
-      const { useCase, restaurantHoursRepository } = await build();
-      await openSaturdayEvenings(restaurantHoursRepository);
+      const { useCase, branchHoursRepository } = await build();
+      await openSaturdayEvenings(branchHoursRepository);
 
       const result = await useCase.execute({
         actor: employeeActor(),
@@ -959,6 +971,92 @@ describe('CreateReservationUseCase', () => {
           guests: 21,
         }),
       ).rejects.toBeInstanceOf(InvalidReservationException);
+    });
+  });
+
+  describe('branch booking limits (ADR-053)', () => {
+    const online = (startTime: string, guests = 2) => ({
+      actor: baseActor(),
+      branchId,
+      tableId,
+      reservationStartTime: startTime,
+      guests,
+    });
+
+    it('auto-approves a party up to the limit and leaves a larger one Pending', async () => {
+      const small = await build({ autoApproval: true, limits: { autoApprovalMaxGuests: 3 } });
+      expect((await small.useCase.execute(online('2026-08-01T18:00:00.000Z', 3))).status).toBe(
+        'Approved',
+      );
+
+      const large = await build({ autoApproval: true, limits: { autoApprovalMaxGuests: 3 } });
+      expect((await large.useCase.execute(online('2026-08-01T18:00:00.000Z', 4))).status).toBe(
+        'Pending',
+      );
+    });
+
+    it('rejects an online booking on a date a temporary closure covers', async () => {
+      const { useCase, closureRepository } = await build();
+      await closureRepository.save(
+        BranchClosure.create({
+          id: 'abababab-abab-4bab-8bab-abababababab',
+          branchId,
+          startDate: '2026-08-01',
+          endDate: '2026-08-01',
+          reason: null,
+          createdAt: fixedNow,
+          updatedAt: fixedNow,
+        }),
+      );
+
+      await expect(useCase.execute(online('2026-08-01T18:00:00.000Z'))).rejects.toBeInstanceOf(
+        InvalidReservationTimeException,
+      );
+    });
+
+    it('rejects an online booking while the branch is paused, but staff can still book', async () => {
+      const { useCase, branchRepository } = await build();
+      const branch = await branchRepository.findById(BranchId.create(branchId));
+      await branchRepository.save(branch!.pause(fixedNow));
+
+      await expect(useCase.execute(online('2026-08-01T18:00:00.000Z'))).rejects.toBeInstanceOf(
+        RestaurantNotAcceptingReservationsException,
+      );
+      const phone = await useCase.execute({
+        actor: employeeActor(),
+        branchId,
+        tableId,
+        reservationStartTime: '2026-08-01T18:00:00.000Z',
+        guests: 2,
+        source: ReservationSource.Phone,
+        reservationGuest: guestPayload(),
+      });
+      expect(phone.source).toBe(ReservationSource.Phone);
+    });
+
+    it('rejects an online booking inside the minimum notice', async () => {
+      const { useCase } = await build({ limits: { minLeadTimeMinutes: 7 * 24 * 60 } });
+
+      await expect(useCase.execute(online('2026-08-01T18:00:00.000Z'))).rejects.toBeInstanceOf(
+        InvalidReservationTimeException,
+      );
+    });
+
+    it('rejects an online booking past the branch booking window', async () => {
+      const { useCase } = await build({ limits: { maxDaysAhead: 1 } });
+
+      await expect(useCase.execute(online('2026-08-10T18:00:00.000Z'))).rejects.toBeInstanceOf(
+        InvalidReservationTimeException,
+      );
+    });
+
+    it('rejects an online party that would pass the daily guest cap', async () => {
+      const { useCase, bookingEligibility } = await build({ limits: { dailyGuestCap: 10 } });
+      bookingEligibility.branchGuestsBooked = 9;
+
+      await expect(useCase.execute(online('2026-08-01T18:00:00.000Z'))).rejects.toBeInstanceOf(
+        InvalidReservationException,
+      );
     });
   });
 });

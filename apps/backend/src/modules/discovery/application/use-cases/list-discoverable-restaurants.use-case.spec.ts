@@ -1,14 +1,14 @@
 import { ListDiscoverableRestaurantsUseCase } from './list-discoverable-restaurants.use-case';
 import { ListRestaurantIdsWithActiveOfferUseCase } from '@modules/offers/application/use-cases/list-restaurant-ids-with-active-offer.use-case';
 import { ListRestaurantIdsWithMenuUseCase } from '@modules/menus/application/use-cases/list-restaurant-ids-with-menu.use-case';
-import { ListWorkingHoursByRestaurantIdsUseCase } from '@modules/restaurants/application/use-cases/list-working-hours-by-restaurant-ids.use-case';
-import { WorkingHours } from '@modules/restaurants/domain/entities/working-hours.entity';
-import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
+import { ListRestaurantWorkingHoursFromBranchesUseCase } from '@modules/branches/application/use-cases/list-restaurant-working-hours-from-branches.use-case';
+import { BranchWorkingHours } from '@modules/branches/domain/entities/branch-working-hours.entity';
+import { BranchId } from '@shared/domain/value-objects/identifiers.vo';
 import { FakeDiscoveryReader } from '../../../../../test/discovery/support/fake-discovery-reader';
 import { FixedClock } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryOfferRepository } from '../../../../../test/offers/support/in-memory-offer.repository';
 import { InMemoryMenuRepository } from '../../../../../test/menus/support/in-memory-menu.repository';
-import { InMemoryWorkingHoursRepository } from '../../../../../test/restaurants/support/in-memory-working-hours.repository';
+import { InMemoryBranchWorkingHoursRepository } from '../../../../../test/branches/support/in-memory-branch-working-hours.repository';
 import {
   testOffer,
   testOfferContent,
@@ -18,6 +18,8 @@ import { FileRecord } from '@modules/files/domain/entities/file-record.entity';
 import { RestaurantCoverImageUrlResolver } from '../services/restaurant-cover-image-url.resolver';
 import { InMemoryFileRepository } from '../../../../../test/restaurants/support/in-memory-file-repository';
 import { FakeStoragePort } from '../../../../../test/restaurants/support/fake-storage-port';
+
+const firstBranchId = '44444444-4444-4444-8444-444444444441';
 
 function restaurant(
   id: string,
@@ -32,6 +34,10 @@ function restaurant(
     coverImageId: null,
     description: null,
     cuisineType: 'Italian',
+    nameAr: null,
+    nameEn: null,
+    descriptionAr: null,
+    descriptionEn: null,
     averageRating: null,
     ratingCount: 0,
     priceLevel: 2,
@@ -66,8 +72,8 @@ function buildUseCase(reader: FakeDiscoveryReader, now = new Date('2026-08-15T00
   const listRestaurantIdsWithMenuUseCase = new ListRestaurantIdsWithMenuUseCase(
     new InMemoryMenuRepository(),
   );
-  const workingHoursRepository = new InMemoryWorkingHoursRepository();
-  const listWorkingHoursByRestaurantIdsUseCase = new ListWorkingHoursByRestaurantIdsUseCase(
+  const workingHoursRepository = new InMemoryBranchWorkingHoursRepository();
+  const listWorkingHoursByRestaurantIdsUseCase = new ListRestaurantWorkingHoursFromBranchesUseCase(
     workingHoursRepository,
   );
   const fileRepository = new InMemoryFileRepository();
@@ -135,6 +141,10 @@ describe('ListDiscoverableRestaurantsUseCase', () => {
     const reader = new FakeDiscoveryReader();
     const italian = restaurant('11111111-1111-4111-8111-111111111111', 'Roma', {
       cuisineType: 'NotItalian',
+      nameAr: null,
+      nameEn: null,
+      descriptionAr: null,
+      descriptionEn: null,
     });
     const other = restaurant('11111111-1111-4111-8111-111111111112', 'Sea Breeze');
     reader.restaurants = [italian, other];
@@ -207,40 +217,38 @@ describe('ListDiscoverableRestaurantsUseCase', () => {
     expect(withoutOfferResult?.hasActiveOffer).toBe(false);
   });
 
-  it('annotates workingHours from WorkingHours, ordered by dayOfWeek, empty array when unconfigured', async () => {
+  it('annotates workingHours from the oldest branch, ordered by dayOfWeek, empty array when unconfigured', async () => {
     const reader = new FakeDiscoveryReader();
     const withHours = restaurant('11111111-1111-4111-8111-111111111111', 'WithHours');
     const withoutHours = restaurant('11111111-1111-4111-8111-111111111112', 'WithoutHours');
     reader.restaurants = [withHours, withoutHours];
 
     const { useCase, workingHoursRepository } = buildUseCase(reader);
-    await workingHoursRepository.replaceAllForRestaurant(
-      RestaurantId.create(withHours.restaurantId),
-      [
-        WorkingHours.create({
-          id: '33333333-3333-4333-8333-333333333332',
-          restaurantId: withHours.restaurantId,
-          dayOfWeek: 3,
-          openingTime: '09:00',
-          closingTime: '22:00',
-          breakStartTime: null,
-          breakEndTime: null,
-          createdAt: new Date('2026-08-01T00:00:00.000Z'),
-          updatedAt: new Date('2026-08-01T00:00:00.000Z'),
-        }),
-        WorkingHours.create({
-          id: '33333333-3333-4333-8333-333333333331',
-          restaurantId: withHours.restaurantId,
-          dayOfWeek: 1,
-          openingTime: '10:00',
-          closingTime: '14:00',
-          breakStartTime: null,
-          breakEndTime: null,
-          createdAt: new Date('2026-08-01T00:00:00.000Z'),
-          updatedAt: new Date('2026-08-01T00:00:00.000Z'),
-        }),
-      ],
-    );
+    workingHoursRepository.registerBranch(withHours.restaurantId, firstBranchId);
+    await workingHoursRepository.replaceAllForBranch(BranchId.create(firstBranchId), [
+      BranchWorkingHours.create({
+        id: '33333333-3333-4333-8333-333333333332',
+        branchId: firstBranchId,
+        dayOfWeek: 3,
+        openingTime: '09:00',
+        closingTime: '22:00',
+        breakStartTime: null,
+        breakEndTime: null,
+        createdAt: new Date('2026-08-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-08-01T00:00:00.000Z'),
+      }),
+      BranchWorkingHours.create({
+        id: '33333333-3333-4333-8333-333333333331',
+        branchId: firstBranchId,
+        dayOfWeek: 1,
+        openingTime: '10:00',
+        closingTime: '14:00',
+        breakStartTime: null,
+        breakEndTime: null,
+        createdAt: new Date('2026-08-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-08-01T00:00:00.000Z'),
+      }),
+    ]);
 
     const result = await useCase.execute({ page: 1, limit: 20 });
 

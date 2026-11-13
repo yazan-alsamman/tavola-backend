@@ -1,3 +1,4 @@
+import { BranchSubscriptionStatus } from '@modules/branches/domain/enums/branch.enums';
 import { RestaurantResult } from '@modules/restaurants/application/dto/restaurant.result';
 import { WorkingHoursEntryResult } from '@modules/restaurants/application/dto/working-hours.result';
 import { BranchResult } from '@modules/branches/application/dto/branch.result';
@@ -16,6 +17,10 @@ function restaurant(overrides: Partial<RestaurantResult> = {}): RestaurantResult
     coverImageId: null,
     description: null,
     cuisineType: 'Italian',
+    nameAr: null,
+    nameEn: null,
+    descriptionAr: null,
+    descriptionEn: null,
     averageRating: null,
     ratingCount: 0,
     priceLevel: 2,
@@ -37,6 +42,11 @@ function branch(overrides: Partial<BranchResult> = {}): BranchResult {
     longitude: null,
     countryCode: 'SY',
     currency: null,
+    coverImageId: null,
+    venueType: null,
+    features: [],
+    subscriptionStatus: BranchSubscriptionStatus.Active,
+    trialEndsAt: null,
     timezone: 'Asia/Damascus',
     referencePrice: null,
     priceLevel: null,
@@ -128,7 +138,11 @@ describe('discovery-response.mapper', () => {
 
   describe('toDiscoveryBranchResponse', () => {
     it('never copies phone into the response object (structural omission, not just a TS type)', () => {
-      const response = toDiscoveryBranchResponse({ ...branch(), workingHours: [] });
+      const response = toDiscoveryBranchResponse({
+        ...branch(),
+        workingHours: [],
+        coverImageUrl: null,
+      });
 
       expect(response).not.toHaveProperty('phone');
       expect(Object.keys(response)).not.toContain('phone');
@@ -139,6 +153,7 @@ describe('discovery-response.mapper', () => {
       const response = toDiscoveryBranchResponse({
         ...branch(),
         workingHours: [branchWorkingHoursEntry],
+        coverImageUrl: null,
       });
 
       expect(response.workingHours).toEqual([

@@ -1,3 +1,4 @@
+import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import { Injectable, Inject } from '@nestjs/common';
 import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import {
@@ -15,6 +16,7 @@ export class ListBranchesUseCase {
   constructor(
     @Inject(BRANCH_REPOSITORY) private readonly branchRepository: BranchRepository,
     @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
+    @Inject(CLOCK) private readonly clock: ClockPort,
   ) {}
 
   async execute(command: ListBranchesCommand): Promise<BranchListResult> {
@@ -33,7 +35,7 @@ export class ListBranchesUseCase {
     );
 
     return {
-      items: page.items.map(toBranchResult),
+      items: page.items.map((branch) => toBranchResult(branch, this.clock.now())),
       page: command.page,
       limit: command.limit,
       total: page.total,

@@ -32,4 +32,16 @@ export class PrismaBookingEligibilityReader implements BookingEligibilityReaderP
       },
     });
   }
+
+  async sumActiveGuestsForBranchBetween(branchId: string, from: Date, to: Date): Promise<number> {
+    const result = await this.prismaContext.client.reservation.aggregate({
+      _sum: { guests: true },
+      where: {
+        branchId,
+        status: { in: [ReservationStatus.Pending, ReservationStatus.Approved] },
+        reservationStartTime: { gte: from, lt: to },
+      },
+    });
+    return result._sum.guests ?? 0;
+  }
 }

@@ -106,6 +106,7 @@ describe('RemoveRestaurantGalleryImageUseCase', () => {
       RestaurantGalleryImage.create({
         id: galleryItemId,
         restaurantId,
+        branchId: null,
         fileId,
         caption: null,
         sortOrder: 0,
@@ -166,6 +167,40 @@ describe('RemoveRestaurantGalleryImageUseCase', () => {
     ).toBeNull();
     expect(fileRepository.get(fileId)?.isDeleted()).toBe(true);
     expect(storagePort.deleted).toContainEqual({ bucket: BUCKET, objectKey });
+  });
+
+  it("keeps the stored file while another branch's copy of the photo still uses it (ADR-051)", async () => {
+    const {
+      useCase,
+      restaurantRepository,
+      restaurantSettingsRepository,
+      galleryRepository,
+      fileRepository,
+      storagePort,
+    } = createUseCase();
+    const restaurantId = await seedRestaurant(restaurantRepository, restaurantSettingsRepository);
+    const { galleryItemId, fileId } = await seedGalleryImage(
+      galleryRepository,
+      fileRepository,
+      restaurantId,
+    );
+    await galleryRepository.add(
+      RestaurantGalleryImage.create({
+        id: '22222222-2222-4222-8222-222222222223',
+        restaurantId,
+        branchId: '99999999-9999-4999-8999-999999999999',
+        fileId,
+        caption: null,
+        sortOrder: 0,
+        createdAt: fixedNow,
+        updatedAt: fixedNow,
+      }),
+    );
+
+    await useCase.execute({ actor: baseActor(), restaurantId, galleryItemId });
+
+    expect(fileRepository.get(fileId)?.isDeleted()).toBe(false);
+    expect(storagePort.deleted).toEqual([]);
   });
 
   it('writes exactly one audit log entry describing the removal', async () => {

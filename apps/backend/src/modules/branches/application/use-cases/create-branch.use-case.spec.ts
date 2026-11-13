@@ -1,3 +1,8 @@
+import {
+  BranchFeature,
+  BranchSubscriptionStatus,
+  BranchVenueType,
+} from '../../domain/enums/branch.enums';
 import { CreateBranchUseCase } from './create-branch.use-case';
 import { BranchCreatedEvent } from '../../domain/events/branch.events';
 import { RestaurantNotFoundException } from '@modules/restaurants/domain/exceptions/restaurant-not-found.exception';
@@ -126,6 +131,22 @@ describe('CreateBranchUseCase', () => {
       RestaurantId.create(restaurantId),
     );
     expect(persisted).not.toBeNull();
+  });
+
+  it('stores venue type and features and starts a 30-day trial (ADR-053)', async () => {
+    const { useCase, restaurantRepository } = createUseCase();
+    await seedRestaurant(restaurantRepository, restaurantId, organizationId);
+
+    const result = await useCase.execute({
+      ...validCommand,
+      venueType: BranchVenueType.Cafe,
+      features: [BranchFeature.Shisha, BranchFeature.Shisha, BranchFeature.Parking],
+    });
+
+    expect(result.venueType).toBe(BranchVenueType.Cafe);
+    expect(result.features).toEqual([BranchFeature.Shisha, BranchFeature.Parking]);
+    expect(result.subscriptionStatus).toBe(BranchSubscriptionStatus.Trial);
+    expect(result.trialEndsAt?.toISOString()).toBe('2026-08-15T12:00:00.000Z');
   });
 
   it('throws RestaurantNotFoundException when the restaurant does not exist', async () => {

@@ -73,8 +73,9 @@ export class RecheckWaitlistUseCase {
       return;
     }
 
-    const settings = await this.restaurantSettingsRepository.findByRestaurantId(
+    const settings = await this.restaurantSettingsRepository.findForBranch(
       branch.restaurantId,
+      branch.branchId,
     );
 
     const preferredDate = new Date(`${input.preferredDateIso}T00:00:00.000Z`);
@@ -90,7 +91,8 @@ export class RecheckWaitlistUseCase {
         branchTimezone: branch.timezone,
         reservationIntervalMinutes: settings?.reservationIntervalMinutes ?? 30,
         defaultReservationDurationMinutes: settings?.defaultReservationDurationMinutes ?? 90,
-        autoApproval: settings?.autoApproval === true,
+        // ADR-053: auto-approval may stop above a party size.
+        autoApproval: settings?.autoApprovesParty(entry.partySize) === true,
         promotedBy: null,
         now,
         correlationId: input.correlationId,

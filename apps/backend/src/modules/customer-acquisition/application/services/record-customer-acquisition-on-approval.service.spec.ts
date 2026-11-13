@@ -227,7 +227,7 @@ describe('RecordCustomerAcquisitionOnApprovalService', () => {
     expect(acquisitionRepository.created).toHaveLength(1);
   });
 
-  it('falls back to Branch.currency when RestaurantSettings.defaultCurrency is unset (ADR-033 §17)', async () => {
+  it('uses Branch.currency when RestaurantSettings.defaultCurrency is unset (ADR-033 §17)', async () => {
     const { service, acquisitionRepository } = build({
       defaultCurrency: null,
       branchCurrency: 'SYP',
@@ -245,6 +245,26 @@ describe('RecordCustomerAcquisitionOnApprovalService', () => {
 
     expect(result.recorded).toBe(true);
     expect(acquisitionRepository.created).toHaveLength(1);
+  });
+
+  it("uses the branch's own currency over the legacy restaurant default (ADR-050)", async () => {
+    const { service, acquisitionRepository } = build({
+      defaultCurrency: 'USD',
+      branchCurrency: 'SYP',
+    });
+
+    const result = await service.recordIfEligible({
+      restaurantId: RESTAURANT_ID,
+      branchId: BRANCH_ID,
+      userId: USER_ID,
+      reservationGuestId: null,
+      source: ReservationSource.Online,
+      sourceReservationId: RESERVATION_ID,
+      now,
+    });
+
+    expect(result.recorded).toBe(true);
+    expect(acquisitionRepository.created[0]?.feeCurrency).toBe('SYP');
   });
 
   it('fails closed when no pricing rule matches the operating currency at any scope (ADR-033 §17)', async () => {

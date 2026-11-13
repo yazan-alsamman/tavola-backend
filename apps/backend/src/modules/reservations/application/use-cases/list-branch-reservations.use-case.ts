@@ -13,6 +13,8 @@ import {
   RESTAURANT_REPOSITORY,
 } from '@modules/restaurants/domain/repositories/restaurant.repository';
 import { BranchId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
+import { CLOCK, ClockPort } from '@shared/application/ports/clock.port';
+import { calendarDateInTimeZone } from '../../domain/services/reservation-time-slots.service';
 import {
   StaffReservationsReaderPort,
   STAFF_RESERVATIONS_READER,
@@ -33,6 +35,9 @@ import { BranchReservationsListResult } from '../dto/branch-reservations-list.re
 export const BRANCH_RESERVATIONS_MAX_RANGE_DAYS = 366;
 
 const MS_PER_DAY = 86_400_000;
+
+/** ADR-053: an Employee holding this permission sees only today's reservations. */
+export const TODAY_ONLY_PERMISSION = 'reservations:today-only';
 
 /**
  * Restaurant Dashboard Calendar (`GET
@@ -60,6 +65,7 @@ export class ListBranchReservationsUseCase {
     private readonly reader: StaffReservationsReaderPort,
     @Inject(BRANCH_REPOSITORY) private readonly branchRepository: BranchRepository,
     @Inject(RESTAURANT_REPOSITORY) private readonly restaurantRepository: RestaurantRepository,
+    @Inject(CLOCK) private readonly clock: ClockPort,
   ) {}
 
   async execute(command: ListBranchReservationsCommand): Promise<BranchReservationsListResult> {
@@ -98,11 +104,21 @@ export class ListBranchReservationsUseCase {
       throw new EmployeeBranchNotAssignedException();
     }
 
-    if (command.dateFrom.getTime() > command.dateTo.getTime()) {
+    // ADR-053: the Front Desk role reads only the branch's current day,
+    // whatever range it asks for.
+    const todayOnly =
+      command.actor.actorType === AccessTokenActorType.Employee &&
+      command.actor.permissions.includes(TODAY_ONLY_PERMISSION);
+    const today = new Date(
+      `${calendarDateInTimeZone(this.clock.now(), branch.timezone)}T00:00:00.000Z`,
+    );
+    const dateFrom = todayOnly ? today : command.dateFrom;
+    const dateTo = todayOnly ? today : command.dateTo;
+
+    if (dateFrom.getTime() > dateTo.getTime()) {
       throw new InvalidReservationDateRangeException('"dateFrom" must not be after "dateTo".');
     }
-    const spanDays =
-      Math.round((command.dateTo.getTime() - command.dateFrom.getTime()) / MS_PER_DAY) + 1;
+    const spanDays = Math.round((dateTo.getTime() - dateFrom.getTime()) / MS_PER_DAY) + 1;
     if (spanDays > BRANCH_RESERVATIONS_MAX_RANGE_DAYS) {
       throw new InvalidReservationDateRangeException(
         `Requested range spans ${spanDays} days, exceeding the maximum of ${BRANCH_RESERVATIONS_MAX_RANGE_DAYS} days.`,
@@ -114,8 +130,8 @@ export class ListBranchReservationsUseCase {
       command.branchId,
       {
         status: command.status,
-        dateFrom: command.dateFrom,
-        dateTo: command.dateTo,
+        dateFrom,
+        dateTo,
         customerKey: command.customerKey,
       },
       command.page,
