@@ -1,3 +1,5 @@
+import { BranchClosure } from '@modules/branches/domain/entities/branch-closure.entity';
+import { InMemoryBranchClosureRepository } from '../../../../../test/branches/support/in-memory-branch-closure.repository';
 import { CreateReservationUseCase } from './create-reservation.use-case';
 import { OfferAttributionReaderPort } from '../ports/offer-attribution-reader.port';
 import { BranchNotFoundException } from '@modules/branches/domain/exceptions/branch-not-found.exception';
@@ -91,6 +93,12 @@ describe('CreateReservationUseCase', () => {
     tableStatus?: TableStatus;
     tableCapacity?: number;
     autoApproval?: boolean;
+    limits?: {
+      autoApprovalMaxGuests?: number | null;
+      minLeadTimeMinutes?: number;
+      maxDaysAhead?: number | null;
+      dailyGuestCap?: number | null;
+    };
   }) {
     const branchRepository = new InMemoryBranchRepository();
     const tableRepository = new InMemoryTableRepository();
@@ -126,9 +134,13 @@ describe('CreateReservationUseCase', () => {
       fixedNow,
     );
     await restaurantSettingsRepository.save(
-      overrides?.autoApproval
+      overrides?.autoApproval || overrides?.limits
         ? defaultSettings.updateSettings(
-            { ...defaultSettings.toProps(), autoApproval: true },
+            {
+              ...defaultSettings.toProps(),
+              autoApproval: overrides.autoApproval === true,
+              ...overrides.limits,
+            },
             fixedNow,
           )
         : defaultSettings,
@@ -175,6 +187,7 @@ describe('CreateReservationUseCase', () => {
       operationalScheduler,
       restaurantSettingsRepository,
     );
+    const closureRepository = new InMemoryBranchClosureRepository();
     const useCase = new CreateReservationUseCase(
       branchRepository,
       tableRepository,
@@ -197,11 +210,15 @@ describe('CreateReservationUseCase', () => {
       bookingEligibility,
       new BranchOpeningHoursService(
         new ListBranchWorkingHoursByBranchIdsUseCase(branchHoursRepository),
+        closureRepository,
       ),
     );
 
     return {
       useCase,
+      closureRepository,
+      restaurantSettingsRepository,
+      branchRepository,
       bookingEligibility,
       reservationRepository,
       reservationGuestRepository,
@@ -954,6 +971,92 @@ describe('CreateReservationUseCase', () => {
           guests: 21,
         }),
       ).rejects.toBeInstanceOf(InvalidReservationException);
+    });
+  });
+
+  describe('branch booking limits (ADR-053)', () => {
+    const online = (startTime: string, guests = 2) => ({
+      actor: baseActor(),
+      branchId,
+      tableId,
+      reservationStartTime: startTime,
+      guests,
+    });
+
+    it('auto-approves a party up to the limit and leaves a larger one Pending', async () => {
+      const small = await build({ autoApproval: true, limits: { autoApprovalMaxGuests: 3 } });
+      expect((await small.useCase.execute(online('2026-08-01T18:00:00.000Z', 3))).status).toBe(
+        'Approved',
+      );
+
+      const large = await build({ autoApproval: true, limits: { autoApprovalMaxGuests: 3 } });
+      expect((await large.useCase.execute(online('2026-08-01T18:00:00.000Z', 4))).status).toBe(
+        'Pending',
+      );
+    });
+
+    it('rejects an online booking on a date a temporary closure covers', async () => {
+      const { useCase, closureRepository } = await build();
+      await closureRepository.save(
+        BranchClosure.create({
+          id: 'abababab-abab-4bab-8bab-abababababab',
+          branchId,
+          startDate: '2026-08-01',
+          endDate: '2026-08-01',
+          reason: null,
+          createdAt: fixedNow,
+          updatedAt: fixedNow,
+        }),
+      );
+
+      await expect(useCase.execute(online('2026-08-01T18:00:00.000Z'))).rejects.toBeInstanceOf(
+        InvalidReservationTimeException,
+      );
+    });
+
+    it('rejects an online booking while the branch is paused, but staff can still book', async () => {
+      const { useCase, branchRepository } = await build();
+      const branch = await branchRepository.findById(BranchId.create(branchId));
+      await branchRepository.save(branch!.pause(fixedNow));
+
+      await expect(useCase.execute(online('2026-08-01T18:00:00.000Z'))).rejects.toBeInstanceOf(
+        RestaurantNotAcceptingReservationsException,
+      );
+      const phone = await useCase.execute({
+        actor: employeeActor(),
+        branchId,
+        tableId,
+        reservationStartTime: '2026-08-01T18:00:00.000Z',
+        guests: 2,
+        source: ReservationSource.Phone,
+        reservationGuest: guestPayload(),
+      });
+      expect(phone.source).toBe(ReservationSource.Phone);
+    });
+
+    it('rejects an online booking inside the minimum notice', async () => {
+      const { useCase } = await build({ limits: { minLeadTimeMinutes: 7 * 24 * 60 } });
+
+      await expect(useCase.execute(online('2026-08-01T18:00:00.000Z'))).rejects.toBeInstanceOf(
+        InvalidReservationTimeException,
+      );
+    });
+
+    it('rejects an online booking past the branch booking window', async () => {
+      const { useCase } = await build({ limits: { maxDaysAhead: 1 } });
+
+      await expect(useCase.execute(online('2026-08-10T18:00:00.000Z'))).rejects.toBeInstanceOf(
+        InvalidReservationTimeException,
+      );
+    });
+
+    it('rejects an online party that would pass the daily guest cap', async () => {
+      const { useCase, bookingEligibility } = await build({ limits: { dailyGuestCap: 10 } });
+      bookingEligibility.branchGuestsBooked = 9;
+
+      await expect(useCase.execute(online('2026-08-01T18:00:00.000Z'))).rejects.toBeInstanceOf(
+        InvalidReservationException,
+      );
     });
   });
 });

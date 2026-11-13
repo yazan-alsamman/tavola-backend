@@ -94,6 +94,8 @@ export function toDiscoveryBranchResponse(
     currency: result.currency,
     priceLevel: result.priceLevel,
     coverImageUrl: result.coverImageUrl,
+    venueType: result.venueType,
+    features: result.features,
     timezone: result.timezone,
     createdAt: result.createdAt.toISOString(),
     updatedAt: result.updatedAt.toISOString(),

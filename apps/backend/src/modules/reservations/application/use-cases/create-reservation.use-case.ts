@@ -58,13 +58,18 @@ import {
 import { BranchOpeningHoursService } from '../services/branch-opening-hours.service';
 import {
   durationMinutes,
+  fitsDailyGuestCap,
   fitsOpeningHours,
   isWithinBookingHorizon,
+  lastBookableDate,
+  localDayBounds,
   MAX_ONLINE_BOOKING_ADVANCE_DAYS,
+  meetsMinLeadTime,
   MAX_RESERVATION_DURATION_MINUTES,
   MAX_UPCOMING_ONLINE_RESERVATIONS_PER_CUSTOMER,
   MIN_RESERVATION_DURATION_MINUTES,
 } from '../../domain/services/reservation-booking-policy';
+import { calendarDateInTimeZone } from '../../domain/services/reservation-time-slots.service';
 import { ActiveReservationLimitReachedException } from '../../domain/exceptions/active-reservation-limit-reached.exception';
 import { RestaurantNotAcceptingReservationsException } from '../../domain/exceptions/restaurant-not-accepting-reservations.exception';
 import { RecordCustomerAcquisitionOnApprovalService } from '@modules/customer-acquisition/application/services/record-customer-acquisition-on-approval.service';
@@ -219,6 +224,12 @@ export class CreateReservationUseCase {
       endTime,
       guests: command.guests,
       maxGuests: settings?.maxGuestsPerReservation ?? null,
+      limits: {
+        paused: branch.isPaused(),
+        minLeadTimeMinutes: settings?.minLeadTimeMinutes ?? 0,
+        maxDaysAhead: settings?.maxDaysAhead ?? null,
+        dailyGuestCap: settings?.dailyGuestCap ?? null,
+      },
       now,
     });
 
@@ -274,7 +285,8 @@ export class CreateReservationUseCase {
       timeSlotBucket,
     );
 
-    const autoApprove = settings?.autoApproval === true;
+    // ADR-053: auto-approval may stop above a party size.
+    const autoApprove = settings?.autoApprovesParty(command.guests) === true;
     const reservation = autoApprove
       ? Reservation.createAutoApproved(reservationProps)
       : Reservation.create(reservationProps);
@@ -485,6 +497,51 @@ export class CreateReservationUseCase {
    * Phone/WalkIn bookings may sit outside opening hours on purpose (a late
    * private event, for example), so those rules apply to Online only.
    */
+  /** ADR-053: pause, temporary closures and the branch's extra booking limits. */
+  private async assertWithinBranchLimits(input: {
+    branchId: string;
+    timeZone: string;
+    startTime: Date;
+    guests: number;
+    limits: {
+      paused: boolean;
+      minLeadTimeMinutes: number;
+      maxDaysAhead: number | null;
+      dailyGuestCap: number | null;
+    };
+    now: Date;
+  }): Promise<void> {
+    if (input.limits.paused) {
+      throw new RestaurantNotAcceptingReservationsException();
+    }
+    const localDate = calendarDateInTimeZone(input.startTime, input.timeZone);
+    if (await this.openingHours.isClosedOn(input.branchId, localDate)) {
+      throw new InvalidReservationTimeException('The branch is closed on this date.');
+    }
+    if (!meetsMinLeadTime(input.startTime, input.now, input.limits.minLeadTimeMinutes)) {
+      throw new InvalidReservationTimeException(
+        `Reservations must be made at least ${input.limits.minLeadTimeMinutes} minutes ahead.`,
+      );
+    }
+    const today = calendarDateInTimeZone(input.now, input.timeZone);
+    if (localDate > lastBookableDate(today, input.limits.maxDaysAhead)) {
+      throw new InvalidReservationTimeException(
+        `Reservations can be made at most ${input.limits.maxDaysAhead ?? MAX_ONLINE_BOOKING_ADVANCE_DAYS} days ahead.`,
+      );
+    }
+    if (input.limits.dailyGuestCap !== null) {
+      const day = localDayBounds(localDate, input.timeZone);
+      const booked = await this.bookingEligibility.sumActiveGuestsForBranchBetween(
+        input.branchId,
+        day.start,
+        day.end,
+      );
+      if (!fitsDailyGuestCap(booked, input.guests, input.limits.dailyGuestCap)) {
+        throw new InvalidReservationException('The branch is fully booked on this date.');
+      }
+    }
+  }
+
   private async assertBookable(input: {
     restaurantId: string;
     branchId: string;
@@ -495,6 +552,13 @@ export class CreateReservationUseCase {
     endTime: Date;
     guests: number;
     maxGuests: number | null;
+    /** ADR-053: branch plan state and booking limits, online only. */
+    limits: {
+      paused: boolean;
+      minLeadTimeMinutes: number;
+      maxDaysAhead: number | null;
+      dailyGuestCap: number | null;
+    };
     now: Date;
   }): Promise<void> {
     if (!(await this.bookingEligibility.isRestaurantAcceptingReservations(input.restaurantId))) {
@@ -523,6 +587,8 @@ export class CreateReservationUseCase {
         `guests must not exceed the restaurant maximum of ${input.maxGuests}.`,
       );
     }
+
+    await this.assertWithinBranchLimits(input);
 
     const schedule = await this.openingHours.load(input.branchId);
     if (!fitsOpeningHours(input.startTime, input.endTime, input.timeZone, schedule)) {

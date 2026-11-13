@@ -1,7 +1,8 @@
 import { Branch } from '../../domain/entities/branch.entity';
 import { BranchResult } from '../dto/branch.result';
 
-export function toBranchResult(branch: Branch): BranchResult {
+/** `now` decides whether a trial is still running (ADR-053). */
+export function toBranchResult(branch: Branch, now: Date): BranchResult {
   return {
     branchId: branch.branchId.value,
     restaurantId: branch.restaurantId.value,
@@ -13,6 +14,10 @@ export function toBranchResult(branch: Branch): BranchResult {
     countryCode: branch.countryCode,
     currency: branch.currency,
     coverImageId: branch.coverImageId,
+    venueType: branch.venueType,
+    features: branch.features,
+    subscriptionStatus: branch.subscriptionStatus(now),
+    trialEndsAt: branch.trialEndsAt,
     referencePrice: branch.referencePrice,
     priceLevel: branch.priceLevel,
     timezone: branch.timezone,

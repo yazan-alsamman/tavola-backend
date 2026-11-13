@@ -1,3 +1,6 @@
+import { BranchClosure } from '@modules/branches/domain/entities/branch-closure.entity';
+import { InMemoryBranchClosureRepository } from '../../../../../test/branches/support/in-memory-branch-closure.repository';
+import { InMemoryBookingEligibilityReader } from '../../../../../test/reservations/support/in-memory-booking-eligibility.reader';
 import { ListReservationTimeSlotsUseCase } from './list-reservation-time-slots.use-case';
 import { Branch } from '@modules/branches/domain/entities/branch.entity';
 import { BranchWorkingHours } from '@modules/branches/domain/entities/branch-working-hours.entity';
@@ -11,7 +14,7 @@ import { ReservationSource } from '../../domain/enums/reservation.enums';
 import { InvalidReservationTimeException } from '../../domain/exceptions/invalid-reservation-time.exception';
 import { ReservationSlotOutcome } from '../dto/reservation-time-slots.result';
 import { BranchOpeningHoursService } from '../services/branch-opening-hours.service';
-import { BranchId } from '@shared/domain/value-objects/identifiers.vo';
+import { BranchId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
 import { InMemoryBranchWorkingHoursRepository } from '../../../../../test/branches/support/in-memory-branch-working-hours.repository';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
@@ -79,18 +82,26 @@ describe('ListReservationTimeSlotsUseCase', () => {
         deletedAt: null,
       }),
     );
+    const closureRepository = new InMemoryBranchClosureRepository();
+    const bookingEligibility = new InMemoryBookingEligibilityReader();
     const useCase = new ListReservationTimeSlotsUseCase(
       branchRepository,
       new BranchOpeningHoursService(
         new ListBranchWorkingHoursByBranchIdsUseCase(branchHoursRepository),
+        closureRepository,
       ),
       settingsRepository,
       tableRepository,
       reservationRepository,
       { now: () => now },
+      bookingEligibility,
     );
     return {
       useCase,
+      closureRepository,
+      bookingEligibility,
+      settingsRepository,
+      branchRepository,
       branchHoursRepository,
       tableRepository,
       reservationRepository,
@@ -338,5 +349,111 @@ describe('ListReservationTimeSlotsUseCase', () => {
     await expect(
       useCase.execute({ branchId, date: '2026-09-28', partySize: 21 }),
     ).rejects.toBeInstanceOf(InvalidReservationTimeException);
+  });
+
+  describe('branch booking limits (ADR-053)', () => {
+    async function withEveningHours() {
+      const built = await build();
+      await built.branchHoursRepository.replaceAllForBranch(BranchId.create(branchId), [
+        BranchWorkingHours.create({
+          id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+          branchId,
+          dayOfWeek: 1,
+          openingTime: '18:00',
+          closingTime: '22:00',
+          breakStartTime: null,
+          breakEndTime: null,
+          createdAt: now,
+          updatedAt: now,
+        }),
+      ]);
+      return built;
+    }
+
+    async function setLimits(
+      settingsRepository: InMemoryRestaurantSettingsRepository,
+      limits: { minLeadTimeMinutes?: number; maxDaysAhead?: number; dailyGuestCap?: number },
+    ) {
+      const settings = await settingsRepository.findByRestaurantId(
+        RestaurantId.create(restaurantId),
+      );
+      await settingsRepository.save(
+        settings!.updateSettings(
+          {
+            reservationIntervalMinutes: settings!.reservationIntervalMinutes,
+            maxGuestsPerReservation: settings!.maxGuestsPerReservation,
+            cancellationWindowMinutes: settings!.cancellationWindowMinutes,
+            pendingReservationTimeoutMinutes: settings!.pendingReservationTimeoutMinutes,
+            defaultReservationDurationMinutes: settings!.defaultReservationDurationMinutes,
+            autoApproval: settings!.autoApproval,
+            timezone: settings!.timezone,
+            defaultCurrency: settings!.defaultCurrency,
+            reservationReminderMinutesBefore: settings!.reservationReminderMinutesBefore,
+            lateArrivalGraceMinutes: settings!.lateArrivalGraceMinutes,
+            ...limits,
+          },
+          now,
+        ),
+      );
+    }
+
+    it('reports CLOSED on a date a temporary closure covers', async () => {
+      const { useCase, closureRepository } = await withEveningHours();
+      await closureRepository.save(
+        BranchClosure.create({
+          id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+          branchId,
+          startDate: '2026-09-27',
+          endDate: '2026-09-28',
+          reason: 'Holiday',
+          createdAt: now,
+          updatedAt: now,
+        }),
+      );
+
+      const result = await useCase.execute({ branchId, date: '2026-09-28', partySize: 4 });
+
+      expect(result.outcome).toBe(ReservationSlotOutcome.Closed);
+      expect(result.slots).toEqual([]);
+    });
+
+    it('reports CLOSED while the branch is paused', async () => {
+      const { useCase, branchRepository } = await withEveningHours();
+      const branch = await branchRepository.findById(BranchId.create(branchId));
+      await branchRepository.save(branch!.pause(now));
+
+      const result = await useCase.execute({ branchId, date: '2026-09-28', partySize: 4 });
+
+      expect(result.outcome).toBe(ReservationSlotOutcome.Closed);
+    });
+
+    it('drops slots inside the minimum notice', async () => {
+      const { useCase, settingsRepository } = await withEveningHours();
+      // now is 09:00 local; 10 hours of notice leaves slots from 19:00 local.
+      await setLimits(settingsRepository, { minLeadTimeMinutes: 600 });
+
+      const result = await useCase.execute({ branchId, date: '2026-09-28', partySize: 4 });
+
+      expect(result.slots[0].startTime).toBe('2026-09-28T16:30:00.000Z');
+    });
+
+    it('reports CLOSED past the branch booking window', async () => {
+      const { useCase, settingsRepository } = await withEveningHours();
+      await setLimits(settingsRepository, { maxDaysAhead: 6 });
+
+      const result = await useCase.execute({ branchId, date: '2026-10-05', partySize: 4 });
+
+      expect(result.outcome).toBe(ReservationSlotOutcome.Closed);
+    });
+
+    it('reports NO_REMAINING_SLOTS when the party would pass the daily guest cap', async () => {
+      const { useCase, settingsRepository, bookingEligibility } = await withEveningHours();
+      await setLimits(settingsRepository, { dailyGuestCap: 40 });
+      bookingEligibility.branchGuestsBooked = 38;
+
+      const result = await useCase.execute({ branchId, date: '2026-09-28', partySize: 4 });
+
+      expect(result.outcome).toBe(ReservationSlotOutcome.NoRemainingSlots);
+    });
   });
 });

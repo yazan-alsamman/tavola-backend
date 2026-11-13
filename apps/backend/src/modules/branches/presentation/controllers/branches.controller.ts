@@ -123,6 +123,8 @@ export class BranchesController {
       currency: body.currency ?? null,
       timezone: body.timezone,
       phone: body.phone ?? null,
+      venueType: body.venueType,
+      features: body.features,
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
     return this.toResponse(result);
@@ -208,7 +210,7 @@ export class BranchesController {
     operationId: 'branchesUpdate',
     summary: 'Update a branch (full-replace)',
     description:
-      'Full-replace update of city/district/address/countryCode/currency/timezone/phone. Never accepts restaurantId - see UpdateBranchRequestDto.',
+      'Full-replace update of city/district/address/countryCode/currency/timezone/phone. venueType/features (ADR-053) keep their stored value when omitted. Never accepts restaurantId - see UpdateBranchRequestDto.',
   })
   @ApiParam({ name: 'restaurantId', format: 'uuid' })
   @ApiParam({ name: 'branchId', format: 'uuid' })
@@ -244,6 +246,8 @@ export class BranchesController {
       currency: body.currency ?? null,
       timezone: body.timezone,
       phone: body.phone ?? null,
+      venueType: body.venueType,
+      features: body.features,
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
     return this.toResponse(result);
@@ -401,6 +405,10 @@ export class BranchesController {
       countryCode: result.countryCode,
       currency: result.currency,
       coverImageId: result.coverImageId,
+      venueType: result.venueType,
+      features: result.features,
+      subscriptionStatus: result.subscriptionStatus,
+      trialEndsAt: result.trialEndsAt?.toISOString() ?? null,
       referencePrice: result.referencePrice,
       priceLevel: result.priceLevel,
       timezone: result.timezone,

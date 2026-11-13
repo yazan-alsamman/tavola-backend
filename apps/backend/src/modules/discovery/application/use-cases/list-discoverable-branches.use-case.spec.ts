@@ -1,3 +1,4 @@
+import { BranchSubscriptionStatus } from '@modules/branches/domain/enums/branch.enums';
 import { RestaurantCoverImageUrlResolver } from '../services/restaurant-cover-image-url.resolver';
 import { InMemoryFileRepository } from '../../../../../test/restaurants/support/in-memory-file-repository';
 import { FakeStoragePort } from '../../../../../test/restaurants/support/fake-storage-port';
@@ -48,6 +49,10 @@ function branch(id: string, ownerRestaurantId: string): BranchResult {
     countryCode: 'SY',
     currency: null,
     coverImageId: null,
+    venueType: null,
+    features: [],
+    subscriptionStatus: BranchSubscriptionStatus.Active,
+    trialEndsAt: null,
     timezone: 'Asia/Damascus',
     referencePrice: null,
     priceLevel: null,

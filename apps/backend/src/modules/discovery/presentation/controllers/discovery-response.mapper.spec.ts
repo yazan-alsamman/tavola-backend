@@ -1,3 +1,4 @@
+import { BranchSubscriptionStatus } from '@modules/branches/domain/enums/branch.enums';
 import { RestaurantResult } from '@modules/restaurants/application/dto/restaurant.result';
 import { WorkingHoursEntryResult } from '@modules/restaurants/application/dto/working-hours.result';
 import { BranchResult } from '@modules/branches/application/dto/branch.result';
@@ -42,6 +43,10 @@ function branch(overrides: Partial<BranchResult> = {}): BranchResult {
     countryCode: 'SY',
     currency: null,
     coverImageId: null,
+    venueType: null,
+    features: [],
+    subscriptionStatus: BranchSubscriptionStatus.Active,
+    trialEndsAt: null,
     timezone: 'Asia/Damascus',
     referencePrice: null,
     priceLevel: null,

@@ -45,6 +45,10 @@ export class UpdateBranchSettingsUseCase {
         defaultCurrency: settings.defaultCurrency,
         reservationReminderMinutesBefore: command.reservationReminderMinutesBefore,
         lateArrivalGraceMinutes: command.lateArrivalGraceMinutes,
+        autoApprovalMaxGuests: command.autoApprovalMaxGuests,
+        minLeadTimeMinutes: command.minLeadTimeMinutes,
+        maxDaysAhead: command.maxDaysAhead,
+        dailyGuestCap: command.dailyGuestCap,
       },
       now,
     );

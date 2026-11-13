@@ -2884,3 +2884,27 @@ Restaurant name and description in Arabic and English
 ### Consequences
 
 A newer app build picks `nameAr`/`nameEn` by the user's language; app 1.0.2 keeps showing `name`.
+
+---
+
+## ADR-053
+
+### Title
+
+Venue identity, temporary closures, extra booking limits, per-branch plan state and the Front Desk role
+
+### Status
+
+**Accepted — owner-approved 2026-11-14** (Branches and Settings sheets, "proposed additions"; the map search item is out of scope).
+
+### Decision
+
+1. **Venue identity.** `Branch.venueType` (`Restaurant`, `Cafe`, `Patisserie`, `Brunch`, nullable) and `Branch.features` (`Shisha`, `OutdoorSeating`, `Heating`, `Parking`, `FamilyFriendly`, `PrivateRoom`). Set on branch create/update (omitted on update keeps the stored value) and returned by the management and Discovery branch responses.
+2. **Temporary closures.** `BranchClosure` rows (`startDate`..`endDate`, inclusive branch-local dates, at most 366 days, optional reason). `GET/POST /restaurants/:id/branches/:branchId/closures`, `DELETE .../closures/:closureId` (Owner/Admin). Online time slots return `Closed` and online bookings are refused on a closed date; staff bookings and existing reservations are unaffected, same as opening hours.
+3. **Extra booking limits** on the branch rules (`branch_settings`, mirrored on `restaurant_settings` so the entity keeps one shape): `autoApprovalMaxGuests` (auto-approval only up to this party size, also for waitlist promotion), `minLeadTimeMinutes`, `maxDaysAhead` (1-90, null = the platform 90 days) and `dailyGuestCap` (Pending + Approved guests starting that branch-local day). Online only. Omitted on PATCH keeps the stored value; null removes the limit.
+4. **Per-branch plan state.** `Branch.trialEndsAt` (new branches get 30 days) and `Branch.pausedAt`. `subscriptionStatus` is derived: `Paused`, else `Trial` until `trialEndsAt`, else `Active`. `POST .../pause` and `.../resume` (Owner/Admin). A paused branch is hidden from Discovery and takes no online bookings. Billing stays with the organization subscription; there is no per-branch price yet.
+5. **Front Desk role** (`front-desk`, seeded): `reservations:create`, `complete`, `noshow`, `tableready`, `waitlist`, plus `reservations:today-only`, which makes `GET /restaurants/:id/branches/:branchId/reservations` return only the branch's current day whatever range is asked.
+
+### Consequences
+
+Additive migration `20261114000000_branch_identity_closures_and_booking_limits`; existing branches have no trial, no closures and no extra limits, so behaviour is unchanged until the owner sets them. The Front Desk role and permission come from `prisma db seed`, which must run after deploy. App 1.0.2 ignores the new response fields; a closed or paused branch reads as no available slots.

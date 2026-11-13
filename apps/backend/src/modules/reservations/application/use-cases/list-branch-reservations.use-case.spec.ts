@@ -1,3 +1,4 @@
+import { FixedClock } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { ListBranchReservationsUseCase } from './list-branch-reservations.use-case';
 import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
 import { PermissionDeniedException } from '@modules/authorization/domain/exceptions/permission-denied.exception';
@@ -20,7 +21,9 @@ describe('ListBranchReservationsUseCase', () => {
   const branchId = '44444444-4444-4444-8444-444444444444';
   const otherBranchId = '44444444-4444-4444-8444-444444444499';
 
-  function employeeActor(overrides: Partial<{ restaurantId: string; branchIds: string[] }> = {}) {
+  function employeeActor(
+    overrides: Partial<{ restaurantId: string; branchIds: string[]; permissions: string[] }> = {},
+  ) {
     return {
       actorType: AccessTokenActorType.Employee as const,
       userId: 'employee-user-1',
@@ -31,7 +34,7 @@ describe('ListBranchReservationsUseCase', () => {
       organizationId: 'org-1',
       restaurantId: overrides.restaurantId ?? restaurantId,
       branchIds: overrides.branchIds ?? [],
-      permissions: [],
+      permissions: overrides.permissions ?? [],
       permissionsVersion: 1,
     };
   }
@@ -116,7 +119,12 @@ describe('ListBranchReservationsUseCase', () => {
     branchRepository: InMemoryBranchRepository,
     restaurantRepository: InMemoryRestaurantRepository = new InMemoryRestaurantRepository(),
   ) {
-    return new ListBranchReservationsUseCase(reader, branchRepository, restaurantRepository);
+    return new ListBranchReservationsUseCase(
+      reader,
+      branchRepository,
+      restaurantRepository,
+      new FixedClock(new Date('2026-08-10T12:00:00.000Z')),
+    );
   }
 
   async function seedRestaurant(restaurantRepository: InMemoryRestaurantRepository): Promise<void> {
@@ -181,6 +189,33 @@ describe('ListBranchReservationsUseCase', () => {
     });
 
     expect(result.total).toBe(1);
+  });
+
+  it('limits a Front Desk employee to the branch current day (ADR-053)', async () => {
+    const reader = new InMemoryStaffReservationsReader();
+    reader.seed(makeItem());
+    reader.seed(
+      makeItem({
+        reservationId: '11111111-1111-4111-8111-111111111113',
+        reservationDate: new Date('2026-08-11T00:00:00.000Z'),
+      }),
+    );
+    const branchRepository = new InMemoryBranchRepository();
+    await seedBranch(branchRepository);
+    const useCase = makeUseCase(reader, branchRepository);
+
+    const result = await useCase.execute({
+      actor: employeeActor({ branchIds: [branchId], permissions: ['reservations:today-only'] }),
+      restaurantId,
+      branchId,
+      dateFrom: new Date('2026-08-01T00:00:00.000Z'),
+      dateTo: new Date('2026-08-31T00:00:00.000Z'),
+      page: 1,
+      limit: 20,
+    });
+
+    expect(result.total).toBe(1);
+    expect(result.items[0].reservationDate.toISOString()).toBe('2026-08-10T00:00:00.000Z');
   });
 
   it('filters by status when provided', async () => {

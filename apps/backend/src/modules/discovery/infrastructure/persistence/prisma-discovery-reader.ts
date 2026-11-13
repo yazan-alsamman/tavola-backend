@@ -1,3 +1,8 @@
+import {
+  BranchFeature,
+  BranchSubscriptionStatus,
+  BranchVenueType,
+} from '@modules/branches/domain/enums/branch.enums';
 import { FloorPlanAreaFeature } from '@modules/tables/domain/enums/table.enums';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -140,7 +145,8 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
     page: number,
     limit: number,
   ): Promise<DiscoveryListPage<BranchResult>> {
-    const where = { restaurantId, deletedAt: null };
+    // ADR-053: a paused branch is hidden from guests.
+    const where = { restaurantId, deletedAt: null, pausedAt: null };
     const [rows, total] = await Promise.all([
       this.prisma.branch.findMany({
         where,
@@ -155,7 +161,7 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
 
   async getBranchById(branchId: string, restaurantId: string): Promise<BranchResult | null> {
     const row = await this.prisma.branch.findFirst({
-      where: { id: branchId, restaurantId, deletedAt: null },
+      where: { id: branchId, restaurantId, deletedAt: null, pausedAt: null },
     });
     return row ? this.toBranchResult(row) : null;
   }
@@ -216,7 +222,11 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
     }
     if (filters.city) {
       where.branches = {
-        some: { city: { equals: filters.city, mode: 'insensitive' }, deletedAt: null },
+        some: {
+          city: { equals: filters.city, mode: 'insensitive' },
+          deletedAt: null,
+          pausedAt: null,
+        },
       };
     }
     return where;
@@ -276,7 +286,7 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
             )
           ) AS distance_km
         FROM branches b
-        WHERE b.deleted_at IS NULL
+        WHERE b.deleted_at IS NULL AND b.paused_at IS NULL
           AND b.latitude IS NOT NULL
           AND b.longitude IS NOT NULL
           AND b.latitude BETWEEN ${box.minLat}::float8 AND ${box.maxLat}::float8
@@ -410,6 +420,10 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
     countryCode: string;
     currency: string | null;
     coverImageId: string | null;
+    venueType: string | null;
+    features: string[];
+    trialEndsAt: Date | null;
+    pausedAt: Date | null;
     referencePrice: DecimalLike;
     priceLevel: number | null;
     timezone: string;
@@ -428,6 +442,14 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
       countryCode: row.countryCode,
       currency: row.currency,
       coverImageId: row.coverImageId,
+      venueType: row.venueType as BranchVenueType | null,
+      features: row.features as BranchFeature[],
+      // Paused branches never reach this mapper (see the queries above).
+      subscriptionStatus:
+        row.trialEndsAt !== null && row.trialEndsAt.getTime() > Date.now()
+          ? BranchSubscriptionStatus.Trial
+          : BranchSubscriptionStatus.Active,
+      trialEndsAt: row.trialEndsAt,
       referencePrice: toNumberOrNull(row.referencePrice),
       priceLevel: row.priceLevel,
       timezone: row.timezone,

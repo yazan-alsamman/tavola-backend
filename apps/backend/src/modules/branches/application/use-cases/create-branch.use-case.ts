@@ -1,3 +1,4 @@
+import { trialEndFor } from '../../domain/services/branch-plan-policy';
 import { Injectable, Inject } from '@nestjs/common';
 import { ClockPort, CLOCK } from '@shared/application/ports/clock.port';
 import { IdGeneratorPort, ID_GENERATOR } from '@shared/application/ports/id-generator.port';
@@ -96,6 +97,11 @@ export class CreateBranchUseCase {
       currency: command.currency,
       timezone: command.timezone,
       phone: command.phone,
+      venueType: command.venueType ?? null,
+      features: command.features ?? [],
+      // ADR-053: every new branch starts with a free period.
+      trialEndsAt: trialEndFor(now),
+      pausedAt: null,
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
@@ -126,6 +132,6 @@ export class CreateBranchUseCase {
       ),
     );
 
-    return toBranchResult(branch);
+    return toBranchResult(branch, now);
   }
 }

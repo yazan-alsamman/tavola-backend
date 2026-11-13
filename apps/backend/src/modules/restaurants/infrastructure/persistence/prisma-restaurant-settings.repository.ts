@@ -43,6 +43,10 @@ export class PrismaRestaurantSettingsRepository implements RestaurantSettingsRep
         defaultCurrency: data.defaultCurrency,
         reservationReminderMinutesBefore: data.reservationReminderMinutesBefore,
         lateArrivalGraceMinutes: data.lateArrivalGraceMinutes,
+        autoApprovalMaxGuests: data.autoApprovalMaxGuests,
+        minLeadTimeMinutes: data.minLeadTimeMinutes,
+        maxDaysAhead: data.maxDaysAhead,
+        dailyGuestCap: data.dailyGuestCap,
         updatedAt: data.updatedAt,
       },
     });
@@ -76,6 +80,10 @@ export class PrismaRestaurantSettingsRepository implements RestaurantSettingsRep
       defaultCurrency: restaurantRow?.defaultCurrency ?? null,
       reservationReminderMinutesBefore: branchRow.reservationReminderMinutesBefore,
       lateArrivalGraceMinutes: branchRow.lateArrivalGraceMinutes,
+      autoApprovalMaxGuests: branchRow.autoApprovalMaxGuests,
+      minLeadTimeMinutes: branchRow.minLeadTimeMinutes,
+      maxDaysAhead: branchRow.maxDaysAhead,
+      dailyGuestCap: branchRow.dailyGuestCap,
       createdAt: branchRow.createdAt,
       updatedAt: branchRow.updatedAt,
     });
@@ -91,6 +99,10 @@ export class PrismaRestaurantSettingsRepository implements RestaurantSettingsRep
       autoApproval: settings.autoApproval,
       reservationReminderMinutesBefore: settings.reservationReminderMinutesBefore,
       lateArrivalGraceMinutes: settings.lateArrivalGraceMinutes,
+      autoApprovalMaxGuests: settings.autoApprovalMaxGuests,
+      minLeadTimeMinutes: settings.minLeadTimeMinutes,
+      maxDaysAhead: settings.maxDaysAhead,
+      dailyGuestCap: settings.dailyGuestCap,
       updatedAt: settings.updatedAt,
     };
     await this.prismaContext.client.branchSettings.upsert({

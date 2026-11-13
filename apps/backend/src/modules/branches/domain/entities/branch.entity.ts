@@ -1,6 +1,7 @@
 import { Entity } from '@shared/domain/base/entity.base';
 import { BranchId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import { InvalidBranchCoordinatesException } from '../exceptions/invalid-branch-coordinates.exception';
+import { BranchFeature, BranchSubscriptionStatus, BranchVenueType } from '../enums/branch.enums';
 
 export interface BranchProps {
   id: string;
@@ -16,6 +17,14 @@ export interface BranchProps {
   phone: string | null;
   /** ADR-051: File id of the branch cover, written only by the cover upload. */
   coverImageId?: string | null;
+  /** ADR-053: what kind of place this is; null until the owner picks one. */
+  venueType?: BranchVenueType | null;
+  /** ADR-053: amenities, each at most once. */
+  features?: BranchFeature[];
+  /** ADR-053: end of the free period; null for branches older than per-branch plans. */
+  trialEndsAt?: Date | null;
+  /** ADR-053: set while the owner has paused the branch. */
+  pausedAt?: Date | null;
   /** Read-only, recomputed from the menu (ADR-046): never set by create/update. */
   referencePrice?: number | null;
   /** Read-only 1-4 price level (ADR-046). */
@@ -38,7 +47,10 @@ export class Branch extends Entity<BranchProps> {
 
   static create(props: BranchProps): Branch {
     validateCoordinates(props.latitude, props.longitude);
-    return new Branch({ ...props });
+    return new Branch({
+      ...props,
+      features: props.features === undefined ? undefined : [...new Set(props.features)],
+    });
   }
 
   static reconstitute(props: BranchProps): Branch {
@@ -83,6 +95,52 @@ export class Branch extends Entity<BranchProps> {
 
   get coverImageId(): string | null {
     return this.props.coverImageId ?? null;
+  }
+
+  get venueType(): BranchVenueType | null {
+    return this.props.venueType ?? null;
+  }
+
+  get features(): BranchFeature[] {
+    return [...(this.props.features ?? [])];
+  }
+
+  get trialEndsAt(): Date | null {
+    return this.props.trialEndsAt ? new Date(this.props.trialEndsAt.getTime()) : null;
+  }
+
+  get pausedAt(): Date | null {
+    return this.props.pausedAt ? new Date(this.props.pausedAt.getTime()) : null;
+  }
+
+  isPaused(): boolean {
+    return (this.props.pausedAt ?? null) !== null;
+  }
+
+  subscriptionStatus(now: Date): BranchSubscriptionStatus {
+    if (this.isPaused()) {
+      return BranchSubscriptionStatus.Paused;
+    }
+    const trialEndsAt = this.props.trialEndsAt ?? null;
+    return trialEndsAt !== null && trialEndsAt.getTime() > now.getTime()
+      ? BranchSubscriptionStatus.Trial
+      : BranchSubscriptionStatus.Active;
+  }
+
+  /** ADR-053: stop online bookings and hide the branch from guests. Idempotent. */
+  pause(at: Date): Branch {
+    if (this.isPaused()) {
+      return this;
+    }
+    return Branch.reconstitute({ ...this.props, pausedAt: at, updatedAt: at });
+  }
+
+  /** ADR-053: undo `pause`. Idempotent. */
+  resume(at: Date): Branch {
+    if (!this.isPaused()) {
+      return this;
+    }
+    return Branch.reconstitute({ ...this.props, pausedAt: null, updatedAt: at });
   }
 
   get referencePrice(): number | null {
@@ -133,6 +191,9 @@ export class Branch extends Entity<BranchProps> {
       currency: string | null;
       timezone: string;
       phone: string | null;
+      /** ADR-053: omitted keeps the stored value. */
+      venueType?: BranchVenueType | null;
+      features?: BranchFeature[];
     },
     at: Date,
   ): Branch {
@@ -148,6 +209,8 @@ export class Branch extends Entity<BranchProps> {
       currency: props.currency,
       timezone: props.timezone,
       phone: props.phone,
+      venueType: props.venueType === undefined ? this.props.venueType : props.venueType,
+      features: props.features === undefined ? this.props.features : [...new Set(props.features)],
       updatedAt: at,
     });
   }

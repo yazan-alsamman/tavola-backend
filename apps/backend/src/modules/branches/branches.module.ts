@@ -23,6 +23,15 @@ import { BRANCH_WORKING_HOURS_REPOSITORY } from './domain/repositories/branch-wo
 import { PrismaBranchRepository } from './infrastructure/persistence/prisma-branch.repository';
 import { PrismaBranchWorkingHoursRepository } from './infrastructure/persistence/prisma-branch-working-hours.repository';
 import { BranchesController } from './presentation/controllers/branches.controller';
+import { BranchAvailabilityController } from './presentation/controllers/branch-availability.controller';
+import {
+  CreateBranchClosureUseCase,
+  DeleteBranchClosureUseCase,
+  ListBranchClosuresUseCase,
+} from './application/use-cases/branch-closures.use-cases';
+import { SetBranchPausedUseCase } from './application/use-cases/set-branch-paused.use-case';
+import { BRANCH_CLOSURE_REPOSITORY } from './domain/repositories/branch-closure.repository';
+import { PrismaBranchClosureRepository } from './infrastructure/persistence/prisma-branch-closure.repository';
 
 /**
  * Phase 5.1 (Branch CRUD) + Phase 5.2 (Working Schedule, branch-level
@@ -76,7 +85,7 @@ import { BranchesController } from './presentation/controllers/branches.controll
     forwardRef(() => TablesModule),
     PrismaModule,
   ],
-  controllers: [BranchesController],
+  controllers: [BranchesController, BranchAvailabilityController],
   providers: [
     CreateBranchUseCase,
     GetBranchUseCase,
@@ -91,8 +100,14 @@ import { BranchesController } from './presentation/controllers/branches.controll
     BranchSettingsAccessService,
     GetBranchSettingsUseCase,
     UpdateBranchSettingsUseCase,
+    ListBranchClosuresUseCase,
+    CreateBranchClosureUseCase,
+    DeleteBranchClosureUseCase,
+    SetBranchPausedUseCase,
     PrismaBranchRepository,
     PrismaBranchWorkingHoursRepository,
+    PrismaBranchClosureRepository,
+    { provide: BRANCH_CLOSURE_REPOSITORY, useExisting: PrismaBranchClosureRepository },
     { provide: BRANCH_REPOSITORY, useExisting: PrismaBranchRepository },
     { provide: BRANCH_WORKING_HOURS_REPOSITORY, useExisting: PrismaBranchWorkingHoursRepository },
   ],
@@ -109,8 +124,11 @@ import { BranchesController } from './presentation/controllers/branches.controll
   // calling it - same passthrough-safe shape as this module's own
   // BRANCH_WORKING_HOURS_REPOSITORY. ListRestaurantWorkingHoursFromBranchesUseCase
   // is exported for DiscoveryModule's restaurant-level `workingHours` (ADR-050).
+  // BRANCH_CLOSURE_REPOSITORY is exported for ReservationsModule (ADR-053):
+  // time slots and online booking refuse a closed date.
   exports: [
     BRANCH_REPOSITORY,
+    BRANCH_CLOSURE_REPOSITORY,
     ListBranchWorkingHoursByBranchIdsUseCase,
     ListRestaurantWorkingHoursFromBranchesUseCase,
   ],

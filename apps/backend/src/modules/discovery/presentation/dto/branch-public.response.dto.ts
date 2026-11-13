@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { BranchFeature, BranchVenueType } from '@modules/branches/domain/enums/branch.enums';
 import { WorkingHoursEntryPublicResponseDto } from './working-hours-entry-public.response.dto';
 
 /**
@@ -55,6 +56,12 @@ export class BranchPublicResponseDto {
       'ADR-051: short-lived signed URL of the branch cover, or of the restaurant cover when the branch has none.',
   })
   coverImageUrl!: string | null;
+
+  @ApiProperty({ enum: BranchVenueType, nullable: true, description: 'ADR-053: kind of place' })
+  venueType!: BranchVenueType | null;
+
+  @ApiProperty({ enum: BranchFeature, isArray: true, description: 'ADR-053: amenities' })
+  features!: BranchFeature[];
 
   @ApiProperty({ example: 'Asia/Damascus' })
   timezone!: string;

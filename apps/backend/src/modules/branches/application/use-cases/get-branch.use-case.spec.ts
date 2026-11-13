@@ -113,7 +113,11 @@ describe('GetBranchUseCase', () => {
       phone: null,
     });
 
-    const useCase = new GetBranchUseCase(branchRepository, restaurantRepository);
+    const useCase = new GetBranchUseCase(
+      branchRepository,
+      restaurantRepository,
+      new FixedClock(new Date('2026-08-01T00:00:00.000Z')),
+    );
     const deleteUseCase = new DeleteBranchUseCase(
       branchRepository,
       restaurantRepository,
@@ -168,7 +172,11 @@ describe('GetBranchUseCase', () => {
   it('throws RestaurantNotFoundException when the restaurant does not exist', async () => {
     const branchRepository = new InMemoryBranchRepository();
     const restaurantRepository = new InMemoryRestaurantRepository();
-    const useCase = new GetBranchUseCase(branchRepository, restaurantRepository);
+    const useCase = new GetBranchUseCase(
+      branchRepository,
+      restaurantRepository,
+      new FixedClock(new Date('2026-08-01T00:00:00.000Z')),
+    );
 
     await expect(
       useCase.execute({

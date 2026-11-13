@@ -2330,3 +2330,10 @@ This section consolidates the highest-value composite indexes defined per-table 
 
 * `restaurants.name_ar`, `name_en`, `description_ar`, `description_en` (nullable). `name`/`description` mirror the Arabic, else English, text.
 
+
+## Venue identity, closures, booking limits, plan state (ADR-053, 2026-11-14)
+
+* `branches.venue_type` (enum `BranchVenueType`, nullable), `branches.features` (`BranchFeature[]`, default empty), `branches.trial_ends_at` and `branches.paused_at` (nullable timestamps).
+* `branch_closures`: `id`, `branch_id` (cascade), `start_date`/`end_date` (DATE, inclusive, branch-local), `reason` (nullable), `created_at`, `updated_at`. Index `(branch_id, end_date)`. Rows are removed, not soft-deleted: they are configuration with no history value.
+* `branch_settings` and `restaurant_settings`: `auto_approval_max_guests`, `max_days_ahead`, `daily_guest_cap` (nullable INT) and `min_lead_time_minutes` (INT, default 0).
+* Seeded permission `reservations:today-only` and role `front-desk`.

@@ -1,3 +1,4 @@
+import { BranchSubscriptionStatus } from '@modules/branches/domain/enums/branch.enums';
 import { NearbyRestaurantsUseCase } from './nearby-restaurants.use-case';
 import { ListRestaurantIdsWithActiveOfferUseCase } from '@modules/offers/application/use-cases/list-restaurant-ids-with-active-offer.use-case';
 import { ListRestaurantIdsWithMenuUseCase } from '@modules/menus/application/use-cases/list-restaurant-ids-with-menu.use-case';
@@ -61,6 +62,10 @@ function branch(
     countryCode: 'SY',
     currency: 'SYP',
     coverImageId: null,
+    venueType: null,
+    features: [],
+    subscriptionStatus: BranchSubscriptionStatus.Active,
+    trialEndsAt: null,
     timezone: 'Asia/Damascus',
     referencePrice: null,
     priceLevel: null,

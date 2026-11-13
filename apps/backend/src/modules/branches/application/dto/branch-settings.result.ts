@@ -9,5 +9,10 @@ export interface BranchSettingsResult {
   autoApproval: boolean;
   reservationReminderMinutesBefore: number;
   lateArrivalGraceMinutes: number;
+  /** ADR-053 */
+  autoApprovalMaxGuests: number | null;
+  minLeadTimeMinutes: number;
+  maxDaysAhead: number | null;
+  dailyGuestCap: number | null;
   updatedAt: Date;
 }

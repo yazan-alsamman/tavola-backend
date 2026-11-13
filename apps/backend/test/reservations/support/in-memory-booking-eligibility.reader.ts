@@ -3,6 +3,7 @@ import { BookingEligibilityReaderPort } from '@modules/reservations/application/
 export class InMemoryBookingEligibilityReader implements BookingEligibilityReaderPort {
   acceptingReservations = true;
   upcomingActiveCount = 0;
+  branchGuestsBooked = 0;
 
   async isRestaurantAcceptingReservations(): Promise<boolean> {
     return this.acceptingReservations;
@@ -10,5 +11,9 @@ export class InMemoryBookingEligibilityReader implements BookingEligibilityReade
 
   async countUpcomingActiveForUser(): Promise<number> {
     return this.upcomingActiveCount;
+  }
+
+  async sumActiveGuestsForBranchBetween(): Promise<number> {
+    return this.branchGuestsBooked;
   }
 }

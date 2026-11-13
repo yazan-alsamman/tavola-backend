@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import {
+  BranchClosureRepository,
+  BRANCH_CLOSURE_REPOSITORY,
+} from '@modules/branches/domain/repositories/branch-closure.repository';
 import { ListBranchWorkingHoursByBranchIdsUseCase } from '@modules/branches/application/use-cases/list-branch-working-hours-by-branch-ids.use-case';
 import { DayScheduleWindow } from '../../domain/services/reservation-time-slots.service';
 
@@ -35,7 +39,15 @@ export class BranchWeeklySchedule {
  */
 @Injectable()
 export class BranchOpeningHoursService {
-  constructor(private readonly listBranchWorkingHours: ListBranchWorkingHoursByBranchIdsUseCase) {}
+  constructor(
+    private readonly listBranchWorkingHours: ListBranchWorkingHoursByBranchIdsUseCase,
+    @Inject(BRANCH_CLOSURE_REPOSITORY) private readonly closures: BranchClosureRepository,
+  ) {}
+
+  /** ADR-053: true when a temporary closure covers this branch-local date. */
+  isClosedOn(branchId: string, date: string): Promise<boolean> {
+    return this.closures.isClosedOn(branchId, date);
+  }
 
   async load(branchId: string): Promise<BranchWeeklySchedule> {
     const branchHours = await this.listBranchWorkingHours.execute({ branchIds: [branchId] });

@@ -15,6 +15,11 @@ export interface BranchSettingsRules {
   autoApproval: boolean;
   reservationReminderMinutesBefore: number;
   lateArrivalGraceMinutes: number;
+  /** ADR-053 booking limits: omitted keeps the stored value, null removes the limit. */
+  autoApprovalMaxGuests?: number | null;
+  minLeadTimeMinutes?: number;
+  maxDaysAhead?: number | null;
+  dailyGuestCap?: number | null;
 }
 
 export interface UpdateBranchSettingsCommand extends GetBranchSettingsCommand, BranchSettingsRules {

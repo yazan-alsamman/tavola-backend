@@ -51,6 +51,10 @@ export function toBranchSettingsResult(
     autoApproval: settings.autoApproval,
     reservationReminderMinutesBefore: settings.reservationReminderMinutesBefore,
     lateArrivalGraceMinutes: settings.lateArrivalGraceMinutes,
+    autoApprovalMaxGuests: settings.autoApprovalMaxGuests,
+    minLeadTimeMinutes: settings.minLeadTimeMinutes,
+    maxDaysAhead: settings.maxDaysAhead,
+    dailyGuestCap: settings.dailyGuestCap,
     updatedAt: settings.updatedAt,
   };
 }

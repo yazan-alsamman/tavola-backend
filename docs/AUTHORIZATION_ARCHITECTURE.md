@@ -89,7 +89,7 @@ Policies answer: *given business context, is this specific action allowed?*
 |---|---|---|
 | Platform | `PlatformAdmin`, `PlatformSupport` (ADR-034 §11 — two-tier, `PlatformAdminClaims.role`; `PlatformSupport` is read-only, no mutation authority) | Above all tenants |
 | Organization member | `Owner` > `Admin` > `Billing` > `Staff` | Org-wide admin |
-| Employee (operational) | `Manager` > `Receptionist`, `Cashier` | Restaurant ops (flat permission sets per role, not inheritance tree in Phase 2) |
+| Employee (operational) | `Manager` > `Receptionist`, `Front Desk` (today only, ADR-053), `Cashier` | Restaurant ops (flat permission sets per role, not inheritance tree in Phase 2) |
 | Implicit customer | `Customer` | No Employee record; resource-owner rules only |
 
 ## 2.3 Permission Slugs
@@ -156,6 +156,7 @@ OrganizationMember.Staff
     │
     ├── Employee.Manager         (restaurant ops — broad operational set)
     ├── Employee.Receptionist
+    ├── Employee.FrontDesk
     └── Employee.Cashier
     │
 Customer (User)                  (no org/employee role — owns own resources)
