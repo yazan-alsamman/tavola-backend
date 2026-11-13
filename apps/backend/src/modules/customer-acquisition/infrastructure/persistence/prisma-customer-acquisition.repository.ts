@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaContext } from '@infrastructure/prisma/prisma-context.service';
 import { CustomerAcquisitionId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
 import { CustomerAcquisition } from '../../domain/entities/customer-acquisition.entity';
@@ -77,21 +76,21 @@ export class PrismaCustomerAcquisitionRepository implements CustomerAcquisitionR
   /**
    * ADR-033 §9 - the partial unique index
    * (`customer_acquisitions_restaurant_user_active_key`/`..._guest_active_key`)
-   * is the actual concurrency authority; a concurrent-insert `P2002` here is
-   * swallowed as "already acquired, no-op" - mirrors
-   * `PrismaConversationParticipantRepository.create()`'s exact precedent.
+   * is the actual concurrency authority. The insert is an
+   * `INSERT ... ON CONFLICT DO NOTHING` (`skipDuplicates`), never a caught
+   * `P2002`: this runs inside the caller's approval/creation transaction, and
+   * a raised unique violation aborts that whole PostgreSQL transaction, so
+   * every later statement in it fails with `25P02` (a repeat customer's
+   * approval surfaced as a 500) or the reservation write is silently rolled
+   * back on commit.
    */
   async createIfNotExists(acquisition: CustomerAcquisition): Promise<boolean> {
     const data = CustomerAcquisitionPrismaMapper.toPersistence(acquisition);
-    try {
-      await this.prismaContext.client.customerAcquisition.create({ data });
-      return true;
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        return false;
-      }
-      throw error;
-    }
+    const { count } = await this.prismaContext.client.customerAcquisition.createMany({
+      data: [data],
+      skipDuplicates: true,
+    });
+    return count === 1;
   }
 
   async save(acquisition: CustomerAcquisition): Promise<void> {

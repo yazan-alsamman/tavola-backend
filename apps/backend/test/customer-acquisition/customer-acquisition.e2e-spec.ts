@@ -16,6 +16,18 @@ function uniqueId(): string {
 }
 
 /**
+ * A booking window `daysAhead` days from now at 18:00 UTC: reservations must
+ * be in the future and at most 90 days ahead, so fixed calendar dates rot.
+ */
+function slot(daysAhead: number, minutes = 60) {
+  const start = new Date();
+  start.setUTCDate(start.getUTCDate() + daysAhead);
+  start.setUTCHours(18, 0, 0, 0);
+  const end = new Date(start.getTime() + minutes * 60_000);
+  return { reservationStartTime: start.toISOString(), reservationEndTime: end.toISOString() };
+}
+
+/**
  * ADR-033 (Phase 19.2, architecture frozen 2026-08-04, implemented
  * 2026-08-09) e2e coverage: the acquisition-on-approval side effect wired
  * into the real Reservation auto-approval HTTP path, WalkIn exclusion,
@@ -135,6 +147,7 @@ describe('Customer Acquisition & Pricing (e2e, Phase 19.2)', () => {
   async function setUpRestaurantBranchTable(
     ownerAccessToken: string,
     currency: string | null,
+    autoApproval = true,
   ): Promise<{ restaurantId: string; branchId: string; tableId: string; floorPlanId: string }> {
     const restaurantResponse = await request(app!.getHttpServer())
       .post('/api/v1/restaurants')
@@ -169,7 +182,8 @@ describe('Customer Acquisition & Pricing (e2e, Phase 19.2)', () => {
       .expect(201);
     const tableId = tableResponse.body.data.tableId as string;
 
-    // Auto-approval ON, with the given operating currency (ADR-033 §17).
+    // Auto-approval (ON unless the test approves by hand), with the given
+    // operating currency (ADR-033 §17).
     await request(app!.getHttpServer())
       .patch(`/api/v1/restaurants/${restaurantId}/settings`)
       .set('Authorization', `Bearer ${ownerAccessToken}`)
@@ -179,7 +193,7 @@ describe('Customer Acquisition & Pricing (e2e, Phase 19.2)', () => {
         cancellationWindowMinutes: 60,
         pendingReservationTimeoutMinutes: 15,
         defaultReservationDurationMinutes: 90,
-        autoApproval: true,
+        autoApproval,
         timezone: 'UTC',
         defaultCurrency: currency,
         reservationReminderMinutesBefore: 60,
@@ -205,8 +219,7 @@ describe('Customer Acquisition & Pricing (e2e, Phase 19.2)', () => {
       .send({
         branchId,
         tableId,
-        reservationStartTime: '2026-11-01T18:00:00.000Z',
-        reservationEndTime: '2026-11-01T19:30:00.000Z',
+        ...slot(1, 90),
         guests: 2,
       })
       .expect(201);
@@ -257,8 +270,7 @@ describe('Customer Acquisition & Pricing (e2e, Phase 19.2)', () => {
       .send({
         branchId,
         tableId,
-        reservationStartTime: '2026-11-02T18:00:00.000Z',
-        reservationEndTime: '2026-11-02T19:00:00.000Z',
+        ...slot(2),
         guests: 2,
       })
       .expect(201);
@@ -268,8 +280,7 @@ describe('Customer Acquisition & Pricing (e2e, Phase 19.2)', () => {
       .send({
         branchId,
         tableId: secondTableId,
-        reservationStartTime: '2026-11-03T18:00:00.000Z',
-        reservationEndTime: '2026-11-03T19:00:00.000Z',
+        ...slot(3),
         guests: 2,
       })
       .expect(201);
@@ -278,6 +289,57 @@ describe('Customer Acquisition & Pricing (e2e, Phase 19.2)', () => {
       where: { restaurantId, userId: customer.userId },
     });
     expect(acquisitions).toHaveLength(1);
+
+    // The skipped duplicate must not abort the booking's own transaction:
+    // both reservations are committed as Approved.
+    const reservations = await prisma.reservation.findMany({
+      where: { restaurantId, userId: customer.userId },
+    });
+    expect(reservations.map((row) => row.status)).toEqual(['Approved', 'Approved']);
+  });
+
+  it('staff can manually approve a repeat customer: the existing acquisition is a no-op, never a 500 (ADR-033 §5/§9)', async () => {
+    if (!dbAvailable || !app) return;
+    const owner = await registerAndLoginOwner('repeat-manual-owner');
+    const { branchId, tableId, restaurantId, floorPlanId } = await setUpRestaurantBranchTable(
+      owner.accessToken,
+      'SYP',
+      false,
+    );
+    const customer = await registerAndLoginOwner('repeat-manual-customer');
+    const secondTableResponse = await request(app.getHttpServer())
+      .post(`/api/v1/restaurants/${restaurantId}/branches/${branchId}/tables`)
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({ floorPlanId, tableNumber: 'T2', capacity: 4 })
+      .expect(201);
+
+    const reservationIds: string[] = [];
+    for (const [bookedTableId, daysAhead] of [
+      [tableId, 8],
+      [secondTableResponse.body.data.tableId as string, 9],
+    ] as const) {
+      const created = await request(app.getHttpServer())
+        .post('/api/v1/reservations')
+        .set('Authorization', `Bearer ${customer.accessToken}`)
+        .send({ branchId, tableId: bookedTableId, ...slot(daysAhead), guests: 2 })
+        .expect(201);
+      expect(created.body.data.status).toBe('Pending');
+      reservationIds.push(created.body.data.reservationId as string);
+    }
+
+    for (const reservationId of reservationIds) {
+      const approved = await request(app.getHttpServer())
+        .post(`/api/v1/reservations/${reservationId}/approve`)
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .expect(200);
+      expect(approved.body.data.status).toBe('Approved');
+    }
+
+    const acquisitions = await prisma.customerAcquisition.findMany({
+      where: { restaurantId, userId: customer.userId },
+    });
+    expect(acquisitions).toHaveLength(1);
+    expect(acquisitions[0].sourceReservationId).toBe(reservationIds[0]);
   });
 
   it('fails closed (422, no reservation created) when the restaurant currency has no matching pricing rule (ADR-033 §17)', async () => {
@@ -295,8 +357,7 @@ describe('Customer Acquisition & Pricing (e2e, Phase 19.2)', () => {
       .send({
         branchId,
         tableId,
-        reservationStartTime: '2026-11-04T18:00:00.000Z',
-        reservationEndTime: '2026-11-04T19:00:00.000Z',
+        ...slot(4),
         guests: 2,
       })
       .expect(422);
@@ -327,8 +388,7 @@ describe('Customer Acquisition & Pricing (e2e, Phase 19.2)', () => {
         .send({
           branchId,
           tableId,
-          reservationStartTime: '2026-11-07T18:00:00.000Z',
-          reservationEndTime: '2026-11-07T19:00:00.000Z',
+          ...slot(7),
           guests: 2,
         })
         .expect(201);
@@ -363,8 +423,7 @@ describe('Customer Acquisition & Pricing (e2e, Phase 19.2)', () => {
         .send({
           branchId,
           tableId,
-          reservationStartTime: '2026-11-05T18:00:00.000Z',
-          reservationEndTime: '2026-11-05T19:00:00.000Z',
+          ...slot(5),
           guests: 2,
         })
         .expect(201);
@@ -512,8 +571,7 @@ describe('Customer Acquisition & Pricing (e2e, Phase 19.2)', () => {
         .send({
           branchId,
           tableId,
-          reservationStartTime: '2026-11-06T18:00:00.000Z',
-          reservationEndTime: '2026-11-06T19:00:00.000Z',
+          ...slot(6),
           guests: 2,
         })
         .expect(201);
@@ -522,7 +580,7 @@ describe('Customer Acquisition & Pricing (e2e, Phase 19.2)', () => {
 
       const reportResponse = await request(app.getHttpServer())
         .get(
-          `/api/v1/platform-admin/revenue/report?from=2026-01-01T00:00:00.000Z&to=2027-01-01T00:00:00.000Z&groupBy=restaurant&restaurantId=${restaurantId}`,
+          `/api/v1/platform-admin/revenue/report?from=${slot(-30).reservationStartTime}&to=${slot(30).reservationStartTime}&groupBy=restaurant&restaurantId=${restaurantId}`,
         )
         .set('Authorization', `Bearer ${support.accessToken}`)
         .expect(200);
@@ -535,7 +593,7 @@ describe('Customer Acquisition & Pricing (e2e, Phase 19.2)', () => {
 
       const exportResponse = await request(app.getHttpServer())
         .get(
-          `/api/v1/platform-admin/revenue/export?from=2026-01-01T00:00:00.000Z&to=2027-01-01T00:00:00.000Z&restaurantId=${restaurantId}`,
+          `/api/v1/platform-admin/revenue/export?from=${slot(-30).reservationStartTime}&to=${slot(30).reservationStartTime}&restaurantId=${restaurantId}`,
         )
         .set('Authorization', `Bearer ${support.accessToken}`)
         .expect(200);
