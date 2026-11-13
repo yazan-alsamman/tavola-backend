@@ -1,5 +1,6 @@
 import { CreateRestaurantUseCase } from './create-restaurant.use-case';
 import { RestaurantSlugAlreadyExistsException } from '../../domain/exceptions/restaurant-slug-already-exists.exception';
+import { UnknownCuisineTypeException } from '../../domain/exceptions/unknown-cuisine-type.exception';
 import { RestaurantCreatedEvent } from '../../domain/events/restaurant.events';
 import { RestaurantStatus } from '../../domain/enums/restaurant.enums';
 import { AccessTokenActorType } from '@modules/authentication/domain/services/access-token-claims';
@@ -13,6 +14,7 @@ import {
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
 import { createPermissiveSubscriptionFixture } from '../../../../../test/subscriptions/support/permissive-subscription-fixture';
+import { createSeededCuisineCategoryRepository } from '../../../../../test/restaurants/support/in-memory-cuisine-category.repository';
 
 describe('CreateRestaurantUseCase', () => {
   const fixedNow = new Date('2026-07-16T12:00:00.000Z');
@@ -64,6 +66,7 @@ describe('CreateRestaurantUseCase', () => {
       new SequentialIdGenerator([restaurantId, settingsId, usageId, eventId]),
       eventPublisher,
       new ImmediateUnitOfWork(),
+      createSeededCuisineCategoryRepository(),
     );
     return {
       useCase,
@@ -93,6 +96,38 @@ describe('CreateRestaurantUseCase', () => {
 
     const persisted = await restaurantRepository.findById(RestaurantId.create(restaurantId));
     expect(persisted?.organizationId.value).toBe(organizationId);
+  });
+
+  it('stores the canonical cuisine category name when cuisineType is given as a slug', async () => {
+    const { useCase } = createUseCase();
+
+    const result = await useCase.execute({
+      organizationId: baseActor().organizationId,
+      actorId: baseActor().userId,
+      name: 'The Old Mill',
+      description: null,
+      cuisineType: 'oriental',
+      priceLevel: null,
+    });
+
+    expect(result.cuisineType).toBe('Oriental');
+  });
+
+  it('rejects a cuisineType that is not an active cuisine category, before creating anything', async () => {
+    const { useCase, restaurantRepository, eventPublisher } = createUseCase();
+
+    await expect(
+      useCase.execute({
+        organizationId: baseActor().organizationId,
+        actorId: baseActor().userId,
+        name: 'The Old Mill',
+        description: null,
+        cuisineType: 'Fusion',
+        priceLevel: null,
+      }),
+    ).rejects.toBeInstanceOf(UnknownCuisineTypeException);
+    expect(await restaurantRepository.findById(RestaurantId.create(restaurantId))).toBeNull();
+    expect(eventPublisher.events).toHaveLength(0);
   });
 
   it('atomically creates a default RestaurantSettings row alongside the restaurant', async () => {
@@ -168,6 +203,7 @@ describe('CreateRestaurantUseCase', () => {
       new SequentialIdGenerator(['44444444-4444-4444-8444-444444444444']),
       new CollectingEventPublisher(),
       new ImmediateUnitOfWork(),
+      createSeededCuisineCategoryRepository(),
     );
 
     await expect(

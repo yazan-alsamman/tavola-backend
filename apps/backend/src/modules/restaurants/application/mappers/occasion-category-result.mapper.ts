@@ -6,6 +6,7 @@ export function toOccasionCategoryResult(category: OccasionCategory): OccasionCa
     occasionCategoryId: category.occasionCategoryId,
     slug: category.slug,
     name: category.name,
+    nameAr: category.nameAr,
     sortOrder: category.sortOrder,
     createdAt: category.createdAt,
     updatedAt: category.updatedAt,

@@ -747,6 +747,8 @@ model CuisineCategory {
   id        String   @id @default(uuid()) @db.Uuid
   slug      String   @unique
   name      String
+  /// Arabic display name; clients fall back to `name` when null.
+  nameAr    String?  @map("name_ar")
   isActive  Boolean  @default(true) @map("is_active")
   sortOrder Int      @default(0) @map("sort_order")
   createdAt DateTime @default(now()) @map("created_at")
@@ -776,6 +778,8 @@ model OccasionCategory {
   id        String   @id @default(uuid()) @db.Uuid
   slug      String   @unique
   name      String
+  /// Arabic display name; clients fall back to `name` when null.
+  nameAr    String?  @map("name_ar")
   isActive  Boolean  @default(true) @map("is_active")
   sortOrder Int      @default(0) @map("sort_order")
   createdAt DateTime @default(now()) @map("created_at")

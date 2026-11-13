@@ -1,6 +1,8 @@
 import { InvalidRestaurantProfileException } from '../../domain/exceptions/invalid-restaurant-profile.exception';
 import { UpdateRestaurantUseCase } from './update-restaurant.use-case';
 import { CreateRestaurantUseCase } from './create-restaurant.use-case';
+import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
+import { UnknownCuisineTypeException } from '../../domain/exceptions/unknown-cuisine-type.exception';
 import { RestaurantNotFoundException } from '../../domain/exceptions/restaurant-not-found.exception';
 import {
   RestaurantActivatedEvent,
@@ -18,6 +20,7 @@ import {
 import { createPermissiveSubscriptionFixture } from '../../../../../test/subscriptions/support/permissive-subscription-fixture';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
+import { createSeededCuisineCategoryRepository } from '../../../../../test/restaurants/support/in-memory-cuisine-category.repository';
 
 describe('UpdateRestaurantUseCase', () => {
   const fixedNow = new Date('2026-07-16T12:00:00.000Z');
@@ -61,6 +64,7 @@ describe('UpdateRestaurantUseCase', () => {
       new UuidGenerator(),
       new CollectingEventPublisher(),
       new ImmediateUnitOfWork(),
+      createSeededCuisineCategoryRepository(),
     );
     const result = await createUseCase.execute({
       organizationId: baseActor().organizationId,
@@ -80,6 +84,7 @@ describe('UpdateRestaurantUseCase', () => {
       new FixedClock(fixedNow),
       new UuidGenerator(),
       eventPublisher,
+      createSeededCuisineCategoryRepository(),
     );
     return { useCase, eventPublisher };
   }
@@ -217,12 +222,12 @@ describe('UpdateRestaurantUseCase', () => {
       restaurantId,
       name: 'المطحنة',
       description: null,
-      cuisineType: 'Syrian',
+      cuisineType: 'Oriental',
       status: RestaurantStatus.Active,
     });
 
     expect(result.nameEn).toBe('The Mill');
-    expect(result.cuisineType).toBe('Syrian');
+    expect(result.cuisineType).toBe('Oriental');
   });
 
   it('rejects a profile with no name in any language', async () => {
@@ -257,5 +262,76 @@ describe('UpdateRestaurantUseCase', () => {
         status: RestaurantStatus.Active,
       }),
     ).rejects.toBeInstanceOf(RestaurantNotFoundException);
+  });
+
+  describe('cuisineType (closed list of active cuisine categories)', () => {
+    function update(
+      useCase: UpdateRestaurantUseCase,
+      restaurantId: string,
+      cuisineType: string | null,
+    ) {
+      return useCase.execute({
+        actor: baseActor(),
+        restaurantId,
+        name: 'Original Name',
+        description: 'Original description',
+        cuisineType,
+        status: RestaurantStatus.Active,
+      });
+    }
+
+    it('stores the canonical category name for a case-insensitive name or slug match', async () => {
+      const repository = new InMemoryRestaurantRepository();
+      const restaurantId = await seedRestaurant(repository);
+      const { useCase } = createUseCase(repository);
+
+      expect((await update(useCase, restaurantId, 'oriental')).cuisineType).toBe('Oriental');
+      expect((await update(useCase, restaurantId, '  FRENCH ')).cuisineType).toBe('French');
+    });
+
+    it('treats a blank value as no cuisine type', async () => {
+      const repository = new InMemoryRestaurantRepository();
+      const restaurantId = await seedRestaurant(repository);
+      const { useCase } = createUseCase(repository);
+
+      expect((await update(useCase, restaurantId, '   ')).cuisineType).toBeNull();
+    });
+
+    it('rejects a value that is not an active cuisine category', async () => {
+      const repository = new InMemoryRestaurantRepository();
+      const restaurantId = await seedRestaurant(repository);
+      const { useCase, eventPublisher } = createUseCase(repository);
+
+      await expect(update(useCase, restaurantId, 'Fusion')).rejects.toBeInstanceOf(
+        UnknownCuisineTypeException,
+      );
+      expect(eventPublisher.events).toHaveLength(0);
+    });
+
+    it('keeps a legacy free-text value when it is re-sent unchanged, but rejects a new free-text value', async () => {
+      const repository = new InMemoryRestaurantRepository();
+      const restaurantId = await seedRestaurant(repository);
+      const existing = await repository.findById(RestaurantId.create(restaurantId));
+      await repository.save(
+        existing!.updateProfile(
+          {
+            name: existing!.name,
+            nameAr: existing!.nameAr,
+            nameEn: existing!.nameEn,
+            description: existing!.description,
+            descriptionAr: existing!.descriptionAr,
+            descriptionEn: existing!.descriptionEn,
+            cuisineType: 'مشاوي',
+          },
+          fixedNow,
+        ),
+      );
+      const { useCase } = createUseCase(repository);
+
+      expect((await update(useCase, restaurantId, 'مشاوي')).cuisineType).toBe('مشاوي');
+      await expect(update(useCase, restaurantId, 'حلويات')).rejects.toBeInstanceOf(
+        UnknownCuisineTypeException,
+      );
+    });
   });
 });

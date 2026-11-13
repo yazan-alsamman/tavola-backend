@@ -15,6 +15,7 @@ import { createPermissiveSubscriptionFixture } from '../../../../../test/subscri
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
 import { InMemoryWorkingHoursRepository } from '../../../../../test/restaurants/support/in-memory-working-hours.repository';
+import { createSeededCuisineCategoryRepository } from '../../../../../test/restaurants/support/in-memory-cuisine-category.repository';
 
 describe('UpdateWorkingHoursUseCase', () => {
   const fixedNow = new Date('2026-07-16T12:00:00.000Z');
@@ -61,6 +62,7 @@ describe('UpdateWorkingHoursUseCase', () => {
       new UuidGenerator(),
       new CollectingEventPublisher(),
       new ImmediateUnitOfWork(),
+      createSeededCuisineCategoryRepository(),
     );
     const result = await createUseCase.execute({
       organizationId: baseActor().organizationId,

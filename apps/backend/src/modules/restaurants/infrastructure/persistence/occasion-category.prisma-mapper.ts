@@ -7,6 +7,7 @@ export class OccasionCategoryPrismaMapper {
       id: row.id,
       slug: row.slug,
       name: row.name,
+      nameAr: row.nameAr,
       isActive: row.isActive,
       sortOrder: row.sortOrder,
       createdAt: row.createdAt,

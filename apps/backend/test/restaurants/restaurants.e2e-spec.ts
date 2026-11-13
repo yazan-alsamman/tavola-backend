@@ -29,6 +29,19 @@ describe('/api/v1/restaurants (e2e)', () => {
     }
     passwordHash = await hashTestPassword(PASSWORD);
     app = await createTestApp();
+    // `cuisineType` must name an active CuisineCategory. These rows are
+    // platform reference data from prisma/seed.ts; upserting them here keeps
+    // the spec independent of whether the seed ran against this database.
+    for (const [slug, name] of [
+      ['italian', 'Italian'],
+      ['french', 'French'],
+    ] as const) {
+      await prisma.cuisineCategory.upsert({
+        where: { slug },
+        create: { slug, name },
+        update: { isActive: true },
+      });
+    }
   });
 
   afterAll(async () => {
@@ -95,6 +108,20 @@ describe('/api/v1/restaurants (e2e)', () => {
     cuisineType: 'Italian',
     priceLevel: 2,
   };
+
+  it('POST rejects a cuisineType that is not an active cuisine category', async () => {
+    if (!dbAvailable || !app) return;
+
+    const owner = await registerAndLoginOwner('cuisine');
+
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/restaurants')
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({ ...validCreateBody, cuisineType: 'Fusion', slug: `${TEST_PREFIX}${uniqueId()}` })
+      .expect(400);
+
+    expect(response.body.code).toBe('VALIDATION_ERROR');
+  });
 
   it('POST creates a restaurant scoped to the caller organization', async () => {
     if (!dbAvailable || !app) return;

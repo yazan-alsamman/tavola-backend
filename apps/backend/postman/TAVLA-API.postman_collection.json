@@ -5097,7 +5097,7 @@
                 "description": "## Purpose\nCreate a restaurant within the caller organization\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n_None_\n## Query Params\n_None_\n## Body\nJSON body — DTO: `CreateRestaurantRequestDto`\n## Success Response\nEnvelope message: \"Restaurant created successfully.\"\n## Error Responses\n- Standard auth/validation errors as applicable.\n## Notes\n- Controller: `RestaurantsController`.`unknown`\n- Full path: `/api/v1/restaurants`\n- Callers (from source): Owner/Admin (Owner, Admin)",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"name\": \"The Old Mill\",\n  \"description\": \"A cozy neighborhood restaurant serving modern Mediterranean cuisine.\",\n  \"cuisineType\": \"Mediterranean\",\n  \"priceLevel\": 2\n}",
+                  "raw": "{\n  \"name\": \"The Old Mill\",\n  \"description\": \"A cozy neighborhood restaurant serving modern Mediterranean cuisine.\",\n  \"cuisineType\": \"Italian\",\n  \"priceLevel\": 2\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -5390,7 +5390,7 @@
                 "description": "## Purpose\nUpdate a restaurant (full-replace)\n## Authorization\nBearer `{{accessToken}}`.\nGuards: JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard\n## Required Role\nRestaurant Owner/Admin\nOrg roles: [\"Owner\",\"Admin\"]\n## Headers\n- `Authorization: Bearer <token>`\n- `Content-Type: application/json` (when body present)\n## Path Params\n| Name | Variable | Notes |\n|------|----------|-------|\n| `id` | `{{restaurantId}}` | UUID path parameter |\n## Query Params\n_None_\n## Body\nJSON body — DTO: `UpdateRestaurantRequestDto`\n## Success Response\nEnvelope message: \"Restaurant updated successfully.\"\n## Error Responses\n- **400**: VALIDATION_ERROR\n## Notes\n- Controller: `RestaurantsController`.`unknown`\n- Full path: `/api/v1/restaurants/:id`\n- Callers (from source): Owner/Admin (Owner, Admin)",
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"name\": \"The Old Mill\",\n  \"description\": \"A cozy neighborhood restaurant serving modern Mediterranean cuisine.\",\n  \"cuisineType\": \"Mediterranean\",\n  \"priceLevel\": 3,\n  \"status\": \"Active\"\n}",
+                  "raw": "{\n  \"name\": \"The Old Mill\",\n  \"description\": \"A cozy neighborhood restaurant serving modern Mediterranean cuisine.\",\n  \"cuisineType\": \"Italian\",\n  \"priceLevel\": 3,\n  \"status\": \"Active\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"

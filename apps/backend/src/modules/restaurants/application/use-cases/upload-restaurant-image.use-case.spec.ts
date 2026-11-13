@@ -19,6 +19,7 @@ import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/su
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
 import { InMemoryFileRepository } from '../../../../../test/restaurants/support/in-memory-file-repository';
 import { FakeStoragePort } from '../../../../../test/restaurants/support/fake-storage-port';
+import { createSeededCuisineCategoryRepository } from '../../../../../test/restaurants/support/in-memory-cuisine-category.repository';
 import { InMemoryBranchCoverImageRepository } from '../../../../../test/restaurants/support/in-memory-branch-cover-image.repository';
 import { BranchNotFoundException } from '@modules/branches/domain/exceptions/branch-not-found.exception';
 
@@ -74,6 +75,7 @@ describe('UploadRestaurantImageUseCase', () => {
       new UuidGenerator(),
       new CollectingEventPublisher(),
       new ImmediateUnitOfWork(),
+      createSeededCuisineCategoryRepository(),
     );
     const result = await createUseCase.execute({
       organizationId: baseActor().organizationId,

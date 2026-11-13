@@ -4,6 +4,8 @@ export interface CuisineCategoryProps {
   id: string;
   slug: string;
   name: string;
+  /** Arabic display name; null when none is set. */
+  nameAr?: string | null;
   isActive: boolean;
   sortOrder: number;
   createdAt: Date;
@@ -35,6 +37,10 @@ export class CuisineCategory extends Entity<CuisineCategoryProps> {
 
   get name(): string {
     return this.props.name;
+  }
+
+  get nameAr(): string | null {
+    return this.props.nameAr ?? null;
   }
 
   get isActive(): boolean {

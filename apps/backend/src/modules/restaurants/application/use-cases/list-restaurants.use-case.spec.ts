@@ -10,6 +10,7 @@ import {
 import { createPermissiveSubscriptionFixture } from '../../../../../test/subscriptions/support/permissive-subscription-fixture';
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
+import { createSeededCuisineCategoryRepository } from '../../../../../test/restaurants/support/in-memory-cuisine-category.repository';
 
 describe('ListRestaurantsUseCase', () => {
   const fixedNow = new Date('2026-07-16T12:00:00.000Z');
@@ -53,6 +54,7 @@ describe('ListRestaurantsUseCase', () => {
       new UuidGenerator(),
       new CollectingEventPublisher(),
       new ImmediateUnitOfWork(),
+      createSeededCuisineCategoryRepository(),
     );
     for (let i = 0; i < count; i += 1) {
       await createUseCase.execute({

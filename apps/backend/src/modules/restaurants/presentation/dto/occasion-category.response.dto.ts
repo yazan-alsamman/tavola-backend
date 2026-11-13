@@ -10,6 +10,14 @@ export class OccasionCategoryResponseDto {
   @ApiProperty({ example: 'Date Night' })
   name!: string;
 
+  @ApiProperty({
+    example: 'عشاء رومانسي',
+    nullable: true,
+    type: String,
+    description: 'Arabic display name. Clients fall back to `name` when null.',
+  })
+  nameAr!: string | null;
+
   @ApiProperty({ example: 0 })
   sortOrder!: number;
 
