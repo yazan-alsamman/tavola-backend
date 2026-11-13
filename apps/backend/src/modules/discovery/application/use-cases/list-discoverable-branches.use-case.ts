@@ -4,6 +4,7 @@ import { BranchWorkingHoursEntryResult } from '@modules/branches/application/dto
 import { ListBranchWorkingHoursByBranchIdsUseCase } from '@modules/branches/application/use-cases/list-branch-working-hours-by-branch-ids.use-case';
 import { RestaurantNotFoundException } from '@modules/restaurants/domain/exceptions/restaurant-not-found.exception';
 import { DiscoveryReaderPort, DISCOVERY_READER } from '../ports/discovery-reader.port';
+import { RestaurantCoverImageUrlResolver } from '../services/restaurant-cover-image-url.resolver';
 
 export interface ListDiscoverableBranchesCommand {
   restaurantId: string;
@@ -13,6 +14,8 @@ export interface ListDiscoverableBranchesCommand {
 
 export type DiscoverableBranch = BranchResult & {
   workingHours: BranchWorkingHoursEntryResult[];
+  /** ADR-051: the branch cover, or the restaurant cover when the branch has none. */
+  coverImageUrl: string | null;
 };
 
 export interface DiscoverableBranchListResult {
@@ -37,6 +40,7 @@ export class ListDiscoverableBranchesUseCase {
   constructor(
     @Inject(DISCOVERY_READER) private readonly discoveryReader: DiscoveryReaderPort,
     private readonly listBranchWorkingHoursByBranchIdsUseCase: ListBranchWorkingHoursByBranchIdsUseCase,
+    private readonly coverImageUrlResolver: RestaurantCoverImageUrlResolver,
   ) {}
 
   async execute(command: ListDiscoverableBranchesCommand): Promise<DiscoverableBranchListResult> {
@@ -56,8 +60,15 @@ export class ListDiscoverableBranchesUseCase {
       branchIds,
     });
 
+    const withCovers = await this.coverImageUrlResolver.attach(
+      page.items.map((item) => ({
+        ...item,
+        coverImageId: item.coverImageId ?? restaurant.coverImageId,
+      })),
+    );
+
     return {
-      items: page.items.map((item) => ({
+      items: withCovers.map((item) => ({
         ...item,
         workingHours: workingHoursByBranchId.get(item.branchId) ?? [],
       })),

@@ -15,7 +15,8 @@ export class AddRestaurantGalleryImageRequestDto {
 
   @ApiPropertyOptional({
     format: 'uuid',
-    description: "ADR-051: the branch the photo belongs to. Omitted, the restaurant's oldest branch.",
+    description:
+      "ADR-051: the branch the photo belongs to. Omitted, the restaurant's oldest branch.",
   })
   @IsOptional()
   @IsUUID()

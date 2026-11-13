@@ -55,6 +55,13 @@ import { UpdateBranchSettingsRequestDto } from '../dto/update-branch-settings.re
 import { GetBranchSettingsUseCase } from '../../application/use-cases/get-branch-settings.use-case';
 import { UpdateBranchSettingsUseCase } from '../../application/use-cases/update-branch-settings.use-case';
 import { BranchSettingsResult } from '../../application/dto/branch-settings.result';
+import { GetBranchCategoriesUseCase } from '../../application/use-cases/get-branch-categories.use-case';
+import { SetBranchCategoriesUseCase } from '../../application/use-cases/set-branch-categories.use-case';
+import { UpdateBranchDetailsUseCase } from '../../application/use-cases/update-branch-details.use-case';
+import { BranchCategoriesResult } from '../../application/dto/branch-categories.result';
+import { BranchCategoriesResponseDto } from '../dto/branch-categories.response.dto';
+import { SetBranchCategoriesRequestDto } from '../dto/set-branch-categories.request.dto';
+import { UpdateBranchDetailsRequestDto } from '../dto/update-branch-details.request.dto';
 
 /**
  * Nested under `/restaurants/:restaurantId` (not a flat top-level `/branches`
@@ -82,6 +89,9 @@ export class BranchesController {
     private readonly updateBranchWorkingHoursUseCase: UpdateBranchWorkingHoursUseCase,
     private readonly getBranchSettingsUseCase: GetBranchSettingsUseCase,
     private readonly updateBranchSettingsUseCase: UpdateBranchSettingsUseCase,
+    private readonly getBranchCategoriesUseCase: GetBranchCategoriesUseCase,
+    private readonly setBranchCategoriesUseCase: SetBranchCategoriesUseCase,
+    private readonly updateBranchDetailsUseCase: UpdateBranchDetailsUseCase,
   ) {}
 
   @Post()
@@ -400,6 +410,9 @@ export class BranchesController {
       longitude: result.longitude,
       countryCode: result.countryCode,
       currency: result.currency,
+      name: result.name,
+      description: result.description,
+      coverImageId: result.coverImageId,
       referencePrice: result.referencePrice,
       priceLevel: result.priceLevel,
       timezone: result.timezone,
@@ -485,6 +498,136 @@ export class BranchesController {
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });
     return this.toSettingsResponse(result);
+  }
+
+  @Patch(':branchId/details')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
+  @RequireOrgRole(OrganizationMemberRole.Owner, OrganizationMemberRole.Admin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Branch details updated successfully.')
+  @ApiOperation({
+    operationId: 'branchesUpdateDetails',
+    summary: 'Set a branch name and description',
+    description:
+      'ADR-051: full replace of the branch name and description. Null or empty falls back to the restaurant value. The branch cover is uploaded with POST /restaurants/{id}/cover-image and branchId.',
+  })
+  @ApiParam({ name: 'restaurantId', format: 'uuid' })
+  @ApiParam({ name: 'branchId', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Branch updated', type: BranchResponseDto })
+  @ApiErrorResponse(400, 'Invalid body or ids', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller is not an Owner/Admin organization member', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Restaurant or branch not found', ['NOT_FOUND'])
+  async updateDetails(
+    @Param('restaurantId', ParseUUIDPipe) restaurantId: string,
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+    @Body() body: UpdateBranchDetailsRequestDto,
+    @CurrentActor() actor: AuthenticatedOrganizationMemberActor,
+    @Req() request: Request,
+  ): Promise<BranchResponseDto> {
+    const result = await this.updateBranchDetailsUseCase.execute({
+      actor,
+      restaurantId,
+      branchId,
+      name: body.name,
+      description: body.description,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return this.toResponse(result);
+  }
+
+  @Get(':branchId/categories')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
+  @RequireOrgRole(OrganizationMemberRole.Owner, OrganizationMemberRole.Admin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Branch categories retrieved successfully.')
+  @ApiOperation({
+    operationId: 'branchesGetCategories',
+    summary: 'Get a branch cuisine and occasion categories',
+    description: 'ADR-051: each branch has its own cuisine and occasion categories.',
+  })
+  @ApiParam({ name: 'restaurantId', format: 'uuid' })
+  @ApiParam({ name: 'branchId', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Branch categories', type: BranchCategoriesResponseDto })
+  @ApiErrorResponse(400, 'restaurantId or branchId is not a valid UUID', ['VALIDATION_ERROR'])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller is not an Owner/Admin organization member', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Restaurant or branch not found', ['NOT_FOUND'])
+  async getCategories(
+    @Param('restaurantId', ParseUUIDPipe) restaurantId: string,
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+    @CurrentActor() actor: AuthenticatedOrganizationMemberActor,
+  ): Promise<BranchCategoriesResponseDto> {
+    const result = await this.getBranchCategoriesUseCase.execute({ actor, restaurantId, branchId });
+    return this.toCategoriesResponse(result);
+  }
+
+  @Patch(':branchId/categories')
+  @UseGuards(JwtAuthGuard, SessionVersionGuard, OrganizationMemberGuard)
+  @RequireOrgRole(OrganizationMemberRole.Owner, OrganizationMemberRole.Admin)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ResponseMessage('Branch categories updated successfully.')
+  @ApiOperation({
+    operationId: 'branchesSetCategories',
+    summary: 'Replace a branch cuisine and occasion categories',
+    description:
+      'ADR-051: full replace of both lists for this branch. The restaurant-level categories (GET /restaurants/{id}/cuisine-categories) become the union over its live branches, which Discovery filters use.',
+  })
+  @ApiParam({ name: 'restaurantId', format: 'uuid' })
+  @ApiParam({ name: 'branchId', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Branch categories', type: BranchCategoriesResponseDto })
+  @ApiErrorResponse(400, 'Invalid body, ids, or an unknown or inactive category', [
+    'VALIDATION_ERROR',
+    'UNKNOWN_CUISINE_CATEGORY',
+    'UNKNOWN_OCCASION_CATEGORY',
+  ])
+  @ApiErrorResponse(401, 'Access token is missing, invalid, or expired', [
+    'AUTH_INVALID_TOKEN',
+    'AUTH_EXPIRED_TOKEN',
+  ])
+  @ApiErrorResponse(403, 'Caller is not an Owner/Admin organization member', ['FORBIDDEN'])
+  @ApiErrorResponse(404, 'Restaurant or branch not found', ['NOT_FOUND'])
+  async setCategories(
+    @Param('restaurantId', ParseUUIDPipe) restaurantId: string,
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+    @Body() body: SetBranchCategoriesRequestDto,
+    @CurrentActor() actor: AuthenticatedOrganizationMemberActor,
+    @Req() request: Request,
+  ): Promise<BranchCategoriesResponseDto> {
+    const result = await this.setBranchCategoriesUseCase.execute({
+      actor,
+      restaurantId,
+      branchId,
+      cuisineCategoryIds: body.cuisineCategoryIds,
+      occasionCategoryIds: body.occasionCategoryIds,
+      correlationId: request.headers['x-correlation-id'] as string | undefined,
+    });
+    return this.toCategoriesResponse(result);
+  }
+
+  private toCategoriesResponse(result: BranchCategoriesResult): BranchCategoriesResponseDto {
+    return {
+      branchId: result.branchId,
+      cuisineCategories: result.cuisineCategories.map((category) => ({
+        ...category,
+        createdAt: category.createdAt.toISOString(),
+        updatedAt: category.updatedAt.toISOString(),
+      })),
+      occasionCategories: result.occasionCategories.map((category) => ({
+        ...category,
+        createdAt: category.createdAt.toISOString(),
+        updatedAt: category.updatedAt.toISOString(),
+      })),
+    };
   }
 
   private toSettingsResponse(result: BranchSettingsResult): BranchSettingsResponseDto {

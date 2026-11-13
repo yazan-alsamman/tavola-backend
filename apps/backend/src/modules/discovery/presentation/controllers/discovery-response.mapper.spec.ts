@@ -37,6 +37,9 @@ function branch(overrides: Partial<BranchResult> = {}): BranchResult {
     longitude: null,
     countryCode: 'SY',
     currency: null,
+    name: null,
+    description: null,
+    coverImageId: null,
     timezone: 'Asia/Damascus',
     referencePrice: null,
     priceLevel: null,
@@ -128,7 +131,11 @@ describe('discovery-response.mapper', () => {
 
   describe('toDiscoveryBranchResponse', () => {
     it('never copies phone into the response object (structural omission, not just a TS type)', () => {
-      const response = toDiscoveryBranchResponse({ ...branch(), workingHours: [] });
+      const response = toDiscoveryBranchResponse({
+        ...branch(),
+        workingHours: [],
+        coverImageUrl: null,
+      });
 
       expect(response).not.toHaveProperty('phone');
       expect(Object.keys(response)).not.toContain('phone');
@@ -139,6 +146,7 @@ describe('discovery-response.mapper', () => {
       const response = toDiscoveryBranchResponse({
         ...branch(),
         workingHours: [branchWorkingHoursEntry],
+        coverImageUrl: null,
       });
 
       expect(response.workingHours).toEqual([

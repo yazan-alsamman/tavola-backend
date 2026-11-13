@@ -14,6 +14,12 @@ export interface BranchProps {
   currency: string | null;
   timezone: string;
   phone: string | null;
+  /** ADR-051: the branch's own display name; null shows the restaurant name. */
+  name?: string | null;
+  /** ADR-051: the branch's own description; null shows the restaurant description. */
+  description?: string | null;
+  /** ADR-051: File id of the branch cover, written only by the cover upload. */
+  coverImageId?: string | null;
   /** Read-only, recomputed from the menu (ADR-046): never set by create/update. */
   referencePrice?: number | null;
   /** Read-only 1-4 price level (ADR-046). */
@@ -79,6 +85,18 @@ export class Branch extends Entity<BranchProps> {
     return this.props.currency;
   }
 
+  get name(): string | null {
+    return this.props.name ?? null;
+  }
+
+  get description(): string | null {
+    return this.props.description ?? null;
+  }
+
+  get coverImageId(): string | null {
+    return this.props.coverImageId ?? null;
+  }
+
   get referencePrice(): number | null {
     return this.props.referencePrice ?? null;
   }
@@ -142,6 +160,20 @@ export class Branch extends Entity<BranchProps> {
       currency: props.currency,
       timezone: props.timezone,
       phone: props.phone,
+      updatedAt: at,
+    });
+  }
+
+  /**
+   * ADR-051: the branch's own name and description, each null to fall back to
+   * the restaurant's. Kept apart from `updateProfile` so the existing
+   * full-replace address/locale update never clears them.
+   */
+  updateDetails(props: { name: string | null; description: string | null }, at: Date): Branch {
+    return Branch.reconstitute({
+      ...this.props,
+      name: props.name,
+      description: props.description,
       updatedAt: at,
     });
   }

@@ -66,6 +66,8 @@ export class PrismaBranchRepository implements BranchRepository {
         longitude: data.longitude,
         countryCode: data.countryCode,
         currency: data.currency,
+        name: data.name,
+        description: data.description,
         timezone: data.timezone,
         phone: data.phone,
         updatedAt: data.updatedAt,

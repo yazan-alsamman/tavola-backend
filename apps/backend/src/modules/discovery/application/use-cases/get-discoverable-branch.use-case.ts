@@ -5,6 +5,7 @@ import { ListBranchWorkingHoursByBranchIdsUseCase } from '@modules/branches/appl
 import { RestaurantNotFoundException } from '@modules/restaurants/domain/exceptions/restaurant-not-found.exception';
 import { BranchNotFoundException } from '@modules/branches/domain/exceptions/branch-not-found.exception';
 import { DiscoveryReaderPort, DISCOVERY_READER } from '../ports/discovery-reader.port';
+import { RestaurantCoverImageUrlResolver } from '../services/restaurant-cover-image-url.resolver';
 
 export interface GetDiscoverableBranchCommand {
   restaurantId: string;
@@ -13,6 +14,8 @@ export interface GetDiscoverableBranchCommand {
 
 export type DiscoverableBranchDetail = BranchResult & {
   workingHours: BranchWorkingHoursEntryResult[];
+  /** ADR-051: the branch cover, or the restaurant cover when the branch has none. */
+  coverImageUrl: string | null;
 };
 
 /**
@@ -30,6 +33,7 @@ export class GetDiscoverableBranchUseCase {
   constructor(
     @Inject(DISCOVERY_READER) private readonly discoveryReader: DiscoveryReaderPort,
     private readonly listBranchWorkingHoursByBranchIdsUseCase: ListBranchWorkingHoursByBranchIdsUseCase,
+    private readonly coverImageUrlResolver: RestaurantCoverImageUrlResolver,
   ) {}
 
   async execute(command: GetDiscoverableBranchCommand): Promise<DiscoverableBranchDetail> {
@@ -47,8 +51,11 @@ export class GetDiscoverableBranchUseCase {
       branchIds: [branch.branchId],
     });
 
+    const [withCover] = await this.coverImageUrlResolver.attach([
+      { ...branch, coverImageId: branch.coverImageId ?? restaurant.coverImageId },
+    ]);
     return {
-      ...branch,
+      ...withCover,
       workingHours: workingHoursByBranchId.get(branch.branchId) ?? [],
     };
   }

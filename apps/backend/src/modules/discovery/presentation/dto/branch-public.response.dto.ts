@@ -49,6 +49,13 @@ export class BranchPublicResponseDto {
   })
   priceLevel!: number | null;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'ADR-051: short-lived signed URL of the branch cover, or of the restaurant cover when the branch has none.',
+  })
+  coverImageUrl!: string | null;
+
   @ApiProperty({ example: 'Asia/Damascus' })
   timezone!: string;
 

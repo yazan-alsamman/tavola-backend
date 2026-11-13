@@ -1,5 +1,6 @@
 import { GetBranchSettingsUseCase } from './get-branch-settings.use-case';
 import { UpdateBranchSettingsUseCase } from './update-branch-settings.use-case';
+import { BranchAccessService } from '../services/branch-access.service';
 import { BranchSettingsAccessService } from '../services/branch-settings-access.service';
 import { BranchNotFoundException } from '../../domain/exceptions/branch-not-found.exception';
 import { Branch } from '../../domain/entities/branch.entity';
@@ -91,8 +92,7 @@ describe('Branch settings (ADR-051)', () => {
       RestaurantSettings.createDefault('77777777-7777-4777-8777-777777777777', restaurantId, now),
     );
     const access = new BranchSettingsAccessService(
-      restaurantRepository,
-      branchRepository,
+      new BranchAccessService(restaurantRepository, branchRepository),
       settingsRepository,
     );
     const auditLogWriter = new CollectingAuditLogWriter();

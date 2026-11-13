@@ -1,3 +1,6 @@
+import { RestaurantCoverImageUrlResolver } from '../services/restaurant-cover-image-url.resolver';
+import { InMemoryFileRepository } from '../../../../../test/restaurants/support/in-memory-file-repository';
+import { FakeStoragePort } from '../../../../../test/restaurants/support/fake-storage-port';
 import { GetDiscoverableBranchUseCase } from './get-discoverable-branch.use-case';
 import { RestaurantNotFoundException } from '@modules/restaurants/domain/exceptions/restaurant-not-found.exception';
 import { BranchNotFoundException } from '@modules/branches/domain/exceptions/branch-not-found.exception';
@@ -42,6 +45,9 @@ function branch(id: string, ownerRestaurantId: string): BranchResult {
     longitude: 36.2,
     countryCode: 'SY',
     currency: null,
+    name: null,
+    description: null,
+    coverImageId: null,
     timezone: 'Asia/Damascus',
     referencePrice: null,
     priceLevel: null,
@@ -57,7 +63,11 @@ function buildUseCase(reader: FakeDiscoveryReader) {
     branchWorkingHoursRepository,
   );
   return {
-    useCase: new GetDiscoverableBranchUseCase(reader, listBranchWorkingHoursByBranchIdsUseCase),
+    useCase: new GetDiscoverableBranchUseCase(
+      reader,
+      listBranchWorkingHoursByBranchIdsUseCase,
+      new RestaurantCoverImageUrlResolver(new InMemoryFileRepository(), new FakeStoragePort()),
+    ),
     branchWorkingHoursRepository,
   };
 }

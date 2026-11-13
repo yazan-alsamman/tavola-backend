@@ -73,7 +73,10 @@ export function toDiscoveryRestaurantResponse(
 }
 
 export function toDiscoveryBranchResponse(
-  result: BranchResult & { workingHours: BranchWorkingHoursEntryResult[] },
+  result: BranchResult & {
+    workingHours: BranchWorkingHoursEntryResult[];
+    coverImageUrl: string | null;
+  },
 ): BranchPublicResponseDto {
   return {
     branchId: result.branchId,
@@ -86,6 +89,7 @@ export function toDiscoveryBranchResponse(
     countryCode: result.countryCode,
     currency: result.currency,
     priceLevel: result.priceLevel,
+    coverImageUrl: result.coverImageUrl,
     timezone: result.timezone,
     createdAt: result.createdAt.toISOString(),
     updatedAt: result.updatedAt.toISOString(),

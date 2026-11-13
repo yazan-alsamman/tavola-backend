@@ -16,6 +16,13 @@ import { ListBranchWorkingHoursByBranchIdsUseCase } from './application/use-case
 import { GetBranchSettingsUseCase } from './application/use-cases/get-branch-settings.use-case';
 import { UpdateBranchSettingsUseCase } from './application/use-cases/update-branch-settings.use-case';
 import { BranchSettingsAccessService } from './application/services/branch-settings-access.service';
+import { BranchAccessService } from './application/services/branch-access.service';
+import { BranchCategoriesReader } from './application/services/branch-categories-reader.service';
+import { GetBranchCategoriesUseCase } from './application/use-cases/get-branch-categories.use-case';
+import { SetBranchCategoriesUseCase } from './application/use-cases/set-branch-categories.use-case';
+import { UpdateBranchDetailsUseCase } from './application/use-cases/update-branch-details.use-case';
+import { BRANCH_CATEGORY_REPOSITORY } from './domain/repositories/branch-category.repository';
+import { PrismaBranchCategoryRepository } from './infrastructure/persistence/prisma-branch-category.repository';
 import { ListRestaurantWorkingHoursFromBranchesUseCase } from './application/use-cases/list-restaurant-working-hours-from-branches.use-case';
 import { BRANCH_REPOSITORY } from './domain/repositories/branch.repository';
 import { BRANCH_WORKING_HOURS_REPOSITORY } from './domain/repositories/branch-working-hours.repository';
@@ -86,7 +93,14 @@ import { BranchesController } from './presentation/controllers/branches.controll
     UpdateBranchWorkingHoursUseCase,
     ListBranchWorkingHoursByBranchIdsUseCase,
     ListRestaurantWorkingHoursFromBranchesUseCase,
+    BranchAccessService,
     BranchSettingsAccessService,
+    BranchCategoriesReader,
+    GetBranchCategoriesUseCase,
+    SetBranchCategoriesUseCase,
+    UpdateBranchDetailsUseCase,
+    PrismaBranchCategoryRepository,
+    { provide: BRANCH_CATEGORY_REPOSITORY, useExisting: PrismaBranchCategoryRepository },
     GetBranchSettingsUseCase,
     UpdateBranchSettingsUseCase,
     PrismaBranchRepository,

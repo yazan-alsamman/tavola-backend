@@ -75,6 +75,7 @@ import { UpdateRestaurantRequestDto } from '../dto/update-restaurant.request.dto
 import { UpdateRestaurantSettingsRequestDto } from '../dto/update-restaurant-settings.request.dto';
 import { UpdateWorkingHoursRequestDto } from '../dto/update-working-hours.request.dto';
 import { AddRestaurantGalleryImageRequestDto } from '../dto/add-restaurant-gallery-image.request.dto';
+import { UploadRestaurantCoverImageRequestDto } from '../dto/upload-restaurant-cover-image.request.dto';
 import { SetRestaurantCuisineCategoriesRequestDto } from '../dto/set-restaurant-cuisine-categories.request.dto';
 import { SetRestaurantOccasionCategoriesRequestDto } from '../dto/set-restaurant-occasion-categories.request.dto';
 import { ListRestaurantsQueryDto } from '../dto/list-restaurants.query.dto';
@@ -490,7 +491,10 @@ export class RestaurantsController {
   @ApiBody({
     schema: {
       type: 'object',
-      properties: { file: { type: 'string', format: 'binary' } },
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        branchId: { type: 'string', format: 'uuid' },
+      },
       required: ['file'],
     },
   })
@@ -499,7 +503,7 @@ export class RestaurantsController {
     operationId: 'restaurantsUploadCoverImage',
     summary: 'Upload a restaurant cover image',
     description:
-      'Stores the file in the public bucket and sets Restaurant.coverImageId to the new File id. Replaces any previous cover. Does not write the gallery and does not use the logo. Discovery then signs coverImageUrl from this id.',
+      'Stores the file in the public bucket and sets Restaurant.coverImageId to the new File id. With `branchId` (ADR-051) it sets the own cover of that branch instead. Replaces any previous cover; the old file is deleted only when no restaurant or branch still uses it. Does not write the gallery and does not use the logo. Discovery then signs coverImageUrl from this id.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 201, type: RestaurantCoverImageResponseDto })
@@ -507,13 +511,16 @@ export class RestaurantsController {
     'VALIDATION_ERROR',
     'INVALID_FILE',
   ])
-  @ApiErrorResponse(404, 'Restaurant not found (or belongs to another organization)', ['NOT_FOUND'])
+  @ApiErrorResponse(404, 'Restaurant or branch not found (or belongs to another organization)', [
+    'NOT_FOUND',
+  ])
   @ApiErrorResponse(413, 'Image file exceeds the maximum allowed size', ['FILE_TOO_LARGE'])
   @ApiErrorResponse(415, 'Unsupported image file type', ['UNSUPPORTED_FILE_TYPE'])
   @ApiErrorResponse(503, 'Image storage is temporarily unavailable', ['STORAGE_UNAVAILABLE'])
   async uploadCover(
     @Param('id', ParseUUIDPipe) id: string,
     @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() body: UploadRestaurantCoverImageRequestDto,
     @CurrentActor() actor: AuthenticatedOrganizationMemberActor,
     @Req() request: Request,
   ): Promise<RestaurantCoverImageResponseDto> {
@@ -522,6 +529,7 @@ export class RestaurantsController {
       organizationId: actor.organizationId,
       restaurantId: id,
       slot: 'cover',
+      branchId: body.branchId ?? null,
       file: file ? { buffer: file.buffer, mimeType: file.mimetype, sizeBytes: file.size } : null,
       correlationId: request.headers['x-correlation-id'] as string | undefined,
     });

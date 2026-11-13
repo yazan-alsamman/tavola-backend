@@ -16,7 +16,8 @@ export class ReorderRestaurantGalleryRequestDto {
 
   @ApiPropertyOptional({
     format: 'uuid',
-    description: "ADR-051: the branch whose gallery is reordered. Omitted, the restaurant's oldest branch.",
+    description:
+      "ADR-051: the branch whose gallery is reordered. Omitted, the restaurant's oldest branch.",
   })
   @IsOptional()
   @IsUUID()

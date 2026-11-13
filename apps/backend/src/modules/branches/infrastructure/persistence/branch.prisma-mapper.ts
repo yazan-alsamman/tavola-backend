@@ -13,6 +13,9 @@ export class BranchPrismaMapper {
       longitude: row.longitude === null ? null : row.longitude.toNumber(),
       countryCode: row.countryCode,
       currency: row.currency,
+      name: row.name,
+      description: row.description,
+      coverImageId: row.coverImageId,
       referencePrice: row.referencePrice === null ? null : row.referencePrice.toNumber(),
       priceLevel: row.priceLevel,
       timezone: row.timezone,
@@ -43,6 +46,8 @@ export class BranchPrismaMapper {
     longitude: number | null;
     countryCode: string;
     currency: string | null;
+    name: string | null | undefined;
+    description: string | null | undefined;
     timezone: string;
     phone: string | null;
     createdAt: Date;
@@ -60,6 +65,10 @@ export class BranchPrismaMapper {
       longitude: props.longitude,
       countryCode: props.countryCode,
       currency: props.currency,
+      // Undefined (never loaded or set) leaves the column untouched. The cover
+      // id is written only by the cover upload, never by this full save.
+      name: props.name,
+      description: props.description,
       timezone: props.timezone,
       phone: props.phone,
       createdAt: props.createdAt,
