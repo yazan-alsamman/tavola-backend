@@ -2,8 +2,6 @@ import { ListReservationTimeSlotsUseCase } from './list-reservation-time-slots.u
 import { Branch } from '@modules/branches/domain/entities/branch.entity';
 import { BranchWorkingHours } from '@modules/branches/domain/entities/branch-working-hours.entity';
 import { ListBranchWorkingHoursByBranchIdsUseCase } from '@modules/branches/application/use-cases/list-branch-working-hours-by-branch-ids.use-case';
-import { WorkingHours } from '@modules/restaurants/domain/entities/working-hours.entity';
-import { ListWorkingHoursByRestaurantIdsUseCase } from '@modules/restaurants/application/use-cases/list-working-hours-by-restaurant-ids.use-case';
 import { RestaurantSettings } from '@modules/restaurants/domain/entities/restaurant-settings.entity';
 import { BranchNotFoundException } from '@modules/branches/domain/exceptions/branch-not-found.exception';
 import { Table } from '@modules/tables/domain/entities/table.entity';
@@ -13,10 +11,9 @@ import { ReservationSource } from '../../domain/enums/reservation.enums';
 import { InvalidReservationTimeException } from '../../domain/exceptions/invalid-reservation-time.exception';
 import { ReservationSlotOutcome } from '../dto/reservation-time-slots.result';
 import { BranchOpeningHoursService } from '../services/branch-opening-hours.service';
-import { BranchId, RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
+import { BranchId } from '@shared/domain/value-objects/identifiers.vo';
 import { InMemoryBranchRepository } from '../../../../../test/branches/support/in-memory-branch.repository';
 import { InMemoryBranchWorkingHoursRepository } from '../../../../../test/branches/support/in-memory-branch-working-hours.repository';
-import { InMemoryWorkingHoursRepository } from '../../../../../test/restaurants/support/in-memory-working-hours.repository';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
 import { InMemoryTableRepository } from '../../../../../test/tables/support/in-memory-table.repository';
 import { InMemoryReservationRepository } from '../../../../../test/reservations/support/in-memory-reservation.repository';
@@ -30,7 +27,6 @@ describe('ListReservationTimeSlotsUseCase', () => {
   async function build() {
     const branchRepository = new InMemoryBranchRepository();
     const branchHoursRepository = new InMemoryBranchWorkingHoursRepository();
-    const restaurantHoursRepository = new InMemoryWorkingHoursRepository();
     const settingsRepository = new InMemoryRestaurantSettingsRepository();
     const tableRepository = new InMemoryTableRepository();
     const reservationRepository = new InMemoryReservationRepository();
@@ -87,7 +83,6 @@ describe('ListReservationTimeSlotsUseCase', () => {
       branchRepository,
       new BranchOpeningHoursService(
         new ListBranchWorkingHoursByBranchIdsUseCase(branchHoursRepository),
-        new ListWorkingHoursByRestaurantIdsUseCase(restaurantHoursRepository),
       ),
       settingsRepository,
       tableRepository,
@@ -97,18 +92,17 @@ describe('ListReservationTimeSlotsUseCase', () => {
     return {
       useCase,
       branchHoursRepository,
-      restaurantHoursRepository,
       tableRepository,
       reservationRepository,
     };
   }
 
   it('steps the restaurant interval inside restaurant hours and returns only bookable windows', async () => {
-    const { useCase, restaurantHoursRepository } = await build();
-    await restaurantHoursRepository.replaceAllForRestaurant(RestaurantId.create(restaurantId), [
-      WorkingHours.create({
+    const { useCase, branchHoursRepository } = await build();
+    await branchHoursRepository.replaceAllForBranch(BranchId.create(branchId), [
+      BranchWorkingHours.create({
         id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        restaurantId,
+        branchId,
         dayOfWeek: 1,
         openingTime: '18:00',
         closingTime: '22:00',
@@ -135,21 +129,8 @@ describe('ListReservationTimeSlotsUseCase', () => {
     expect(result.slots[0].endTime).toBe('2026-09-28T16:30:00.000Z');
   });
 
-  it('prefers the branch override and the client duration', async () => {
-    const { useCase, branchHoursRepository, restaurantHoursRepository } = await build();
-    await restaurantHoursRepository.replaceAllForRestaurant(RestaurantId.create(restaurantId), [
-      WorkingHours.create({
-        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        restaurantId,
-        dayOfWeek: 1,
-        openingTime: '18:00',
-        closingTime: '23:00',
-        breakStartTime: null,
-        breakEndTime: null,
-        createdAt: now,
-        updatedAt: now,
-      }),
-    ]);
+  it('uses the branch hours and the client duration', async () => {
+    const { useCase, branchHoursRepository } = await build();
     await branchHoursRepository.replaceAllForBranch(BranchId.create(branchId), [
       BranchWorkingHours.create({
         id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
@@ -190,11 +171,11 @@ describe('ListReservationTimeSlotsUseCase', () => {
   });
 
   it('reports NO_SUITABLE_TABLE when every fitting table is already reserved', async () => {
-    const { useCase, restaurantHoursRepository, reservationRepository } = await build();
-    await restaurantHoursRepository.replaceAllForRestaurant(RestaurantId.create(restaurantId), [
-      WorkingHours.create({
+    const { useCase, branchHoursRepository, reservationRepository } = await build();
+    await branchHoursRepository.replaceAllForBranch(BranchId.create(branchId), [
+      BranchWorkingHours.create({
         id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        restaurantId,
+        branchId,
         dayOfWeek: 1,
         openingTime: '18:00',
         closingTime: '22:00',
@@ -231,11 +212,11 @@ describe('ListReservationTimeSlotsUseCase', () => {
   });
 
   it('keeps a later window when only the earlier one overlaps a Pending reservation', async () => {
-    const { useCase, restaurantHoursRepository, reservationRepository } = await build();
-    await restaurantHoursRepository.replaceAllForRestaurant(RestaurantId.create(restaurantId), [
-      WorkingHours.create({
+    const { useCase, branchHoursRepository, reservationRepository } = await build();
+    await branchHoursRepository.replaceAllForBranch(BranchId.create(branchId), [
+      BranchWorkingHours.create({
         id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        restaurantId,
+        branchId,
         dayOfWeek: 1,
         openingTime: '18:00',
         closingTime: '22:00',
@@ -275,11 +256,11 @@ describe('ListReservationTimeSlotsUseCase', () => {
   });
 
   it('ignores a Cleaning table', async () => {
-    const { useCase, restaurantHoursRepository, tableRepository } = await build();
-    await restaurantHoursRepository.replaceAllForRestaurant(RestaurantId.create(restaurantId), [
-      WorkingHours.create({
+    const { useCase, branchHoursRepository, tableRepository } = await build();
+    await branchHoursRepository.replaceAllForBranch(BranchId.create(branchId), [
+      BranchWorkingHours.create({
         id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        restaurantId,
+        branchId,
         dayOfWeek: 1,
         openingTime: '18:00',
         closingTime: '22:00',

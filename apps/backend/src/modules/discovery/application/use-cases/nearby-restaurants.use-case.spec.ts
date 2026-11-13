@@ -1,12 +1,12 @@
 import { NearbyRestaurantsUseCase } from './nearby-restaurants.use-case';
 import { ListRestaurantIdsWithActiveOfferUseCase } from '@modules/offers/application/use-cases/list-restaurant-ids-with-active-offer.use-case';
 import { ListRestaurantIdsWithMenuUseCase } from '@modules/menus/application/use-cases/list-restaurant-ids-with-menu.use-case';
-import { ListWorkingHoursByRestaurantIdsUseCase } from '@modules/restaurants/application/use-cases/list-working-hours-by-restaurant-ids.use-case';
+import { ListRestaurantWorkingHoursFromBranchesUseCase } from '@modules/branches/application/use-cases/list-restaurant-working-hours-from-branches.use-case';
 import { FakeDiscoveryReader } from '../../../../../test/discovery/support/fake-discovery-reader';
 import { FixedClock } from '../../../../../test/authentication/support/in-memory-registration.dependencies';
 import { InMemoryOfferRepository } from '../../../../../test/offers/support/in-memory-offer.repository';
 import { InMemoryMenuRepository } from '../../../../../test/menus/support/in-memory-menu.repository';
-import { InMemoryWorkingHoursRepository } from '../../../../../test/restaurants/support/in-memory-working-hours.repository';
+import { InMemoryBranchWorkingHoursRepository } from '../../../../../test/branches/support/in-memory-branch-working-hours.repository';
 import { RestaurantResult } from '@modules/restaurants/application/dto/restaurant.result';
 import { RestaurantCoverImageUrlResolver } from '../services/restaurant-cover-image-url.resolver';
 import { InMemoryFileRepository } from '../../../../../test/restaurants/support/in-memory-file-repository';
@@ -74,8 +74,8 @@ function buildUseCase(reader: FakeDiscoveryReader) {
   const listRestaurantIdsWithMenuUseCase = new ListRestaurantIdsWithMenuUseCase(
     new InMemoryMenuRepository(),
   );
-  const listWorkingHoursByRestaurantIdsUseCase = new ListWorkingHoursByRestaurantIdsUseCase(
-    new InMemoryWorkingHoursRepository(),
+  const listWorkingHoursByRestaurantIdsUseCase = new ListRestaurantWorkingHoursFromBranchesUseCase(
+    new InMemoryBranchWorkingHoursRepository(),
   );
   return new NearbyRestaurantsUseCase(
     reader,

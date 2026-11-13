@@ -397,9 +397,10 @@ export class RestaurantsController {
   @ResponseMessage('Restaurant working hours retrieved successfully.')
   @ApiOperation({
     operationId: 'restaurantsGetWorkingHours',
-    summary: 'Get a restaurant weekly working hours',
+    summary: 'Get a restaurant weekly working hours (deprecated)',
+    deprecated: true,
     description:
-      'Restaurant-level default only (Phase 4.3 scope; branch-level override is a future phase). Only restaurants belonging to the caller organization are ever visible - tenant scoping is automatic (TENANCY.md). A day absent from `entries` is closed that day; a brand-new restaurant has an empty `entries` array until explicitly configured.',
+      'Deprecated (ADR-050): working hours belong to branches - use GET /restaurants/{id}/branches/{branchId}/working-hours. These legacy rows no longer affect bookings or customer-facing hours. Restaurant-level default only (Phase 4.3 scope; branch-level override is a future phase). Only restaurants belonging to the caller organization are ever visible - tenant scoping is automatic (TENANCY.md). A day absent from `entries` is closed that day; a brand-new restaurant has an empty `entries` array until explicitly configured.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({
@@ -433,9 +434,10 @@ export class RestaurantsController {
   @ResponseMessage('Restaurant working hours updated successfully.')
   @ApiOperation({
     operationId: 'restaurantsUpdateWorkingHours',
-    summary: 'Replace a restaurant weekly working hours (full-replace)',
+    summary: 'Replace a restaurant weekly working hours (deprecated)',
+    deprecated: true,
     description:
-      "Full-replace of the entire week: the submitted `entries` become the restaurant's complete schedule - a day omitted from `entries` becomes closed that day. Restaurant-level only (Phase 4.3 scope; branch-level override is a future phase). Only restaurants belonging to the caller organization can be updated - tenant scoping is automatic (TENANCY.md).",
+      "Deprecated (ADR-050): working hours belong to branches - use PATCH /restaurants/{id}/branches/{branchId}/working-hours. These legacy rows no longer affect bookings or customer-facing hours. Full-replace of the entire week: the submitted `entries` become the restaurant's complete schedule - a day omitted from `entries` becomes closed that day. Restaurant-level only (Phase 4.3 scope; branch-level override is a future phase). Only restaurants belonging to the caller organization can be updated - tenant scoping is automatic (TENANCY.md).",
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({

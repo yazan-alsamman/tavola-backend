@@ -2803,3 +2803,34 @@ Broadcasting `MessageSent` to the branch or restaurant room was not chosen becau
 ### Consequences
 
 Owners and permitted staff see new messages in the notification count and list. The realtime hint for each row goes to the recipient's own `user:{id}` room, as for every other staff notification.
+
+## ADR-050
+
+### Title
+
+Working hours and currency belong to the branch
+
+### Status
+
+**Accepted — owner-approved 2026-11-13** (the owner asked for working hours, currency and timezone to be set per branch and for the restaurant-wide working hours to be removed from restaurant settings). Amends Phase 4.3, Phase 5.2 and ADR-033 §17.
+
+### Context
+
+A restaurant had a weekly `WorkingHours` default and each branch an optional `BranchWorkingHours` override, merged per weekday when bookings were checked. `RestaurantSettings` also carried `timezone` and `defaultCurrency`, while `Branch` already had its own required `timezone` and optional `currency`. Branches of one restaurant can keep different hours and sit in different countries, so a restaurant-wide value is the wrong owner.
+
+### Decision
+
+1. Bookings (`BranchOpeningHoursService`: time slots and reservation creation) read the branch's `BranchWorkingHours` alone. A weekday without a branch row is closed; a branch with no row at all keeps the existing "no hours configured" behaviour.
+2. Migration `20261113180000_branch_owned_hours_and_currency` copies each restaurant's `working_hours` rows onto every live branch for the weekdays that branch had no row of its own, so every branch keeps exactly the schedule it had, and sets `branches.currency` from `restaurant_settings.default_currency` where the branch had none. Data only and forward-only; no table or column is dropped.
+3. The Discovery restaurant responses keep their `workingHours` field for the customer app; it now carries the schedule of the restaurant's oldest live branch (`ListRestaurantWorkingHoursFromBranchesUseCase`, one query). Branch responses are unchanged.
+4. Customer acquisition fees resolve the reservation branch's `currency` first and fall back to `RestaurantSettings.defaultCurrency` (amends ADR-033 §17's order). The platform-admin manual record, which names no branch, uses the oldest branch with a currency, then the same fallback.
+5. `GET`/`PATCH /restaurants/:id/working-hours` and the `timezone`/`defaultCurrency` fields of restaurant settings stay in the API for older clients but are marked deprecated in Swagger and no longer drive any behaviour, except `defaultCurrency` as the fallback in 4. `RestaurantSettings.timezone` was never read by any feature; every time calculation already uses `Branch.timezone`.
+
+### Alternatives
+
+Dropping the `working_hours` table and the two settings columns was not chosen: the deployed dashboard and app builds still call those endpoints and fields, and the drop can follow once no client sends them. Deriving the restaurant-level Discovery hours from every branch was not chosen because branches can differ; the oldest branch is the restaurant's original location.
+
+### Consequences
+
+Owners set hours, currency and timezone on each branch in the dashboard's Branches page; restaurant settings no longer show them. A new branch starts with no hours until the owner sets them.
+

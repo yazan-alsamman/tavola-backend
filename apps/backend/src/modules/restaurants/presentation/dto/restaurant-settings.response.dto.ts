@@ -22,10 +22,20 @@ export class RestaurantSettingsResponseDto {
   @ApiProperty({ example: false })
   autoApproval!: boolean;
 
-  @ApiProperty({ example: 'UTC' })
+  @ApiProperty({
+    example: 'UTC',
+    deprecated: true,
+    description: 'Deprecated (ADR-050): each branch has its own timezone; this value is not used.',
+  })
   timezone!: string;
 
-  @ApiPropertyOptional({ example: null, nullable: true })
+  @ApiPropertyOptional({
+    example: null,
+    nullable: true,
+    deprecated: true,
+    description:
+      'Deprecated (ADR-050): each branch has its own currency; only a fallback for branches without one.',
+  })
   defaultCurrency!: string | null;
 
   @ApiProperty({ example: 60, minimum: 1, maximum: 10080 })

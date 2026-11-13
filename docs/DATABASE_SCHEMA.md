@@ -647,8 +647,8 @@ Fields
 * pendingReservationTimeoutMinutes
 * defaultReservationDurationMinutes (Phase 7.1 — fallback `Reservation.reservationEndTime` duration when the client omits it)
 * autoApproval (boolean)
-* timezone
-* defaultCurrency
+* timezone (deprecated by ADR-050: never read; every time calculation uses `Branch.timezone`)
+* defaultCurrency (deprecated by ADR-050: only a fallback for a branch without `currency`)
 * reservationReminderMinutesBefore (Phase 7.6 — ADR-019 Operational Signals; int, 1-10080, default 60; minutes before `reservationStartTime` the `ReservationReminderDue` BullMQ job fires)
 * lateArrivalGraceMinutes (Phase 7.6 — ADR-019 Operational Signals; int, 1-1440, default 15; minutes after `reservationStartTime` the `GuestLateArrivalNotified` BullMQ job fires)
 * createdAt
@@ -682,6 +682,8 @@ Indexes
 
 * restaurantId
 * unique composite (restaurantId, dayOfWeek)
+
+**Superseded by ADR-050 (2026-11-13)**: working hours belong to branches. This table is kept read-only for older clients; its rows were copied onto each branch (migration `20261113180000_branch_owned_hours_and_currency`) and no longer affect bookings or customer-facing hours. The Discovery restaurant `workingHours` field now comes from the restaurant's oldest live branch.
 
 **Resolved in Phase 5.2**: branch-level override was delivered as a separate table, `BranchWorkingHours` (see "Branch Working Hours" below), not as a nullable `branchId` column added to this table - each aggregate owns its own child entity, avoiding the dual-parent design this section originally anticipated.
 
@@ -784,6 +786,8 @@ Notes
 ## Branch Working Hours
 
 Purpose
+
+**ADR-050 (2026-11-13)**: this table is the only source of opening hours. Bookings read it alone (a weekday without a row is closed), with no fallback to the restaurant `WorkingHours`.
 
 Branch-level weekly opening/closing schedule override (Phase 5.2), resolving the branch-level override the "Working Hours" section above deferred to Phase 5. A separate table from `WorkingHours` (Restaurant-level, Phase 4.3) - each aggregate owns its own child entity, not a nullable `branchId` added to the Restaurant-level table. Structurally identical to `WorkingHours`, scoped to `branchId` instead of `restaurantId`.
 

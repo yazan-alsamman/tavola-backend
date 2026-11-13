@@ -523,7 +523,7 @@ export class CreateReservationUseCase {
       );
     }
 
-    const schedule = await this.openingHours.load(input.branchId, input.restaurantId);
+    const schedule = await this.openingHours.load(input.branchId);
     if (!fitsOpeningHours(input.startTime, input.endTime, input.timeZone, schedule)) {
       throw new InvalidReservationTimeException(
         'The reservation must start and end within the branch opening hours.',

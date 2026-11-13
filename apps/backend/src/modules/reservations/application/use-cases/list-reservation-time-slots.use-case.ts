@@ -110,7 +110,7 @@ export class ListReservationTimeSlotsUseCase {
     }
 
     const dayOfWeek = dayOfWeekFromCalendarDate(command.date);
-    const weekly = await this.openingHours.load(command.branchId, branch.restaurantId.value);
+    const weekly = await this.openingHours.load(command.branchId);
     const schedule = weekly.forDay(dayOfWeek);
     const base = {
       branchId: command.branchId,

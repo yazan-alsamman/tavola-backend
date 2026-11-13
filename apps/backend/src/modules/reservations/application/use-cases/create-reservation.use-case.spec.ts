@@ -39,11 +39,8 @@ import { ActiveReservationLimitReachedException } from '@modules/reservations/do
 import { RestaurantNotAcceptingReservationsException } from '@modules/reservations/domain/exceptions/restaurant-not-accepting-reservations.exception';
 import { BranchOpeningHoursService } from '@modules/reservations/application/services/branch-opening-hours.service';
 import { ListBranchWorkingHoursByBranchIdsUseCase } from '@modules/branches/application/use-cases/list-branch-working-hours-by-branch-ids.use-case';
-import { ListWorkingHoursByRestaurantIdsUseCase } from '@modules/restaurants/application/use-cases/list-working-hours-by-restaurant-ids.use-case';
-import { WorkingHours } from '@modules/restaurants/domain/entities/working-hours.entity';
-import { RestaurantId } from '@shared/domain/value-objects/identifiers.vo';
+import { BranchWorkingHours } from '@modules/branches/domain/entities/branch-working-hours.entity';
 import { InMemoryBranchWorkingHoursRepository } from '../../../../../test/branches/support/in-memory-branch-working-hours.repository';
-import { InMemoryWorkingHoursRepository } from '../../../../../test/restaurants/support/in-memory-working-hours.repository';
 import { InMemoryBookingEligibilityReader } from '../../../../../test/reservations/support/in-memory-booking-eligibility.reader';
 
 describe('CreateReservationUseCase', () => {
@@ -102,7 +99,6 @@ describe('CreateReservationUseCase', () => {
     const restaurantSettingsRepository = new InMemoryRestaurantSettingsRepository();
     const expirationScheduler = new InMemoryReservationExpirationScheduler();
     const branchHoursRepository = new InMemoryBranchWorkingHoursRepository();
-    const restaurantHoursRepository = new InMemoryWorkingHoursRepository();
     const bookingEligibility = new InMemoryBookingEligibilityReader();
 
     await branchRepository.save(
@@ -201,20 +197,19 @@ describe('CreateReservationUseCase', () => {
       bookingEligibility,
       new BranchOpeningHoursService(
         new ListBranchWorkingHoursByBranchIdsUseCase(branchHoursRepository),
-        new ListWorkingHoursByRestaurantIdsUseCase(restaurantHoursRepository),
       ),
     );
 
     return {
       useCase,
       bookingEligibility,
-      restaurantHoursRepository,
       reservationRepository,
       reservationGuestRepository,
       tableRepository,
       eventPublisher,
       expirationScheduler,
       operationalScheduler,
+      branchHoursRepository,
     };
   }
 
@@ -806,11 +801,11 @@ describe('CreateReservationUseCase', () => {
 
   describe('booking rules (report finding #2)', () => {
     // 2026-08-01 is a Saturday (dayOfWeek 6); Asia/Damascus is UTC+3.
-    function openSaturdayEvenings(repository: InMemoryWorkingHoursRepository) {
-      return repository.replaceAllForRestaurant(RestaurantId.create(restaurantId), [
-        WorkingHours.create({
+    function openSaturdayEvenings(repository: InMemoryBranchWorkingHoursRepository) {
+      return repository.replaceAllForBranch(BranchId.create(branchId), [
+        BranchWorkingHours.create({
           id: 'abababab-abab-4bab-8bab-abababababab',
-          restaurantId,
+          branchId,
           dayOfWeek: 6,
           openingTime: '18:00',
           closingTime: '23:00',
@@ -867,8 +862,8 @@ describe('CreateReservationUseCase', () => {
     });
 
     it('rejects an online booking outside the opening hours once hours are configured', async () => {
-      const { useCase, restaurantHoursRepository } = await build();
-      await openSaturdayEvenings(restaurantHoursRepository);
+      const { useCase, branchHoursRepository } = await build();
+      await openSaturdayEvenings(branchHoursRepository);
 
       await expect(
         useCase.execute({
@@ -883,8 +878,8 @@ describe('CreateReservationUseCase', () => {
     });
 
     it('rejects an online booking that runs past closing time', async () => {
-      const { useCase, restaurantHoursRepository } = await build();
-      await openSaturdayEvenings(restaurantHoursRepository);
+      const { useCase, branchHoursRepository } = await build();
+      await openSaturdayEvenings(branchHoursRepository);
 
       await expect(
         useCase.execute({
@@ -900,8 +895,8 @@ describe('CreateReservationUseCase', () => {
     });
 
     it('accepts an online booking inside the opening hours', async () => {
-      const { useCase, restaurantHoursRepository } = await build();
-      await openSaturdayEvenings(restaurantHoursRepository);
+      const { useCase, branchHoursRepository } = await build();
+      await openSaturdayEvenings(branchHoursRepository);
 
       const result = await useCase.execute({
         actor: baseActor(),
@@ -916,8 +911,8 @@ describe('CreateReservationUseCase', () => {
     });
 
     it('lets staff book a phone reservation outside the opening hours', async () => {
-      const { useCase, restaurantHoursRepository } = await build();
-      await openSaturdayEvenings(restaurantHoursRepository);
+      const { useCase, branchHoursRepository } = await build();
+      await openSaturdayEvenings(branchHoursRepository);
 
       const result = await useCase.execute({
         actor: employeeActor(),

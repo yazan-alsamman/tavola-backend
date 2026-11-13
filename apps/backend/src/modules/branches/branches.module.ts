@@ -13,6 +13,7 @@ import { DeleteBranchUseCase } from './application/use-cases/delete-branch.use-c
 import { GetBranchWorkingHoursUseCase } from './application/use-cases/get-branch-working-hours.use-case';
 import { UpdateBranchWorkingHoursUseCase } from './application/use-cases/update-branch-working-hours.use-case';
 import { ListBranchWorkingHoursByBranchIdsUseCase } from './application/use-cases/list-branch-working-hours-by-branch-ids.use-case';
+import { ListRestaurantWorkingHoursFromBranchesUseCase } from './application/use-cases/list-restaurant-working-hours-from-branches.use-case';
 import { BRANCH_REPOSITORY } from './domain/repositories/branch.repository';
 import { BRANCH_WORKING_HOURS_REPOSITORY } from './domain/repositories/branch-working-hours.repository';
 import { PrismaBranchRepository } from './infrastructure/persistence/prisma-branch.repository';
@@ -81,6 +82,7 @@ import { BranchesController } from './presentation/controllers/branches.controll
     GetBranchWorkingHoursUseCase,
     UpdateBranchWorkingHoursUseCase,
     ListBranchWorkingHoursByBranchIdsUseCase,
+    ListRestaurantWorkingHoursFromBranchesUseCase,
     PrismaBranchRepository,
     PrismaBranchWorkingHoursRepository,
     { provide: BRANCH_REPOSITORY, useExisting: PrismaBranchRepository },
@@ -97,7 +99,12 @@ import { BranchesController } from './presentation/controllers/branches.controll
   // batched lookup for Discovery's customer-facing (no-organizationId)
   // callers, which have already resolved branch visibility themselves before
   // calling it - same passthrough-safe shape as this module's own
-  // BRANCH_WORKING_HOURS_REPOSITORY.
-  exports: [BRANCH_REPOSITORY, ListBranchWorkingHoursByBranchIdsUseCase],
+  // BRANCH_WORKING_HOURS_REPOSITORY. ListRestaurantWorkingHoursFromBranchesUseCase
+  // is exported for DiscoveryModule's restaurant-level `workingHours` (ADR-050).
+  exports: [
+    BRANCH_REPOSITORY,
+    ListBranchWorkingHoursByBranchIdsUseCase,
+    ListRestaurantWorkingHoursFromBranchesUseCase,
+  ],
 })
 export class BranchesModule {}

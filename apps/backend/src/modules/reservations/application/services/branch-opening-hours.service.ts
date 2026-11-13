@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { ListBranchWorkingHoursByBranchIdsUseCase } from '@modules/branches/application/use-cases/list-branch-working-hours-by-branch-ids.use-case';
-import { ListWorkingHoursByRestaurantIdsUseCase } from '@modules/restaurants/application/use-cases/list-working-hours-by-restaurant-ids.use-case';
 import { DayScheduleWindow } from '../../domain/services/reservation-time-slots.service';
 
 interface WorkingHoursRow {
@@ -12,25 +11,19 @@ interface WorkingHoursRow {
 }
 
 /**
- * A branch's weekly opening hours. A weekday uses the branch's own row when
- * it has one, otherwise the restaurant default row for that weekday, and is
- * closed when neither exists. `hasAnyHours` is false when neither the branch
- * nor the restaurant has configured a single row.
+ * A branch's weekly opening hours. Hours belong to the branch alone
+ * (ADR-050): a weekday without a branch row is closed, and `hasAnyHours` is
+ * false while the branch has not configured a single row.
  */
 export class BranchWeeklySchedule {
-  constructor(
-    private readonly branchRows: WorkingHoursRow[],
-    private readonly restaurantRows: WorkingHoursRow[],
-  ) {}
+  constructor(private readonly rows: WorkingHoursRow[]) {}
 
   get hasAnyHours(): boolean {
-    return this.branchRows.length > 0 || this.restaurantRows.length > 0;
+    return this.rows.length > 0;
   }
 
   forDay(dayOfWeek: number): DayScheduleWindow | null {
-    const row =
-      this.branchRows.find((entry) => entry.dayOfWeek === dayOfWeek) ??
-      this.restaurantRows.find((entry) => entry.dayOfWeek === dayOfWeek);
+    const row = this.rows.find((entry) => entry.dayOfWeek === dayOfWeek);
     return row === undefined ? null : toWindow(row);
   }
 }
@@ -42,20 +35,11 @@ export class BranchWeeklySchedule {
  */
 @Injectable()
 export class BranchOpeningHoursService {
-  constructor(
-    private readonly listBranchWorkingHours: ListBranchWorkingHoursByBranchIdsUseCase,
-    private readonly listRestaurantWorkingHours: ListWorkingHoursByRestaurantIdsUseCase,
-  ) {}
+  constructor(private readonly listBranchWorkingHours: ListBranchWorkingHoursByBranchIdsUseCase) {}
 
-  async load(branchId: string, restaurantId: string): Promise<BranchWeeklySchedule> {
-    const [branchHours, restaurantHours] = await Promise.all([
-      this.listBranchWorkingHours.execute({ branchIds: [branchId] }),
-      this.listRestaurantWorkingHours.execute({ restaurantIds: [restaurantId] }),
-    ]);
-    return new BranchWeeklySchedule(
-      branchHours.get(branchId) ?? [],
-      restaurantHours.get(restaurantId) ?? [],
-    );
+  async load(branchId: string): Promise<BranchWeeklySchedule> {
+    const branchHours = await this.listBranchWorkingHours.execute({ branchIds: [branchId] });
+    return new BranchWeeklySchedule(branchHours.get(branchId) ?? []);
   }
 }
 
