@@ -398,7 +398,7 @@ Explicit, not inferred from event names — no event outside this list produces 
 | `ReservationNoShow` | B — In-App only | Not a "good news, check your phone now" event from the Customer's own perspective |
 | `GuestLateArrivalNotified` | D — no Phase 9 notification | Staff-facing operational signal, not Customer-facing (owner-confirmed) |
 | `ReservationExpired` | D — no Phase 9 notification | Low-salience event; no requirement supports notifying about it (owner-confirmed) |
-| `MessageSent` | A — Push + In-App (Customer-only) | Phase 15.6 (Messaging) Owner Decision D6, added after this table's initial Phase 9 freeze — see `TASKS.md`'s Phase 15.6 Implementation & Verification Report. A Customer-sent or System-sent message never notifies anyone; only a Restaurant-side (`OrganizationMember`/`Employee`) sender's message notifies the conversation's Customer participant, resolved via `ConversationParticipantRepository.findCustomerParticipant`. |
+| `MessageSent` | A — Push + In-App (Customer-only) | Phase 15.6 (Messaging) Owner Decision D6, added after this table's initial Phase 9 freeze — see `TASKS.md`'s Phase 15.6 Implementation & Verification Report. A Customer-sent message reaches staff through the restaurant-side list below instead (`StaffMessageReceived`, ADR-049); a System-sent message notifies no one. Only a Restaurant-side (`OrganizationMember`/`Employee`) sender's message notifies the conversation's Customer participant, resolved via `ConversationParticipantRepository.findCustomerParticipant`. |
 
 ### Restaurant-side In-App notifications (ADR-041)
 
@@ -409,8 +409,9 @@ A second, separate allow-list for the restaurant's own people (`NotificationDisp
 | `ReservationCreated` | `source = Online` and `userId` set | `StaffReservationCreated` |
 | `ReservationCancelled` | `cancelledBy` is the reservation's own customer | `StaffReservationCancelled` |
 | `WaitlistEntryCreated` | `userId` set and `createdBy = userId` | `StaffWaitlistEntryCreated` |
+| `MessageSent` | `senderType = Customer`; only Owner/Admin and Employees with `conversations:manage` in the conversation's branch scope (ADR-049) | `StaffMessageReceived` |
 
-Each row publishes its own `NotificationCreated` (audit + the usual per-user realtime hint). `data` carries `reservationId` or `entryId`, plus `restaurantId` and `branchId`.
+Each row publishes its own `NotificationCreated` (audit + the usual per-user realtime hint). `data` carries `reservationId`, `entryId`, `reviewId` or `conversationId`, plus `restaurantId` and `branchId` (omitted for a conversation with no branch). A message's text is never copied into its notification.
 
 `WaitlistEntryNotified` is not separately listed — it fires as a consequence of the `WaitlistEntryPromoted`-triggered notification's push outcome (only on `Accepted`), never a second independent trigger.
 

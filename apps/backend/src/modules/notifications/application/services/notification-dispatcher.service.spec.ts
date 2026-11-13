@@ -569,6 +569,7 @@ describe('NotificationDispatcher', () => {
       expect(staffRecipientReader.findRecipientUserIds).toHaveBeenCalledWith(
         restaurantId,
         branchId,
+        undefined,
       );
       expect(created.map((e) => e.payload.userId)).toEqual([ownerId, employeeUserId]);
       expect(notificationRepository.save).toHaveBeenCalledTimes(2);
@@ -665,6 +666,60 @@ describe('NotificationDispatcher', () => {
         }),
       );
       expect(rerated.notificationRepository.save.mock.calls[0][0].type).toBe('StaffReviewCreated');
+    });
+
+    it("tells staff who can answer about a customer's message, never about their own (ADR-049)", async () => {
+      const message = (senderType: MessageSenderType, messageBranchId: string | null = branchId) =>
+        new MessageSentEvent('e1', {
+          conversationId,
+          restaurantId,
+          branchId: messageBranchId,
+          messageId: 'message-1',
+          senderType,
+          senderUserId: senderType === MessageSenderType.Employee ? null : userId,
+          senderEmployeeId: senderType === MessageSenderType.Employee ? 'employee-1' : null,
+          body: 'Is there parking?',
+          messageType: MessageType.Text,
+          attachmentFileId: null,
+        });
+
+      const customer = buildDispatcher({ staffRecipientIds: [ownerId, employeeUserId] });
+      const created = await customer.dispatcher.dispatchToStaff(
+        message(MessageSenderType.Customer),
+      );
+      expect(created.map((e) => e.payload.userId)).toEqual([ownerId, employeeUserId]);
+      expect(customer.staffRecipientReader.findRecipientUserIds).toHaveBeenCalledWith(
+        restaurantId,
+        branchId,
+        'conversations:manage',
+      );
+      const saved = customer.notificationRepository.save.mock.calls[0][0];
+      expect(saved.type).toBe('StaffMessageReceived');
+      expect(saved.data).toEqual({ conversationId, restaurantId, branchId });
+      expect(saved.data).not.toHaveProperty('body');
+      expect(customer.deliveryScheduler.enqueueDelivery).not.toHaveBeenCalled();
+
+      const restaurantWide = buildDispatcher({ staffRecipientIds: [ownerId] });
+      await restaurantWide.dispatcher.dispatchToStaff(message(MessageSenderType.Customer, null));
+      expect(restaurantWide.staffRecipientReader.findRecipientUserIds).toHaveBeenCalledWith(
+        restaurantId,
+        null,
+        'conversations:manage',
+      );
+      expect(restaurantWide.notificationRepository.save.mock.calls[0][0].data).toEqual({
+        conversationId,
+        restaurantId,
+      });
+
+      for (const senderType of [
+        MessageSenderType.Employee,
+        MessageSenderType.OrganizationMember,
+        MessageSenderType.System,
+      ]) {
+        const staff = buildDispatcher({ staffRecipientIds: [ownerId] });
+        await expect(staff.dispatcher.dispatchToStaff(message(senderType))).resolves.toEqual([]);
+        expect(staff.staffRecipientReader.findRecipientUserIds).not.toHaveBeenCalled();
+      }
     });
 
     it('ignores events outside the staff list', async () => {

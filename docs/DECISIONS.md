@@ -910,7 +910,7 @@ In-app chat between customers and restaurant staff is required (`PRODUCT_REQUIRE
 3. **`Message` sender attribution** — `senderType` (`Customer | Employee | OrganizationMember | System`) plus `senderUserId` (nullable) / `senderEmployeeId` (nullable FK → `Employee`), mirroring `resolveTableManagementActorId`'s dual resolution (`apps/backend/src/modules/tables/application/services/assert-actor-can-manage-tables.ts`): an `Employee` sender populates `senderEmployeeId`; an `OrganizationMember` sender populates `senderUserId` with their own `User.id` (there is no `Employee` row for them); a `Customer` sender populates `senderUserId`. The `senderUserId` XOR `senderEmployeeId` invariant (for non-`System` senders) is a database `CHECK` constraint added via raw SQL in the migration, exactly like `Reservation.userId`/`reservationGuestId` and `ReservationWaitlistEntry` — Prisma's schema language cannot express it directly, so it is not written in `schema.prisma` itself. `senderType` is additionally validated in the `Message` domain entity constructor (it disambiguates which of the two same-shaped XOR cases applies — a DB `CHECK` alone cannot tell a Customer's `senderUserId` from an OrganizationMember's).
 4. **Optional `reservationId`** — unchanged from ADR-020 item 4: nullable, no cascading behavior, soft link only.
 5. **Conversation status** — `ConversationStatus { Open, Closed, Archived }`, one column (no separate `archivedAt`). `POST /conversations/:id/close` is actor-branched, reusing the single endpoint rather than adding a ninth route: a `Restaurant`-side actor (`Employee`/`OrganizationMember`) sets `Closed` (closes for both sides); the `Customer` participant sets `Archived` (soft-hides from their own default `ListCustomerConversations` view only — staff visibility/list unaffected). Sending a new `Message` to a `Closed` or `Archived` conversation auto-transitions it back to `Open` from either side — closing/archiving is a convenience signal, not a hard lock.
-6. **Notifications** — customer-only, per the existing `NotificationDispatcher` precedent (`apps/backend/src/modules/notifications/application/services/notification-dispatcher.service.ts`), which has no staff notification path at all. When a `Restaurant`-side sender (`Employee` or `OrganizationMember`) sends a `Message`, exactly one `Notification` is dispatched to the `Customer` participant's `userId` via the existing `NOTIFICATION_PROVIDER`/dispatcher pipeline. A `Customer`-sent `Message` never triggers a `Notification` (staff visibility is realtime-only, per D9). No `Employee`/`OrganizationMember` ever receives a `Notification` row for messaging.
+6. **Notifications** — customer-only, per the existing `NotificationDispatcher` precedent (`apps/backend/src/modules/notifications/application/services/notification-dispatcher.service.ts`), which has no staff notification path at all. When a `Restaurant`-side sender (`Employee` or `OrganizationMember`) sends a `Message`, exactly one `Notification` is dispatched to the `Customer` participant's `userId` via the existing `NOTIFICATION_PROVIDER`/dispatcher pipeline. A `Customer`-sent `Message` never triggers a `Notification` (staff visibility is realtime-only, per D9). No `Employee`/`OrganizationMember` ever receives a `Notification` row for messaging. **Amended by ADR-049:** a `Customer`-sent `Message` now gives the staff who may answer it a `StaffMessageReceived` In-App notification.
 7. **`FileOwnerType`** — add `Message` as a fifth enum value (`User | Restaurant | Review | Menu | Message`) alongside the TS union in `apps/backend/src/modules/files/domain/entities/file-record.entity.ts`. `Message.attachmentFileId` is a plain UUID pointer (no Prisma relation, consistent with `File`'s existing polymorphic `ownerId`/`ownerType` design). Upload flow mirrors `AddReviewImageUseCase` (`apps/backend/src/modules/reviews/application/use-cases/add-review-image.use-case.ts`) exactly: resolve+own-check the parent `Conversation` first, validate file, `StoragePort.upload()`, `FileRepository.create({ ownerType: 'Message', ownerId: message.id, ... })` with compensating delete on failure. No virus scanning in this phase (ADR-020 item 5's "virus scan in infrastructure layer" remains a future hardening item, not a blocker here).
 8. **Rate limiting** — new `MESSAGING_RATE_LIMITER` DI token bound to the existing `RedisSlidingWindowRateLimiter` (`RateLimiterPort`), following Discovery's precedent of binding its own token rather than reusing Authentication's closed `RateLimitPolicyName` union (`apps/backend/src/modules/discovery/presentation/guards/discovery-rate-limit.guard.ts`). Keyed per participant (`messaging:ratelimit:send:{participantKey}`, where `participantKey` is the resolved actor id from D15/D3). Applied only to `SendMessage`; reads use the standard global HTTP tier only.
 9. **Realtime** — extend `RoomType` (`apps/backend/src/modules/realtime/application/room.ts`) with `Conversation` — the addition its own doc comment anticipated and gated behind "a new architecture freeze"; this decision note is that freeze. Add `authorizeConversation(actor, conversationId)` to `RoomAuthorizationService`, dual-branching: `User` must be the conversation's `Customer` participant (`userId` match); `Employee`/`OrganizationMember` must pass the same D15 check used for `SendMessage`. Extend `realtime-event-mapping.ts` with `ConversationStarted`/`MessageSent`/`MessageRead`/`ConversationClosed`, broadcasting only to `conversation:{conversationId}`. No regression to the existing four `RoomType` values.
@@ -2774,3 +2774,32 @@ Express `trust proxy` was not used because the gateway and the HTTP layer would 
 ### Consequences
 
 The API port must not be reachable except through the trusted proxies, or a client can again choose its own IP. A third party can no longer lock an owner out from the owner's own address; a distributed run across many addresses can still reach the account-wide lock.
+
+## ADR-049
+
+### Title
+
+Staff hear about a customer's message
+
+### Status
+
+**Accepted — owner-approved 2026-11-13** (the owner asked for the dashboard to be told, with a sound, when a customer writes from the app). Amends Phase 15.6 D6 and D9.
+
+### Context
+
+D6 kept messaging notifications customer-only and D9 left staff with realtime only, on the `conversation:{id}` room. A staff member only joins that room once they open the conversation, so a new message, and above all a new conversation, reached nobody until someone refreshed the inbox.
+
+### Decision
+
+1. `NotificationDispatcher.dispatchToStaff` handles `MessageSent` when `senderType = Customer` and creates one `StaffMessageReceived` In-App notification per recipient. Messages from staff or the System never notify staff. Never Push, like every staff notification (ADR-041).
+2. Recipients are the people D15 lets answer: active Owner/Admin members, plus active Employees of the restaurant whose effective permissions include `conversations:manage` and whose branch scope covers the conversation's branch. A conversation with no branch reaches every such Employee. `StaffNotificationRecipientReaderPort.findRecipientUserIds` takes an optional required permission and a nullable branch for this; the other staff notifications are unchanged.
+3. `data` is `{ conversationId, restaurantId, branchId? }`. The message text is never copied into the notification. Templates are seeded in English and Arabic.
+4. Each customer message makes its own notification, so the dashboard can chime on every one; `SendMessage`'s per-participant rate limit (D8) bounds the volume.
+
+### Alternatives
+
+Broadcasting `MessageSent` to the branch or restaurant room was not chosen because the dashboard has no socket client today and the notification also gives the owner a durable, countable record. Collapsing to one unread notification per conversation was not chosen because the owner wants a sound for each message.
+
+### Consequences
+
+Owners and permitted staff see new messages in the notification count and list. The realtime hint for each row goes to the recipient's own `user:{id}` room, as for every other staff notification.

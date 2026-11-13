@@ -227,7 +227,7 @@ describe('Messaging (Phase 15.6) (e2e)', () => {
 
   it('Customer starts a conversation, both sides exchange messages, staff reply notifies the customer, and read receipts update per-person', async () => {
     if (!dbAvailable || !app) return;
-    const { restaurantId, branchId, employee, customer } = await setUpWorld('golden');
+    const { owner, restaurantId, branchId, employee, customer } = await setUpWorld('golden');
 
     const startResponse = await request(app.getHttpServer())
       .post('/api/v1/conversations')
@@ -242,6 +242,15 @@ describe('Messaging (Phase 15.6) (e2e)', () => {
       .set('Authorization', `Bearer ${customer.accessToken}`)
       .send({ body: 'Is my table still available at 8pm?' })
       .expect(201);
+
+    // ADR-049: the customer's message tells the restaurant's staff, In-App,
+    // without copying the message text.
+    const staffNotification = await prisma.notification.findFirst({
+      where: { userId: owner.userId, type: 'StaffMessageReceived' },
+    });
+    expect(staffNotification).not.toBeNull();
+    expect(staffNotification?.data).toMatchObject({ conversationId, restaurantId, branchId });
+    expect(staffNotification?.body).not.toContain('8pm');
 
     const staffListResponse = await request(app.getHttpServer())
       .get(`/api/v1/restaurants/${restaurantId}/conversations`)
@@ -261,12 +270,15 @@ describe('Messaging (Phase 15.6) (e2e)', () => {
     expect(replyResponse.body.data.senderType).toBe('Employee');
     expect(replyResponse.body.data.senderEmployeeId).toBe(employee.employeeId);
 
-    // D6: staff reply notifies the Customer (never the reverse, never staff).
+    // D6: staff reply notifies the Customer; the staff reply never notifies staff (ADR-049).
     const notification = await prisma.notification.findFirst({
       where: { userId: customer.userId, type: 'MessageSent' },
     });
     expect(notification).not.toBeNull();
     expect(notification?.data).toMatchObject({ conversationId });
+    await expect(
+      prisma.notification.count({ where: { userId: owner.userId, type: 'StaffMessageReceived' } }),
+    ).resolves.toBe(1);
 
     const messagesResponse = await request(app.getHttpServer())
       .get(`/api/v1/conversations/${conversationId}/messages`)

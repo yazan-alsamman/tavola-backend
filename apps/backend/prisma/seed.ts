@@ -233,6 +233,21 @@ const NOTIFICATION_TEMPLATES: Array<{
     title: 'تقييم منخفض',
     body: 'أعطى زبون زيارته تقييماً منخفضاً. يستحق الرد.',
   },
+  // ADR-049: a customer wrote in a conversation. The message text itself is
+  // never copied into the notification.
+  {
+    eventType: 'StaffMessageReceived',
+    channel: NotificationChannel.InApp,
+    title: 'New message',
+    body: 'A customer sent you a message.',
+  },
+  {
+    eventType: 'StaffMessageReceived',
+    channel: NotificationChannel.InApp,
+    language: 'ar',
+    title: 'رسالة جديدة',
+    body: 'أرسل لك زبون رسالة.',
+  },
 ];
 
 const SYSTEM_CONFIGURATION: Array<{
