@@ -436,37 +436,52 @@ const ROLES: Array<{
   },
 ];
 
-const CUISINE_CATEGORIES: Array<{ slug: string; name: string; sortOrder: number }> = [
-  { slug: 'italian', name: 'Italian', sortOrder: 0 },
-  { slug: 'japanese', name: 'Japanese', sortOrder: 1 },
-  { slug: 'chinese', name: 'Chinese', sortOrder: 2 },
-  { slug: 'indian', name: 'Indian', sortOrder: 3 },
-  { slug: 'mexican', name: 'Mexican', sortOrder: 4 },
-  { slug: 'french', name: 'French', sortOrder: 5 },
-  { slug: 'turkish', name: 'Turkish', sortOrder: 6 },
-  { slug: 'lebanese', name: 'Lebanese', sortOrder: 7 },
-  { slug: 'american', name: 'American', sortOrder: 8 },
-  { slug: 'seafood', name: 'Seafood', sortOrder: 9 },
-  { slug: 'vegetarian', name: 'Vegetarian', sortOrder: 10 },
-  { slug: 'steakhouse', name: 'Steakhouse', sortOrder: 11 },
-];
+const CUISINE_CATEGORIES: Array<{ slug: string; name: string; nameAr: string; sortOrder: number }> =
+  [
+    { slug: 'italian', name: 'Italian', nameAr: 'إيطالي', sortOrder: 0 },
+    { slug: 'japanese', name: 'Japanese', nameAr: 'ياباني', sortOrder: 1 },
+    { slug: 'chinese', name: 'Chinese', nameAr: 'صيني', sortOrder: 2 },
+    { slug: 'indian', name: 'Indian', nameAr: 'هندي', sortOrder: 3 },
+    { slug: 'mexican', name: 'Mexican', nameAr: 'مكسيكي', sortOrder: 4 },
+    { slug: 'french', name: 'French', nameAr: 'فرنسي', sortOrder: 5 },
+    { slug: 'turkish', name: 'Turkish', nameAr: 'تركي', sortOrder: 6 },
+    { slug: 'lebanese', name: 'Lebanese', nameAr: 'لبناني', sortOrder: 7 },
+    { slug: 'american', name: 'American', nameAr: 'أمريكي', sortOrder: 8 },
+    { slug: 'seafood', name: 'Seafood', nameAr: 'مأكولات بحرية', sortOrder: 9 },
+    { slug: 'vegetarian', name: 'Vegetarian', nameAr: 'نباتي', sortOrder: 10 },
+    { slug: 'steakhouse', name: 'Steakhouse', nameAr: 'ستيك هاوس', sortOrder: 11 },
+    { slug: 'oriental', name: 'Oriental', nameAr: 'شرقي', sortOrder: 12 },
+    { slug: 'grills', name: 'Grills', nameAr: 'مشاوي', sortOrder: 13 },
+    { slug: 'cafe', name: 'Cafe', nameAr: 'مقهى', sortOrder: 14 },
+    { slug: 'desserts', name: 'Desserts', nameAr: 'حلويات', sortOrder: 15 },
+  ];
 
-const OCCASION_CATEGORIES: Array<{ slug: string; name: string; sortOrder: number }> = [
-  { slug: 'date-night', name: 'Date Night', sortOrder: 0 },
-  { slug: 'business-lunch', name: 'Business Lunch', sortOrder: 1 },
-  { slug: 'family', name: 'Family', sortOrder: 2 },
-  { slug: 'birthday', name: 'Birthday', sortOrder: 3 },
-  { slug: 'group-gathering', name: 'Group Gathering', sortOrder: 4 },
-  { slug: 'casual', name: 'Casual', sortOrder: 5 },
-  { slug: 'fine-dining', name: 'Fine Dining', sortOrder: 6 },
+const OCCASION_CATEGORIES: Array<{
+  slug: string;
+  name: string;
+  nameAr: string;
+  sortOrder: number;
+}> = [
+  { slug: 'date-night', name: 'Date Night', nameAr: 'عشاء رومانسي', sortOrder: 0 },
+  { slug: 'business-lunch', name: 'Business Lunch', nameAr: 'غداء عمل', sortOrder: 1 },
+  { slug: 'family', name: 'Family', nameAr: 'عائلي', sortOrder: 2 },
+  { slug: 'birthday', name: 'Birthday', nameAr: 'عيد ميلاد', sortOrder: 3 },
+  { slug: 'group-gathering', name: 'Group Gathering', nameAr: 'تجمع الأصدقاء', sortOrder: 4 },
+  { slug: 'casual', name: 'Casual', nameAr: 'غير رسمي', sortOrder: 5 },
+  { slug: 'fine-dining', name: 'Fine Dining', nameAr: 'طعام فاخر', sortOrder: 6 },
 ];
 
 async function seedCuisineCategories(): Promise<void> {
   for (const category of CUISINE_CATEGORIES) {
     await prisma.cuisineCategory.upsert({
       where: { slug: category.slug },
-      create: { slug: category.slug, name: category.name, sortOrder: category.sortOrder },
-      update: { name: category.name, sortOrder: category.sortOrder },
+      create: {
+        slug: category.slug,
+        name: category.name,
+        nameAr: category.nameAr,
+        sortOrder: category.sortOrder,
+      },
+      update: { name: category.name, nameAr: category.nameAr, sortOrder: category.sortOrder },
     });
   }
 }
@@ -475,8 +490,13 @@ async function seedOccasionCategories(): Promise<void> {
   for (const category of OCCASION_CATEGORIES) {
     await prisma.occasionCategory.upsert({
       where: { slug: category.slug },
-      create: { slug: category.slug, name: category.name, sortOrder: category.sortOrder },
-      update: { name: category.name, sortOrder: category.sortOrder },
+      create: {
+        slug: category.slug,
+        name: category.name,
+        nameAr: category.nameAr,
+        sortOrder: category.sortOrder,
+      },
+      update: { name: category.name, nameAr: category.nameAr, sortOrder: category.sortOrder },
     });
   }
 }

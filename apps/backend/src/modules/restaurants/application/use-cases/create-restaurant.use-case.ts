@@ -39,6 +39,11 @@ import {
   RestaurantUsageRepository,
   RESTAURANT_USAGE_REPOSITORY,
 } from '../../domain/repositories/restaurant-usage.repository';
+import {
+  CuisineCategoryRepository,
+  CUISINE_CATEGORY_REPOSITORY,
+} from '../../domain/repositories/cuisine-category.repository';
+import { resolveCuisineType } from '../services/resolve-cuisine-type';
 import { RestaurantSlugAlreadyExistsException } from '../../domain/exceptions/restaurant-slug-already-exists.exception';
 import { RestaurantCreatedEvent } from '../../domain/events/restaurant.events';
 import { resolveRestaurantSlug } from '../utils/restaurant-slug.util';
@@ -74,6 +79,8 @@ export class CreateRestaurantUseCase {
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
     @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWorkPort,
+    @Inject(CUISINE_CATEGORY_REPOSITORY)
+    private readonly cuisineCategoryRepository: CuisineCategoryRepository,
   ) {}
 
   async execute(command: CreateRestaurantCommand): Promise<RestaurantResult> {
@@ -82,6 +89,11 @@ export class CreateRestaurantUseCase {
     if (await this.restaurantRepository.existsBySlug(slug)) {
       throw new RestaurantSlugAlreadyExistsException(slug);
     }
+
+    const cuisineType = await resolveCuisineType(
+      this.cuisineCategoryRepository,
+      command.cuisineType,
+    );
 
     const subscription = await this.subscriptionRepository.findByOrganizationId();
     if (subscription === null) {
@@ -102,7 +114,7 @@ export class CreateRestaurantUseCase {
       logoId: null,
       coverImageId: null,
       description: command.description,
-      cuisineType: command.cuisineType,
+      cuisineType,
       averageRating: null,
       priceLevel: command.priceLevel,
       status: RestaurantStatus.Active,

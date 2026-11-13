@@ -11,7 +11,12 @@ import {
   RestaurantRepository,
   RESTAURANT_REPOSITORY,
 } from '../../domain/repositories/restaurant.repository';
+import {
+  CuisineCategoryRepository,
+  CUISINE_CATEGORY_REPOSITORY,
+} from '../../domain/repositories/cuisine-category.repository';
 import { RestaurantNotFoundException } from '../../domain/exceptions/restaurant-not-found.exception';
+import { resolveCuisineType } from '../services/resolve-cuisine-type';
 import {
   RestaurantActivatedEvent,
   RestaurantSuspendedEvent,
@@ -28,6 +33,8 @@ export class UpdateRestaurantUseCase {
     @Inject(CLOCK) private readonly clock: ClockPort,
     @Inject(ID_GENERATOR) private readonly idGenerator: IdGeneratorPort,
     @Inject(EVENT_PUBLISHER) private readonly eventPublisher: EventPublisherPort,
+    @Inject(CUISINE_CATEGORY_REPOSITORY)
+    private readonly cuisineCategoryRepository: CuisineCategoryRepository,
   ) {}
 
   async execute(command: UpdateRestaurantCommand): Promise<RestaurantResult> {
@@ -37,6 +44,12 @@ export class UpdateRestaurantUseCase {
       throw new RestaurantNotFoundException();
     }
 
+    const cuisineType = await resolveCuisineType(
+      this.cuisineCategoryRepository,
+      command.cuisineType,
+      restaurant.cuisineType,
+    );
+
     const now = this.clock.now();
     const statusChanged = command.status !== restaurant.status;
 
@@ -44,7 +57,7 @@ export class UpdateRestaurantUseCase {
       {
         name: command.name,
         description: command.description,
-        cuisineType: command.cuisineType,
+        cuisineType,
       },
       now,
     );

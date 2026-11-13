@@ -6,6 +6,7 @@ export function toCuisineCategoryResult(category: CuisineCategory): CuisineCateg
     cuisineCategoryId: category.cuisineCategoryId,
     slug: category.slug,
     name: category.name,
+    nameAr: category.nameAr,
     sortOrder: category.sortOrder,
     createdAt: category.createdAt,
     updatedAt: category.updatedAt,

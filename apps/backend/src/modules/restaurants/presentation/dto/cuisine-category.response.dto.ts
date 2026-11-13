@@ -10,6 +10,14 @@ export class CuisineCategoryResponseDto {
   @ApiProperty({ example: 'Italian' })
   name!: string;
 
+  @ApiProperty({
+    example: 'إيطالي',
+    nullable: true,
+    type: String,
+    description: 'Arabic display name. Clients fall back to `name` when null.',
+  })
+  nameAr!: string | null;
+
   @ApiProperty({ example: 0 })
   sortOrder!: number;
 

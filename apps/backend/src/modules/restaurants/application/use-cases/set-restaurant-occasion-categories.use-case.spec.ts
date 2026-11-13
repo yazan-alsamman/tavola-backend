@@ -17,6 +17,7 @@ import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/su
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
 import { InMemoryRestaurantOccasionCategoryRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-occasion-category.repository';
 import { InMemoryOccasionCategoryRepository } from '../../../../../test/restaurants/support/in-memory-occasion-category.repository';
+import { createSeededCuisineCategoryRepository } from '../../../../../test/restaurants/support/in-memory-cuisine-category.repository';
 
 describe('SetRestaurantOccasionCategoriesUseCase', () => {
   const fixedNow = new Date('2026-07-16T12:00:00.000Z');
@@ -63,6 +64,7 @@ describe('SetRestaurantOccasionCategoriesUseCase', () => {
       new UuidGenerator(),
       new CollectingEventPublisher(),
       new ImmediateUnitOfWork(),
+      createSeededCuisineCategoryRepository(),
     );
     const result = await createUseCase.execute({
       organizationId: baseActor().organizationId,

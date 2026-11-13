@@ -19,6 +19,7 @@ import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/su
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
 import { InMemoryFileRepository } from '../../../../../test/restaurants/support/in-memory-file-repository';
 import { FakeStoragePort } from '../../../../../test/restaurants/support/fake-storage-port';
+import { createSeededCuisineCategoryRepository } from '../../../../../test/restaurants/support/in-memory-cuisine-category.repository';
 
 const BUCKET = 'tavla-public';
 const FILE_ID = '66666666-6666-4666-8666-666666666666';
@@ -72,6 +73,7 @@ describe('UploadRestaurantImageUseCase', () => {
       new UuidGenerator(),
       new CollectingEventPublisher(),
       new ImmediateUnitOfWork(),
+      createSeededCuisineCategoryRepository(),
     );
     const result = await createUseCase.execute({
       organizationId: baseActor().organizationId,

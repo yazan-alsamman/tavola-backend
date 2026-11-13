@@ -548,7 +548,7 @@ Indexes
 Notes
 
 * `ownerId` is removed from this table (see ADR-011). Restaurant ownership/administration is expressed through `OrganizationMember` on the parent Organization.
-* `cuisineType` is a **legacy display field** retained for backward-compatible API responses. Canonical cuisine classification uses `RestaurantCuisineCategory` (many-to-many). New features must read/write taxonomy tables, not this string alone.
+* `cuisineType` is a **legacy display field** retained for backward-compatible API responses. Canonical cuisine classification uses `RestaurantCuisineCategory` (many-to-many). New features must read/write taxonomy tables, not this string alone. Writes are a closed list: Create/Update accept only the name or slug of an active `CuisineCategory` and store its canonical `name` (`VALIDATION_ERROR` otherwise). A pre-existing free-text value is kept when an Update re-sends it unchanged; it is not migrated.
 * `priceLevel` is the **price category** (1 = budget … 4 = fine dining). See `PRODUCT_REQUIREMENTS.md` FR-07.5. **ADR-046**: computed, never written by the restaurant: the rounded average of its branches' `priceLevel`, left unchanged while no branch has one.
 
 ---
@@ -562,6 +562,7 @@ Fields
 * id (UUID)
 * slug (unique)
 * name (default English label; translatable business content deferred per DECISIONS.md Future Decisions)
+* nameAr (nullable Arabic display label for this platform-managed reference data, seeded with `name`; clients fall back to `name` when null)
 * isActive
 * sortOrder
 * createdAt
@@ -601,6 +602,7 @@ Fields
 * id (UUID)
 * slug (unique)
 * name
+* nameAr (nullable Arabic display label, same rule as `CuisineCategories.nameAr`)
 * isActive
 * sortOrder
 * createdAt

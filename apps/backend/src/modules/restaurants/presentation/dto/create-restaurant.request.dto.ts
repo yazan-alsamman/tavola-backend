@@ -26,7 +26,12 @@ export class CreateRestaurantRequestDto {
   @MaxLength(2000)
   description?: string | null;
 
-  @ApiPropertyOptional({ example: 'Italian', nullable: true })
+  @ApiPropertyOptional({
+    example: 'Italian',
+    nullable: true,
+    description:
+      'Name (or slug) of an active cuisine category from GET /cuisine-categories; stored as the category name. Any other value is rejected with VALIDATION_ERROR.',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(100)

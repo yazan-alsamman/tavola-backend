@@ -14,7 +14,10 @@ import {
 import { InMemoryRestaurantRepository } from '../../../../../test/restaurants/support/in-memory-restaurant.repository';
 import { InMemoryRestaurantSettingsRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-settings.repository';
 import { InMemoryRestaurantCuisineCategoryRepository } from '../../../../../test/restaurants/support/in-memory-restaurant-cuisine-category.repository';
-import { InMemoryCuisineCategoryRepository } from '../../../../../test/restaurants/support/in-memory-cuisine-category.repository';
+import {
+  InMemoryCuisineCategoryRepository,
+  createSeededCuisineCategoryRepository,
+} from '../../../../../test/restaurants/support/in-memory-cuisine-category.repository';
 import { createPermissiveSubscriptionFixture } from '../../../../../test/subscriptions/support/permissive-subscription-fixture';
 
 describe('GetRestaurantCuisineCategoriesUseCase', () => {
@@ -62,6 +65,7 @@ describe('GetRestaurantCuisineCategoriesUseCase', () => {
       new UuidGenerator(),
       new CollectingEventPublisher(),
       new ImmediateUnitOfWork(),
+      createSeededCuisineCategoryRepository(),
     );
     const result = await createUseCase.execute({
       organizationId: baseActor().organizationId,
