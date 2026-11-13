@@ -11,7 +11,6 @@ import {
   TableRepository,
   TABLE_REPOSITORY,
 } from '@modules/tables/domain/repositories/table.repository';
-import { TableNotFoundException } from '@modules/tables/domain/exceptions/table-not-found.exception';
 import {
   RestaurantSettingsRepository,
   RESTAURANT_SETTINGS_REPOSITORY,
@@ -52,6 +51,7 @@ import { ScheduleApprovedReservationSignalsService } from '../services/schedule-
 import { toReservationResult } from '../mappers/reservation-result.mapper';
 import { CancelReservationCommand } from '../dto/cancel-reservation.command';
 import { ReservationResult } from '../dto/reservation.result';
+import { releaseReservationTable } from '../services/release-reservation-table';
 
 /**
  * Phase 7.3 (Reservation Lifecycle, architecture frozen 2026-07-23). Reachable
@@ -133,12 +133,7 @@ export class CancelReservationUseCase {
       }
 
       if (sourceStatus === ReservationStatus.Approved) {
-        const table = await this.tableRepository.findById(existing.tableId);
-        if (table === null) {
-          throw new TableNotFoundException();
-        }
-        const releasedTable = table.release(now);
-        await this.tableRepository.save(releasedTable);
+        await releaseReservationTable(this.tableRepository, existing.tableId, now);
       }
 
       await this.reservationHistoryRepository.save(

@@ -253,6 +253,22 @@ describe('CompleteReservationUseCase', () => {
       expect(stored?.status).toBe(ReservationStatus.Approved);
     });
 
+    it('closes a booking whose table was deleted meanwhile, instead of failing every sweep', async () => {
+      const { sweep, reservationRepository, tableRepository, eventPublisher } = await buildSweep(
+        new Date('2026-08-01T20:01:00.000Z'),
+      );
+      await reservationRepository.seed(approvedReservation());
+      const table = await tableRepository.findById(TableId.create(tableId));
+      await tableRepository.save(table!.softDelete(fixedNow));
+
+      await expect(sweep.execute()).resolves.toEqual({ closed: 1 });
+
+      const stored = await reservationRepository.findById(ReservationId.create(reservationId));
+      expect(stored?.status).toBe(ReservationStatus.Completed);
+      expect(eventPublisher.events[0]).toBeInstanceOf(ReservationCompletedEvent);
+      expect(await tableRepository.findById(TableId.create(tableId))).toBeNull();
+    });
+
     it('skips a booking that is no longer Approved', async () => {
       const { useCase, reservationRepository } = await build(new Date('2026-08-01T20:01:00.000Z'));
       await reservationRepository.seed(
