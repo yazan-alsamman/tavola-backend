@@ -70,6 +70,7 @@ describe('RestaurantGallery round-trip via PrismaRestaurantGalleryRepository (in
     return RestaurantGalleryImage.create({
       id: randomUUID(),
       restaurantId,
+      branchId: null,
       fileId: randomUUID(),
       caption,
       sortOrder,
