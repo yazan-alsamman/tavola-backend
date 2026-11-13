@@ -37,6 +37,10 @@ interface NearbyRawRow {
   logoId: string | null;
   coverImageId: string | null;
   description: string | null;
+  nameAr: string | null;
+  nameEn: string | null;
+  descriptionAr: string | null;
+  descriptionEn: string | null;
   cuisineType: string | null;
   averageRating: number | null;
   ratingCount: number;
@@ -191,7 +195,12 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
       deletedAt: null,
     };
     if (filters.q) {
-      where.name = { contains: filters.q, mode: 'insensitive' };
+      // ADR-052: a guest may search in either language.
+      where.OR = [
+        { name: { contains: filters.q, mode: 'insensitive' } },
+        { nameAr: { contains: filters.q, mode: 'insensitive' } },
+        { nameEn: { contains: filters.q, mode: 'insensitive' } },
+      ];
     }
     if (filters.cuisineId) {
       where.cuisineCategories = { some: { cuisineCategoryId: filters.cuisineId } };
@@ -292,6 +301,10 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
         r.logo_id AS "logoId",
         r.cover_image_id AS "coverImageId",
         r.description AS "description",
+        r.name_ar AS "nameAr",
+        r.name_en AS "nameEn",
+        r.description_ar AS "descriptionAr",
+        r.description_en AS "descriptionEn",
         r.cuisine_type AS "cuisineType",
         r.average_rating::float8 AS "averageRating",
         r.rating_count AS "ratingCount",
@@ -311,7 +324,10 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
   private buildNearbyFilterSql(filters: DiscoverableRestaurantFilters): Prisma.Sql {
     const fragments: Prisma.Sql[] = [];
     if (filters.q) {
-      fragments.push(Prisma.sql`AND r.name ILIKE ${`%${filters.q}%`}`);
+      const pattern = `%${filters.q}%`;
+      fragments.push(
+        Prisma.sql`AND (r.name ILIKE ${pattern} OR r.name_ar ILIKE ${pattern} OR r.name_en ILIKE ${pattern})`,
+      );
     }
     if (filters.cuisineId) {
       fragments.push(
@@ -342,6 +358,10 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
     logoId: string | null;
     coverImageId: string | null;
     description: string | null;
+    nameAr: string | null;
+    nameEn: string | null;
+    descriptionAr: string | null;
+    descriptionEn: string | null;
     cuisineType: string | null;
     averageRating: DecimalLike;
     ratingCount: number;
@@ -357,6 +377,10 @@ export class PrismaDiscoveryReader implements DiscoveryReaderPort {
       logoId: row.logoId,
       coverImageId: row.coverImageId,
       description: row.description,
+      nameAr: row.nameAr,
+      nameEn: row.nameEn,
+      descriptionAr: row.descriptionAr,
+      descriptionEn: row.descriptionEn,
       cuisineType: row.cuisineType,
       averageRating: toNumberOrNull(row.averageRating),
       ratingCount: row.ratingCount,

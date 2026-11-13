@@ -2319,3 +2319,14 @@ This section consolidates the highest-value composite indexes defined per-table 
 * Migration files must be committed to version control.
 * The initial migration must enable the `btree_gist` PostgreSQL extension before creating the `Reservations` table's exclusion constraint.
 * Reference tables (`Country`, `Currency`, initial `Roles`/`Permissions`) are populated via the Seed System (see TASKS.md Phase 1), not via manual migration data, so environments remain reproducible.
+
+## Branch-owned rules, photos and cover (ADR-051, 2026-11-13)
+
+* `branch_settings`: one row per branch (`branch_id` unique, cascade). Columns mirror the rule columns of `restaurant_settings` (`reservation_interval_minutes`, `max_guests_per_reservation`, `cancellation_window_minutes`, `pending_reservation_timeout_minutes`, `default_reservation_duration_minutes`, `auto_approval`, `reservation_reminder_minutes_before`, `late_arrival_grace_minutes`) plus `created_at`/`updated_at`.
+* `restaurant_gallery.branch_id` (nullable, indexed): the branch a photo belongs to. Copies on several branches may share one `file_id`.
+* `branches.cover_image_id` (nullable UUID): the branch cover file; may be shared with the restaurant or other branches.
+
+## Restaurant names per language (ADR-052, 2026-11-13)
+
+* `restaurants.name_ar`, `name_en`, `description_ar`, `description_en` (nullable). `name`/`description` mirror the Arabic, else English, text.
+

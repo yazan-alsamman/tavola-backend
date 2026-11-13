@@ -34,6 +34,10 @@ function restaurant(
     coverImageId: null,
     description: null,
     cuisineType: 'Italian',
+    nameAr: null,
+    nameEn: null,
+    descriptionAr: null,
+    descriptionEn: null,
     averageRating: null,
     ratingCount: 0,
     priceLevel: 2,
@@ -137,6 +141,10 @@ describe('ListDiscoverableRestaurantsUseCase', () => {
     const reader = new FakeDiscoveryReader();
     const italian = restaurant('11111111-1111-4111-8111-111111111111', 'Roma', {
       cuisineType: 'NotItalian',
+      nameAr: null,
+      nameEn: null,
+      descriptionAr: null,
+      descriptionEn: null,
     });
     const other = restaurant('11111111-1111-4111-8111-111111111112', 'Sea Breeze');
     reader.restaurants = [italian, other];

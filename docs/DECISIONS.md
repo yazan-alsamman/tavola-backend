@@ -2834,3 +2834,53 @@ Dropping the `working_hours` table and the two settings columns was not chosen: 
 
 Owners set hours, currency and timezone on each branch in the dashboard's Branches page; restaurant settings no longer show them. A new branch starts with no hours until the owner sets them.
 
+
+---
+
+## ADR-051
+
+### Title
+
+Reservation rules, photos and cover belong to the branch
+
+### Status
+
+**Accepted — owner-approved 2026-11-13** (the owner asked for reservation rules and photos to be set per branch, then confirmed in the Branches/Settings sheets that the restaurant keeps its name, description, cuisine type and categories while the cover and photos move to the branch). Extends ADR-050.
+
+### Context
+
+`RestaurantSettings` held one set of reservation rules for every branch, and `RestaurantGallery` and `Restaurant.coverImageId` one set of photos and one cover. Branches of one restaurant can differ in size, service style and look.
+
+### Decision
+
+1. New `BranchSettings` table (one row per branch: interval, max guests, cancellation window, pending timeout, default duration, auto approval, reminder minutes, late-arrival grace). `RestaurantSettingsRepository.findForBranch(restaurantId, branchId)` returns the restaurant settings with the branch's rule fields applied; every booking path (create, approve, cancel, reschedule, time slots, availability search, approved-reservation signals, waitlist recheck/promote) reads the branch's rules. `GET`/`PATCH /restaurants/:id/branches/:branchId/settings` (Owner/Admin). Migration `20261113190000_branch_settings_and_gallery` seeds a row per live branch from the restaurant settings.
+2. `RestaurantGallery.branchId`. Listing, adding and reordering take an optional `branchId`; without it the restaurant's oldest live branch is used, which is what app 1.0.2 reads. The same migration copies each existing photo onto every other live branch, sharing the stored file; a file is deleted only with its last gallery row.
+3. `Branch.coverImageId`. `POST /restaurants/:id/cover` takes an optional multipart `branchId`; with it the upload sets that branch's cover. A replaced cover file is deleted only once no restaurant or branch still points at it. Discovery branch responses carry `coverImageUrl`: the branch cover, else the restaurant cover. Migration `20261113200000_branch_cover_image` starts every live branch on the restaurant's cover file.
+4. The restaurant keeps its name, description, cuisine type and cuisine/occasion categories (brand-level, see ADR-052).
+
+### Consequences
+
+The dashboard edits rules on the Branches page and photos/cover on the Photos page for the selected branch. Restaurant-level rules remain only as the default a new branch starts from.
+
+---
+
+## ADR-052
+
+### Title
+
+Restaurant name and description in Arabic and English
+
+### Status
+
+**Accepted — owner-approved 2026-11-13** (Settings sheet: "two fields, Arabic and English, and the app shows the user's language").
+
+### Decision
+
+1. `Restaurant.nameAr`/`nameEn`/`descriptionAr`/`descriptionEn` (nullable). At least one name is required. `name`/`description`, read by app 1.0.2, are the Arabic text, else the English one (same rule as `MenuItem`, ADR-046).
+2. `PATCH /restaurants/:id` accepts the four fields; a client that sends only the old `name`/`description` keeps working: an unchanged text keeps the stored translations, a new one is filed under the language of its script. Creation files the single name the same way.
+3. Restaurant responses (management and Discovery) carry the four fields. Discovery search `q` matches any of the three names.
+4. Migration `20261113210000_restaurant_bilingual_profile` files existing names and descriptions by script.
+
+### Consequences
+
+A newer app build picks `nameAr`/`nameEn` by the user's language; app 1.0.2 keeps showing `name`.

@@ -583,6 +583,11 @@ model Restaurant {
   logoId         String?   @map("logo_id") @db.Uuid
   coverImageId   String?   @map("cover_image_id") @db.Uuid
   description    String?
+  /// ADR-052: name and description per language. `name`/`description` mirror the Arabic (else English) text for app 1.0.2.
+  nameAr         String?   @map("name_ar")
+  nameEn         String?   @map("name_en")
+  descriptionAr  String?   @map("description_ar")
+  descriptionEn  String?   @map("description_en")
   cuisineType    String?   @map("cuisine_type")
   averageRating  Decimal?  @map("average_rating") @db.Decimal(3, 2)
   /// Active reviews in the rating window (last 6 months). `averageRating` is null below 5.
