@@ -4,6 +4,12 @@ import { Username } from '@shared/domain/value-objects/username.vo';
 import { User } from '../entities/user.entity';
 import { UserStatus } from '../enums/authentication.enums';
 
+/**
+ * ADR-054: customers start in Arabic, the product's primary market. It picks
+ * the language of their notification templates; `PATCH /users/me` changes it.
+ */
+export const DEFAULT_CUSTOMER_LANGUAGE = 'ar';
+
 export interface CreateActiveCustomerInput {
   id: string;
   username: Username;
@@ -31,7 +37,7 @@ export class CustomerRegistrationPolicy {
       phone: input.phone.value,
       username: input.username.value,
       passwordHash: input.passwordHash.value,
-      language: 'en',
+      language: DEFAULT_CUSTOMER_LANGUAGE,
       preferredCurrency: null,
       notificationOptIn: true,
       marketingOptIn: false,
